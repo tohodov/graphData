@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Text.Json;
 using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
@@ -127,6 +130,70 @@ public sealed class SymLinkGraphStorage : IGraphStorage
         }
 
         return Task.FromResult<IReadOnlyCollection<Guid>>(connections.ToArray());
+    }
+
+    public async Task<Subgraph> GetSubgraphAsync(SubgraphQuery query, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        if (query.RootNodeIds.Count == 0)
+        {
+            return Subgraph.Empty;
+        }
+
+        var visited = new HashSet<Guid>();
+        var discovered = new HashSet<Guid>(query.RootNodeIds);
+        var queue = new Queue<(Guid NodeId, int Depth)>();
+
+        foreach (var root in query.RootNodeIds)
+        {
+            queue.Enqueue((root, 0));
+        }
+
+        var nodes = new Dictionary<Guid, NodeDetails>();
+
+        while (queue.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var (nodeId, depth) = queue.Dequeue();
+            if (!visited.Add(nodeId))
+            {
+                continue;
+            }
+
+            var metadata = await GetNodeMetadataAsync(nodeId, cancellationToken).ConfigureAwait(false);
+            if (metadata is null)
+            {
+                continue;
+            }
+
+            var connections = await GetConnectedNodesAsync(nodeId, cancellationToken).ConfigureAwait(false);
+            var relevantConnections = new HashSet<Guid>();
+
+            foreach (var connection in connections)
+            {
+                if (depth < query.MaxDepth && discovered.Add(connection))
+                {
+                    queue.Enqueue((connection, depth + 1));
+                }
+
+                if (discovered.Contains(connection))
+                {
+                    relevantConnections.Add(connection);
+                }
+            }
+
+            nodes[nodeId] = new NodeDetails
+            {
+                Metadata = metadata,
+                Connections = relevantConnections.ToArray()
+            };
+        }
+
+        return nodes.Count == 0
+            ? Subgraph.Empty
+            : new Subgraph(nodes);
     }
 
     private string GetNodePath(Guid nodeId)

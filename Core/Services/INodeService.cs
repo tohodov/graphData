@@ -11,4 +11,6 @@ public interface INodeService
     Task UpdateNodeAsync(NodeMetadata metadata, CancellationToken cancellationToken = default);
 
     Task ConnectNodesAsync(Guid firstNodeId, Guid secondNodeId, CancellationToken cancellationToken = default);
+
+    Task<Subgraph> GetSubgraphAsync(SubgraphQuery query, CancellationToken cancellationToken = default);
 }

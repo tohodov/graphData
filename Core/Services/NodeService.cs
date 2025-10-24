@@ -1,3 +1,4 @@
+using System;
 using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
 
@@ -53,5 +54,22 @@ public sealed class NodeService(IGraphStorage storage) : INodeService
         }
 
         return _storage.ConnectNodesAsync(firstNodeId, secondNodeId, cancellationToken);
+    }
+
+    public Task<Subgraph> GetSubgraphAsync(SubgraphQuery query, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        if (query.RootNodeIds.Count == 0)
+        {
+            return Task.FromResult(Subgraph.Empty);
+        }
+
+        if (query.MaxDepth < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(query.MaxDepth), "Depth must be non-negative.");
+        }
+
+        return _storage.GetSubgraphAsync(query, cancellationToken);
     }
 }
