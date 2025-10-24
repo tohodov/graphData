@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace GraphData.NtfsStorage;
 
-public sealed class NtfsGraphStorage : IGraphStorage
+public sealed class SymLinkGraphStorage : IGraphStorage
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -15,9 +15,9 @@ public sealed class NtfsGraphStorage : IGraphStorage
     };
 
     private readonly NtfsGraphStorageOptions _options;
-    private readonly ILogger<NtfsGraphStorage> _logger;
+    private readonly ILogger<SymLinkGraphStorage> _logger;
 
-    public NtfsGraphStorage(IOptions<NtfsGraphStorageOptions> options, ILogger<NtfsGraphStorage> logger)
+    public SymLinkGraphStorage(IOptions<NtfsGraphStorageOptions> options, ILogger<SymLinkGraphStorage> logger)
     {
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger;

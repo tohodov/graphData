@@ -19,14 +19,14 @@ public static class ServiceCollectionExtensions
                 }
             });
 
-        services.AddSingleton<IGraphStorage, NtfsGraphStorage>();
+        services.AddSingleton<IGraphStorage, SymLinkGraphStorage>();
         return services;
     }
 
     public static IServiceCollection AddNtfsGraphStorage(this IServiceCollection services, Action<NtfsGraphStorageOptions> configure)
     {
         services.Configure(configure);
-        services.AddSingleton<IGraphStorage, NtfsGraphStorage>();
+        services.AddSingleton<IGraphStorage, SymLinkGraphStorage>();
         return services;
     }
 }

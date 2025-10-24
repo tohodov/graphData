@@ -3,22 +3,18 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.0.31903.59
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GraphData.Api", "GraphData.Api\GraphData.Api.csproj", "{2DD9C0D3-4F92-4BC8-8A85-4F1DB1EBF3E5}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Api", "Api\Api.csproj", "{2DD9C0D3-4F92-4BC8-8A85-4F1DB1EBF3E5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GraphData.Core", "GraphData.Core\GraphData.Core.csproj", "{667CEA99-D60C-437B-9B0D-E14E0BD1079A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Core", "Core\Core.csproj", "{667CEA99-D60C-437B-9B0D-E14E0BD1079A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GraphData.NtfsStorage", "GraphData.NtfsStorage\GraphData.NtfsStorage.csproj", "{87DB4B2D-5739-4242-B924-1A6ADA7E694F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SymLinkStorage", "NtfsStorage\SymLinkStorage.csproj", "{87DB4B2D-5739-4242-B924-1A6ADA7E694F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GraphData.Tests", "GraphData.Tests\GraphData.Tests.csproj", "{CB10B461-8AB2-45F2-BB63-1E80C8648DD7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests", "Tests\Tests.csproj", "{CB10B461-8AB2-45F2-BB63-1E80C8648DD7}"
 EndProject
-
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
-	EndGlobalSection
-	GlobalSection(SolutionProperties) = preSolution
-		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{2DD9C0D3-4F92-4BC8-8A85-4F1DB1EBF3E5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
@@ -33,10 +29,15 @@ Global
 		{87DB4B2D-5739-4242-B924-1A6ADA7E694F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{87DB4B2D-5739-4242-B924-1A6ADA7E694F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{87DB4B2D-5739-4242-B924-1A6ADA7E694F}.Release|Any CPU.Build.0 = Release|Any CPU
-                {CB10B461-8AB2-45F2-BB63-1E80C8648DD7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-                {CB10B461-8AB2-45F2-BB63-1E80C8648DD7}.Debug|Any CPU.Build.0 = Debug|Any CPU
-                {CB10B461-8AB2-45F2-BB63-1E80C8648DD7}.Release|Any CPU.ActiveCfg = Release|Any CPU
-                {CB10B461-8AB2-45F2-BB63-1E80C8648DD7}.Release|Any CPU.Build.0 = Release|Any CPU
-
+		{CB10B461-8AB2-45F2-BB63-1E80C8648DD7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CB10B461-8AB2-45F2-BB63-1E80C8648DD7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CB10B461-8AB2-45F2-BB63-1E80C8648DD7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CB10B461-8AB2-45F2-BB63-1E80C8648DD7}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {F335C091-E3F9-4A2E-A99F-0E238CFA22BF}
 	EndGlobalSection
 EndGlobal

@@ -15,7 +15,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\GraphData.Core\GraphData.Core.csproj" />
-    <ProjectReference Include="..\GraphData.NtfsStorage\GraphData.NtfsStorage.csproj" />
+    <ProjectReference Include="..\Core\Core.csproj" />
+    <ProjectReference Include="..\NtfsStorage\SymLinkStorage.csproj" />
   </ItemGroup>
 </Project>

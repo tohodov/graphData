@@ -13,7 +13,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace GraphData.Tests.Storage.Ntfs;
 
 [TestClass]
-public sealed class NtfsGraphStorageTests : GraphStorageContractTests
+public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
 {
     private NtfsGraphStorageOptions _options = null!;
     private string? _snapshotRoot;
@@ -34,7 +34,7 @@ public sealed class NtfsGraphStorageTests : GraphStorageContractTests
             RootPath = rootPath
         };
 
-        IGraphStorage storage = new NtfsGraphStorage(Options.Create(_options), NullLogger<NtfsGraphStorage>.Instance);
+        IGraphStorage storage = new SymLinkGraphStorage(Options.Create(_options), NullLogger<SymLinkGraphStorage>.Instance);
         return Task.FromResult(storage);
     }
 
