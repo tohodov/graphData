@@ -130,4 +130,40 @@ public abstract class GraphStorageContractTests
         var connections = (await Storage.GetConnectedNodesAsync(node.Id).ConfigureAwait(false)).ToList();
         CollectionAssert.DoesNotContain(connections, node.Id);
     }
+
+    [TestMethod]
+    public async Task GetSubgraphAsync_ShouldRespectDepth()
+    {
+        var first = CreateMetadata();
+        var second = CreateMetadata();
+        var third = CreateMetadata();
+        var fourth = CreateMetadata();
+
+        await Storage.CreateNodeAsync(first).ConfigureAwait(false);
+        await Storage.CreateNodeAsync(second).ConfigureAwait(false);
+        await Storage.CreateNodeAsync(third).ConfigureAwait(false);
+        await Storage.CreateNodeAsync(fourth).ConfigureAwait(false);
+
+        await Storage.ConnectNodesAsync(first.Id, second.Id).ConfigureAwait(false);
+        await Storage.ConnectNodesAsync(second.Id, third.Id).ConfigureAwait(false);
+        await Storage.ConnectNodesAsync(third.Id, fourth.Id).ConfigureAwait(false);
+
+        var query = new SubgraphQuery
+        {
+            RootNodeIds = new[] { first.Id },
+            MaxDepth = 2
+        };
+
+        var subgraph = await Storage.GetSubgraphAsync(query).ConfigureAwait(false);
+
+        Assert.AreEqual(3, subgraph.Nodes.Count);
+        Assert.IsTrue(subgraph.Nodes.ContainsKey(first.Id));
+        Assert.IsTrue(subgraph.Nodes.ContainsKey(second.Id));
+        Assert.IsTrue(subgraph.Nodes.ContainsKey(third.Id));
+        Assert.IsFalse(subgraph.Nodes.ContainsKey(fourth.Id));
+
+        var firstConnections = subgraph.Nodes[first.Id].Connections;
+        CollectionAssert.Contains(firstConnections.ToList(), second.Id);
+        CollectionAssert.DoesNotContain(firstConnections.ToList(), third.Id);
+    }
 }

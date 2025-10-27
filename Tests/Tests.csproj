@@ -17,5 +17,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\NtfsStorage\SymLinkStorage.csproj" />
+    <ProjectReference Include="..\SubgraphStorage\SubgraphStorage.csproj" />
   </ItemGroup>
 </Project>

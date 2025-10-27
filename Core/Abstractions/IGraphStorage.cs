@@ -13,4 +13,6 @@ public interface IGraphStorage
     Task ConnectNodesAsync(Guid sourceNodeId, Guid targetNodeId, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyCollection<Guid>> GetConnectedNodesAsync(Guid nodeId, CancellationToken cancellationToken = default);
+
+    Task<Subgraph> GetSubgraphAsync(SubgraphQuery query, CancellationToken cancellationToken = default);
 }
