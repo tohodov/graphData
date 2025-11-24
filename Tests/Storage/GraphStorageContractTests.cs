@@ -8,25 +8,20 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.Storage;
 
-public abstract class GraphStorageContractTests
-{
+public abstract partial class GraphStorageContractTests {
     protected IGraphStorage Storage { get; private set; } = default!;
 
     [TestInitialize]
-    public async Task TestInitializeAsync()
-    {
-        Storage = await CreateStorageAsync().ConfigureAwait(false);
+    public async Task TestInitializeAsync() {
+        Storage = await CreateStorageAsync();
     }
 
     [TestCleanup]
-    public async Task TestCleanupAsync()
-    {
-        if (Storage is not null)
-        {
-            switch (Storage)
-            {
+    public async Task TestCleanupAsync() {
+        if (Storage is not null) {
+            switch (Storage) {
                 case IAsyncDisposable asyncDisposable:
-                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                    await asyncDisposable.DisposeAsync();
                     break;
                 case IDisposable disposable:
                     disposable.Dispose();
@@ -36,134 +31,108 @@ public abstract class GraphStorageContractTests
             Storage = null!;
         }
 
-        await OnCleanupAsync().ConfigureAwait(false);
+        await OnCleanupAsync();
     }
 
     protected virtual Task OnCleanupAsync() => Task.CompletedTask;
 
     protected abstract Task<IGraphStorage> CreateStorageAsync();
 
-    protected static NodeMetadata CreateMetadata(Guid? id = null)
-    {
-        return new NodeMetadata
-        {
-            Id = id ?? Guid.NewGuid(),
-            Name = $"Node-{Guid.NewGuid():N}",
-            Attributes = new Dictionary<string, string>
-            {
-                ["type"] = "test",
-                ["created"] = DateTime.UtcNow.ToString("O")
-            }
-        };
-    }
-
+    protected Task<Node> CreateNode(string? name = null) => Storage.Create(name ?? Guid.NewGuid().ToString(), null, new() {
+        { "type", "test" },
+        { "created", DateTime.UtcNow.ToString("O")
+    } });
+}
+[TestCategory(nameof(IGraphStorage.Create))]
+partial class GraphStorageContractTests {
     [TestMethod]
-    public async Task CreateNodeAsync_ShouldPersistMetadata()
-    {
-        var metadata = CreateMetadata();
-
-        var created = await Storage.CreateNodeAsync(metadata).ConfigureAwait(false);
-        var retrieved = await Storage.GetNodeMetadataAsync(created.Id).ConfigureAwait(false);
+    public async Task ShouldPersistMetadata() {
+        var created = await CreateNode();
+        var retrieved = await Storage.Get(created.Name);
 
         Assert.IsNotNull(retrieved);
-        Assert.AreEqual(created.Id, retrieved!.Id);
+        Assert.AreEqual(created.Name, retrieved.Name);
         Assert.AreEqual(created.Name, retrieved.Name);
         CollectionAssert.AreEquivalent(created.Attributes.ToList(), retrieved.Attributes.ToList());
     }
-
+}
+[TestCategory(nameof(IGraphStorage.Get))]
+partial class GraphStorageContractTests {
     [TestMethod]
-    public async Task GetNodeMetadataAsync_ShouldReturnNull_WhenNodeMissing()
-    {
-        var result = await Storage.GetNodeMetadataAsync(Guid.NewGuid()).ConfigureAwait(false);
+    public async Task NodeMissing() {
+        var result = await Storage.Get(Guid.NewGuid().ToString());
         Assert.IsNull(result);
     }
-
+}
+[TestCategory(nameof(IGraphStorage.Update))]
+partial class GraphStorageContractTests {
     [TestMethod]
-    public async Task UpdateMetadataAsync_ShouldPersistChanges()
-    {
-        var metadata = CreateMetadata();
-        await Storage.CreateNodeAsync(metadata).ConfigureAwait(false);
+    public async Task ShouldPersistChanges() {
+        var node = await CreateNode();
+        var attributes = new Dictionary<string, string>(node.Attributes);
+        attributes["type"] = "updated";
+        attributes["extra"] = "value";
 
-        var updated = metadata with
-        {
-            Name = metadata.Name + "-updated",
-            Attributes = new Dictionary<string, string>
-            {
-                ["type"] = "updated",
-                ["extra"] = "value"
-            }
-        };
-
-        await Storage.UpdateMetadataAsync(updated).ConfigureAwait(false);
-        var retrieved = await Storage.GetNodeMetadataAsync(metadata.Id).ConfigureAwait(false);
+        await Storage.Update(node.Name, attributes);
+        var retrieved = await Storage.Get(node.Name);
 
         Assert.IsNotNull(retrieved);
-        Assert.AreEqual(updated.Name, retrieved!.Name);
-        CollectionAssert.AreEquivalent(updated.Attributes.ToList(), retrieved.Attributes.ToList());
+        CollectionAssert.AreEquivalent(attributes.ToList(), retrieved.Attributes.ToList());
     }
-
+}
+[TestCategory(nameof(IGraphStorage.Connect))]
+partial class GraphStorageContractTests {
     [TestMethod]
-    public async Task ConnectNodesAsync_ShouldReturnMutualConnections()
-    {
-        var first = CreateMetadata();
-        var second = CreateMetadata();
-        await Storage.CreateNodeAsync(first).ConfigureAwait(false);
-        await Storage.CreateNodeAsync(second).ConfigureAwait(false);
+    public async Task ShouldReturnMutualConnections() {
+        var first = await CreateNode();
+        var second = await CreateNode();
 
-        await Storage.ConnectNodesAsync(first.Id, second.Id).ConfigureAwait(false);
+        await Storage.Connect(first, second);
 
-        var firstConnections = (await Storage.GetConnectedNodesAsync(first.Id).ConfigureAwait(false)).ToList();
-        var secondConnections = (await Storage.GetConnectedNodesAsync(second.Id).ConfigureAwait(false)).ToList();
+        var firstConnections = await Storage.GetConnectedNodesAsync(first);
+        var secondConnections = await Storage.GetConnectedNodesAsync(second);
 
-        CollectionAssert.Contains(firstConnections, second.Id);
-        CollectionAssert.Contains(secondConnections, first.Id);
+        Assert.IsTrue(firstConnections.Any(x => x.Name == second.Name));
+        Assert.IsTrue(secondConnections.Any(x => x.Name == first.Name));
     }
-
     [TestMethod]
-    public async Task ConnectNodesAsync_ShouldIgnoreSelfConnection()
-    {
-        var node = CreateMetadata();
-        await Storage.CreateNodeAsync(node).ConfigureAwait(false);
+    public async Task ShouldIgnoreSelfConnection() {
+        var node = await CreateNode();
 
-        await Storage.ConnectNodesAsync(node.Id, node.Id).ConfigureAwait(false);
+        await Storage.Connect(node, node);
 
-        var connections = (await Storage.GetConnectedNodesAsync(node.Id).ConfigureAwait(false)).ToList();
-        CollectionAssert.DoesNotContain(connections, node.Id);
+        var connections = (await Storage.GetConnectedNodesAsync(node)).ToList();
+        CollectionAssert.DoesNotContain(connections, node.Name);
     }
-
+}
+[TestCategory(nameof(IGraphStorage.GetSubgraphAsync))]
+partial class GraphStorageContractTests {
     [TestMethod]
-    public async Task GetSubgraphAsync_ShouldRespectDepth()
-    {
-        var first = CreateMetadata();
-        var second = CreateMetadata();
-        var third = CreateMetadata();
-        var fourth = CreateMetadata();
+    public async Task ShouldRespectDepth() {
+        var first = await CreateNode();
+        var second = await CreateNode();
+        var third = await CreateNode();
+        var fourth = await CreateNode();
 
-        await Storage.CreateNodeAsync(first).ConfigureAwait(false);
-        await Storage.CreateNodeAsync(second).ConfigureAwait(false);
-        await Storage.CreateNodeAsync(third).ConfigureAwait(false);
-        await Storage.CreateNodeAsync(fourth).ConfigureAwait(false);
+        await Storage.Connect(first, second);
+        await Storage.Connect(second, third);
+        await Storage.Connect(third, fourth);
 
-        await Storage.ConnectNodesAsync(first.Id, second.Id).ConfigureAwait(false);
-        await Storage.ConnectNodesAsync(second.Id, third.Id).ConfigureAwait(false);
-        await Storage.ConnectNodesAsync(third.Id, fourth.Id).ConfigureAwait(false);
-
-        var query = new SubgraphQuery
-        {
-            RootNodeIds = new[] { first.Id },
+        var query = new SubgraphQuery {
+            RootNodeIds = new[] { first.Name },
             MaxDepth = 2
         };
 
-        var subgraph = await Storage.GetSubgraphAsync(query).ConfigureAwait(false);
+        var subgraph = await Storage.GetSubgraphAsync(query);
 
         Assert.AreEqual(3, subgraph.Nodes.Count);
-        Assert.IsTrue(subgraph.Nodes.ContainsKey(first.Id));
-        Assert.IsTrue(subgraph.Nodes.ContainsKey(second.Id));
-        Assert.IsTrue(subgraph.Nodes.ContainsKey(third.Id));
-        Assert.IsFalse(subgraph.Nodes.ContainsKey(fourth.Id));
+        Assert.IsTrue(subgraph.Nodes.Contains(first));
+        Assert.IsTrue(subgraph.Nodes.Contains(second));
+        Assert.IsTrue(subgraph.Nodes.Contains(third));
+        Assert.IsFalse(subgraph.Nodes.Contains(fourth));
 
-        var firstConnections = subgraph.Nodes[first.Id].Connections;
-        CollectionAssert.Contains(firstConnections.ToList(), second.Id);
-        CollectionAssert.DoesNotContain(firstConnections.ToList(), third.Id);
+        var children = subgraph.Nodes.First(x => x.Name == first.Name).Edges.Values.SelectMany(x => new[] { x.Node1, x.Node2 }).Distinct().Except([first]).ToArray();
+        Assert.IsTrue(children.Any(x => x.Name == second.Name));
+        Assert.IsFalse(children.Any(x => x.Name == third.Name));
     }
 }

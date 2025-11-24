@@ -4,15 +4,12 @@ namespace GraphData.Core.Abstractions;
 
 public interface IGraphStorage
 {
-    Task<NodeMetadata> CreateNodeAsync(NodeMetadata metadata, CancellationToken cancellationToken = default);
-
-    Task<NodeMetadata?> GetNodeMetadataAsync(Guid nodeId, CancellationToken cancellationToken = default);
-
-    Task UpdateMetadataAsync(NodeMetadata metadata, CancellationToken cancellationToken = default);
-
-    Task ConnectNodesAsync(Guid sourceNodeId, Guid targetNodeId, CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyCollection<Guid>> GetConnectedNodesAsync(Guid nodeId, CancellationToken cancellationToken = default);
-
-    Task<Subgraph> GetSubgraphAsync(SubgraphQuery query, CancellationToken cancellationToken = default);
+    Task<Node> Create(string name, Node? parent = null, Dictionary<string, string>? attributes = null);
+    Task<Node?> Get(string basisNodeName) => Get(null, basisNodeName);
+    Task<Node?> Get(Node? parent, string subNodeName);
+    Task<Node?> Get(NodeQuery query);
+    Task Update(string subNodeName, IDictionary<string, string> attributes, Node? parent = null);
+    Task Connect(Node sourceNode, Node targetNode);
+    Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node);
+    Task<Subgraph> GetSubgraphAsync(SubgraphQuery query);
 }

@@ -4,59 +4,40 @@ using GraphData.Core.Models;
 
 namespace GraphData.Core.Services;
 
-public sealed class NodeService(IGraphStorage storage) : INodeService
+public sealed class NodeService(IGraphStorage storage)
 {
     private readonly IGraphStorage _storage = storage;
 
-    public async Task<NodeDetails?> GetNodeAsync(Guid nodeId, CancellationToken cancellationToken = default)
+    public async Task<Node?> Get(string name)
     {
-        var metadata = await _storage.GetNodeMetadataAsync(nodeId, cancellationToken).ConfigureAwait(false);
-        if (metadata is null)
+        var node = await _storage.Get(name);
+        if (node is null)
         {
             return null;
         }
-
-        var connections = await _storage.GetConnectedNodesAsync(nodeId, cancellationToken).ConfigureAwait(false);
-        return new NodeDetails
-        {
-            Metadata = metadata,
-            Connections = connections
-        };
+        var connections = await _storage.GetConnectedNodesAsync(node);
+        return node;
     }
 
-    public async Task<NodeMetadata> CreateNodeAsync(NodeMetadata metadata, CancellationToken cancellationToken = default)
+    public async Task<Node> Create(Node? parent, string name)
     {
-        var nodeId = metadata.Id == Guid.Empty ? Guid.NewGuid() : metadata.Id;
-        var normalized = metadata with { Id = nodeId };
-        return await _storage.CreateNodeAsync(normalized, cancellationToken).ConfigureAwait(false);
+        return await _storage.Create(name, parent);
     }
 
-    public Task UpdateNodeAsync(NodeMetadata metadata, CancellationToken cancellationToken = default)
+    public Task Update(Node node)
     {
-        if (metadata.Id == Guid.Empty)
-        {
-            throw new ArgumentException("Node id must be provided.", nameof(metadata));
-        }
-
-        return _storage.UpdateMetadataAsync(metadata, cancellationToken);
+        return _storage.Update(node.Name, node.Attributes.ToDictionary());
     }
 
-    public Task ConnectNodesAsync(Guid firstNodeId, Guid secondNodeId, CancellationToken cancellationToken = default)
+    public Task ConnectNodes(Node first, Node second)
     {
-        if (firstNodeId == Guid.Empty)
-        {
-            throw new ArgumentException("Node id must be provided.", nameof(firstNodeId));
-        }
+        if(first == second)
+            throw new ArgumentException("Node id must be provided.", nameof(second));
 
-        if (secondNodeId == Guid.Empty)
-        {
-            throw new ArgumentException("Node id must be provided.", nameof(secondNodeId));
-        }
-
-        return _storage.ConnectNodesAsync(firstNodeId, secondNodeId, cancellationToken);
+        return _storage.Connect(first, second);
     }
 
-    public Task<Subgraph> GetSubgraphAsync(SubgraphQuery query, CancellationToken cancellationToken = default)
+    public Task<Subgraph> GetSubgraph(SubgraphQuery query)
     {
         ArgumentNullException.ThrowIfNull(query);
 
@@ -70,6 +51,6 @@ public sealed class NodeService(IGraphStorage storage) : INodeService
             throw new ArgumentOutOfRangeException(nameof(query.MaxDepth), "Depth must be non-negative.");
         }
 
-        return _storage.GetSubgraphAsync(query, cancellationToken);
+        return _storage.GetSubgraphAsync(query);
     }
 }

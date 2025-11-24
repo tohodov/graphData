@@ -46,17 +46,9 @@ public sealed class RandomAccessGraphStorage : IGraphStorage
         Directory.CreateDirectory(_connectionsRoot);
     }
 
-    public async Task<NodeMetadata> CreateNodeAsync(NodeMetadata metadata, CancellationToken cancellationToken = default)
+    public async Task<Node> CreateNodeAsync(Node metadata, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(metadata);
-        if (metadata.Id == Guid.Empty)
-        {
-            throw new ArgumentException("Node id must be provided.", nameof(metadata));
-        }
-
-        EnsureAttributes(metadata);
-
-        var metadataLock = GetMetadataLock(metadata.Id);
+        var metadataLock = GetMetadataLock(metadata.Name);
         await metadataLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -67,29 +59,29 @@ public sealed class RandomAccessGraphStorage : IGraphStorage
             metadataLock.Release();
         }
 
-        var connectionLock = GetConnectionLock(metadata.Id);
+        var connectionLock = GetConnectionLock(metadata.Name);
         await connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            await EnsureConnectionsFileAsync(metadata.Id, cancellationToken).ConfigureAwait(false);
+            await EnsureConnectionsFileAsync(metadata.Name, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             connectionLock.Release();
         }
 
-        _logger.LogDebug("Stored metadata for node {NodeId}", metadata.Id);
+        _logger.LogDebug("Stored metadata for node {NodeId}", metadata.Name);
         return metadata;
     }
 
-    public async Task<NodeMetadata?> GetNodeMetadataAsync(Guid nodeId, CancellationToken cancellationToken = default)
+    public async Task<Node?> GetNodeMetadataAsync(Guid nodeId, CancellationToken cancellationToken = default)
     {
         var metadataLock = GetMetadataLock(nodeId);
         await metadataLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var metadata = await ReadMetadataAsync(nodeId, cancellationToken).ConfigureAwait(false);
-            return metadata is null ? null : Clone(metadata);
+            return metadata is null ? null : metadata;
         }
         finally
         {
@@ -97,23 +89,21 @@ public sealed class RandomAccessGraphStorage : IGraphStorage
         }
     }
 
-    public async Task UpdateMetadataAsync(NodeMetadata metadata, CancellationToken cancellationToken = default)
+    public async Task UpdateMetadataAsync(Node metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(metadata);
-        if (metadata.Id == Guid.Empty)
+        if (metadata.Name == Guid.Empty)
         {
             throw new ArgumentException("Node id must be provided.", nameof(metadata));
         }
 
-        EnsureAttributes(metadata);
-
-        var metadataLock = GetMetadataLock(metadata.Id);
+        var metadataLock = GetMetadataLock(metadata.Name);
         await metadataLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            if (!File.Exists(GetMetadataPath(metadata.Id)))
+            if (!File.Exists(GetMetadataPath(metadata.Name)))
             {
-                throw new FileNotFoundException($"Metadata for node '{metadata.Id}' does not exist.");
+                throw new FileNotFoundException($"Metadata for node '{metadata.Name}' does not exist.");
             }
 
             await WriteMetadataAsync(metadata, cancellationToken).ConfigureAwait(false);
@@ -183,7 +173,7 @@ public sealed class RandomAccessGraphStorage : IGraphStorage
         var discovered = new HashSet<Guid>(query.RootNodeIds);
         var queue = new Queue<(Guid NodeId, int Depth)>();
         var nodes = new Dictionary<Guid, NodeDetails>();
-        var metadataCache = new Dictionary<Guid, NodeMetadata?>();
+        var metadataCache = new Dictionary<Guid, Node?>();
         var connectionCache = new Dictionary<Guid, IReadOnlyCollection<Guid>>();
 
         foreach (var root in query.RootNodeIds)
@@ -235,7 +225,7 @@ public sealed class RandomAccessGraphStorage : IGraphStorage
             : new Subgraph(nodes);
     }
 
-    private async Task<NodeMetadata?> GetOrReadMetadataAsync(Guid nodeId, IDictionary<Guid, NodeMetadata?> cache, CancellationToken cancellationToken)
+    private async Task<Node?> GetOrReadMetadataAsync(Guid nodeId, IDictionary<Guid, Node?> cache, CancellationToken cancellationToken)
     {
         if (cache.TryGetValue(nodeId, out var cached))
         {
@@ -259,7 +249,7 @@ public sealed class RandomAccessGraphStorage : IGraphStorage
         return connections;
     }
 
-    private async Task<NodeMetadata?> ReadMetadataAsync(Guid nodeId, CancellationToken cancellationToken)
+    private async Task<Node?> ReadMetadataAsync(Guid nodeId, CancellationToken cancellationToken)
     {
         var metadataPath = GetMetadataPath(nodeId);
         if (!File.Exists(metadataPath))
@@ -268,18 +258,13 @@ public sealed class RandomAccessGraphStorage : IGraphStorage
         }
 
         await using var stream = new FileStream(metadataPath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, useAsync: true);
-        var metadata = await JsonSerializer.DeserializeAsync<NodeMetadata>(stream, SerializerOptions, cancellationToken).ConfigureAwait(false);
-        if (metadata is not null)
-        {
-            EnsureAttributes(metadata);
-        }
-
+        var metadata = await JsonSerializer.DeserializeAsync<Node>(stream, SerializerOptions, cancellationToken).ConfigureAwait(false);
         return metadata;
     }
 
-    private async Task WriteMetadataAsync(NodeMetadata metadata, CancellationToken cancellationToken)
+    private async Task WriteMetadataAsync(Node metadata, CancellationToken cancellationToken)
     {
-        var metadataPath = GetMetadataPath(metadata.Id);
+        var metadataPath = GetMetadataPath(metadata.Name);
         Directory.CreateDirectory(Path.GetDirectoryName(metadataPath)!);
         await using var stream = new FileStream(metadataPath, FileMode.Create, FileAccess.Write, FileShare.None, 4096, useAsync: true);
         await JsonSerializer.SerializeAsync(stream, metadata, SerializerOptions, cancellationToken).ConfigureAwait(false);
@@ -368,27 +353,5 @@ public sealed class RandomAccessGraphStorage : IGraphStorage
         return first.CompareTo(second) < 0
             ? new[] { first, second }
             : new[] { second, first };
-    }
-
-    private static void EnsureAttributes(NodeMetadata metadata)
-    {
-        if (metadata.Attributes is null || metadata.Attributes.Count == 0)
-        {
-            metadata.Attributes = new Dictionary<string, string>(StringComparer.Ordinal);
-            return;
-        }
-
-        if (metadata.Attributes.Comparer != StringComparer.Ordinal)
-        {
-            metadata.Attributes = new Dictionary<string, string>(metadata.Attributes, StringComparer.Ordinal);
-        }
-    }
-
-    private static NodeMetadata Clone(NodeMetadata metadata)
-    {
-        return metadata with
-        {
-            Attributes = new Dictionary<string, string>(metadata.Attributes, StringComparer.Ordinal)
-        };
     }
 }

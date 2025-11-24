@@ -10,12 +10,12 @@ namespace GraphData.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public sealed class SubgraphsController(INodeService nodeService) : ControllerBase
+public sealed class SubgraphsController(NodeService nodeService) : ControllerBase
 {
-    private readonly INodeService _nodeService = nodeService;
+    private readonly NodeService service = nodeService;
 
     [HttpPost]
-    public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request)
     {
         if (request is null)
         {
@@ -27,7 +27,7 @@ public sealed class SubgraphsController(INodeService nodeService) : ControllerBa
             return BadRequest("MaxDepth must be non-negative.");
         }
 
-        var roots = request.RootNodeIds?.Where(static id => id != Guid.Empty).Distinct().ToArray() ?? Array.Empty<Guid>();
+        var roots = request.RootNodeIds?.Distinct().ToArray() ?? Array.Empty<NodeId>();
         if (roots.Length == 0)
         {
             return Ok(new SubgraphResponse());
@@ -40,14 +40,12 @@ public sealed class SubgraphsController(INodeService nodeService) : ControllerBa
             IncludeDisconnectedRoots = request.IncludeDisconnectedRoots
         };
 
-        var subgraph = await _nodeService.GetSubgraphAsync(query, cancellationToken).ConfigureAwait(false);
-        var nodes = subgraph.Nodes.Values
+        var subgraph = await service.GetSubgraph(query);
+        var nodes = subgraph.Nodes
             .Select(static node => new NodeResponse
             {
-                Id = node.Metadata.Id,
-                Name = node.Metadata.Name,
-                Attributes = new Dictionary<string, string>(node.Metadata.Attributes),
-                Connections = node.Connections
+                Name = node.Name,
+                Attributes = new Dictionary<string, string>(node.Attributes)
             })
             .ToArray();
 

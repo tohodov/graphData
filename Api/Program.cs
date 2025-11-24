@@ -1,5 +1,5 @@
 using GraphData.Core.Extensions;
-using GraphData.NtfsStorage.Extensions;
+using SymLinkStorage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,7 +7,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddGraphCore();
-builder.Services.AddNtfsGraphStorage(builder.Configuration.GetSection("GraphStorage"));
+builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
 
 var app = builder.Build();
 

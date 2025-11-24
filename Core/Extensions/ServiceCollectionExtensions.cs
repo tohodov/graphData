@@ -7,7 +7,7 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddGraphCore(this IServiceCollection services)
     {
-        services.AddScoped<INodeService, NodeService>();
+        services.AddScoped<NodeService, NodeService>();
         return services;
     }
 }

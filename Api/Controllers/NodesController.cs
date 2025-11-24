@@ -7,14 +7,14 @@ namespace GraphData.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public sealed class NodesController(INodeService nodeService) : ControllerBase
+public sealed class NodesController(NodeService nodeService) : ControllerBase
 {
-    private readonly INodeService _nodeService = nodeService;
+    private readonly NodeService _nodeService = nodeService;
 
     [HttpGet("{id:guid}")]
-    public async Task<ActionResult<NodeResponse>> GetAsync(Guid id, CancellationToken cancellationToken)
+    public async Task<ActionResult<NodeResponse>> GetAsync(string name)
     {
-        var node = await _nodeService.GetNodeAsync(id, cancellationToken).ConfigureAwait(false);
+        var node = await _nodeService.Get(name);
         if (node is null)
         {
             return NotFound();
@@ -24,65 +24,39 @@ public sealed class NodesController(INodeService nodeService) : ControllerBase
     }
 
     [HttpPost]
-    public async Task<ActionResult<NodeResponse>> CreateAsync([FromBody] CreateNodeRequest request, CancellationToken cancellationToken)
+    public async Task<ActionResult<NodeResponse>> CreateAsync([FromBody] CreateNodeRequest request)
     {
-        var metadata = new NodeMetadata
-        {
-            Id = Guid.Empty,
-            Name = request.Name,
-            Attributes = request.Attributes is null
-                ? new Dictionary<string, string>()
-                : new Dictionary<string, string>(request.Attributes)
-        };
-
-        var created = await _nodeService.CreateNodeAsync(metadata, cancellationToken).ConfigureAwait(false);
-        var details = await _nodeService.GetNodeAsync(created.Id, cancellationToken).ConfigureAwait(false);
-        return CreatedAtAction(nameof(GetAsync), new { id = created.Id }, ToResponse(details!));
+        var created = await _nodeService.Create(null, request.Name);
+        return CreatedAtAction(nameof(GetAsync), new { id = created.Name }, ToResponse(created));
     }
 
     [HttpPut("{id:guid}")]
-    public async Task<IActionResult> UpdateAsync(Guid id, [FromBody] UpdateNodeRequest request, CancellationToken cancellationToken)
+    public async Task<IActionResult> UpdateAsync(string name, [FromBody] UpdateNodeRequest request)
     {
-        var metadata = new NodeMetadata
-        {
-            Id = id,
-            Name = request.Name,
-            Attributes = request.Attributes is null
-                ? new Dictionary<string, string>()
-                : new Dictionary<string, string>(request.Attributes)
-        };
-
-        await _nodeService.UpdateNodeAsync(metadata, cancellationToken).ConfigureAwait(false);
+        var node = await _nodeService.Get(name);
+        if(node == null)
+            return NotFound();
+        await _nodeService.Update(node);
         return NoContent();
     }
 
     [HttpPost("{id:guid}/connect/{targetId:guid}")]
-    public async Task<IActionResult> ConnectAsync(Guid id, Guid targetId, CancellationToken cancellationToken)
+    public async Task<IActionResult> ConnectAsync(string name, string targetName)
     {
-        await _nodeService.ConnectNodesAsync(id, targetId, cancellationToken).ConfigureAwait(false);
+        var node = await _nodeService.Get(name);
+        var targetNode =  await _nodeService.Get(targetName);
+        if(node is null || targetNode is null)
+            return NotFound();
+        await _nodeService.ConnectNodes(node, targetNode);
         return NoContent();
     }
 
-    [HttpGet("{id:guid}/connections")]
-    public async Task<ActionResult<IReadOnlyCollection<Guid>>> GetConnectionsAsync(Guid id, CancellationToken cancellationToken)
-    {
-        var node = await _nodeService.GetNodeAsync(id, cancellationToken).ConfigureAwait(false);
-        if (node is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(node.Connections);
-    }
-
-    private static NodeResponse ToResponse(NodeDetails node)
+    private static NodeResponse ToResponse(Node node)
     {
         return new NodeResponse
         {
-            Id = node.Metadata.Id,
-            Name = node.Metadata.Name,
-            Attributes = new Dictionary<string, string>(node.Metadata.Attributes),
-            Connections = node.Connections
+            Name = node.Name,
+            Attributes = new Dictionary<string, string>(node.Attributes)
         };
     }
 }

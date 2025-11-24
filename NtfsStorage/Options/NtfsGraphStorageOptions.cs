@@ -1,8 +1,0 @@
-namespace GraphData.NtfsStorage.Options;
-
-public sealed class NtfsGraphStorageOptions
-{
-    public string RootPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "graph-data");
-
-    public string MetadataFileName { get; set; } = "metadata.json";
-}

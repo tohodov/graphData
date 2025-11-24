@@ -4,37 +4,40 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using GraphData.Core.Abstractions;
-using GraphData.NtfsStorage;
-using GraphData.NtfsStorage.Options;
+using GraphData.SymLinkStorage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using SymLinkStorage;
 
 namespace GraphData.Tests.Storage.Ntfs;
 
 [TestClass]
 public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
 {
-    private NtfsGraphStorageOptions _options = null!;
-    private string? _snapshotRoot;
-    private IReadOnlyList<string> _baselineEntries = Array.Empty<string>();
-    private bool _parentInitiallyExisted;
+    private NtfsGraphStorageOptions options = null!;
+    private string? snapshotRoot;
+    private IReadOnlyList<string> baselineEntries = Array.Empty<string>();
+    private bool parentInitiallyExisted;
 
     protected override Task<IGraphStorage> CreateStorageAsync()
     {
-        _snapshotRoot = Path.Combine(Path.GetTempPath(), "GraphDataTests");
-        _parentInitiallyExisted = Directory.Exists(_snapshotRoot);
-        _baselineEntries = _parentInitiallyExisted
-            ? SnapshotFileSystem(_snapshotRoot)
+        var folder = "E:\\TTT";
+        if (!Directory.Exists(folder))
+            folder = Path.GetTempPath();
+        snapshotRoot = Path.Combine(folder, "GraphDataTests");
+        parentInitiallyExisted = Directory.Exists(snapshotRoot);
+        baselineEntries = parentInitiallyExisted
+            ? SnapshotFileSystem(snapshotRoot)
             : Array.Empty<string>();
 
-        var rootPath = Path.Combine(_snapshotRoot!, Guid.NewGuid().ToString("N"));
-        _options = new NtfsGraphStorageOptions
+        var rootPath = Path.Combine(snapshotRoot!, Guid.NewGuid().ToString("N"));
+        options = new NtfsGraphStorageOptions
         {
             RootPath = rootPath
         };
 
-        IGraphStorage storage = new SymLinkGraphStorage(Options.Create(_options), NullLogger<SymLinkGraphStorage>.Instance);
+        IGraphStorage storage = new SymLinkGraphStorage(Options.Create(options), new CancellationTokensAccessorMock(), NullLogger<SymLinkGraphStorage>.Instance);
         return Task.FromResult(storage);
     }
 
@@ -42,77 +45,72 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
     {
         try
         {
-            if (!string.IsNullOrEmpty(_options?.RootPath) && Directory.Exists(_options.RootPath))
+            if (!string.IsNullOrEmpty(options?.RootPath) && Directory.Exists(options.RootPath))
             {
-                Directory.Delete(_options.RootPath, recursive: true);
+                Directory.Delete(options.RootPath, recursive: true);
             }
 
-            if (_snapshotRoot is not null)
+            if (snapshotRoot is not null)
             {
-                if (!_parentInitiallyExisted && Directory.Exists(_snapshotRoot) &&
-                    !Directory.EnumerateFileSystemEntries(_snapshotRoot).Any())
+                if (!parentInitiallyExisted && Directory.Exists(snapshotRoot) &&
+                    !Directory.EnumerateFileSystemEntries(snapshotRoot).Any())
                 {
-                    Directory.Delete(_snapshotRoot);
+                    Directory.Delete(snapshotRoot);
                 }
 
-                if (_parentInitiallyExisted)
+                if (parentInitiallyExisted)
                 {
-                    Assert.IsTrue(Directory.Exists(_snapshotRoot), $"The directory '{_snapshotRoot}' should exist after cleanup.");
+                    Assert.IsTrue(Directory.Exists(snapshotRoot), $"The directory '{snapshotRoot}' should exist after cleanup.");
 
-                    var currentEntries = SnapshotFileSystem(_snapshotRoot);
-                    CollectionAssert.AreEquivalent(_baselineEntries.ToList(), currentEntries.ToList(),
+                    var currentEntries = SnapshotFileSystem(snapshotRoot);
+                    CollectionAssert.AreEquivalent(baselineEntries.ToList(), currentEntries.ToList(),
                         "The test left unexpected files, directories, or links in the NTFS test root.");
                 }
                 else
                 {
-                    Assert.IsFalse(Directory.Exists(_snapshotRoot),
-                        $"The temporary test root '{_snapshotRoot}' should not remain after cleanup.");
+                    Assert.IsFalse(Directory.Exists(snapshotRoot),
+                        $"The temporary test root '{snapshotRoot}' should not remain after cleanup.");
                 }
             }
         }
         finally
         {
-            _options = null!;
-            _snapshotRoot = null;
-            _baselineEntries = Array.Empty<string>();
-            _parentInitiallyExisted = false;
+            options = null!;
+            snapshotRoot = null;
+            baselineEntries = Array.Empty<string>();
+            parentInitiallyExisted = false;
 
-            await base.OnCleanupAsync().ConfigureAwait(false);
+            await base.OnCleanupAsync();
         }
     }
 
     [TestMethod]
     public async Task CreateNodeAsync_ShouldCreateDirectoryAndMetadataFile()
     {
-        var metadata = CreateMetadata();
-
-        await Storage.CreateNodeAsync(metadata).ConfigureAwait(false);
-
-        var nodeDirectory = Path.Combine(_options.RootPath, metadata.Id.ToString("D"));
+        var node = await CreateNode();
+        var nodeDirectory = Path.Combine(options.RootPath, node.Name);
         Assert.IsTrue(Directory.Exists(nodeDirectory));
 
-        var metadataPath = Path.Combine(nodeDirectory, _options.MetadataFileName);
+        var metadataPath = Path.Combine(nodeDirectory, options.MetadataFileName);
         Assert.IsTrue(File.Exists(metadataPath));
     }
 
     [TestMethod]
     public async Task ConnectNodesAsync_ShouldCreateDirectoryLinks()
     {
-        var first = CreateMetadata();
-        var second = CreateMetadata();
-        await Storage.CreateNodeAsync(first).ConfigureAwait(false);
-        await Storage.CreateNodeAsync(second).ConfigureAwait(false);
+        var first = await CreateNode();
+        var second = await CreateNode();
 
-        await Storage.ConnectNodesAsync(first.Id, second.Id).ConfigureAwait(false);
+        await Storage.Connect(first, second);
 
-        var firstLink = Path.Combine(_options.RootPath, first.Id.ToString("D"), second.Id.ToString("D"));
-        var secondLink = Path.Combine(_options.RootPath, second.Id.ToString("D"), first.Id.ToString("D"));
+        var firstLink = Path.Combine(options.RootPath, first.Name, second.Name);
+        var secondLink = Path.Combine(options.RootPath, second.Name, first.Name);
 
         Assert.IsTrue(Directory.Exists(firstLink) || File.Exists(firstLink));
         Assert.IsTrue(Directory.Exists(secondLink) || File.Exists(secondLink));
 
-        var expectedFirstTarget = Path.Combine(_options.RootPath, second.Id.ToString("D"));
-        var expectedSecondTarget = Path.Combine(_options.RootPath, first.Id.ToString("D"));
+        var expectedFirstTarget = Path.Combine(options.RootPath, second.Name);
+        var expectedSecondTarget = Path.Combine(options.RootPath, first.Name);
 
         Assert.AreEqual(Path.GetFullPath(expectedFirstTarget), new DirectoryInfo(firstLink).LinkTarget);
         Assert.AreEqual(Path.GetFullPath(expectedSecondTarget), new DirectoryInfo(secondLink).LinkTarget);

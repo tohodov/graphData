@@ -5,7 +5,7 @@ namespace GraphData.Api.Models;
 
 public sealed class SubgraphRequest
 {
-    public ICollection<Guid> RootNodeIds { get; set; } = Array.Empty<Guid>();
+    public ICollection<string> RootNodeIds { get; set; } = Array.Empty<string>();
 
     public int MaxDepth { get; set; } = 1;
 

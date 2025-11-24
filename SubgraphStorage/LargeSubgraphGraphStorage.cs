@@ -20,6 +20,7 @@ public sealed class LargeSubgraphGraphStorage : IGraphStorage
     };
 
     private readonly LargeSubgraphGraphStorageOptions _options;
+    private readonly ILogger<LargeSubgraphGraphStorage> _logger;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _metadataLocks = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectionsLocks = new(StringComparer.OrdinalIgnoreCase);
     private readonly string _metadataRoot;
@@ -44,36 +45,28 @@ public sealed class LargeSubgraphGraphStorage : IGraphStorage
         Directory.CreateDirectory(_connectionsRoot);
     }
 
-    public async Task<NodeMetadata> CreateNodeAsync(NodeMetadata metadata, CancellationToken cancellationToken = default)
+    public async Task<Node> CreateNodeAsync(Node metadata, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(metadata);
-        if (metadata.Id == Guid.Empty)
-        {
-            throw new ArgumentException("Node id must be provided.", nameof(metadata));
-        }
-
-        EnsureAttributes(metadata);
-
-        var bucketKey = GetBucketKey(metadata.Id);
+        var bucketKey = GetBucketKey(metadata.Name);
         var bucketLock = GetMetadataLock(bucketKey);
         await bucketLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var nodes = await ReadMetadataBucketAsync(bucketKey, cancellationToken).ConfigureAwait(false);
-            nodes[metadata.Id] = metadata;
+            nodes[metadata.Name] = metadata;
             await WriteMetadataBucketAsync(bucketKey, nodes, cancellationToken).ConfigureAwait(false);
-            _logger.LogDebug("Stored metadata for node {NodeId} in bucket {Bucket}", metadata.Id, bucketKey);
+            _logger.LogDebug("Stored metadata for node {NodeId} in bucket {Bucket}", metadata.Name, bucketKey);
         }
         finally
         {
             bucketLock.Release();
         }
 
-        await EnsureConnectionBucketEntryAsync(metadata.Id, cancellationToken).ConfigureAwait(false);
+        await EnsureConnectionBucketEntryAsync(metadata.Name, cancellationToken).ConfigureAwait(false);
         return metadata;
     }
 
-    public async Task<NodeMetadata?> GetNodeMetadataAsync(Guid nodeId, CancellationToken cancellationToken = default)
+    public async Task<Node?> GetNodeMetadataAsync(Guid nodeId, CancellationToken cancellationToken = default)
     {
         var bucketKey = GetBucketKey(nodeId);
         var bucketLock = GetMetadataLock(bucketKey);
@@ -82,7 +75,7 @@ public sealed class LargeSubgraphGraphStorage : IGraphStorage
         {
             var nodes = await ReadMetadataBucketAsync(bucketKey, cancellationToken).ConfigureAwait(false);
             return nodes.TryGetValue(nodeId, out var metadata)
-                ? Clone(metadata)
+                ? metadata
                 : null;
         }
         finally
@@ -91,30 +84,28 @@ public sealed class LargeSubgraphGraphStorage : IGraphStorage
         }
     }
 
-    public async Task UpdateMetadataAsync(NodeMetadata metadata, CancellationToken cancellationToken = default)
+    public async Task UpdateMetadataAsync(Node metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(metadata);
-        if (metadata.Id == Guid.Empty)
+        if (metadata.Name == Guid.Empty)
         {
             throw new ArgumentException("Node id must be provided.", nameof(metadata));
         }
 
-        EnsureAttributes(metadata);
-
-        var bucketKey = GetBucketKey(metadata.Id);
+        var bucketKey = GetBucketKey(metadata.Name);
         var bucketLock = GetMetadataLock(bucketKey);
         await bucketLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var nodes = await ReadMetadataBucketAsync(bucketKey, cancellationToken).ConfigureAwait(false);
-            if (!nodes.ContainsKey(metadata.Id))
+            if (!nodes.ContainsKey(metadata.Name))
             {
-                throw new KeyNotFoundException($"Metadata for node '{metadata.Id}' was not found.");
+                throw new KeyNotFoundException($"Metadata for node '{metadata.Name}' was not found.");
             }
 
-            nodes[metadata.Id] = metadata;
+            nodes[metadata.Name] = metadata;
             await WriteMetadataBucketAsync(bucketKey, nodes, cancellationToken).ConfigureAwait(false);
-            _logger.LogDebug("Updated metadata for node {NodeId} in bucket {Bucket}", metadata.Id, bucketKey);
+            _logger.LogDebug("Updated metadata for node {NodeId} in bucket {Bucket}", metadata.Name, bucketKey);
         }
         finally
         {
@@ -270,14 +261,6 @@ public sealed class LargeSubgraphGraphStorage : IGraphStorage
             : new Subgraph(nodes);
     }
 
-    private static NodeMetadata Clone(NodeMetadata metadata)
-    {
-        return metadata with
-        {
-            Attributes = new Dictionary<string, string>(metadata.Attributes, StringComparer.Ordinal)
-        };
-    }
-
     private async Task EnsureNodeExistsAsync(Guid nodeId, CancellationToken cancellationToken)
     {
         var metadata = await GetNodeMetadataAsync(nodeId, cancellationToken).ConfigureAwait(false);
@@ -307,20 +290,20 @@ public sealed class LargeSubgraphGraphStorage : IGraphStorage
         }
     }
 
-    private async Task<Dictionary<Guid, NodeMetadata>> ReadMetadataBucketAsync(string bucketKey, CancellationToken cancellationToken)
+    private async Task<Dictionary<Guid, Node>> ReadMetadataBucketAsync(string bucketKey, CancellationToken cancellationToken)
     {
         var path = GetMetadataBucketPath(bucketKey);
         if (!File.Exists(path))
         {
-            return new Dictionary<Guid, NodeMetadata>();
+            return new Dictionary<Guid, Node>();
         }
 
         await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 8192, useAsync: true);
-        return await JsonSerializer.DeserializeAsync<Dictionary<Guid, NodeMetadata>>(stream, SerializerOptions, cancellationToken)
-            .ConfigureAwait(false) ?? new Dictionary<Guid, NodeMetadata>();
+        return await JsonSerializer.DeserializeAsync<Dictionary<Guid, Node>>(stream, SerializerOptions, cancellationToken)
+            .ConfigureAwait(false) ?? new Dictionary<Guid, Node>();
     }
 
-    private async Task WriteMetadataBucketAsync(string bucketKey, Dictionary<Guid, NodeMetadata> nodes, CancellationToken cancellationToken)
+    private async Task WriteMetadataBucketAsync(string bucketKey, Dictionary<Guid, Node> nodes, CancellationToken cancellationToken)
     {
         var path = GetMetadataBucketPath(bucketKey);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -397,10 +380,5 @@ public sealed class LargeSubgraphGraphStorage : IGraphStorage
         return string.Compare(firstKey, secondKey, StringComparison.OrdinalIgnoreCase) < 0
             ? new[] { firstKey, secondKey }
             : new[] { secondKey, firstKey };
-    }
-
-    private static void EnsureAttributes(NodeMetadata metadata)
-    {
-        metadata.Attributes ??= new Dictionary<string, string>();
     }
 }

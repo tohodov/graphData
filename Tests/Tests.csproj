@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
@@ -15,8 +15,6 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Core\Core.csproj" />
-    <ProjectReference Include="..\NtfsStorage\SymLinkStorage.csproj" />
-    <ProjectReference Include="..\SubgraphStorage\SubgraphStorage.csproj" />
+    <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
   </ItemGroup>
 </Project>
