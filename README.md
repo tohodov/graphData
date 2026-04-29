@@ -11,3 +11,19 @@ graphData - исследовательский прототип графовой
 3. Code quality
 4. Tests
 5. Docs
+
+## MCP server
+
+В solution добавлен локальный MCP-сервер `Mcp` со stdio-транспортом. Его можно запускать из корня репозитория:
+
+```powershell
+dotnet run --project Mcp/Mcp.csproj
+```
+
+Для VS Code/Copilot уже добавлен workspace-конфиг `.vscode/mcp.json`. Клиенту доступны tools:
+
+- `get_node`
+- `create_node`
+- `update_node_attributes`
+- `connect_nodes`
+- `get_subgraph`
