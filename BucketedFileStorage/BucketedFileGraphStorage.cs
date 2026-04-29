@@ -1,0 +1,510 @@
+using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using GraphData.BucketedFileStorage.Options;
+using GraphData.Core.Abstractions;
+using GraphData.Core.Models;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace GraphData.BucketedFileStorage;
+
+public sealed class BucketedFileGraphStorage : IGraphStorage
+{
+    private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
+    {
+        WriteIndented = true
+    };
+
+    private readonly BucketedFileGraphStorageOptions _options;
+    private readonly ILogger<BucketedFileGraphStorage> _logger;
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _metadataLocks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _connectionsLocks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly string _metadataRoot;
+    private readonly string _connectionsRoot;
+
+    public BucketedFileGraphStorage(IOptions<BucketedFileGraphStorageOptions> options, ILogger<BucketedFileGraphStorage> logger)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options.Value ?? throw new ArgumentNullException(nameof(options));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
+        if (string.IsNullOrWhiteSpace(_options.RootPath))
+        {
+            throw new ArgumentException("Root path must be provided.", nameof(options));
+        }
+
+        _options.RootPath = Path.GetFullPath(_options.RootPath);
+        _metadataRoot = Path.Combine(_options.RootPath, _options.MetadataDirectoryName);
+        _connectionsRoot = Path.Combine(_options.RootPath, _options.ConnectionsDirectoryName);
+
+        Directory.CreateDirectory(_metadataRoot);
+        Directory.CreateDirectory(_connectionsRoot);
+    }
+
+    public async Task<Node> Create(string name, Node? parent = null, Dictionary<string, string>? attributes = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
+        var nodeName = GetNodeName(parent, name);
+        var bucketKey = GetBucketKey(nodeName);
+        var bucketLock = GetMetadataLock(bucketKey);
+        var document = new NodeDocument(nodeName, CopyAttributes(attributes));
+
+        await bucketLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var nodes = await ReadMetadataBucketAsync(bucketKey).ConfigureAwait(false);
+            nodes[nodeName] = document;
+            await WriteMetadataBucketAsync(bucketKey, nodes).ConfigureAwait(false);
+            _logger.LogDebug("Stored node {NodeName} in metadata bucket {Bucket}.", nodeName, bucketKey);
+        }
+        finally
+        {
+            bucketLock.Release();
+        }
+
+        await EnsureConnectionBucketEntryAsync(nodeName).ConfigureAwait(false);
+        return CreateNode(document);
+    }
+
+    public async Task<Node?> Get(Node? parent, string subNodeName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(subNodeName);
+
+        var nodeName = GetNodeName(parent, subNodeName);
+        var document = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
+        return document is null ? null : CreateNode(document);
+    }
+
+    public async Task<Node?> Get(NodeQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        Node? node = null;
+        foreach (var part in query.SelectRecursive(static x => x.Child))
+        {
+            node = await Get(node, part.Name).ConfigureAwait(false);
+            if (node is null)
+            {
+                return null;
+            }
+        }
+
+        return node;
+    }
+
+    public async Task Update(string subNodeName, IDictionary<string, string> attributes, Node? parent = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(subNodeName);
+        ArgumentNullException.ThrowIfNull(attributes);
+
+        var nodeName = GetNodeName(parent, subNodeName);
+        var bucketKey = GetBucketKey(nodeName);
+        var bucketLock = GetMetadataLock(bucketKey);
+        await bucketLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var nodes = await ReadMetadataBucketAsync(bucketKey).ConfigureAwait(false);
+            if (!nodes.ContainsKey(nodeName))
+            {
+                throw new KeyNotFoundException($"Node '{nodeName}' was not found.");
+            }
+
+            nodes[nodeName] = new NodeDocument(nodeName, CopyAttributes(attributes));
+            await WriteMetadataBucketAsync(bucketKey, nodes).ConfigureAwait(false);
+        }
+        finally
+        {
+            bucketLock.Release();
+        }
+    }
+
+    public async Task Connect(Node sourceNode, Node targetNode)
+    {
+        ArgumentNullException.ThrowIfNull(sourceNode);
+        ArgumentNullException.ThrowIfNull(targetNode);
+
+        if (string.Equals(sourceNode.Name, targetNode.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        await EnsureNodeExistsAsync(sourceNode.Name).ConfigureAwait(false);
+        await EnsureNodeExistsAsync(targetNode.Name).ConfigureAwait(false);
+
+        var firstKey = GetBucketKey(sourceNode.Name);
+        var secondKey = GetBucketKey(targetNode.Name);
+        var locks = Order(firstKey, secondKey).Select(GetConnectionsLock).ToArray();
+
+        foreach (var connectionLock in locks)
+        {
+            await connectionLock.WaitAsync().ConfigureAwait(false);
+        }
+
+        try
+        {
+            var firstConnections = await ReadConnectionsBucketAsync(firstKey).ConfigureAwait(false);
+            var secondConnections = firstKey == secondKey
+                ? firstConnections
+                : await ReadConnectionsBucketAsync(secondKey).ConfigureAwait(false);
+
+            var firstSet = GetOrCreateConnectionSet(firstConnections, sourceNode.Name);
+            var secondSet = GetOrCreateConnectionSet(secondConnections, targetNode.Name);
+
+            var addedToFirst = firstSet.Add(targetNode.Name);
+            var addedToSecond = secondSet.Add(sourceNode.Name);
+
+            if (addedToFirst)
+            {
+                firstConnections[sourceNode.Name] = firstSet;
+                await WriteConnectionsBucketAsync(firstKey, firstConnections).ConfigureAwait(false);
+            }
+
+            if (addedToSecond)
+            {
+                secondConnections[targetNode.Name] = secondSet;
+                if (secondKey != firstKey)
+                {
+                    await WriteConnectionsBucketAsync(secondKey, secondConnections).ConfigureAwait(false);
+                }
+                else if (!addedToFirst)
+                {
+                    await WriteConnectionsBucketAsync(firstKey, firstConnections).ConfigureAwait(false);
+                }
+            }
+        }
+        finally
+        {
+            foreach (var connectionLock in locks.Reverse())
+            {
+                connectionLock.Release();
+            }
+        }
+    }
+
+    public async Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        var connections = await ReadConnectionsWithLockAsync(node.Name).ConfigureAwait(false);
+        var nodes = new List<Node>();
+        foreach (var connection in connections)
+        {
+            var document = await ReadMetadataWithLockAsync(connection).ConfigureAwait(false);
+            if (document is not null)
+            {
+                nodes.Add(CreateNode(document));
+            }
+        }
+
+        return nodes;
+    }
+
+    public async Task<Subgraph> GetSubgraphAsync(SubgraphQuery query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        if (query.RootNodeIds.Count == 0)
+        {
+            return Subgraph.Empty;
+        }
+
+        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var discovered = new HashSet<string>(query.RootNodeIds, StringComparer.OrdinalIgnoreCase);
+        var queue = new Queue<(string NodeName, int Depth)>();
+        var documents = new Dictionary<string, NodeDocument>(StringComparer.OrdinalIgnoreCase);
+        var connectionMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var root in query.RootNodeIds)
+        {
+            queue.Enqueue((root, 0));
+        }
+
+        while (queue.Count > 0)
+        {
+            var (nodeName, depth) = queue.Dequeue();
+            if (!visited.Add(nodeName))
+            {
+                continue;
+            }
+
+            var document = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
+            if (document is null)
+            {
+                continue;
+            }
+
+            documents[nodeName] = document;
+            var connections = await ReadConnectionsWithLockAsync(nodeName).ConfigureAwait(false);
+            var relevantConnections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var connection in connections)
+            {
+                if (depth < query.MaxDepth && discovered.Add(connection))
+                {
+                    queue.Enqueue((connection, depth + 1));
+                }
+
+                if (discovered.Contains(connection))
+                {
+                    relevantConnections.Add(connection);
+                }
+            }
+
+            connectionMap[nodeName] = relevantConnections;
+        }
+
+        if (documents.Count == 0)
+        {
+            return Subgraph.Empty;
+        }
+
+        var nodes = documents.ToDictionary(
+            static x => x.Key,
+            x => CreateNode(x.Value),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (nodeName, connections) in connectionMap)
+        {
+            if (!nodes.TryGetValue(nodeName, out var node))
+            {
+                continue;
+            }
+
+            node.SetConnections(connections.Where(nodes.ContainsKey).Select(x => nodes[x]).ToArray());
+        }
+
+        return new Subgraph { Nodes = nodes.Values.ToArray() };
+    }
+
+    private async Task<NodeDocument?> ReadMetadataWithLockAsync(string nodeName)
+    {
+        var bucketKey = GetBucketKey(nodeName);
+        var bucketLock = GetMetadataLock(bucketKey);
+        await bucketLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var nodes = await ReadMetadataBucketAsync(bucketKey).ConfigureAwait(false);
+            return nodes.TryGetValue(nodeName, out var document)
+                ? document with { Attributes = CopyAttributes(document.Attributes) }
+                : null;
+        }
+        finally
+        {
+            bucketLock.Release();
+        }
+    }
+
+    private async Task<IReadOnlyCollection<string>> ReadConnectionsWithLockAsync(string nodeName)
+    {
+        var bucketKey = GetBucketKey(nodeName);
+        var connectionLock = GetConnectionsLock(bucketKey);
+        await connectionLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var connections = await ReadConnectionsBucketAsync(bucketKey).ConfigureAwait(false);
+            return connections.TryGetValue(nodeName, out var set)
+                ? set.ToArray()
+                : Array.Empty<string>();
+        }
+        finally
+        {
+            connectionLock.Release();
+        }
+    }
+
+    private async Task EnsureNodeExistsAsync(string nodeName)
+    {
+        var metadata = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
+        if (metadata is null)
+        {
+            throw new DirectoryNotFoundException($"Node '{nodeName}' does not exist in storage.");
+        }
+    }
+
+    private async Task EnsureConnectionBucketEntryAsync(string nodeName)
+    {
+        var bucketKey = GetBucketKey(nodeName);
+        var connectionLock = GetConnectionsLock(bucketKey);
+        await connectionLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var connections = await ReadConnectionsBucketAsync(bucketKey).ConfigureAwait(false);
+            if (!connections.ContainsKey(nodeName))
+            {
+                connections[nodeName] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                await WriteConnectionsBucketAsync(bucketKey, connections).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            connectionLock.Release();
+        }
+    }
+
+    private async Task<Dictionary<string, NodeDocument>> ReadMetadataBucketAsync(string bucketKey)
+    {
+        var path = GetMetadataBucketPath(bucketKey);
+        if (!File.Exists(path))
+        {
+            return new Dictionary<string, NodeDocument>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 8192, useAsync: true);
+        var nodes = await JsonSerializer.DeserializeAsync<Dictionary<string, NodeDocument>>(stream, SerializerOptions).ConfigureAwait(false);
+        return nodes is null
+            ? new Dictionary<string, NodeDocument>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, NodeDocument>(nodes, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task WriteMetadataBucketAsync(string bucketKey, Dictionary<string, NodeDocument> nodes)
+    {
+        var path = GetMetadataBucketPath(bucketKey);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 8192, useAsync: true);
+        await JsonSerializer.SerializeAsync(stream, nodes, SerializerOptions).ConfigureAwait(false);
+    }
+
+    private async Task<Dictionary<string, HashSet<string>>> ReadConnectionsBucketAsync(string bucketKey)
+    {
+        var path = GetConnectionsBucketPath(bucketKey);
+        if (!File.Exists(path))
+        {
+            return new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 8192, useAsync: true);
+        var connections = await JsonSerializer.DeserializeAsync<Dictionary<string, HashSet<string>>>(stream, SerializerOptions).ConfigureAwait(false);
+        return connections is null
+            ? new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase)
+            : connections.ToDictionary(
+                static x => x.Key,
+                static x => new HashSet<string>(x.Value, StringComparer.OrdinalIgnoreCase),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task WriteConnectionsBucketAsync(string bucketKey, Dictionary<string, HashSet<string>> connections)
+    {
+        var path = GetConnectionsBucketPath(bucketKey);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        await using var stream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, 8192, useAsync: true);
+        await JsonSerializer.SerializeAsync(stream, connections, SerializerOptions).ConfigureAwait(false);
+    }
+
+    private SemaphoreSlim GetMetadataLock(string bucketKey)
+    {
+        return _metadataLocks.GetOrAdd(bucketKey, static _ => new SemaphoreSlim(1, 1));
+    }
+
+    private SemaphoreSlim GetConnectionsLock(string bucketKey)
+    {
+        return _connectionsLocks.GetOrAdd(bucketKey, static _ => new SemaphoreSlim(1, 1));
+    }
+
+    private string GetBucketKey(string nodeName)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(nodeName));
+        var normalized = Convert.ToHexString(hash).ToLowerInvariant();
+        var prefixLength = Math.Clamp(_options.BucketPrefixLength, 1, normalized.Length);
+        return normalized[..prefixLength];
+    }
+
+    private string GetMetadataBucketPath(string bucketKey)
+    {
+        return Path.Combine(_metadataRoot, $"{bucketKey}.json");
+    }
+
+    private string GetConnectionsBucketPath(string bucketKey)
+    {
+        return Path.Combine(_connectionsRoot, $"{bucketKey}.json");
+    }
+
+    private static HashSet<string> GetOrCreateConnectionSet(Dictionary<string, HashSet<string>> map, string nodeName)
+    {
+        if (!map.TryGetValue(nodeName, out var set))
+        {
+            set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            map[nodeName] = set;
+        }
+
+        return set;
+    }
+
+    private static StoredNode CreateNode(NodeDocument document)
+    {
+        return new StoredNode(document.Name) { AttributesSnapshot = CopyAttributes(document.Attributes) };
+    }
+
+    private static Dictionary<string, string> CopyAttributes(IDictionary<string, string>? attributes)
+    {
+        return attributes is null
+            ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, string>(attributes, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string GetNodeName(Node? parent, string subNodeName)
+    {
+        return parent is null
+            ? subNodeName
+            : $"{parent.Name}/{subNodeName}";
+    }
+
+    private static IReadOnlyList<string> Order(string firstKey, string secondKey)
+    {
+        if (string.Equals(firstKey, secondKey, StringComparison.OrdinalIgnoreCase))
+        {
+            return new[] { firstKey };
+        }
+
+        return string.Compare(firstKey, secondKey, StringComparison.OrdinalIgnoreCase) < 0
+            ? new[] { firstKey, secondKey }
+            : new[] { secondKey, firstKey };
+    }
+
+    private sealed record NodeDocument(string Name, Dictionary<string, string> Attributes);
+
+    private sealed record StoredNode(string NodeName) : Node
+    {
+        private IReadOnlyDictionary<string, Edge>? _edges;
+        private IReadOnlyCollection<Node> _nodes = Array.Empty<Node>();
+
+        public override string Name => NodeName;
+
+        public override IReadOnlyDictionary<string, Edge> Edges => _edges ??= _nodes.ToDictionary(
+            static x => x.Name,
+            x => (Edge)new StoredEdge(this, x),
+            StringComparer.OrdinalIgnoreCase);
+
+        public override IReadOnlyCollection<Node> Nodes => _nodes;
+
+        public override IReadOnlyDictionary<string, string> Attributes => AttributesSnapshot;
+
+        internal IReadOnlyDictionary<string, string> AttributesSnapshot { get; init; } =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        internal void SetConnections(IReadOnlyCollection<Node> nodes)
+        {
+            _nodes = nodes;
+            _edges = null;
+        }
+
+        public bool Equals(StoredNode? other)
+        {
+            return other is not null && string.Equals(NodeName, other.NodeName, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public override int GetHashCode()
+        {
+            return StringComparer.OrdinalIgnoreCase.GetHashCode(NodeName);
+        }
+    }
+
+    private sealed record StoredEdge(Node First, Node Second) : Edge
+    {
+        public override Node Node1 => First;
+
+        public override Node Node2 => Second;
+    }
+}

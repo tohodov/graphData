@@ -1,0 +1,54 @@
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using GraphData.BucketedFileStorage;
+using GraphData.BucketedFileStorage.Options;
+using GraphData.Core.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+
+namespace GraphData.Tests.Storage.Files;
+
+[TestClass]
+public sealed class BucketedFileGraphStorageTests : GraphStorageContractTests
+{
+    private BucketedFileGraphStorageOptions options = null!;
+
+    protected override Task<IGraphStorage> CreateStorageAsync()
+    {
+        options = new BucketedFileGraphStorageOptions
+        {
+            RootPath = Path.Combine(Path.GetTempPath(), "GraphDataTests", Guid.NewGuid().ToString("N"))
+        };
+
+        IGraphStorage storage = new BucketedFileGraphStorage(Options.Create(options), NullLogger<BucketedFileGraphStorage>.Instance);
+        return Task.FromResult(storage);
+    }
+
+    protected override async Task OnCleanupAsync()
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(options?.RootPath) && Directory.Exists(options.RootPath))
+            {
+                Directory.Delete(options.RootPath, recursive: true);
+            }
+        }
+        finally
+        {
+            options = null!;
+            await base.OnCleanupAsync();
+        }
+    }
+
+    [TestMethod]
+    public async Task Create_ShouldStoreNodeInsideMetadataBucket()
+    {
+        await CreateNode();
+
+        var metadataRoot = Path.Combine(options.RootPath, options.MetadataDirectoryName);
+        Assert.IsTrue(Directory.EnumerateFiles(metadataRoot, "*.json").Any());
+    }
+}

@@ -16,5 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
+    <ProjectReference Include="..\PerNodeFileStorage\PerNodeFileStorage.csproj" />
+    <ProjectReference Include="..\BucketedFileStorage\BucketedFileStorage.csproj" />
   </ItemGroup>
 </Project>

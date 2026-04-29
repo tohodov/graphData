@@ -1,8 +1,8 @@
-namespace GraphData.SubgraphStorage.Options;
+namespace GraphData.PerNodeFileStorage.Options;
 
-public sealed class RandomAccessGraphStorageOptions
+public sealed class PerNodeFileGraphStorageOptions
 {
-    public string RootPath { get; set; } = string.Empty;
+    public string RootPath { get; set; } = Path.Combine(AppContext.BaseDirectory, "per-node-file-storage");
 
     public string MetadataDirectoryName { get; set; } = "metadata";
 
