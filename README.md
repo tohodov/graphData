@@ -32,14 +32,20 @@ dotnet run --project Mcp/Mcp.csproj
 
 Для стабильного подключения к LM Studio используйте установленную Release-сборку, а не `dotnet run`.
 Скрипт публикует свежие бинарники в `%USERPROFILE%\.lmstudio\graphdata-mcp-server`,
-создает junction `%USERPROFILE%\.lmstudio\graphdata-repo` на этот репозиторий и обновляет
-`%USERPROFILE%\.lmstudio\mcp.json` без UTF-8 BOM:
+записывает `GraphStorage.RootPath` в `%USERPROFILE%\.lmstudio\graphdata-mcp-server\appsettings.json`
+и обновляет `%USERPROFILE%\.lmstudio\mcp.json` без UTF-8 BOM:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\Install-LmStudioMcp.ps1
 ```
 
 После запуска скрипта перезапустите LM Studio. В чате сервер должен быть виден как `mcp/graphdata`.
+
+По умолчанию данные графа хранятся в `graph-data` внутри этого репозитория. Другой путь можно указать так:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\Install-LmStudioMcp.ps1 -GraphStorageRoot C:\path\to\graph-data
+```
 
 Для отладки реального запуска из LM Studio можно установить сервер в режиме ожидания debugger:
 

@@ -1,6 +1,6 @@
 param(
     [string]$InstallRoot = "$env:USERPROFILE\.lmstudio\graphdata-mcp-server",
-    [string]$RepoLink = "$env:USERPROFILE\.lmstudio\graphdata-repo",
+    [string]$GraphStorageRoot = "",
     [string]$McpJsonPath = "$env:USERPROFILE\.lmstudio\mcp.json",
     [string]$ServerName = "graphdata",
     [switch]$DebugWait,
@@ -10,11 +10,39 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$repoRoot = Resolve-Path (Join-Path $scriptDir "..")
+function Invoke-GitUtf8 {
+    param(
+        [Parameter(Mandatory = $true)][string]$Arguments,
+        [Parameter(Mandatory = $true)][string]$WorkingDirectory
+    )
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new("git", $Arguments)
+    $startInfo.WorkingDirectory = $WorkingDirectory
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $startInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+    $output = $process.StandardOutput.ReadToEnd().Trim()
+    $errorOutput = $process.StandardError.ReadToEnd().Trim()
+    $process.WaitForExit()
+
+    if ($process.ExitCode -ne 0) {
+        throw "git $Arguments failed: $errorOutput"
+    }
+
+    return $output
+}
+
+$repoRoot = Invoke-GitUtf8 -Arguments "rev-parse --show-toplevel" -WorkingDirectory (Get-Location).Path
 $projectPath = Join-Path $repoRoot "Mcp\Mcp.csproj"
-$graphDataRoot = Join-Path $RepoLink "graph-data"
 $internalSyncPath = Join-Path (Split-Path -Parent $McpJsonPath) ".internal\last-synced-mcp-state.json"
+
+if ([string]::IsNullOrWhiteSpace($GraphStorageRoot)) {
+    $GraphStorageRoot = Join-Path $repoRoot "graph-data"
+}
 
 function Stop-InstalledMcp {
     param([string]$Root)
@@ -74,18 +102,18 @@ if (-not $NoStop) {
     Stop-InstalledMcp -Root $InstallRoot
 }
 
-if (Test-Path -LiteralPath $RepoLink) {
-    $item = Get-Item -LiteralPath $RepoLink -Force
-    if (-not ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-        throw "$RepoLink exists and is not a junction/reparse point."
-    }
-} else {
-    New-Item -ItemType Junction -Path $RepoLink -Target $repoRoot | Out-Null
-}
-
 if (-not $SkipPublish) {
     dotnet publish $projectPath -c Release -o $InstallRoot
 }
+
+$appSettings = [PSCustomObject]@{
+    GraphStorage = [PSCustomObject]@{
+        RootPath = $GraphStorageRoot
+        MetadataFileName = "node.json"
+    }
+}
+
+ConvertTo-JsonFile -Value $appSettings -Path (Join-Path $InstallRoot "appsettings.json")
 
 $config = Get-OrCreateJsonObject -Path $McpJsonPath
 if ($null -eq $config.PSObject.Properties["mcpServers"]) {
@@ -94,8 +122,7 @@ if ($null -eq $config.PSObject.Properties["mcpServers"]) {
 
 $mcpServers = $config.mcpServers
 $args = @(
-    (Join-Path $InstallRoot "Mcp.dll"),
-    "--GraphStorage:RootPath=$graphDataRoot"
+    (Join-Path $InstallRoot "Mcp.dll")
 )
 
 if ($DebugWait) {
@@ -105,7 +132,7 @@ if ($DebugWait) {
 $serverConfig = [PSCustomObject]@{
     command = "dotnet"
     args = $args
-    cwd = $RepoLink
+    cwd = $InstallRoot
 }
 
 Set-JsonProperty -Object $mcpServers -Name $ServerName -Value $serverConfig
@@ -117,7 +144,7 @@ if (Test-Path -LiteralPath (Split-Path -Parent $internalSyncPath)) {
 
 Write-Host "Installed $ServerName MCP server for LM Studio."
 Write-Host "InstallRoot: $InstallRoot"
-Write-Host "RepoLink: $RepoLink"
+Write-Host "GraphStorageRoot: $GraphStorageRoot"
 Write-Host "McpJsonPath: $McpJsonPath"
 if ($DebugWait) {
     Write-Host "Debug wait is enabled. Attach Visual Studio to Mcp.exe after LM Studio starts the server."
