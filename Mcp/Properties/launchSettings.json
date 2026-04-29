@@ -1,0 +1,18 @@
+{
+  "profiles": {
+    "Mcp": {
+      "commandName": "Project",
+      "commandLineArgs": "--GraphStorage:RootPath=\"$(MSBuildProjectDirectory)\\..\\graph-data\"",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    },
+    "Mcp - wait for debugger": {
+      "commandName": "Project",
+      "commandLineArgs": "--debug-wait --GraphStorage:RootPath=\"$(MSBuildProjectDirectory)\\..\\graph-data\"",
+      "environmentVariables": {
+        "DOTNET_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}

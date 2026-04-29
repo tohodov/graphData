@@ -27,3 +27,31 @@ dotnet run --project Mcp/Mcp.csproj
 - `update_node_attributes`
 - `connect_nodes`
 - `get_subgraph`
+
+### LM Studio
+
+Для стабильного подключения к LM Studio используйте установленную Release-сборку, а не `dotnet run`.
+Скрипт публикует свежие бинарники в `%USERPROFILE%\.lmstudio\graphdata-mcp-server`,
+создает junction `%USERPROFILE%\.lmstudio\graphdata-repo` на этот репозиторий и обновляет
+`%USERPROFILE%\.lmstudio\mcp.json` без UTF-8 BOM:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\Install-LmStudioMcp.ps1
+```
+
+После запуска скрипта перезапустите LM Studio. В чате сервер должен быть виден как `mcp/graphdata`.
+
+Для отладки реального запуска из LM Studio можно установить сервер в режиме ожидания debugger:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\Install-LmStudioMcp.ps1 -DebugWait
+```
+
+После этого включите `mcp/graphdata` в LM Studio и подключитесь из Visual Studio к процессу `Mcp.exe`
+через `Debug > Attach to Process`. Когда отладка закончена, переустановите обычный режим командой без `-DebugWait`.
+
+### Visual Studio
+
+В `Mcp/Properties/launchSettings.json` есть профили `Mcp` и `Mcp - wait for debugger`.
+Их удобно использовать для проверки старта, конфигурации и breakpoint'ов в инициализации.
+Для отладки tool-вызовов удобнее запускать сервер из LM Studio в режиме `-DebugWait` и attach'иться к `Mcp.exe`.
