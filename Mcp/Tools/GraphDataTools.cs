@@ -7,7 +7,7 @@ using ModelContextProtocol.Server;
 namespace GraphData.Mcp.Tools;
 
 [McpServerToolType]
-public sealed class GraphDataTools(IGraphStorage storage)
+public sealed class GraphDataTools(IGraphStorage storage, GraphData.Core.Services.IncrementalGraphExpansionService expansionService)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -15,6 +15,7 @@ public sealed class GraphDataTools(IGraphStorage storage)
     };
 
     private readonly IGraphStorage _storage = storage;
+    private readonly GraphData.Core.Services.IncrementalGraphExpansionService _expansionService = expansionService;
 
     [McpServerTool]
     [Description("Gets a graph node by name and returns its attributes and connected node names.")]
@@ -142,6 +143,27 @@ public sealed class GraphDataTools(IGraphStorage storage)
         });
     }
 
+
+    [McpServerTool]
+    [Description("Applies one incremental knowledge-graph expansion step (upsert nodes, connect nodes, and return refreshed context subgraph).")]
+    public async Task<string> ApplyIncrementalExpansionStep(
+        [Description("Expansion payload containing root context nodes, node upserts, and new connections.")] IncrementalExpansionRequest request)
+    {
+        if (request.RootContextNodes.Length == 0)
+        {
+            return ToJson(new { success = false, error = "At least one root context node is required." });
+        }
+
+        var result = await _expansionService.ApplyStepAsync(request);
+        return ToJson(new
+        {
+            success = true,
+            createdNodes = result.CreatedNodes,
+            updatedNodes = result.UpdatedNodes,
+            connectedPairs = result.ConnectedPairs,
+            contextNodes = result.ContextSubgraph.Nodes.Select(ToResponse).ToArray()
+        });
+    }
     private static object ToResponse(Node node)
     {
         return new
