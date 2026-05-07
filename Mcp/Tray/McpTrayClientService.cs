@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
@@ -45,7 +46,7 @@ internal sealed class McpTrayClientService(
         }
 
         var pipeName = GetPipeName();
-        StartTrayApp(pipeName);
+        EnsureTrayAppStarted(pipeName);
 
         await using var pipe = await ConnectAsync(pipeName, stoppingToken);
         if (pipe is null)
@@ -193,9 +194,16 @@ internal sealed class McpTrayClientService(
         await writer.WriteLineAsync(json.AsMemory(), cancellationToken);
     }
 
-    private void StartTrayApp(string pipeName)
+    [SupportedOSPlatform("windows")]
+    private void EnsureTrayAppStarted(string pipeName)
     {
-        var trayPath = Path.Combine(AppContext.BaseDirectory, "McpTray.exe");
+        if (IsTrayAppRunning(pipeName))
+        {
+            _logger.LogDebug("MCP tray app is already running for pipe {PipeName}.", pipeName);
+            return;
+        }
+
+        var trayPath = GetTrayPath();
         if (!File.Exists(trayPath))
         {
             _logger.LogDebug("MCP tray app was not found at {TrayPath}.", trayPath);
@@ -204,15 +212,85 @@ internal sealed class McpTrayClientService(
 
         try
         {
-            if (OperatingSystem.IsWindows())
-            {
-                StartTrayAppWindows(trayPath, pipeName);
-            }
+            StartTrayAppWindows(trayPath, pipeName);
         }
         catch (Exception ex)
         {
             _logger.LogDebug(ex, "Failed to start MCP tray app.");
         }
+    }
+
+    private string GetTrayPath()
+    {
+        var configuredPath = _configuration["McpTray:ExecutablePath"];
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            var candidate = Path.IsPathRooted(configuredPath)
+                ? configuredPath
+                : Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, configuredPath));
+
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            _logger.LogDebug("Configured MCP tray app was not found at {TrayPath}.", candidate);
+        }
+
+        var publishedPath = Path.Combine(AppContext.BaseDirectory, "McpTray.exe");
+        if (File.Exists(publishedPath))
+        {
+            return publishedPath;
+        }
+
+        return GetVisualStudioDebugTrayPath() ?? publishedPath;
+    }
+
+    private static string? GetVisualStudioDebugTrayPath()
+    {
+        var baseDirectory = new DirectoryInfo(AppContext.BaseDirectory);
+        var frameworkDirectory = baseDirectory;
+        var configurationDirectory = frameworkDirectory.Parent;
+        var binDirectory = configurationDirectory?.Parent;
+        var projectDirectory = binDirectory?.Parent;
+        var repositoryDirectory = projectDirectory?.Parent;
+
+        if (configurationDirectory is null || repositoryDirectory is null)
+        {
+            return null;
+        }
+
+        var candidate = Path.Combine(
+            repositoryDirectory.FullName,
+            "McpTray",
+            "bin",
+            configurationDirectory.Name,
+            "net9.0-windows",
+            "McpTray.exe");
+
+        return File.Exists(candidate) ? candidate : null;
+    }
+
+    private static bool IsTrayAppRunning(string pipeName)
+    {
+        if (!Mutex.TryOpenExisting(GetTrayMutexName(pipeName), out var mutex))
+        {
+            return false;
+        }
+
+        mutex.Dispose();
+        return true;
+    }
+
+    private static string GetTrayMutexName(string pipeName)
+    {
+        return $"Local\\GraphDataMcpTray-{HashPipeName(pipeName)}";
+    }
+
+    private static string HashPipeName(string pipeName)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(pipeName.ToUpperInvariant()));
+        return Convert.ToHexString(bytes, 0, 8);
     }
 
     [SupportedOSPlatform("windows")]
