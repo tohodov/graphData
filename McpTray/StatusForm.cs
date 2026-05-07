@@ -63,33 +63,52 @@ internal sealed class StatusForm : Form
 
     public void RefreshData()
     {
-        var selectedId = (_instances.SelectedItem as InstanceListItem)?.InstanceId;
-        _instances.BeginUpdate();
-        _instances.Items.Clear();
-
-        foreach (var instance in _collector.Instances)
+        if (!CanRefresh)
         {
-            _instances.Items.Add(new InstanceListItem(instance));
+            return;
         }
 
-        if (!string.IsNullOrWhiteSpace(selectedId))
+        var selectedId = (_instances.SelectedItem as InstanceListItem)?.InstanceId;
+        _instances.BeginUpdate();
+        try
         {
-            for (var index = 0; index < _instances.Items.Count; index++)
+            _instances.Items.Clear();
+
+            foreach (var instance in _collector.Instances)
             {
-                if ((_instances.Items[index] as InstanceListItem)?.InstanceId == selectedId)
+                _instances.Items.Add(new InstanceListItem(instance));
+            }
+
+            if (!string.IsNullOrWhiteSpace(selectedId))
+            {
+                for (var index = 0; index < _instances.Items.Count; index++)
                 {
-                    _instances.SelectedIndex = index;
-                    break;
+                    if ((_instances.Items[index] as InstanceListItem)?.InstanceId == selectedId)
+                    {
+                        _instances.SelectedIndex = index;
+                        break;
+                    }
                 }
+            }
+
+            if (_instances.SelectedIndex < 0 && _instances.Items.Count > 0)
+            {
+                _instances.SelectedIndex = 0;
+            }
+        }
+        finally
+        {
+            if (!_instances.IsDisposed)
+            {
+                _instances.EndUpdate();
             }
         }
 
-        if (_instances.SelectedIndex < 0 && _instances.Items.Count > 0)
+        if (!CanRefresh)
         {
-            _instances.SelectedIndex = 0;
+            return;
         }
 
-        _instances.EndUpdate();
         _summary.Text = $"{_collector.RunningCount} running, {_collector.Instances.Count} total";
         RefreshSelectedLog();
     }
@@ -132,6 +151,11 @@ internal sealed class StatusForm : Form
 
     private void RefreshSelectedLog()
     {
+        if (!CanRefresh)
+        {
+            return;
+        }
+
         var instance = SelectedInstance;
         if (instance is null)
         {
@@ -148,6 +172,11 @@ internal sealed class StatusForm : Form
 
     private void CopySelectedLog()
     {
+        if (!CanRefresh)
+        {
+            return;
+        }
+
         var instance = SelectedInstance;
         if (instance is null)
         {
@@ -186,6 +215,14 @@ internal sealed class StatusForm : Form
         button.Click += onClick;
         return button;
     }
+
+    private bool CanRefresh =>
+        !IsDisposed
+        && !Disposing
+        && !_instances.IsDisposed
+        && !_summary.IsDisposed
+        && !_details.IsDisposed
+        && !_log.IsDisposed;
 
     private sealed class InstanceListItem(McpInstanceLog instance)
     {

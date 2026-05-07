@@ -12,6 +12,7 @@ internal sealed class TrayApplicationContext : ApplicationContext
     public TrayApplicationContext(string pipeName)
     {
         _dispatcher.CreateControl();
+        _ = _dispatcher.Handle;
         _server = new NamedPipeLogServer(pipeName, OnPipeMessage);
         _server.Start();
 
@@ -55,17 +56,31 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
     private void OnPipeMessage(McpTrayMessage message)
     {
-        if (_dispatcher.IsDisposed)
+        if (_dispatcher.IsDisposed || !_dispatcher.IsHandleCreated)
         {
             return;
         }
 
-        _dispatcher.BeginInvoke((MethodInvoker)(() =>
+        try
         {
-            _collector.Apply(message);
-            RefreshTray();
-            _statusForm?.RefreshData();
-        }));
+            _dispatcher.BeginInvoke((MethodInvoker)(() =>
+            {
+                if (_dispatcher.IsDisposed)
+                {
+                    return;
+                }
+
+                _collector.Apply(message);
+                RefreshTray();
+                RefreshStatusForm();
+            }));
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private ContextMenuStrip CreateContextMenu()
@@ -82,13 +97,38 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         if (_statusForm is null || _statusForm.IsDisposed)
         {
-            _statusForm = new StatusForm(_collector);
+            var form = new StatusForm(_collector);
+            form.FormClosed += (_, _) =>
+            {
+                if (ReferenceEquals(_statusForm, form))
+                {
+                    _statusForm = null;
+                }
+            };
+            _statusForm = form;
         }
 
         _statusForm.RefreshData();
         _statusForm.Show();
         _statusForm.WindowState = FormWindowState.Normal;
         _statusForm.Activate();
+    }
+
+    private void RefreshStatusForm()
+    {
+        var form = _statusForm;
+        if (form is null)
+        {
+            return;
+        }
+
+        if (form.IsDisposed || form.Disposing)
+        {
+            _statusForm = null;
+            return;
+        }
+
+        form.RefreshData();
     }
 
     private void RefreshTray()
