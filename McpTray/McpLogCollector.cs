@@ -4,6 +4,8 @@ internal sealed class McpLogCollector
 {
     private readonly Dictionary<string, McpInstanceLog> _instances = new(StringComparer.OrdinalIgnoreCase);
 
+    public event EventHandler<McpLogCollectorChangedEventArgs>? Changed;
+
     public IReadOnlyList<McpInstanceLog> Instances => _instances.Values
         .OrderByDescending(static instance => instance.IsRunning)
         .ThenByDescending(static instance => instance.LastSeenAt)
@@ -25,10 +27,16 @@ internal sealed class McpLogCollector
         }
 
         instance.Apply(message);
+        Changed?.Invoke(this, new McpLogCollectorChangedEventArgs(message.InstanceId));
     }
 
     public McpInstanceLog? Get(string instanceId)
     {
         return _instances.GetValueOrDefault(instanceId);
     }
+}
+
+internal sealed class McpLogCollectorChangedEventArgs(string instanceId) : EventArgs
+{
+    public string InstanceId { get; } = instanceId;
 }

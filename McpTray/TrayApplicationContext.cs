@@ -33,7 +33,11 @@ internal sealed class TrayApplicationContext : ApplicationContext
         _notifyIcon.DoubleClick += (_, _) => ShowStatusWindow();
 
         _timer = new System.Windows.Forms.Timer { Interval = 2000 };
-        _timer.Tick += (_, _) => RefreshTray();
+        _timer.Tick += (_, _) =>
+        {
+            RefreshTray();
+            RefreshStatusForm();
+        };
         _timer.Start();
 
         RefreshTray();
@@ -72,7 +76,6 @@ internal sealed class TrayApplicationContext : ApplicationContext
 
                 _collector.Apply(message);
                 RefreshTray();
-                RefreshStatusForm();
             }));
         }
         catch (ObjectDisposedException)

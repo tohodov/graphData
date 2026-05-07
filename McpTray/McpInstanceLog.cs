@@ -25,6 +25,8 @@ internal sealed class McpInstanceLog
 
     public IReadOnlyList<McpLogEntry> Entries => _entries;
 
+    public long LogVersion { get; private set; }
+
     public bool IsRunning
     {
         get
@@ -90,6 +92,7 @@ internal sealed class McpInstanceLog
             Text = message.Text,
             Exception = message.Exception
         });
+        LogVersion++;
 
         if (_entries.Count > 2000)
         {
