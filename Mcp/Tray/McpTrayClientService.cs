@@ -181,6 +181,10 @@ internal sealed class McpTrayClientService(
             Level = message.Level,
             Category = message.Category,
             EventId = message.EventId,
+            EndpointName = message.EndpointName,
+            Server = message.Server,
+            Client = message.Client,
+            Properties = message.Properties,
             Text = message.Text,
             Exception = message.Exception
         };

@@ -26,6 +26,14 @@ internal sealed class McpTrayMessage
 
     public int? EventId { get; init; }
 
+    public string? EndpointName { get; init; }
+
+    public string? Server { get; init; }
+
+    public string? Client { get; init; }
+
+    public IReadOnlyDictionary<string, string?>? Properties { get; init; }
+
     public string? Text { get; init; }
 
     public string? Exception { get; init; }

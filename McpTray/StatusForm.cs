@@ -12,6 +12,7 @@ internal sealed class StatusForm : Form
     private const string ColumnEventId = "EventId";
     private const string ColumnMessage = "Message";
     private const string ColumnException = "Exception";
+    private const string ColumnProperties = "Properties";
 
     private readonly McpLogCollector _collector;
     private readonly ListBox _instances = new()
@@ -270,6 +271,17 @@ internal sealed class StatusForm : Form
             MinimumWidth = 220,
             Visible = false
         });
+        _logGrid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            Name = ColumnProperties,
+            DataPropertyName = ColumnProperties,
+            HeaderText = "Properties",
+            SortMode = DataGridViewColumnSortMode.Automatic,
+            AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
+            FillWeight = 120,
+            MinimumWidth = 220,
+            Visible = false
+        });
     }
 
     private void ApplyLogRowStyle(int rowIndex)
@@ -439,6 +451,7 @@ internal sealed class StatusForm : Form
         row[ColumnEventId] = entry.EventId is null ? DBNull.Value : entry.EventId.Value;
         row[ColumnMessage] = entry.Text ?? entry.MessageType;
         row[ColumnException] = entry.Exception ?? string.Empty;
+        row[ColumnProperties] = FormatProperties(entry.Properties);
         _logTable.Rows.Add(row);
     }
 
@@ -458,9 +471,18 @@ internal sealed class StatusForm : Form
             return;
         }
 
-        var server = string.IsNullOrWhiteSpace(instance.Server) ? "-" : instance.Server;
-        var client = string.IsNullOrWhiteSpace(instance.Client) ? "-" : instance.Client;
-        _details.Text = $"PID {instance.ProcessId}; state {instance.State}; last seen {instance.LastSeenAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}; server {server}; client {client}; storage {instance.GraphStorageRoot ?? "-"}";
+        var details = new List<string>
+        {
+            $"PID {instance.ProcessId}",
+            $"state {instance.State}",
+            $"last seen {instance.LastSeenAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}"
+        };
+
+        AddDetail(details, "endpoint", instance.EndpointName);
+        AddDetail(details, "server", instance.Server);
+        AddDetail(details, "client", instance.Client);
+        details.Add($"storage {instance.GraphStorageRoot ?? "-"}");
+        _details.Text = string.Join("; ", details);
     }
 
     private void ApplyFilters()
@@ -489,7 +511,8 @@ internal sealed class StatusForm : Form
                 $"([{ColumnLevel}] LIKE '%{value}%'"
                 + $" OR [{ColumnCategory}] LIKE '%{value}%'"
                 + $" OR [{ColumnMessage}] LIKE '%{value}%'"
-                + $" OR [{ColumnException}] LIKE '%{value}%')");
+                + $" OR [{ColumnException}] LIKE '%{value}%'"
+                + $" OR [{ColumnProperties}] LIKE '%{value}%')");
         }
 
         _logBindingSource.Filter = string.Join(" AND ", filters);
@@ -627,6 +650,7 @@ internal sealed class StatusForm : Form
         table.Columns.Add(ColumnEventId, typeof(int));
         table.Columns.Add(ColumnMessage, typeof(string));
         table.Columns.Add(ColumnException, typeof(string));
+        table.Columns.Add(ColumnProperties, typeof(string));
         return table;
     }
 
@@ -636,6 +660,14 @@ internal sealed class StatusForm : Form
         if (!string.IsNullOrWhiteSpace(trimmed))
         {
             filters.Add($"[{columnName}] LIKE '%{EscapeFilterLikeValue(trimmed)}%'");
+        }
+    }
+
+    private static void AddDetail(List<string> details, string name, string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            details.Add($"{name} {value}");
         }
     }
 
@@ -663,6 +695,18 @@ internal sealed class StatusForm : Form
                 .Replace('\r', ' ')
                 .Replace('\n', ' ') ?? string.Empty
         };
+    }
+
+    private static string FormatProperties(IReadOnlyDictionary<string, string?>? properties)
+    {
+        if (properties is null || properties.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return string.Join("; ", properties
+            .OrderBy(static pair => pair.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(static pair => $"{pair.Key}={pair.Value}"));
     }
 
     private static LogRowColors GetLevelColors(string? level)

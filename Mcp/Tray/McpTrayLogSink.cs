@@ -20,7 +20,11 @@ internal sealed class McpTrayLogSink
         string category,
         EventId eventId,
         string text,
-        Exception? exception)
+        Exception? exception,
+        string? endpointName,
+        string? server,
+        string? client,
+        IReadOnlyDictionary<string, string?>? properties)
     {
         if (level == LogLevel.None)
         {
@@ -34,6 +38,10 @@ internal sealed class McpTrayLogSink
             Level = level,
             Category = category,
             EventId = eventId.Id,
+            EndpointName = endpointName,
+            Server = server,
+            Client = client,
+            Properties = properties,
             Text = text,
             Exception = exception?.ToString()
         });
