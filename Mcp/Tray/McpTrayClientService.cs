@@ -63,26 +63,41 @@ internal sealed class McpTrayClientService(
         await WriteAsync(writer, CreateLifecycleMessage("instance_started", "running", "MCP instance connected."), CancellationToken.None);
 
         using var heartbeat = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        Task<bool>? pendingLogAvailable = null;
+        Task<bool>? pendingHeartbeatTick = null;
 
         try
         {
             while (!stoppingToken.IsCancellationRequested)
             {
-                var logAvailable = _sink.Reader.WaitToReadAsync(stoppingToken).AsTask();
-                var heartbeatTick = heartbeat.WaitForNextTickAsync(stoppingToken).AsTask();
-                var completed = await Task.WhenAny(logAvailable, heartbeatTick);
+                pendingLogAvailable ??= _sink.Reader.WaitToReadAsync(stoppingToken).AsTask();
+                pendingHeartbeatTick ??= heartbeat.WaitForNextTickAsync(stoppingToken).AsTask();
+                var completed = await Task.WhenAny(pendingLogAvailable, pendingHeartbeatTick);
 
-                if (completed == heartbeatTick && await heartbeatTick)
+                if (completed == pendingHeartbeatTick)
                 {
+                    if (!await pendingHeartbeatTick)
+                    {
+                        break;
+                    }
+
                     await WriteAsync(writer, CreateLifecycleMessage("heartbeat", "running", null), stoppingToken);
+                    pendingHeartbeatTick = null;
                 }
 
-                if (completed == logAvailable && await logAvailable)
+                if (completed == pendingLogAvailable)
                 {
+                    if (!await pendingLogAvailable)
+                    {
+                        break;
+                    }
+
                     while (_sink.Reader.TryRead(out var logMessage))
                     {
                         await WriteAsync(writer, WithInstance(logMessage), stoppingToken);
                     }
+
+                    pendingLogAvailable = null;
                 }
             }
         }
