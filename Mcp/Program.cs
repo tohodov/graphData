@@ -1,5 +1,6 @@
 using GraphData.Core.Extensions;
 using GraphData.Mcp.Runtime;
+using GraphData.Mcp.Status;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -35,6 +36,7 @@ builder.Logging.AddConsole(options =>
 builder.Services.AddSingleton<ICancellationTokenAccessor, McpCancellationTokenAccessor>();
 builder.Services.AddGraphCore();
 builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
+builder.Services.AddHostedService<McpStatusReporter>();
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()

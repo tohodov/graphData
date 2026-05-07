@@ -37,13 +37,16 @@ dotnet run --project Mcp/Mcp.csproj
 Для стабильного подключения к LM Studio используйте установленную Release-сборку, а не `dotnet run`.
 Скрипт публикует свежие бинарники в `%USERPROFILE%\.lmstudio\graphdata-mcp-server`,
 записывает `GraphStorage.RootPath` в `%USERPROFILE%\.lmstudio\graphdata-mcp-server\appsettings.json`
-и обновляет `%USERPROFILE%\.lmstudio\mcp.json` без UTF-8 BOM:
+и обновляет `%USERPROFILE%\.lmstudio\mcp.json` без UTF-8 BOM. Вместе с MCP-сервером публикуется
+WinForms tray-приложение `McpTray.exe`: сервер запускает его автоматически, а окно статуса открывается
+кликом по значку в области уведомлений.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\Install-LmStudioMcp.ps1
 ```
 
 После запуска скрипта перезапустите LM Studio. В чате сервер должен быть виден как `mcp/graphdata`.
+При первом запуске MCP-сервера рядом появится значок `graphData MCP status`.
 
 По умолчанию данные графа хранятся в `graph-data` внутри этого репозитория. Другой путь можно указать так:
 

@@ -38,6 +38,7 @@ function Invoke-GitUtf8 {
 
 $repoRoot = Invoke-GitUtf8 -Arguments "rev-parse --show-toplevel" -WorkingDirectory (Get-Location).Path
 $projectPath = Join-Path $repoRoot "Mcp\Mcp.csproj"
+$trayProjectPath = Join-Path $repoRoot "McpTray\McpTray.csproj"
 $internalSyncPath = Join-Path (Split-Path -Parent $McpJsonPath) ".internal\last-synced-mcp-state.json"
 
 if ([string]::IsNullOrWhiteSpace($GraphStorageRoot)) {
@@ -48,7 +49,7 @@ function Stop-InstalledMcp {
     param([string]$Root)
 
     $escapedRoot = [regex]::Escape($Root)
-    $processes = Get-CimInstance Win32_Process -Filter "Name = 'Mcp.exe' OR Name = 'dotnet.exe'" |
+    $processes = Get-CimInstance Win32_Process -Filter "Name = 'Mcp.exe' OR Name = 'McpTray.exe' OR Name = 'dotnet.exe'" |
         Where-Object { $_.CommandLine -match $escapedRoot -or $_.CommandLine -match "graphdata-mcp-server" }
 
     foreach ($process in $processes) {
@@ -98,12 +99,24 @@ function Set-JsonProperty {
     $Object | Add-Member -MemberType NoteProperty -Name $Name -Value $Value
 }
 
+function Clear-StatusDirectory {
+    param([string]$StatusDirectory)
+
+    if (Test-Path -LiteralPath $StatusDirectory) {
+        Get-ChildItem -LiteralPath $StatusDirectory -Filter "mcp-*.json" -File |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+    } else {
+        New-Item -ItemType Directory -Force -Path $StatusDirectory | Out-Null
+    }
+}
+
 if (-not $NoStop) {
     Stop-InstalledMcp -Root $InstallRoot
 }
 
 if (-not $SkipPublish) {
     dotnet publish $projectPath -c Release -o $InstallRoot
+    dotnet publish $trayProjectPath -c Release -o $InstallRoot
 }
 
 $appSettings = [PSCustomObject]@{
@@ -111,8 +124,14 @@ $appSettings = [PSCustomObject]@{
         RootPath = $GraphStorageRoot
         MetadataFileName = "node.json"
     }
+    McpStatus = [PSCustomObject]@{
+        TrayEnabled = $true
+        StatusDirectory = Join-Path $InstallRoot "status"
+    }
 }
 
+$statusDirectory = $appSettings.McpStatus.StatusDirectory
+Clear-StatusDirectory -StatusDirectory $statusDirectory
 ConvertTo-JsonFile -Value $appSettings -Path (Join-Path $InstallRoot "appsettings.json")
 
 $config = Get-OrCreateJsonObject -Path $McpJsonPath
