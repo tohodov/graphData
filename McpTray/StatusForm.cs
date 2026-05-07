@@ -8,7 +8,6 @@ internal sealed class StatusForm : Form
 {
     private const string ColumnTime = "Time";
     private const string ColumnLevel = "Level";
-    private const string ColumnType = "Type";
     private const string ColumnCategory = "Category";
     private const string ColumnEventId = "EventId";
     private const string ColumnMessage = "Message";
@@ -104,6 +103,7 @@ internal sealed class StatusForm : Form
         ConfigureLogGrid();
         _logBindingSource.DataSource = _logTable;
         _logGrid.DataSource = _logBindingSource;
+        _logGrid.RowPrePaint += (_, args) => ApplyLogRowStyle(args.RowIndex);
 
         Controls.Add(CreateLayout());
         _collector.Changed += OnCollectorChanged;
@@ -219,8 +219,8 @@ internal sealed class StatusForm : Form
             DataPropertyName = ColumnTime,
             HeaderText = "Time",
             SortMode = DataGridViewColumnSortMode.Automatic,
-            DefaultCellStyle = new DataGridViewCellStyle { Format = "yyyy-MM-dd HH:mm:ss.fff" },
-            Width = 170
+            DefaultCellStyle = new DataGridViewCellStyle { Format = "HH:mm:ss.fff" },
+            Width = 115
         });
         _logGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -228,15 +228,8 @@ internal sealed class StatusForm : Form
             DataPropertyName = ColumnLevel,
             HeaderText = "Level",
             SortMode = DataGridViewColumnSortMode.Automatic,
-            Width = 95
-        });
-        _logGrid.Columns.Add(new DataGridViewTextBoxColumn
-        {
-            Name = ColumnType,
-            DataPropertyName = ColumnType,
-            HeaderText = "Type",
-            SortMode = DataGridViewColumnSortMode.Automatic,
-            Width = 125
+            Width = 95,
+            Visible = false
         });
         _logGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -244,7 +237,8 @@ internal sealed class StatusForm : Form
             DataPropertyName = ColumnCategory,
             HeaderText = "Category",
             SortMode = DataGridViewColumnSortMode.Automatic,
-            Width = 220
+            Width = 220,
+            Visible = false
         });
         _logGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -252,7 +246,8 @@ internal sealed class StatusForm : Form
             DataPropertyName = ColumnEventId,
             HeaderText = "Event",
             SortMode = DataGridViewColumnSortMode.Automatic,
-            Width = 70
+            Width = 70,
+            Visible = false
         });
         _logGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -275,6 +270,27 @@ internal sealed class StatusForm : Form
             MinimumWidth = 220,
             Visible = false
         });
+    }
+
+    private void ApplyLogRowStyle(int rowIndex)
+    {
+        if (rowIndex < 0 || rowIndex >= _logGrid.Rows.Count)
+        {
+            return;
+        }
+
+        var row = _logGrid.Rows[rowIndex];
+        if (row.IsNewRow)
+        {
+            return;
+        }
+
+        var level = Convert.ToString(row.Cells[ColumnLevel].Value, System.Globalization.CultureInfo.InvariantCulture);
+        var colors = GetLevelColors(level);
+        row.DefaultCellStyle.BackColor = colors.BackColor;
+        row.DefaultCellStyle.ForeColor = colors.ForeColor;
+        row.DefaultCellStyle.SelectionBackColor = colors.SelectionBackColor;
+        row.DefaultCellStyle.SelectionForeColor = colors.SelectionForeColor;
     }
 
     private void OnCollectorChanged(object? sender, McpLogCollectorChangedEventArgs args)
@@ -419,7 +435,6 @@ internal sealed class StatusForm : Form
         var row = _logTable.NewRow();
         row[ColumnTime] = entry.Timestamp.ToLocalTime().DateTime;
         row[ColumnLevel] = entry.Level ?? string.Empty;
-        row[ColumnType] = entry.MessageType;
         row[ColumnCategory] = entry.Category ?? string.Empty;
         row[ColumnEventId] = entry.EventId is null ? DBNull.Value : entry.EventId.Value;
         row[ColumnMessage] = entry.Text ?? entry.MessageType;
@@ -443,7 +458,9 @@ internal sealed class StatusForm : Form
             return;
         }
 
-        _details.Text = $"PID {instance.ProcessId}; state {instance.State}; last seen {instance.LastSeenAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}; storage {instance.GraphStorageRoot ?? "-"}";
+        var server = string.IsNullOrWhiteSpace(instance.Server) ? "-" : instance.Server;
+        var client = string.IsNullOrWhiteSpace(instance.Client) ? "-" : instance.Client;
+        _details.Text = $"PID {instance.ProcessId}; state {instance.State}; last seen {instance.LastSeenAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}; server {server}; client {client}; storage {instance.GraphStorageRoot ?? "-"}";
     }
 
     private void ApplyFilters()
@@ -458,7 +475,7 @@ internal sealed class StatusForm : Form
         if (!string.IsNullOrWhiteSpace(level) && !string.Equals(level, "All", StringComparison.Ordinal))
         {
             filters.Add(string.Equals(level, "Lifecycle", StringComparison.Ordinal)
-                ? $"[{ColumnType}] <> 'log'"
+                ? $"[{ColumnLevel}] = ''"
                 : $"[{ColumnLevel}] = '{EscapeFilterValue(level)}'");
         }
 
@@ -470,7 +487,6 @@ internal sealed class StatusForm : Form
             var value = EscapeFilterLikeValue(search);
             filters.Add(
                 $"([{ColumnLevel}] LIKE '%{value}%'"
-                + $" OR [{ColumnType}] LIKE '%{value}%'"
                 + $" OR [{ColumnCategory}] LIKE '%{value}%'"
                 + $" OR [{ColumnMessage}] LIKE '%{value}%'"
                 + $" OR [{ColumnException}] LIKE '%{value}%')");
@@ -607,7 +623,6 @@ internal sealed class StatusForm : Form
         };
         table.Columns.Add(ColumnTime, typeof(DateTime));
         table.Columns.Add(ColumnLevel, typeof(string));
-        table.Columns.Add(ColumnType, typeof(string));
         table.Columns.Add(ColumnCategory, typeof(string));
         table.Columns.Add(ColumnEventId, typeof(int));
         table.Columns.Add(ColumnMessage, typeof(string));
@@ -643,10 +658,21 @@ internal sealed class StatusForm : Form
         return value switch
         {
             null or DBNull => string.Empty,
-            DateTime timestamp => timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+            DateTime timestamp => timestamp.ToString("HH:mm:ss.fff"),
             _ => Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)?
                 .Replace('\r', ' ')
                 .Replace('\n', ' ') ?? string.Empty
+        };
+    }
+
+    private static LogRowColors GetLevelColors(string? level)
+    {
+        return level switch
+        {
+            "Information" => new LogRowColors(Color.White, Color.Black, SystemColors.Highlight, SystemColors.HighlightText),
+            "Warning" => new LogRowColors(Color.FromArgb(255, 246, 196), Color.Black, Color.FromArgb(225, 154, 0), Color.Black),
+            "Error" or "Critical" => new LogRowColors(Color.FromArgb(255, 214, 214), Color.Black, Color.FromArgb(210, 64, 64), Color.White),
+            _ => new LogRowColors(Color.FromArgb(226, 240, 255), Color.Black, Color.FromArgb(64, 126, 201), Color.White)
         };
     }
 
@@ -678,4 +704,10 @@ internal sealed class StatusForm : Form
             return Instance.DisplayName;
         }
     }
+
+    private readonly record struct LogRowColors(
+        Color BackColor,
+        Color ForeColor,
+        Color SelectionBackColor,
+        Color SelectionForeColor);
 }

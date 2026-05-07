@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using System.Text;
 
 namespace GraphData.McpTray;
@@ -6,6 +7,12 @@ namespace GraphData.McpTray;
 internal sealed class McpInstanceLog
 {
     private readonly List<McpLogEntry> _entries = [];
+    private static readonly Regex SessionPrefixRegex = new(
+        @"^Server\s+(?<server>(?:\([^)]*\)\s*)+)(?:,\s*Client\s+(?<client>(?:\([^)]*\)\s*)+))?\s+(?<message>.+)$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex SessionValueRegex = new(
+        @"\((?<value>[^)]*)\)",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public required string InstanceId { get; init; }
 
@@ -22,6 +29,10 @@ internal sealed class McpInstanceLog
     public string? GraphStorageRoot { get; private set; }
 
     public bool DebuggerAttached { get; private set; }
+
+    public string? Server { get; private set; }
+
+    public string? Client { get; private set; }
 
     public IReadOnlyList<McpLogEntry> Entries => _entries;
 
@@ -82,6 +93,8 @@ internal sealed class McpInstanceLog
             return;
         }
 
+        var text = ExtractSessionFields(message.Text);
+
         _entries.Add(new McpLogEntry
         {
             Timestamp = message.Timestamp,
@@ -89,7 +102,7 @@ internal sealed class McpInstanceLog
             Level = FormatLevel(message.Level),
             Category = message.Category,
             EventId = message.EventId,
-            Text = message.Text,
+            Text = text,
             Exception = message.Exception
         });
         LogVersion++;
@@ -98,6 +111,42 @@ internal sealed class McpInstanceLog
         {
             _entries.RemoveRange(0, _entries.Count - 2000);
         }
+    }
+
+    private string? ExtractSessionFields(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return text;
+        }
+
+        var match = SessionPrefixRegex.Match(text);
+        if (!match.Success)
+        {
+            return text;
+        }
+
+        UpdateSessionField(match.Groups["server"].Value, value => Server = value);
+        UpdateSessionField(match.Groups["client"].Value, value => Client = value);
+
+        var message = match.Groups["message"].Value.TrimStart();
+        return string.IsNullOrWhiteSpace(message) ? text : message;
+    }
+
+    private static void UpdateSessionField(string value, Action<string> update)
+    {
+        var normalized = NormalizeSessionValue(value);
+        if (!string.IsNullOrWhiteSpace(normalized))
+        {
+            update(normalized);
+        }
+    }
+
+    private static string NormalizeSessionValue(string value)
+    {
+        return string.Join(" / ", SessionValueRegex.Matches(value)
+            .Select(static match => match.Groups["value"].Value.Trim())
+            .Where(static part => !string.IsNullOrWhiteSpace(part)));
     }
 
     public string FormatLogText()
