@@ -38,8 +38,8 @@ dotnet run --project Mcp/Mcp.csproj
 Скрипт публикует свежие бинарники в `%USERPROFILE%\.lmstudio\graphdata-mcp-server`,
 записывает `GraphStorage.RootPath` в `%USERPROFILE%\.lmstudio\graphdata-mcp-server\appsettings.json`
 и обновляет `%USERPROFILE%\.lmstudio\mcp.json` без UTF-8 BOM. Вместе с MCP-сервером публикуется
-WinForms tray-приложение `McpTray.exe`: сервер запускает его автоматически, а окно статуса открывается
-кликом по значку в области уведомлений.
+WinForms tray-приложение `McpTray.exe`: сервер запускает его автоматически и передает логи через Named Pipe.
+Окно логов открывается кликом по значку в области уведомлений; несколько MCP-инстансов отображаются отдельно.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\Install-LmStudioMcp.ps1

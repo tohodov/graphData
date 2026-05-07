@@ -1,0 +1,34 @@
+namespace GraphData.McpTray;
+
+internal sealed class McpLogCollector
+{
+    private readonly Dictionary<string, McpInstanceLog> _instances = new(StringComparer.OrdinalIgnoreCase);
+
+    public IReadOnlyList<McpInstanceLog> Instances => _instances.Values
+        .OrderByDescending(static instance => instance.IsRunning)
+        .ThenByDescending(static instance => instance.LastSeenAt)
+        .ToArray();
+
+    public int RunningCount => _instances.Values.Count(static instance => instance.IsRunning);
+
+    public void Apply(McpTrayMessage message)
+    {
+        if (string.IsNullOrWhiteSpace(message.InstanceId))
+        {
+            return;
+        }
+
+        if (!_instances.TryGetValue(message.InstanceId, out var instance))
+        {
+            instance = new McpInstanceLog { InstanceId = message.InstanceId };
+            _instances.Add(message.InstanceId, instance);
+        }
+
+        instance.Apply(message);
+    }
+
+    public McpInstanceLog? Get(string instanceId)
+    {
+        return _instances.GetValueOrDefault(instanceId);
+    }
+}

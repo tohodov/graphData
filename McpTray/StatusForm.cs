@@ -5,123 +5,160 @@ namespace GraphData.McpTray;
 
 internal sealed class StatusForm : Form
 {
-    private readonly McpStatusReader _reader;
-    private readonly Label _stateValue = CreateValueLabel();
-    private readonly Label _pidValue = CreateValueLabel();
-    private readonly Label _startedValue = CreateValueLabel();
-    private readonly Label _heartbeatValue = CreateValueLabel();
-    private readonly Label _storageValue = CreateValueLabel();
-    private readonly Label _serverDirValue = CreateValueLabel();
-    private readonly Label _statusDirValue = CreateValueLabel();
-    private readonly Label _debuggerValue = CreateValueLabel();
-    private readonly TextBox _messageValue = new()
+    private readonly McpLogCollector _collector;
+    private readonly ListBox _instances = new()
+    {
+        Dock = DockStyle.Fill,
+        HorizontalScrollbar = true
+    };
+
+    private readonly Label _summary = new()
+    {
+        AutoEllipsis = true,
+        Dock = DockStyle.Fill
+    };
+
+    private readonly Label _details = new()
+    {
+        AutoEllipsis = true,
+        Dock = DockStyle.Fill
+    };
+
+    private readonly TextBox _log = new()
     {
         BorderStyle = BorderStyle.FixedSingle,
         Dock = DockStyle.Fill,
+        Font = new Font(FontFamily.GenericMonospace, 9),
         Multiline = true,
         ReadOnly = true,
-        ScrollBars = ScrollBars.Vertical
+        ScrollBars = ScrollBars.Both,
+        WordWrap = false
     };
 
-    private McpStatusSnapshot? _snapshot;
-
-    public StatusForm(McpStatusReader reader)
+    public StatusForm(McpLogCollector collector)
     {
-        _reader = reader;
+        _collector = collector;
 
-        Text = "graphData MCP status";
-        Width = 680;
-        Height = 430;
-        MinimumSize = new Size(560, 360);
+        Text = "graphData MCP logs";
+        Width = 980;
+        Height = 620;
+        MinimumSize = new Size(720, 440);
         StartPosition = FormStartPosition.CenterScreen;
 
+        _instances.SelectedIndexChanged += (_, _) => RefreshSelectedLog();
+
+        var split = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            FixedPanel = FixedPanel.Panel1,
+            SplitterDistance = 280
+        };
+
+        split.Panel1.Controls.Add(_instances);
+        split.Panel2.Controls.Add(CreateRightPanel());
+
+        Controls.Add(split);
+        RefreshData();
+    }
+
+    public void RefreshData()
+    {
+        var selectedId = (_instances.SelectedItem as InstanceListItem)?.InstanceId;
+        _instances.BeginUpdate();
+        _instances.Items.Clear();
+
+        foreach (var instance in _collector.Instances)
+        {
+            _instances.Items.Add(new InstanceListItem(instance));
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedId))
+        {
+            for (var index = 0; index < _instances.Items.Count; index++)
+            {
+                if ((_instances.Items[index] as InstanceListItem)?.InstanceId == selectedId)
+                {
+                    _instances.SelectedIndex = index;
+                    break;
+                }
+            }
+        }
+
+        if (_instances.SelectedIndex < 0 && _instances.Items.Count > 0)
+        {
+            _instances.SelectedIndex = 0;
+        }
+
+        _instances.EndUpdate();
+        _summary.Text = $"{_collector.RunningCount} running, {_collector.Instances.Count} total";
+        RefreshSelectedLog();
+    }
+
+    private Control CreateRightPanel()
+    {
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 2,
-            Padding = new Padding(12)
+            RowCount = 4,
+            Padding = new Padding(8)
         };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-
-        var statusGrid = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 9
-        };
-        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
-        statusGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-
-        AddRow(statusGrid, 0, "State", _stateValue);
-        AddRow(statusGrid, 1, "PID", _pidValue);
-        AddRow(statusGrid, 2, "Started", _startedValue);
-        AddRow(statusGrid, 3, "Last heartbeat", _heartbeatValue);
-        AddRow(statusGrid, 4, "Storage", _storageValue);
-        AddRow(statusGrid, 5, "Server dir", _serverDirValue);
-        AddRow(statusGrid, 6, "Status dir", _statusDirValue);
-        AddRow(statusGrid, 7, "Debugger", _debuggerValue);
-        AddRow(statusGrid, 8, "Message", _messageValue);
 
         var buttons = new FlowLayoutPanel
         {
             AutoSize = true,
             Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.RightToLeft,
-            WrapContents = false
+            FlowDirection = FlowDirection.RightToLeft
         };
 
-        buttons.Controls.Add(CreateButton("Refresh", (_, _) => RefreshStatus()));
-        buttons.Controls.Add(CreateButton("Copy", (_, _) => CopyStatus()));
-        buttons.Controls.Add(CreateButton("Open storage", (_, _) => OpenPath(CurrentServer?.GraphStorageRoot)));
-        buttons.Controls.Add(CreateButton("Open server dir", (_, _) => OpenPath(CurrentServer?.BaseDirectory)));
+        buttons.Controls.Add(CreateButton("Refresh", (_, _) => RefreshData()));
+        buttons.Controls.Add(CreateButton("Copy log", (_, _) => CopySelectedLog()));
+        buttons.Controls.Add(CreateButton("Open storage", (_, _) => OpenPath(SelectedInstance?.GraphStorageRoot)));
+        buttons.Controls.Add(CreateButton("Open server dir", (_, _) => OpenPath(SelectedInstance?.BaseDirectory)));
 
-        root.Controls.Add(statusGrid, 0, 0);
-        root.Controls.Add(buttons, 0, 1);
-        Controls.Add(root);
+        root.Controls.Add(_summary, 0, 0);
+        root.Controls.Add(_details, 0, 1);
+        root.Controls.Add(_log, 0, 2);
+        root.Controls.Add(buttons, 0, 3);
 
-        RefreshStatus();
+        return root;
     }
 
-    private McpServerStatus? CurrentServer => _snapshot?.CurrentServer;
+    private McpInstanceLog? SelectedInstance => (_instances.SelectedItem as InstanceListItem)?.Instance;
 
-    public void RefreshStatus()
+    private void RefreshSelectedLog()
     {
-        _snapshot = _reader.Read();
-        var server = _snapshot.CurrentServer;
-
-        _stateValue.Text = _snapshot.DisplayState;
-        _pidValue.Text = server?.ProcessId.ToString() ?? "-";
-        _startedValue.Text = FormatDate(server?.StartedAt);
-        _heartbeatValue.Text = FormatDate(server?.LastHeartbeatAt);
-        _storageValue.Text = server?.GraphStorageRoot ?? "-";
-        _serverDirValue.Text = server?.BaseDirectory ?? "-";
-        _statusDirValue.Text = _snapshot.StatusDirectory;
-        _debuggerValue.Text = server?.DebuggerAttached == true ? "Attached" : "Not attached";
-        _messageValue.Text = server?.Message ?? "No status has been written yet.";
-    }
-
-    private void CopyStatus()
-    {
-        var snapshot = _snapshot ?? _reader.Read();
-        var builder = new StringBuilder();
-        builder.AppendLine($"State: {snapshot.DisplayState}");
-
-        foreach (var server in snapshot.Servers)
+        var instance = SelectedInstance;
+        if (instance is null)
         {
-            builder.AppendLine();
-            builder.AppendLine($"PID: {server.ProcessId}");
-            builder.AppendLine($"State: {server.State}");
-            builder.AppendLine($"Started: {FormatDate(server.StartedAt)}");
-            builder.AppendLine($"Last heartbeat: {FormatDate(server.LastHeartbeatAt)}");
-            builder.AppendLine($"Storage: {server.GraphStorageRoot}");
-            builder.AppendLine($"Server dir: {server.BaseDirectory}");
-            builder.AppendLine($"Status dir: {server.StatusDirectory}");
-            builder.AppendLine($"Debugger: {(server.DebuggerAttached ? "Attached" : "Not attached")}");
-            builder.AppendLine($"Message: {server.Message}");
+            _details.Text = "No MCP instances have connected yet.";
+            _log.Text = string.Empty;
+            return;
         }
 
+        _details.Text = $"PID {instance.ProcessId}; state {instance.State}; last seen {instance.LastSeenAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}; storage {instance.GraphStorageRoot ?? "-"}";
+        _log.Text = instance.FormatLogText();
+        _log.SelectionStart = _log.TextLength;
+        _log.ScrollToCaret();
+    }
+
+    private void CopySelectedLog()
+    {
+        var instance = SelectedInstance;
+        if (instance is null)
+        {
+            return;
+        }
+
+        var builder = new StringBuilder();
+        builder.AppendLine(instance.DisplayName);
+        builder.AppendLine(_details.Text);
+        builder.AppendLine();
+        builder.Append(instance.FormatLogText());
         Clipboard.SetText(builder.ToString());
     }
 
@@ -150,37 +187,15 @@ internal sealed class StatusForm : Form
         return button;
     }
 
-    private static void AddRow(TableLayoutPanel grid, int row, string label, Control value)
+    private sealed class InstanceListItem(McpInstanceLog instance)
     {
-        grid.RowStyles.Add(row == 8
-            ? new RowStyle(SizeType.Percent, 100)
-            : new RowStyle(SizeType.AutoSize));
+        public McpInstanceLog Instance { get; } = instance;
 
-        grid.Controls.Add(new Label
+        public string InstanceId => Instance.InstanceId;
+
+        public override string ToString()
         {
-            AutoSize = true,
-            Dock = DockStyle.Fill,
-            Font = new Font(SystemFonts.DefaultFont, FontStyle.Bold),
-            Margin = new Padding(0, 5, 8, 5),
-            Text = label
-        }, 0, row);
-
-        value.Margin = new Padding(0, 5, 0, 5);
-        grid.Controls.Add(value, 1, row);
-    }
-
-    private static Label CreateValueLabel()
-    {
-        return new Label
-        {
-            AutoEllipsis = true,
-            Dock = DockStyle.Fill,
-            Text = "-"
-        };
-    }
-
-    private static string FormatDate(DateTimeOffset? date)
-    {
-        return date?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "-";
+            return Instance.DisplayName;
+        }
     }
 }

@@ -2,19 +2,24 @@ namespace GraphData.McpTray;
 
 internal sealed class TrayApplicationContext : ApplicationContext
 {
-    private readonly McpStatusReader _reader;
+    private readonly Control _dispatcher = new();
+    private readonly McpLogCollector _collector = new();
+    private readonly NamedPipeLogServer _server;
     private readonly NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.Timer _timer;
     private StatusForm? _statusForm;
 
-    public TrayApplicationContext(string statusDirectory)
+    public TrayApplicationContext(string pipeName)
     {
-        _reader = new McpStatusReader(statusDirectory);
+        _dispatcher.CreateControl();
+        _server = new NamedPipeLogServer(pipeName, OnPipeMessage);
+        _server.Start();
+
         _notifyIcon = new NotifyIcon
         {
             ContextMenuStrip = CreateContextMenu(),
             Icon = SystemIcons.Information,
-            Text = "graphData MCP status",
+            Text = "graphData MCP logs",
             Visible = true
         };
         _notifyIcon.MouseClick += (_, args) =>
@@ -38,19 +43,36 @@ internal sealed class TrayApplicationContext : ApplicationContext
         if (disposing)
         {
             _timer.Dispose();
+            _server.Dispose();
             _notifyIcon.Visible = false;
             _notifyIcon.Dispose();
             _statusForm?.Dispose();
+            _dispatcher.Dispose();
         }
 
         base.Dispose(disposing);
     }
 
+    private void OnPipeMessage(McpTrayMessage message)
+    {
+        if (_dispatcher.IsDisposed)
+        {
+            return;
+        }
+
+        _dispatcher.BeginInvoke((MethodInvoker)(() =>
+        {
+            _collector.Apply(message);
+            RefreshTray();
+            _statusForm?.RefreshData();
+        }));
+    }
+
     private ContextMenuStrip CreateContextMenu()
     {
         var menu = new ContextMenuStrip();
-        menu.Items.Add("Status", null, (_, _) => ShowStatusWindow());
-        menu.Items.Add("Refresh", null, (_, _) => RefreshStatusWindow());
+        menu.Items.Add("Logs", null, (_, _) => ShowStatusWindow());
+        menu.Items.Add("Refresh", null, (_, _) => RefreshTray());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Exit tray", null, (_, _) => ExitThread());
         return menu;
@@ -60,27 +82,19 @@ internal sealed class TrayApplicationContext : ApplicationContext
     {
         if (_statusForm is null || _statusForm.IsDisposed)
         {
-            _statusForm = new StatusForm(_reader);
+            _statusForm = new StatusForm(_collector);
         }
 
-        _statusForm.RefreshStatus();
+        _statusForm.RefreshData();
         _statusForm.Show();
         _statusForm.WindowState = FormWindowState.Normal;
         _statusForm.Activate();
     }
 
-    private void RefreshStatusWindow()
-    {
-        RefreshTray();
-        _statusForm?.RefreshStatus();
-    }
-
     private void RefreshTray()
     {
-        var snapshot = _reader.Read();
-        _notifyIcon.Icon = snapshot.HasRunningServer ? SystemIcons.Information : SystemIcons.Warning;
-        _notifyIcon.Text = Truncate($"graphData MCP: {snapshot.DisplayState}", 63);
-        _statusForm?.RefreshStatus();
+        _notifyIcon.Icon = _collector.RunningCount > 0 ? SystemIcons.Information : SystemIcons.Warning;
+        _notifyIcon.Text = Truncate($"graphData MCP: {_collector.RunningCount} running, {_collector.Instances.Count} total", 63);
     }
 
     private static string Truncate(string value, int maxLength)

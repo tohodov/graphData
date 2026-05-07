@@ -99,14 +99,11 @@ function Set-JsonProperty {
     $Object | Add-Member -MemberType NoteProperty -Name $Name -Value $Value
 }
 
-function Clear-StatusDirectory {
+function Remove-LegacyStatusDirectory {
     param([string]$StatusDirectory)
 
     if (Test-Path -LiteralPath $StatusDirectory) {
-        Get-ChildItem -LiteralPath $StatusDirectory -Filter "mcp-*.json" -File |
-            Remove-Item -Force -ErrorAction SilentlyContinue
-    } else {
-        New-Item -ItemType Directory -Force -Path $StatusDirectory | Out-Null
+        Remove-Item -LiteralPath $StatusDirectory -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -124,14 +121,13 @@ $appSettings = [PSCustomObject]@{
         RootPath = $GraphStorageRoot
         MetadataFileName = "node.json"
     }
-    McpStatus = [PSCustomObject]@{
-        TrayEnabled = $true
-        StatusDirectory = Join-Path $InstallRoot "status"
+    McpTray = [PSCustomObject]@{
+        Enabled = $true
+        PipeName = "GraphDataMcpTray"
     }
 }
 
-$statusDirectory = $appSettings.McpStatus.StatusDirectory
-Clear-StatusDirectory -StatusDirectory $statusDirectory
+Remove-LegacyStatusDirectory -StatusDirectory (Join-Path $InstallRoot "status")
 ConvertTo-JsonFile -Value $appSettings -Path (Join-Path $InstallRoot "appsettings.json")
 
 $config = Get-OrCreateJsonObject -Path $McpJsonPath
