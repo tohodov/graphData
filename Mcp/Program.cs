@@ -4,7 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using McpTracker.Client;
+using Client;
 using SymLinkStorage;
 using System.Diagnostics;
 
@@ -25,7 +25,7 @@ if (!builder.Configuration.GetSection("GraphStorage").Exists())
 builder.Logging.AddConsole(options => {
     options.LogToStandardErrorThreshold = LogLevel.Trace;
 });
-builder.AddMcpTracker(options => {
+builder.AddTracker(options => {
     options.ApplicationName = "graphData";
     options.Properties["GraphStorageRoot"] = builder.Configuration["GraphStorage:RootPath"];
 });

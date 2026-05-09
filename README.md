@@ -38,7 +38,7 @@ dotnet run --project Mcp/Mcp.csproj
 Скрипт публикует свежие бинарники в `%USERPROFILE%\.lmstudio\graphdata-mcp-server`,
 записывает `GraphStorage.RootPath` в `%USERPROFILE%\.lmstudio\graphdata-mcp-server\appsettings.json`
 и обновляет `%USERPROFILE%\.lmstudio\mcp.json` без UTF-8 BOM. Вместе с MCP-сервером публикуется
-универсальный наблюдатель `McpTracker.Tray.exe` из `C:\Users\R\OneDrive\projects\McpTracker`.
+универсальный наблюдатель `Tray.exe` из `McpTracker ([origin](https://github.com/tohodov/McpTracker))`.
 Сервер запускает его автоматически, если он еще не запущен, и передает логи через Named Pipe.
 Окно логов открывается кликом по значку в области уведомлений; несколько MCP-инстансов и серверов отображаются отдельно.
 

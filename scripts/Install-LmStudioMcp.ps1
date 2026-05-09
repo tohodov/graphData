@@ -2,7 +2,7 @@ param(
     [string]$InstallRoot = "$env:USERPROFILE\.lmstudio\graphdata-mcp-server",
     [string]$GraphStorageRoot = "",
     [string]$McpJsonPath = "$env:USERPROFILE\.lmstudio\mcp.json",
-    [string]$McpTrackerRoot = "$env:USERPROFILE\OneDrive\projects\McpTracker",
+    [string]$McpTrackerRoot = "",
     [string]$ServerName = "graphdata",
     [switch]$DebugWait,
     [switch]$SkipPublish,
@@ -39,7 +39,12 @@ function Invoke-GitUtf8 {
 
 $repoRoot = Invoke-GitUtf8 -Arguments "rev-parse --show-toplevel" -WorkingDirectory (Get-Location).Path
 $projectPath = Join-Path $repoRoot "Mcp\Mcp.csproj"
-$trackerTrayProjectPath = Join-Path $McpTrackerRoot "McpTracker.Tray\McpTracker.Tray.csproj"
+$trackerRoot = if ([string]::IsNullOrWhiteSpace($McpTrackerRoot)) {
+    Join-Path $repoRoot "McpTracker"
+} else {
+    $McpTrackerRoot
+}
+$trackerTrayProjectPath = Join-Path $trackerRoot "Tray\Tray.csproj"
 $internalSyncPath = Join-Path (Split-Path -Parent $McpJsonPath) ".internal\last-synced-mcp-state.json"
 
 if ([string]::IsNullOrWhiteSpace($GraphStorageRoot)) {
@@ -50,7 +55,7 @@ function Stop-InstalledMcp {
     param([string]$Root)
 
     $escapedRoot = [regex]::Escape($Root)
-    $processes = Get-CimInstance Win32_Process -Filter "Name = 'Mcp.exe' OR Name = 'McpTray.exe' OR Name = 'McpTracker.Tray.exe' OR Name = 'dotnet.exe'" |
+    $processes = Get-CimInstance Win32_Process -Filter "Name = 'Mcp.exe' OR Name = 'McpTray.exe' OR Name = 'McpTracker.Tray.exe' OR Name = 'Tray.exe' OR Name = 'dotnet.exe'" |
         Where-Object { $_.CommandLine -match $escapedRoot -or $_.CommandLine -match "graphdata-mcp-server" }
 
     foreach ($process in $processes) {
@@ -141,7 +146,7 @@ $appSettings = [PSCustomObject]@{
         Enabled = $true
         PipeName = "McpTracker"
         AutoStartTray = $true
-        TrayExecutablePath = "McpTracker.Tray.exe"
+        TrayExecutablePath = "Tray.exe"
         ApplicationName = "graphData"
         Properties = [PSCustomObject]@{
             GraphStorageRoot = $GraphStorageRoot

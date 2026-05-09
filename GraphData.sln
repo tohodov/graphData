@@ -24,9 +24,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mcp", "Mcp\Mcp.csproj", "{6
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "McpTracker", "McpTracker", "{16906722-6BC9-EACB-E1D4-1E8D45F87E25}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpTracker.Protocol", "..\..\projects\McpTracker\McpTracker.Protocol\McpTracker.Protocol.csproj", "{D8900140-BE35-4A70-9CDC-D65CD0720F87}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Protocol", "McpTracker\Protocol\Protocol.csproj", "{D8900140-BE35-4A70-9CDC-D65CD0720F87}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpTracker.Client", "..\..\projects\McpTracker\McpTracker.Client\McpTracker.Client.csproj", "{AFF43ECE-CCCC-4B55-B112-6F2A7D7F740B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Client", "McpTracker\Client\Client.csproj", "{AFF43ECE-CCCC-4B55-B112-6F2A7D7F740B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

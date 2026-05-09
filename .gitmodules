@@ -1,0 +1,3 @@
+[submodule "McpTracker"]
+	path = McpTracker
+	url = https://github.com/tohodov/McpTracker
