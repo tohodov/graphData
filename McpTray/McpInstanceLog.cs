@@ -65,8 +65,26 @@ internal sealed class McpInstanceLog
         {
             var marker = IsRunning ? "running" : "stale";
             var started = StartedAt == default ? "-" : StartedAt.ToLocalTime().ToString("HH:mm:ss");
-            return $"PID {ProcessId} | {marker} | started {started}";
+            var name = GetSessionName();
+            return $"{name} | {marker} | started {started}";
         }
+    }
+
+    public string GetSessionName()
+    {
+        var hasServer = !string.IsNullOrWhiteSpace(Server);
+        var hasClient = !string.IsNullOrWhiteSpace(Client);
+        if (hasServer || hasClient)
+        {
+            return $"{(hasServer ? Server : "-")} | {(hasClient ? Client : "-")}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(EndpointName))
+        {
+            return EndpointName;
+        }
+
+        return $"PID {ProcessId}";
     }
 
     public void Apply(McpTrayMessage message)

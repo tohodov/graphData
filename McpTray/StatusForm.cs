@@ -55,6 +55,7 @@ internal sealed class StatusForm : Form
         Text = "Columns"
     };
 
+    private ContextMenuStrip? _columnsMenu;
     private readonly DataTable _logTable = CreateLogTable();
     private readonly BindingSource _logBindingSource = new();
     private readonly DataGridView _logGrid = new()
@@ -128,6 +129,7 @@ internal sealed class StatusForm : Form
         if (disposing)
         {
             _collector.Changed -= OnCollectorChanged;
+            _columnsMenu?.Dispose();
             _logBindingSource.Dispose();
             _logTable.Dispose();
         }
@@ -206,6 +208,7 @@ internal sealed class StatusForm : Form
 
         buttons.Controls.Add(CreateButton("Refresh", (_, _) => RefreshData()));
         buttons.Controls.Add(CreateButton("Copy rows", (_, _) => CopyRows()));
+        buttons.Controls.Add(CreateButton("Properties", (_, _) => ShowSelectedProperties()));
         buttons.Controls.Add(CreateButton("Open storage", (_, _) => OpenPath(SelectedInstance?.GraphStorageRoot)));
         buttons.Controls.Add(CreateButton("Open server dir", (_, _) => OpenPath(SelectedInstance?.BaseDirectory)));
 
@@ -220,8 +223,8 @@ internal sealed class StatusForm : Form
             DataPropertyName = ColumnTime,
             HeaderText = "Time",
             SortMode = DataGridViewColumnSortMode.Automatic,
-            DefaultCellStyle = new DataGridViewCellStyle { Format = "HH:mm:ss.fff" },
-            Width = 115
+            DefaultCellStyle = new DataGridViewCellStyle { Format = "HH:mm:ss" },
+            Width = 85
         });
         _logGrid.Columns.Add(new DataGridViewTextBoxColumn
         {
@@ -471,18 +474,7 @@ internal sealed class StatusForm : Form
             return;
         }
 
-        var details = new List<string>
-        {
-            $"PID {instance.ProcessId}",
-            $"state {instance.State}",
-            $"last seen {instance.LastSeenAt.ToLocalTime():yyyy-MM-dd HH:mm:ss}"
-        };
-
-        AddDetail(details, "endpoint", instance.EndpointName);
-        AddDetail(details, "server", instance.Server);
-        AddDetail(details, "client", instance.Client);
-        details.Add($"storage {instance.GraphStorageRoot ?? "-"}");
-        _details.Text = string.Join("; ", details);
+        _details.Text = $"PID {instance.ProcessId}; state {instance.State}; started {FormatDateTime(instance.StartedAt)}; last seen {FormatDateTime(instance.LastSeenAt)}";
     }
 
     private void ApplyFilters()
@@ -528,8 +520,19 @@ internal sealed class StatusForm : Form
 
     private void ShowColumnMenu()
     {
+        if (_columnsMenu is not null)
+        {
+            if (_columnsMenu.Visible)
+            {
+                _columnsMenu.Close();
+                return;
+            }
+
+            _columnsMenu.Dispose();
+        }
+
         var menu = new ContextMenuStrip();
-        menu.Closed += (_, _) => menu.Dispose();
+        _columnsMenu = menu;
 
         foreach (DataGridViewColumn column in _logGrid.Columns)
         {
@@ -603,6 +606,32 @@ internal sealed class StatusForm : Form
         Clipboard.SetText(builder.ToString());
     }
 
+    private void ShowSelectedProperties()
+    {
+        var instance = SelectedInstance;
+        if (instance is null || !CanRefresh)
+        {
+            return;
+        }
+
+        using var form = new Form
+        {
+            Text = $"Session properties - {instance.GetSessionName()}",
+            Width = 760,
+            Height = 560,
+            MinimumSize = new Size(520, 360),
+            StartPosition = FormStartPosition.CenterParent
+        };
+        var grid = new PropertyGrid
+        {
+            Dock = DockStyle.Fill,
+            PropertySort = PropertySort.CategorizedAlphabetical,
+            SelectedObject = new SessionPropertiesView(instance)
+        };
+        form.Controls.Add(grid);
+        form.ShowDialog(this);
+    }
+
     private static void OpenPath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
@@ -663,14 +692,6 @@ internal sealed class StatusForm : Form
         }
     }
 
-    private static void AddDetail(List<string> details, string name, string? value)
-    {
-        if (!string.IsNullOrWhiteSpace(value))
-        {
-            details.Add($"{name} {value}");
-        }
-    }
-
     private static string EscapeFilterValue(string value)
     {
         return value.Replace("'", "''");
@@ -690,7 +711,7 @@ internal sealed class StatusForm : Form
         return value switch
         {
             null or DBNull => string.Empty,
-            DateTime timestamp => timestamp.ToString("HH:mm:ss.fff"),
+            DateTime timestamp => timestamp.ToString("HH:mm:ss"),
             _ => Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture)?
                 .Replace('\r', ' ')
                 .Replace('\n', ' ') ?? string.Empty
@@ -720,6 +741,11 @@ internal sealed class StatusForm : Form
         };
     }
 
+    private static string FormatDateTime(DateTimeOffset value)
+    {
+        return value == default ? "-" : value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
+    }
+
     private McpInstanceLog? SelectedInstance => (_instances.SelectedItem as InstanceListItem)?.Instance;
 
     private string? SelectedInstanceId => (_instances.SelectedItem as InstanceListItem)?.InstanceId;
@@ -747,6 +773,60 @@ internal sealed class StatusForm : Form
         {
             return Instance.DisplayName;
         }
+    }
+
+    private sealed class SessionPropertiesView(McpInstanceLog instance)
+    {
+        [System.ComponentModel.Category("Identity")]
+        public string Name => instance.GetSessionName();
+
+        [System.ComponentModel.Category("Identity")]
+        public string InstanceId => instance.InstanceId;
+
+        [System.ComponentModel.Category("Process")]
+        public int ProcessId => instance.ProcessId;
+
+        [System.ComponentModel.Category("State")]
+        public string State => instance.State;
+
+        [System.ComponentModel.Category("State")]
+        public bool IsRunning => instance.IsRunning;
+
+        [System.ComponentModel.Category("Time")]
+        public string StartedAt => FormatDateTime(instance.StartedAt);
+
+        [System.ComponentModel.Category("Time")]
+        public string LastSeenAt => FormatDateTime(instance.LastSeenAt);
+
+        [System.ComponentModel.Category("Endpoint")]
+        public string EndpointName => instance.EndpointName ?? string.Empty;
+
+        [System.ComponentModel.Category("Endpoint")]
+        public string Server => instance.Server ?? string.Empty;
+
+        [System.ComponentModel.Category("Endpoint")]
+        public string Client => instance.Client ?? string.Empty;
+
+        [System.ComponentModel.Category("Paths")]
+        public string BaseDirectory => instance.BaseDirectory;
+
+        [System.ComponentModel.Category("Paths")]
+        public string GraphStorageRoot => instance.GraphStorageRoot ?? string.Empty;
+
+        [System.ComponentModel.Category("Debug")]
+        public bool DebuggerAttached => instance.DebuggerAttached;
+
+        [System.ComponentModel.Category("Logs")]
+        public int EntryCount => instance.Entries.Count;
+
+        [System.ComponentModel.Category("Logs")]
+        public long LogVersion => instance.LogVersion;
+
+        [System.ComponentModel.Category("Logs")]
+        public string LatestStructuredProperties => FormatProperties(instance.Entries.LastOrDefault(static entry => entry.Properties is not null)?.Properties);
+
+        [System.ComponentModel.Category("Logs")]
+        public string LatestException => instance.Entries.LastOrDefault(static entry => !string.IsNullOrWhiteSpace(entry.Exception))?.Exception ?? string.Empty;
     }
 
     private readonly record struct LogRowColors(

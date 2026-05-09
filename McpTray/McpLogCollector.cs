@@ -7,8 +7,9 @@ internal sealed class McpLogCollector
     public event EventHandler<McpLogCollectorChangedEventArgs>? Changed;
 
     public IReadOnlyList<McpInstanceLog> Instances => _instances.Values
-        .OrderByDescending(static instance => instance.IsRunning)
-        .ThenByDescending(static instance => instance.LastSeenAt)
+        .OrderBy(static instance => instance.StartedAt == default ? DateTimeOffset.MaxValue : instance.StartedAt)
+        .ThenBy(static instance => instance.ProcessId)
+        .ThenBy(static instance => instance.InstanceId, StringComparer.OrdinalIgnoreCase)
         .ToArray();
 
     public int RunningCount => _instances.Values.Count(static instance => instance.IsRunning);
