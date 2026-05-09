@@ -2,6 +2,7 @@ param(
     [string]$InstallRoot = "$env:USERPROFILE\.lmstudio\graphdata-mcp-server",
     [string]$GraphStorageRoot = "",
     [string]$McpJsonPath = "$env:USERPROFILE\.lmstudio\mcp.json",
+    [string]$McpTrackerRoot = "$env:USERPROFILE\OneDrive\projects\McpTracker",
     [string]$ServerName = "graphdata",
     [switch]$DebugWait,
     [switch]$SkipPublish,
@@ -38,7 +39,7 @@ function Invoke-GitUtf8 {
 
 $repoRoot = Invoke-GitUtf8 -Arguments "rev-parse --show-toplevel" -WorkingDirectory (Get-Location).Path
 $projectPath = Join-Path $repoRoot "Mcp\Mcp.csproj"
-$trayProjectPath = Join-Path $repoRoot "McpTray\McpTray.csproj"
+$trackerTrayProjectPath = Join-Path $McpTrackerRoot "src\McpTracker.Tray\McpTracker.Tray.csproj"
 $internalSyncPath = Join-Path (Split-Path -Parent $McpJsonPath) ".internal\last-synced-mcp-state.json"
 
 if ([string]::IsNullOrWhiteSpace($GraphStorageRoot)) {
@@ -49,7 +50,7 @@ function Stop-InstalledMcp {
     param([string]$Root)
 
     $escapedRoot = [regex]::Escape($Root)
-    $processes = Get-CimInstance Win32_Process -Filter "Name = 'Mcp.exe' OR Name = 'McpTray.exe' OR Name = 'dotnet.exe'" |
+    $processes = Get-CimInstance Win32_Process -Filter "Name = 'Mcp.exe' OR Name = 'McpTray.exe' OR Name = 'McpTracker.Tray.exe' OR Name = 'dotnet.exe'" |
         Where-Object { $_.CommandLine -match $escapedRoot -or $_.CommandLine -match "graphdata-mcp-server" }
 
     foreach ($process in $processes) {
@@ -107,13 +108,28 @@ function Remove-LegacyStatusDirectory {
     }
 }
 
+function Remove-LegacyTrayFiles {
+    param([string]$Root)
+
+    foreach ($name in @("McpTray.exe", "McpTray.dll", "McpTray.deps.json", "McpTray.runtimeconfig.json", "McpTray.pdb")) {
+        $path = Join-Path $Root $name
+        if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 if (-not $NoStop) {
     Stop-InstalledMcp -Root $InstallRoot
 }
 
 if (-not $SkipPublish) {
+    if (-not (Test-Path -LiteralPath $trackerTrayProjectPath)) {
+        throw "McpTracker tray project was not found: $trackerTrayProjectPath"
+    }
+
     dotnet publish $projectPath -c Release -o $InstallRoot
-    dotnet publish $trayProjectPath -c Release -o $InstallRoot
+    dotnet publish $trackerTrayProjectPath -c Release -o $InstallRoot
 }
 
 $appSettings = [PSCustomObject]@{
@@ -121,13 +137,20 @@ $appSettings = [PSCustomObject]@{
         RootPath = $GraphStorageRoot
         MetadataFileName = "node.json"
     }
-    McpTray = [PSCustomObject]@{
+    McpTracker = [PSCustomObject]@{
         Enabled = $true
-        PipeName = "GraphDataMcpTray"
+        PipeName = "McpTracker"
+        AutoStartTray = $true
+        TrayExecutablePath = "McpTracker.Tray.exe"
+        ApplicationName = "graphData"
+        Properties = [PSCustomObject]@{
+            GraphStorageRoot = $GraphStorageRoot
+        }
     }
 }
 
 Remove-LegacyStatusDirectory -StatusDirectory (Join-Path $InstallRoot "status")
+Remove-LegacyTrayFiles -Root $InstallRoot
 ConvertTo-JsonFile -Value $appSettings -Path (Join-Path $InstallRoot "appsettings.json")
 
 $config = Get-OrCreateJsonObject -Path $McpJsonPath

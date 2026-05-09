@@ -22,7 +22,11 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BucketedFileStorage", "Buck
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Mcp", "Mcp\Mcp.csproj", "{6D144519-8C00-4A40-B978-D1402BDC3849}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpTray", "McpTray\McpTray.csproj", "{1E519588-8833-4E18-B769-F77DB4264446}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "McpTracker", "McpTracker", "{16906722-6BC9-EACB-E1D4-1E8D45F87E25}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpTracker.Protocol", "..\..\projects\McpTracker\src\McpTracker.Protocol\McpTracker.Protocol.csproj", "{D8900140-BE35-4A70-9CDC-D65CD0720F87}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "McpTracker.Client", "..\..\projects\McpTracker\src\McpTracker.Client\McpTracker.Client.csproj", "{AFF43ECE-CCCC-4B55-B112-6F2A7D7F740B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -58,13 +62,21 @@ Global
 		{6D144519-8C00-4A40-B978-D1402BDC3849}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{6D144519-8C00-4A40-B978-D1402BDC3849}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{6D144519-8C00-4A40-B978-D1402BDC3849}.Release|Any CPU.Build.0 = Release|Any CPU
-		{1E519588-8833-4E18-B769-F77DB4264446}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{1E519588-8833-4E18-B769-F77DB4264446}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1E519588-8833-4E18-B769-F77DB4264446}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{1E519588-8833-4E18-B769-F77DB4264446}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D8900140-BE35-4A70-9CDC-D65CD0720F87}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D8900140-BE35-4A70-9CDC-D65CD0720F87}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D8900140-BE35-4A70-9CDC-D65CD0720F87}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D8900140-BE35-4A70-9CDC-D65CD0720F87}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AFF43ECE-CCCC-4B55-B112-6F2A7D7F740B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AFF43ECE-CCCC-4B55-B112-6F2A7D7F740B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AFF43ECE-CCCC-4B55-B112-6F2A7D7F740B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AFF43ECE-CCCC-4B55-B112-6F2A7D7F740B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{D8900140-BE35-4A70-9CDC-D65CD0720F87} = {16906722-6BC9-EACB-E1D4-1E8D45F87E25}
+		{AFF43ECE-CCCC-4B55-B112-6F2A7D7F740B} = {16906722-6BC9-EACB-E1D4-1E8D45F87E25}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {F335C091-E3F9-4A2E-A99F-0E238CFA22BF}

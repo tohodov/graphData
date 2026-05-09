@@ -1,10 +1,10 @@
 using GraphData.Core.Extensions;
 using GraphData.Mcp.Runtime;
-using GraphData.Mcp.Tray;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using McpTracker.Client;
 using ModelContextProtocol.Server;
 using SymLinkStorage;
 using System.Diagnostics;
@@ -32,14 +32,15 @@ builder.Logging.AddConsole(options =>
 {
     options.LogToStandardErrorThreshold = LogLevel.Trace;
 });
-var trayLogSink = new McpTrayLogSink();
-builder.Logging.Services.AddSingleton(trayLogSink);
-builder.Logging.AddProvider(new McpTrayLoggerProvider(trayLogSink));
+builder.AddMcpTracker(options =>
+{
+    options.ApplicationName = "graphData";
+    options.Properties["GraphStorageRoot"] = builder.Configuration["GraphStorage:RootPath"];
+});
 
 builder.Services.AddSingleton<ICancellationTokenAccessor, McpCancellationTokenAccessor>();
 builder.Services.AddGraphCore();
 builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
-builder.Services.AddHostedService<McpTrayClientService>();
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()

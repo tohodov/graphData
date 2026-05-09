@@ -38,16 +38,16 @@ dotnet run --project Mcp/Mcp.csproj
 Скрипт публикует свежие бинарники в `%USERPROFILE%\.lmstudio\graphdata-mcp-server`,
 записывает `GraphStorage.RootPath` в `%USERPROFILE%\.lmstudio\graphdata-mcp-server\appsettings.json`
 и обновляет `%USERPROFILE%\.lmstudio\mcp.json` без UTF-8 BOM. Вместе с MCP-сервером публикуется
-WinForms tray-приложение `McpTray.exe`: сервер запускает его автоматически, если оно еще не запущено,
-и передает логи через Named Pipe.
-Окно логов открывается кликом по значку в области уведомлений; несколько MCP-инстансов отображаются отдельно.
+универсальный наблюдатель `McpTracker.Tray.exe` из `C:\Users\R\OneDrive\projects\McpTracker`.
+Сервер запускает его автоматически, если он еще не запущен, и передает логи через Named Pipe.
+Окно логов открывается кликом по значку в области уведомлений; несколько MCP-инстансов и серверов отображаются отдельно.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\Install-LmStudioMcp.ps1
 ```
 
 После запуска скрипта перезапустите LM Studio. В чате сервер должен быть виден как `mcp/graphdata`.
-При первом запуске MCP-сервера рядом появится значок `graphData MCP logs`.
+При первом запуске MCP-сервера рядом появится значок `MCP Tracker`.
 
 По умолчанию данные графа хранятся в `graph-data` внутри этого репозитория. Другой путь можно указать так:
 

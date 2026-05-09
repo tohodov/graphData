@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
+    <ProjectReference Include="..\..\..\projects\McpTracker\src\McpTracker.Client\McpTracker.Client.csproj" />
   </ItemGroup>
 
   <ItemGroup>
