@@ -39,7 +39,7 @@ function Invoke-GitUtf8 {
 
 $repoRoot = Invoke-GitUtf8 -Arguments "rev-parse --show-toplevel" -WorkingDirectory (Get-Location).Path
 $projectPath = Join-Path $repoRoot "Mcp\Mcp.csproj"
-$trackerTrayProjectPath = Join-Path $McpTrackerRoot "src\McpTracker.Tray\McpTracker.Tray.csproj"
+$trackerTrayProjectPath = Join-Path $McpTrackerRoot "McpTracker.Tray\McpTracker.Tray.csproj"
 $internalSyncPath = Join-Path (Split-Path -Parent $McpJsonPath) ".internal\last-synced-mcp-state.json"
 
 if ([string]::IsNullOrWhiteSpace($GraphStorageRoot)) {
