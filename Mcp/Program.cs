@@ -25,10 +25,7 @@ if (!builder.Configuration.GetSection("GraphStorage").Exists())
 builder.Logging.AddConsole(options => {
     options.LogToStandardErrorThreshold = LogLevel.Trace;
 });
-builder.AddTracker(options => {
-    options.ApplicationName = "graphData";
-    options.Properties["GraphStorageRoot"] = builder.Configuration["GraphStorage:RootPath"];
-});
+builder.AddTracker();
 
 builder.Services.AddSingleton<ICancellationTokenAccessor, McpCancellationTokenAccessor>();
 builder.Services.AddGraphCore();
