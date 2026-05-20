@@ -11,6 +11,9 @@ const nodeMeta = document.querySelector("#node-meta");
 const neighborList = document.querySelector("#neighbor-list");
 
 const svgNs = "http://www.w3.org/2000/svg";
+const nodeRadius = 34;
+const endpointOffset = nodeRadius + 9;
+
 const state = {
   rootName: null,
   selectedName: null,
@@ -50,7 +53,7 @@ resetButton.addEventListener("click", () => {
 });
 
 svg.addEventListener("pointerdown", event => {
-  if (event.button !== 0 || event.target.closest(".node") || event.target.closest(".edge-hit")) {
+  if (event.button !== 0 || event.target.closest(".node") || event.target.closest(".edge-button")) {
     return;
   }
 
@@ -177,6 +180,7 @@ function collapseNode(name) {
     return;
   }
 
+  const fallbackSelection = state.parentByNode.get(name) ?? state.rootName;
   const removed = new Set();
   const visit = current => {
     removed.add(current);
@@ -193,38 +197,41 @@ function collapseNode(name) {
     state.parentByNode.delete(nodeName);
   });
 
-  state.selectedName = state.rootName;
+  state.selectedName = fallbackSelection;
   render();
   runSimulation(18);
   setStatus(`Развернуто узлов: ${state.loaded.size}`);
 }
 
-function handleEdgeClick(edge) {
-  const sourceLoaded = state.loaded.has(edge.sourceName);
-  const targetLoaded = state.loaded.has(edge.targetName);
+function handleEndpointClick(edge, anchorName) {
+  const otherName = edge.sourceName === anchorName ? edge.targetName : edge.sourceName;
+  const anchorLoaded = state.loaded.has(anchorName);
+  const otherLoaded = state.loaded.has(otherName);
 
-  if (sourceLoaded && !targetLoaded) {
-    loadNode(edge.targetName, edge.sourceName);
+  if (anchorLoaded && !otherLoaded) {
+    loadNode(otherName, anchorName);
     return;
   }
 
-  if (!sourceLoaded && targetLoaded) {
-    loadNode(edge.sourceName, edge.targetName);
+  if (!anchorLoaded && otherLoaded) {
+    loadNode(anchorName, otherName);
     return;
   }
 
-  if (targetLoaded && state.parentByNode.get(edge.targetName) === edge.sourceName) {
-    collapseNode(edge.targetName);
-    return;
-  }
+  if (anchorLoaded && otherLoaded) {
+    if (state.parentByNode.get(otherName) === anchorName) {
+      collapseNode(otherName);
+      return;
+    }
 
-  if (sourceLoaded && state.parentByNode.get(edge.sourceName) === edge.targetName) {
-    collapseNode(edge.sourceName);
-    return;
-  }
+    if (state.parentByNode.get(anchorName) === otherName && anchorName !== state.rootName) {
+      collapseNode(anchorName);
+      return;
+    }
 
-  state.selectedName = edge.targetName;
-  renderInspector(buildGraph());
+    state.selectedName = otherName;
+    render();
+  }
 }
 
 function buildGraph() {
@@ -235,22 +242,10 @@ function buildGraph() {
     const source = expansion.node;
     nodes.set(source.name, {
       name: source.name,
-      attributes: source.attributes ?? {},
-      loaded: true
+      attributes: source.attributes ?? {}
     });
 
     expansion.edges.forEach(edge => {
-      const target = edge.targetNode;
-      if (!nodes.has(target.name)) {
-        nodes.set(target.name, {
-          name: target.name,
-          attributes: target.attributes ?? {},
-          loaded: state.loaded.has(target.name)
-        });
-      } else if (state.loaded.has(target.name)) {
-        nodes.get(target.name).loaded = true;
-      }
-
       const key = edgeKey(edge.sourceName, edge.targetName);
       if (!edges.has(key)) {
         edges.set(key, {
@@ -272,60 +267,111 @@ function render() {
 
   const edgeLayer = createSvg("g", { class: "edges" });
   const nodeLayer = createSvg("g", { class: "nodes" });
-  viewport.append(edgeLayer, nodeLayer);
+  const buttonLayer = createSvg("g", { class: "edge-buttons" });
+  viewport.append(edgeLayer, nodeLayer, buttonLayer);
 
-  graph.edges.forEach(edge => renderEdge(edgeLayer, edge));
-  graph.nodes.forEach(node => renderNode(nodeLayer, node, graph));
+  graph.edges.forEach(edge => renderEdge(edgeLayer, buttonLayer, edge));
+  graph.nodes.forEach(node => renderNode(nodeLayer, node));
   renderInspector(graph);
   applyView();
 }
 
-function renderEdge(layer, edge) {
+function renderEdge(edgeLayer, buttonLayer, edge) {
+  const sourceLoaded = state.loaded.has(edge.sourceName);
+  const targetLoaded = state.loaded.has(edge.targetName);
   const source = state.positions.get(edge.sourceName);
   const target = state.positions.get(edge.targetName);
-  if (!source || !target) {
+
+  if (!source || !target || (!sourceLoaded && !targetLoaded)) {
     return;
   }
 
-  const targetLoaded = state.loaded.has(edge.targetName);
-  const sourceLoaded = state.loaded.has(edge.sourceName);
-  const frontier = sourceLoaded !== targetLoaded;
-  const group = createSvg("g", { class: "edge" });
-  const attrs = {
-    x1: source.x,
-    y1: source.y,
-    x2: target.x,
-    y2: target.y
-  };
-  const hit = createSvg("line", { ...attrs, class: "edge-hit" });
-  const line = createSvg("line", { ...attrs, class: `edge-visible${frontier ? " frontier" : ""}` });
+  if (sourceLoaded && targetLoaded) {
+    const sourceButton = pointOnCircle(source, target, endpointOffset);
+    const targetButton = pointOnCircle(target, source, endpointOffset);
+    const line = createSvg("line", {
+      class: "edge-line",
+      x1: sourceButton.x,
+      y1: sourceButton.y,
+      x2: targetButton.x,
+      y2: targetButton.y
+    });
 
-  hit.addEventListener("click", event => {
-    event.stopPropagation();
-    handleEdgeClick(edge);
+    edgeLayer.append(line);
+    renderEndpointButton(buttonLayer, sourceButton, edge, edge.sourceName, false);
+    renderEndpointButton(buttonLayer, targetButton, edge, edge.targetName, false);
+    return;
+  }
+
+  const anchorName = sourceLoaded ? edge.sourceName : edge.targetName;
+  const hiddenName = sourceLoaded ? edge.targetName : edge.sourceName;
+  const anchor = sourceLoaded ? source : target;
+  const hidden = sourceLoaded ? target : source;
+  const buttonPoint = pointOnCircle(anchor, hidden, endpointOffset);
+  renderEndpointButton(buttonLayer, buttonPoint, edge, anchorName, true, hiddenName);
+}
+
+function renderEndpointButton(layer, point, edge, anchorName, collapsed, hiddenName = null) {
+  const otherName = hiddenName ?? (edge.sourceName === anchorName ? edge.targetName : edge.sourceName);
+  const group = createSvg("g", {
+    class: `edge-button ${collapsed ? "collapsed" : "expanded"}`,
+    transform: `translate(${point.x} ${point.y})`,
+    role: "button",
+    tabindex: "0",
+    "aria-label": collapsed
+      ? `Развернуть ${otherName}`
+      : `Свернуть или выбрать ${otherName}`
+  });
+  const title = createSvg("title", {});
+  title.textContent = collapsed
+    ? `Развернуть ${otherName}`
+    : `Свернуть или выбрать ${otherName}`;
+
+  const hit = createSvg("circle", {
+    class: "edge-button-hit",
+    r: 17,
+    cx: 0,
+    cy: 0
+  });
+  const core = createSvg("circle", {
+    class: "edge-button-core",
+    r: collapsed ? 8 : 6,
+    cx: 0,
+    cy: 0
   });
 
-  group.append(hit, line);
+  const activate = event => {
+    event.stopPropagation();
+    handleEndpointClick(edge, anchorName);
+  };
+
+  group.addEventListener("click", activate);
+  group.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      activate(event);
+    }
+  });
+
+  group.append(title, hit, core);
   layer.append(group);
 }
 
-function renderNode(layer, node, graph) {
+function renderNode(layer, node) {
   const position = state.positions.get(node.name);
   if (!position) {
     return;
   }
 
-  const degree = graph.edges.filter(edge => edge.sourceName === node.name || edge.targetName === node.name).length;
-  const radius = node.loaded ? 34 : 12;
   const group = createSvg("g", {
-    class: `node ${node.loaded ? "loaded" : "placeholder"}${state.selectedName === node.name ? " selected" : ""}`,
+    class: `node${state.selectedName === node.name ? " selected" : ""}`,
     transform: `translate(${position.x} ${position.y})`,
     tabindex: "0"
   });
 
   const circle = createSvg("circle", {
     class: "node-shell",
-    r: radius,
+    r: nodeRadius,
     cx: 0,
     cy: 0
   });
@@ -333,21 +379,13 @@ function renderNode(layer, node, graph) {
   const label = createSvg("text", {
     class: "node-label",
     x: 0,
-    y: node.loaded ? 0 : 28
+    y: 0
   });
-  label.textContent = trimName(node.name, node.loaded ? 18 : 13);
+  label.textContent = trimName(node.name, 18);
 
   group.addEventListener("click", event => {
     event.stopPropagation();
     state.selectedName = node.name;
-    if (!node.loaded) {
-      const edge = graph.edges.find(candidate => candidate.targetName === node.name || candidate.sourceName === node.name);
-      if (edge) {
-        handleEdgeClick(edge);
-      }
-      return;
-    }
-
     render();
   });
 
@@ -362,23 +400,6 @@ function renderNode(layer, node, graph) {
   });
 
   group.append(circle, label);
-
-  if (node.loaded) {
-    const badge = createSvg("circle", {
-      class: "node-badge",
-      r: 11,
-      cx: 25,
-      cy: -24
-    });
-    const badgeText = createSvg("text", {
-      class: "node-badge-text",
-      x: 25,
-      y: -24
-    });
-    badgeText.textContent = degree.toString();
-    group.append(badge, badgeText);
-  }
-
   layer.append(group);
 }
 
@@ -419,6 +440,9 @@ function renderInspector(graph) {
     .sort((a, b) => a.localeCompare(b, "ru"));
 
   neighbors.forEach(name => {
+    const edge = graph.edges.find(candidate =>
+      (candidate.sourceName === selected.name && candidate.targetName === name) ||
+      (candidate.sourceName === name && candidate.targetName === selected.name));
     const row = document.createElement("button");
     row.type = "button";
     row.className = `neighbor-row${state.loaded.has(name) ? " loaded" : ""}`;
@@ -428,11 +452,8 @@ function renderInspector(graph) {
     text.textContent = name;
     row.append(dot, text);
     row.addEventListener("click", () => {
-      const edge = graph.edges.find(candidate =>
-        (candidate.sourceName === selected.name && candidate.targetName === name) ||
-        (candidate.sourceName === name && candidate.targetName === selected.name));
       if (edge) {
-        handleEdgeClick(edge);
+        handleEndpointClick(edge, selected.name);
       }
     });
     neighborList.append(row);
@@ -452,7 +473,7 @@ function seedPosition(name, fromName, index) {
 
   const source = state.positions.get(fromName);
   const angle = index * 2.399963 + [...name].reduce((sum, char) => sum + char.charCodeAt(0), 0) * 0.017;
-  const distance = state.loaded.has(name) ? 190 : 92;
+  const distance = 92;
   state.positions.set(name, {
     x: source.x + Math.cos(angle) * distance,
     y: source.y + Math.sin(angle) * distance
@@ -502,7 +523,7 @@ function simulateStep() {
         dy = 0;
       }
 
-      const strength = 2600 / (distance * distance);
+      const strength = 3000 / (distance * distance);
       const fx = (dx / distance) * strength;
       const fy = (dy / distance) * strength;
       forces.get(a.name).x -= fx;
@@ -512,25 +533,26 @@ function simulateStep() {
     }
   }
 
-  graph.edges.forEach(edge => {
-    const source = state.positions.get(edge.sourceName);
-    const target = state.positions.get(edge.targetName);
-    if (!source || !target) {
-      return;
-    }
+  graph.edges
+    .filter(edge => state.loaded.has(edge.sourceName) && state.loaded.has(edge.targetName))
+    .forEach(edge => {
+      const source = state.positions.get(edge.sourceName);
+      const target = state.positions.get(edge.targetName);
+      if (!source || !target) {
+        return;
+      }
 
-    let dx = target.x - source.x;
-    let dy = target.y - source.y;
-    let distance = Math.max(1, Math.hypot(dx, dy));
-    const targetLength = state.loaded.has(edge.sourceName) && state.loaded.has(edge.targetName) ? 185 : 92;
-    const strength = (distance - targetLength) * 0.015;
-    const fx = (dx / distance) * strength;
-    const fy = (dy / distance) * strength;
-    forces.get(edge.sourceName).x += fx;
-    forces.get(edge.sourceName).y += fy;
-    forces.get(edge.targetName).x -= fx;
-    forces.get(edge.targetName).y -= fy;
-  });
+      let dx = target.x - source.x;
+      let dy = target.y - source.y;
+      let distance = Math.max(1, Math.hypot(dx, dy));
+      const strength = (distance - 185) * 0.018;
+      const fx = (dx / distance) * strength;
+      const fy = (dy / distance) * strength;
+      forces.get(edge.sourceName).x += fx;
+      forces.get(edge.sourceName).y += fy;
+      forces.get(edge.targetName).x -= fx;
+      forces.get(edge.targetName).y -= fy;
+    });
 
   nodes.forEach(node => {
     const position = state.positions.get(node.name);
@@ -562,10 +584,10 @@ function fitView() {
   const points = graph.nodes
     .map(node => state.positions.get(node.name))
     .filter(Boolean);
-  const minX = Math.min(...points.map(point => point.x)) - 90;
-  const maxX = Math.max(...points.map(point => point.x)) + 90;
-  const minY = Math.min(...points.map(point => point.y)) - 90;
-  const maxY = Math.max(...points.map(point => point.y)) + 90;
+  const minX = Math.min(...points.map(point => point.x)) - 120;
+  const maxX = Math.max(...points.map(point => point.x)) + 120;
+  const minY = Math.min(...points.map(point => point.y)) - 120;
+  const maxY = Math.max(...points.map(point => point.y)) + 120;
   const width = Math.max(1, maxX - minX);
   const height = Math.max(1, maxY - minY);
   const scale = Math.min(1.8, Math.max(0.32, Math.min(rect.width / width, rect.height / height)));
@@ -574,6 +596,22 @@ function fitView() {
   state.view.x = rect.width / 2 - ((minX + maxX) / 2) * scale;
   state.view.y = rect.height / 2 - ((minY + maxY) / 2) * scale;
   applyView();
+}
+
+function pointOnCircle(anchor, target, radius) {
+  let dx = target.x - anchor.x;
+  let dy = target.y - anchor.y;
+  let distance = Math.hypot(dx, dy);
+  if (distance < 0.01) {
+    dx = 1;
+    dy = 0;
+    distance = 1;
+  }
+
+  return {
+    x: anchor.x + (dx / distance) * radius,
+    y: anchor.y + (dy / distance) * radius
+  };
 }
 
 function applyView() {

@@ -302,29 +302,39 @@ input:focus {
   white-space: nowrap;
 }
 
-.edge-visible {
+.edge-line {
   stroke: #20292d;
   stroke-width: 2.25;
   stroke-linecap: round;
   pointer-events: none;
 }
 
-.edge-visible.frontier {
-  stroke-dasharray: 8 8;
-  stroke: var(--accent-warm);
-}
-
-.edge-hit {
-  stroke: transparent;
-  stroke-width: 18;
-  stroke-linecap: round;
-  pointer-events: stroke;
+.edge-button {
   cursor: pointer;
 }
 
-.edge-hit:hover + .edge-visible,
-.edge-visible.hovered {
+.edge-button-hit {
+  fill: transparent;
+  stroke: transparent;
+  pointer-events: all;
+}
+
+.edge-button-core {
+  fill: #ffffff;
+  stroke: #172124;
+  stroke-width: 2.2;
+}
+
+.edge-button.collapsed .edge-button-core {
+  fill: #fff8ea;
+  stroke: var(--accent-warm);
+  stroke-width: 2.4;
+}
+
+.edge-button:hover .edge-button-core {
+  fill: #e8f5f3;
   stroke: var(--accent);
+  stroke-width: 2.6;
 }
 
 .node {
@@ -338,16 +348,6 @@ input:focus {
   filter: drop-shadow(0 8px 12px rgba(21, 31, 36, 0.08));
 }
 
-.node.loaded .node-shell {
-  stroke: #172124;
-}
-
-.node.placeholder .node-shell {
-  fill: #fffdf8;
-  stroke: var(--accent-warm);
-  stroke-width: 2;
-}
-
 .node.selected .node-shell {
   stroke: var(--accent);
   stroke-width: 3;
@@ -357,25 +357,6 @@ input:focus {
   fill: #172124;
   font-size: 13px;
   font-weight: 700;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
-}
-
-.node.placeholder .node-label {
-  font-size: 10px;
-}
-
-.node-badge {
-  fill: var(--accent);
-  stroke: #ffffff;
-  stroke-width: 2;
-}
-
-.node-badge-text {
-  fill: #ffffff;
-  font-size: 10px;
-  font-weight: 800;
   text-anchor: middle;
   dominant-baseline: middle;
   pointer-events: none;
