@@ -15,8 +15,20 @@ public sealed class NodeService(IGraphStorage storage)
         {
             return null;
         }
-        var connections = await _storage.GetConnectedNodesAsync(node);
+
         return node;
+    }
+
+    public async Task<(Node Node, IReadOnlyCollection<Node> Connections)?> GetNeighborhood(string name)
+    {
+        var node = await _storage.Get(name);
+        if (node is null)
+        {
+            return null;
+        }
+
+        var connections = await _storage.GetConnectedNodesAsync(node);
+        return (node, connections);
     }
 
     public async Task<Node> Create(Node? parent, string name)

@@ -15,6 +15,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Api\Api.csproj" />
     <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
     <ProjectReference Include="..\PerNodeFileStorage\PerNodeFileStorage.csproj" />
     <ProjectReference Include="..\BucketedFileStorage\BucketedFileStorage.csproj" />

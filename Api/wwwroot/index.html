@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GraphData</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="toolbar">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <span>GraphData</span>
+      </div>
+      <form id="root-form" class="root-form">
+        <input id="root-input" type="text" autocomplete="off" spellcheck="false" placeholder="Имя узла">
+        <button type="submit">Загрузить</button>
+      </form>
+      <div class="toolbar-actions">
+        <button id="fit-button" type="button">Подогнать</button>
+        <button id="reset-button" type="button">Сброс</button>
+      </div>
+      <output id="status" class="status" aria-live="polite"></output>
+    </header>
+
+    <section class="workspace">
+      <div class="graph-surface">
+        <svg id="graph" role="img" aria-label="GraphData graph viewer">
+          <g id="viewport"></g>
+        </svg>
+        <div id="empty-state" class="empty-state">
+          <div class="empty-title">Узел не выбран</div>
+        </div>
+      </div>
+
+      <aside class="inspector">
+        <div class="inspector-header">
+          <span class="eyebrow">Узел</span>
+          <h1 id="selected-name">-</h1>
+        </div>
+        <dl id="node-meta" class="node-meta"></dl>
+        <div class="inspector-section">
+          <span class="eyebrow">Соседи</span>
+          <div id="neighbor-list" class="neighbor-list"></div>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>
