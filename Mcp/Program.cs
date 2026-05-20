@@ -33,6 +33,7 @@ builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorag
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
+    .WithMcpTrackerMessageFilters()
     .WithToolsFromAssembly();
 
 await builder.Build().RunAsync();
