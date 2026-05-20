@@ -7,13 +7,17 @@ using ModelContextProtocol.Server;
 namespace GraphData.Mcp.Tools;
 
 [McpServerToolType]
-public sealed class GraphDataTools(IGraphStorage storage, GraphData.Core.Services.IncrementalGraphExpansionService expansionService) {
+public sealed class GraphDataTools(
+    IGraphStorage storage,
+    GraphData.Core.Services.IncrementalGraphExpansionService expansionService,
+    GraphData.Core.Services.GraphSearchService searchService) {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) {
         WriteIndented = true
     };
 
     private readonly IGraphStorage _storage = storage;
     private readonly GraphData.Core.Services.IncrementalGraphExpansionService _expansionService = expansionService;
+    private readonly GraphData.Core.Services.GraphSearchService _searchService = searchService;
 
     [McpServerTool]
     [Description("Gets a graph node by name and returns its attributes and connected node names.")]
@@ -107,6 +111,64 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphData.Core.Service
             success = true,
             nodes = subgraph.Nodes.Select(ToResponse).ToArray()
         });
+    }
+
+    [McpServerTool]
+    [Description("Searches graph nodes by text and structural graph patterns such as descendants of a node and nodes connected to all/any anchor nodes.")]
+    public async Task<string> SearchNodes(
+        [Description("Optional text to match against node names and string attributes.")] string? text = null,
+        [Description("Optional ancestor node name. Results must be below this node in path hierarchy, for example 'weapons/pistols/...'.")] string? descendantOf = null,
+        [Description("Maximum hierarchy depth below descendantOf.")] int descendantMaxDepth = 8,
+        [Description("Optional anchor node names. Results must be connected to every listed anchor within connectedToAllMaxDepth.")] string[]? connectedToAll = null,
+        [Description("Maximum graph distance for connectedToAll anchors.")] int connectedToAllMaxDepth = 2,
+        [Description("Optional anchor node names. Results must be connected to at least one listed anchor within connectedToAnyMaxDepth.")] string[]? connectedToAny = null,
+        [Description("Maximum graph distance for connectedToAny anchors.")] int connectedToAnyMaxDepth = 2,
+        [Description("Maximum number of matches to return.")] int limit = 50) {
+        if (descendantMaxDepth < 0 || connectedToAllMaxDepth < 0 || connectedToAnyMaxDepth < 0)
+            return ToJson(new { success = false, error = "Depth values must be non-negative." });
+
+        var query = new NodeSearchQuery {
+            Text = text,
+            DescendantOf = string.IsNullOrWhiteSpace(descendantOf)
+                ? null
+                : new HierarchySearchPattern {
+                    NodeName = descendantOf,
+                    MaxDepth = descendantMaxDepth
+                },
+            ConnectedToAll = (connectedToAll ?? Array.Empty<string>())
+                .Where(static name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(name => new ConnectionSearchPattern {
+                    NodeName = name,
+                    MaxDepth = connectedToAllMaxDepth
+                })
+                .ToArray(),
+            ConnectedToAny = (connectedToAny ?? Array.Empty<string>())
+                .Where(static name => !string.IsNullOrWhiteSpace(name))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(name => new ConnectionSearchPattern {
+                    NodeName = name,
+                    MaxDepth = connectedToAnyMaxDepth
+                })
+                .ToArray(),
+            Limit = limit
+        };
+
+        try {
+            var matches = await _searchService.SearchNodesAsync(query);
+            return ToJson(new {
+                success = true,
+                matches = matches.Select(static match => new {
+                    node = ToResponse(match.Node),
+                    score = match.Score,
+                    matchedBy = match.MatchedBy
+                }).ToArray()
+            });
+        } catch (ArgumentException ex) {
+            return ToJson(new { success = false, error = ex.Message });
+        } catch (NotSupportedException ex) {
+            return ToJson(new { success = false, error = ex.Message });
+        }
     }
 
     [McpServerTool]

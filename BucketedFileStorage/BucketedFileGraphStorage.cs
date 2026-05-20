@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace GraphData.BucketedFileStorage;
 
-public sealed class BucketedFileGraphStorage : IGraphStorage
+public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -196,6 +196,38 @@ public sealed class BucketedFileGraphStorage : IGraphStorage
             if (document is not null)
             {
                 nodes.Add(CreateNode(document));
+            }
+        }
+
+        return nodes;
+    }
+
+    public async Task<IReadOnlyCollection<Node>> GetAllNodesAsync()
+    {
+        if (!Directory.Exists(_metadataRoot))
+        {
+            return Array.Empty<Node>();
+        }
+
+        var nodes = new List<Node>();
+        foreach (var metadataPath in Directory.EnumerateFiles(_metadataRoot, "*.json", SearchOption.TopDirectoryOnly))
+        {
+            var bucketKey = Path.GetFileNameWithoutExtension(metadataPath);
+            if (string.IsNullOrWhiteSpace(bucketKey))
+            {
+                continue;
+            }
+
+            var bucketLock = GetMetadataLock(bucketKey);
+            await bucketLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var bucket = await ReadMetadataBucketAsync(bucketKey).ConfigureAwait(false);
+                nodes.AddRange(bucket.Values.Select(CreateNode));
+            }
+            finally
+            {
+                bucketLock.Release();
             }
         }
 

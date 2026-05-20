@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
+using GraphData.Core.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.Storage;
@@ -54,6 +55,59 @@ partial class GraphStorageContractTests {
         Assert.AreEqual(created.Name, retrieved.Name);
         Assert.AreEqual(created.Name, retrieved.Name);
         CollectionAssert.AreEquivalent(created.Attributes.ToList(), retrieved.Attributes.ToList());
+    }
+}
+[TestCategory(nameof(GraphSearchService))]
+partial class GraphStorageContractTests {
+    [TestMethod]
+    public async Task Search_ShouldFindTextMatchBelowHierarchyAncestor() {
+        var pistols = await Storage.Create("pistols");
+        await Storage.Create("double-action revolvers", pistols);
+        await Storage.Create("rifles");
+
+        var service = new GraphSearchService(Storage);
+        var matches = await service.SearchNodesAsync(new NodeSearchQuery {
+            Text = "double-action",
+            DescendantOf = new HierarchySearchPattern {
+                NodeName = pistols.Name,
+                MaxDepth = 3
+            }
+        });
+
+        Assert.AreEqual(1, matches.Count);
+        var match = matches.Single();
+        Assert.AreEqual("pistols/double-action revolvers", match.Node.Name);
+        Assert.IsTrue(match.MatchedBy.Any(x => x.StartsWith("descendant-of:pistols", StringComparison.OrdinalIgnoreCase)));
+        Assert.IsTrue(match.MatchedBy.Any(x => x.StartsWith("text:double-action", StringComparison.OrdinalIgnoreCase)));
+    }
+
+    [TestMethod]
+    public async Task Search_ShouldFindNodesConnectedToAllAnchors() {
+        var america = await Storage.Create("america");
+        var assaultRifles = await Storage.Create("assault rifles");
+        var m16 = await Storage.Create("m16");
+        var unrelated = await Storage.Create("unrelated");
+
+        await Storage.Connect(america, m16);
+        await Storage.Connect(assaultRifles, m16);
+        await Storage.Connect(america, unrelated);
+
+        var service = new GraphSearchService(Storage);
+        var matches = await service.SearchNodesAsync(new NodeSearchQuery {
+            ConnectedToAll = [
+                new ConnectionSearchPattern {
+                    NodeName = america.Name,
+                    MaxDepth = 1
+                },
+                new ConnectionSearchPattern {
+                    NodeName = assaultRifles.Name,
+                    MaxDepth = 1
+                }
+            ]
+        });
+
+        Assert.AreEqual(1, matches.Count);
+        Assert.AreEqual(m16.Name, matches.Single().Node.Name);
     }
 }
 [TestCategory(nameof(IGraphStorage.Get))]

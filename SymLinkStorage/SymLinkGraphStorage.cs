@@ -11,7 +11,7 @@ using SymLinkStorage;
 
 namespace GraphData.SymLinkStorage;
 
-public sealed class SymLinkGraphStorage : IGraphStorage {
+public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
     readonly DirectoryInfo root;
@@ -85,6 +85,33 @@ public sealed class SymLinkGraphStorage : IGraphStorage {
         return internalNode.Nodes;
     }
 
+    public Task<IReadOnlyCollection<Node>> GetAllNodesAsync() {
+        if (!root.Exists)
+            return Task.FromResult<IReadOnlyCollection<Node>>(Array.Empty<Node>());
+
+        var nodes = new List<Node>();
+        var stack = new Stack<DirectoryInfo>();
+        stack.Push(root);
+
+        while (stack.Count > 0) {
+            cancellationTokens.Token.ThrowIfCancellationRequested();
+
+            var current = stack.Pop();
+            foreach (var directory in current.EnumerateDirectories()) {
+                if (directory.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                    continue;
+
+                var relativePath = Path.GetRelativePath(root.FullName, directory.FullName);
+                if (!string.IsNullOrWhiteSpace(relativePath) && relativePath != ".")
+                    nodes.Add(new NodeFileSystem(NormalizeNodeName(relativePath), options.RootPath));
+
+                stack.Push(directory);
+            }
+        }
+
+        return Task.FromResult<IReadOnlyCollection<Node>>(nodes);
+    }
+
     public async Task<Subgraph> GetSubgraphAsync(SubgraphQuery query) {
         var visited = new HashSet<string>();
         var discovered = new HashSet<string>(query.RootNodeIds);
@@ -134,6 +161,10 @@ public sealed class SymLinkGraphStorage : IGraphStorage {
 
     private string GetNodePath(string name) {
         return Path.Combine(options.RootPath, name);
+    }
+
+    private static string NormalizeNodeName(string nodeName) {
+        return nodeName.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/').Trim('/');
     }
 
     private void CreateLinkIfMissing(string sourcePath, string targetPath, string name) {

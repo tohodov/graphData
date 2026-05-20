@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace GraphData.PerNodeFileStorage;
 
-public sealed class PerNodeFileGraphStorage : IGraphStorage
+public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -167,6 +167,33 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage
         foreach (var connection in connections)
         {
             var document = await ReadMetadataWithLockAsync(connection).ConfigureAwait(false);
+            if (document is not null)
+            {
+                nodes.Add(CreateNode(document));
+            }
+        }
+
+        return nodes;
+    }
+
+    public async Task<IReadOnlyCollection<Node>> GetAllNodesAsync()
+    {
+        if (!Directory.Exists(_metadataRoot))
+        {
+            return Array.Empty<Node>();
+        }
+
+        var nodes = new List<Node>();
+        foreach (var metadataPath in Directory.EnumerateFiles(_metadataRoot, $"*{_options.MetadataFileExtension}", SearchOption.TopDirectoryOnly))
+        {
+            var encodedName = Path.GetFileNameWithoutExtension(metadataPath);
+            if (string.IsNullOrWhiteSpace(encodedName))
+            {
+                continue;
+            }
+
+            var nodeName = DecodeNodeName(encodedName);
+            var document = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
             if (document is not null)
             {
                 nodes.Add(CreateNode(document));
@@ -417,6 +444,17 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage
         }
 
         return builder.ToString();
+    }
+
+    private static string DecodeNodeName(string encodedName)
+    {
+        var bytes = new byte[encodedName.Length / 2];
+        for (var i = 0; i < bytes.Length; i++)
+        {
+            bytes[i] = byte.Parse(encodedName.AsSpan(i * 2, 2), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        }
+
+        return Encoding.UTF8.GetString(bytes);
     }
 
     private sealed record NodeDocument(string Name, Dictionary<string, string> Attributes);

@@ -9,6 +9,7 @@ public static class ServiceCollectionExtensions
     {
         services.AddScoped<NodeService, NodeService>();
         services.AddScoped<IncrementalGraphExpansionService, IncrementalGraphExpansionService>();
+        services.AddScoped<GraphSearchService, GraphSearchService>();
         return services;
     }
 }
