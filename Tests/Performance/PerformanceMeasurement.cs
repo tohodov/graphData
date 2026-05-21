@@ -71,6 +71,7 @@ internal sealed class PerformanceRun
     {
         context.WriteLine($"Performance scenario: {Scenario}");
         context.WriteLine($"Storage: {StorageKind}");
+        context.WriteLine($"Run id: {PerformanceTestGate.RunId}");
         context.WriteLine($"Storage root: {StorageRootPath}");
         context.WriteLine($"Graph: nodes={Graph.NodeCount}, connectionsPerNode={Graph.ConnectionsPerNode}, edges={Graph.Edges.Count}, seed={Graph.Seed}, containsCycle={Graph.ContainsCycle}");
         context.WriteLine("operation | count | elapsed ms | avg us/op | min us | p50 us | p95 us | max us | cpu ms | cpu % | allocated MB | managed delta MB | working set delta MB | private delta MB | GC");
@@ -104,7 +105,8 @@ internal sealed class PerformanceRun
     private string WriteJsonReport()
     {
         var root = PerformanceTestGate.GetString("GRAPH_DATA_PERF_OUTPUT_DIR")
-            ?? Path.Combine(Path.GetTempPath(), "GraphDataPerformanceResults");
+            ?? Path.Combine(PerformanceTestGate.GetStorageBaseRoot(), "GraphDataPerformanceResults");
+        root = Path.Combine(root, PerformanceTestGate.RunId);
         Directory.CreateDirectory(root);
 
         var fileName = string.Join(
@@ -126,6 +128,7 @@ internal sealed class PerformanceRun
             Graph.Edges.Count,
             Graph.Seed,
             Graph.ContainsCycle,
+            PerformanceTestGate.RunId,
             StorageRootPath,
             Environment.ProcessorCount,
             Environment.MachineName,
@@ -153,6 +156,7 @@ internal sealed record PerformanceReport(
     int EdgeCount,
     int Seed,
     bool ContainsCycle,
+    string RunId,
     string StorageRootPath,
     int ProcessorCount,
     string MachineName,

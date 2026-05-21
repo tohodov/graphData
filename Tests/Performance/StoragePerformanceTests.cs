@@ -239,6 +239,7 @@ public sealed class StoragePerformanceTests
     {
         var expectedBaseRoot = PerformanceTestGate.GetStorageBaseRoot();
         StringAssert.StartsWith(scope.RootPath, expectedBaseRoot);
+        StringAssert.Contains(scope.RootPath, PerformanceTestGate.RunId);
         StringAssert.Contains(scope.RootPath, scenario);
         StringAssert.Contains(scope.RootPath, scope.Kind.ToString());
     }

@@ -10,6 +10,8 @@ internal static class PerformanceTestGate
 {
     private const string EnableVariableName = "GRAPH_DATA_PERF_TESTS";
 
+    public static string RunId { get; } = CreateRunId();
+
     public static void EnsureEnabled(PerformanceStorageKind storageKind)
     {
         if (!IsEnabled())
@@ -62,6 +64,18 @@ internal static class PerformanceTestGate
         return Path.Combine(Path.GetTempPath(), "GraphDataPerformanceStorage");
     }
 
+    public static string SanitizePathSegment(string value)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
+
+        var invalidCharacters = Path.GetInvalidFileNameChars();
+        var chars = value
+            .Select(character => invalidCharacters.Contains(character) ? '-' : character)
+            .ToArray();
+
+        return new string(chars);
+    }
+
     private static bool IsEnabled()
     {
         var value = Environment.GetEnvironmentVariable(EnableVariableName)
@@ -84,5 +98,16 @@ internal static class PerformanceTestGate
         return value
             .Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string CreateRunId()
+    {
+        var configured = GetString("GRAPH_DATA_PERF_RUN_ID");
+        if (configured is not null)
+        {
+            return SanitizePathSegment(configured);
+        }
+
+        return $"{DateTime.UtcNow:yyyyMMddTHHmmssfffZ}-{Guid.NewGuid().ToString("N")[..8]}";
     }
 }

@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
 using GraphData.BucketedFileStorage;
 using GraphData.BucketedFileStorage.Options;
@@ -43,9 +42,9 @@ internal sealed class PerformanceStorageScope : IAsyncDisposable
         var rootPath = Path.Combine(
             PerformanceTestGate.GetStorageBaseRoot(),
             "GraphDataPerformanceTests",
-            SanitizePathSegment(scenario),
-            kind.ToString(),
-            Guid.NewGuid().ToString("N"));
+            PerformanceTestGate.RunId,
+            PerformanceTestGate.SanitizePathSegment(scenario),
+            kind.ToString());
 
         IGraphStorage storage = kind switch
         {
@@ -70,35 +69,15 @@ internal sealed class PerformanceStorageScope : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        try
+        switch (Storage)
         {
-            switch (Storage)
-            {
-                case IAsyncDisposable asyncDisposable:
-                    await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-                    break;
+            case IAsyncDisposable asyncDisposable:
+                await asyncDisposable.DisposeAsync().ConfigureAwait(false);
+                break;
 
-                case IDisposable disposable:
-                    disposable.Dispose();
-                    break;
-            }
+            case IDisposable disposable:
+                disposable.Dispose();
+                break;
         }
-        finally
-        {
-            if (Directory.Exists(RootPath))
-            {
-                Directory.Delete(RootPath, recursive: true);
-            }
-        }
-    }
-
-    private static string SanitizePathSegment(string value)
-    {
-        var invalidCharacters = Path.GetInvalidFileNameChars();
-        var chars = value
-            .Select(character => invalidCharacters.Contains(character) ? '-' : character)
-            .ToArray();
-
-        return new string(chars);
     }
 }
