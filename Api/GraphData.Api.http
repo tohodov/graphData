@@ -24,3 +24,35 @@ Content-Type: application/json
   "sourceName": "Sample node",
   "targetName": "Another node"
 }
+
+### Update node attributes
+PUT {{GraphData.Api_HostAddress}}/api/graph/nodes?name=Sample%20node
+Content-Type: application/json
+
+{
+  "attributes": {
+    "type": "updated"
+  }
+}
+
+### Delete node
+DELETE {{GraphData.Api_HostAddress}}/api/graph/nodes?name=Sample%20node
+
+### Search nodes
+POST {{GraphData.Api_HostAddress}}/api/graph/search/nodes
+Content-Type: application/json
+
+{
+  "text": "Sample",
+  "limit": 20
+}
+
+### Load subgraph
+POST {{GraphData.Api_HostAddress}}/api/graph/subgraph
+Content-Type: application/json
+
+{
+  "rootNodeIds": [ "Sample node" ],
+  "maxDepth": 1,
+  "includeDisconnectedRoots": true
+}

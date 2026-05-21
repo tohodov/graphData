@@ -41,10 +41,9 @@ public sealed class GraphController(
         }
 
         var created = await _nodeService.Create(null, request.Name, request.Attributes);
-        return CreatedAtAction(
-            nameof(GetNodeAsync),
-            new { name = created.Name },
-            ToNodeResponse(created));
+        var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { name = created.Name })
+            ?? $"/api/graph/nodes?name={Uri.EscapeDataString(created.Name)}";
+        return Created(location, ToNodeResponse(created));
     }
 
     [HttpPut("nodes")]
@@ -67,6 +66,24 @@ public sealed class GraphController(
         }
 
         await _nodeService.Update(name, request.Attributes ?? new Dictionary<string, string>());
+        return NoContent();
+    }
+
+    [HttpDelete("nodes")]
+    public async Task<IActionResult> DeleteNodeAsync([FromQuery] string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return BadRequest("Node name must be provided.");
+        }
+
+        var node = await _nodeService.Get(name);
+        if (node is null)
+        {
+            return NotFound();
+        }
+
+        await _nodeService.Delete(name);
         return NoContent();
     }
 

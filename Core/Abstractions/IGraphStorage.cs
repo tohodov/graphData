@@ -9,6 +9,7 @@ public interface IGraphStorage
     Task<Node?> Get(Node? parent, string subNodeName);
     Task<Node?> Get(NodeQuery query);
     Task Update(string subNodeName, IDictionary<string, string> attributes, Node? parent = null);
+    Task Delete(string subNodeName, Node? parent = null);
     Task Connect(Node sourceNode, Node targetNode);
     Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node);
     Task<Subgraph> GetSubgraphAsync(SubgraphQuery query);

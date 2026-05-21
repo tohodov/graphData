@@ -50,6 +50,28 @@ public sealed class GraphControllerTests
     }
 
     [TestMethod]
+    public async Task CreateNodeAsync_ReturnsCreatedNodeWithLocation()
+    {
+        var storage = new FakeGraphStorage([]);
+        var controller = CreateController(storage);
+
+        var result = await controller.CreateNodeAsync(new CreateNodeRequest
+        {
+            Name = "new node",
+            Attributes = new Dictionary<string, string> { ["kind"] = "demo" }
+        });
+
+        var created = result.Result as CreatedResult;
+        Assert.IsNotNull(created);
+        StringAssert.Contains(created.Location, "/api/graph/nodes?name=new%20node");
+
+        var response = created.Value as NodeResponse;
+        Assert.IsNotNull(response);
+        Assert.AreEqual("new node", response.Name);
+        Assert.AreEqual("demo", response.Attributes["kind"]);
+    }
+
+    [TestMethod]
     public async Task GetSubgraphAsync_ReturnsTopLevelEdgesWithoutDuplicatingThemOnNodes()
     {
         var first = new TestNode("1");
@@ -97,7 +119,9 @@ public sealed class GraphControllerTests
 
         public Task<Node> Create(string name, Node? parent = null, Dictionary<string, string>? attributes = null)
         {
-            throw new NotSupportedException();
+            var node = new TestNode(name, attributes ?? new Dictionary<string, string>());
+            _nodes[name] = node;
+            return Task.FromResult<Node>(node);
         }
 
         public Task<Node?> Get(Node? parent, string subNodeName)
@@ -113,6 +137,18 @@ public sealed class GraphControllerTests
         public Task Update(string subNodeName, IDictionary<string, string> attributes, Node? parent = null)
         {
             throw new NotSupportedException();
+        }
+
+        public Task Delete(string subNodeName, Node? parent = null)
+        {
+            _nodes.Remove(subNodeName);
+            _connections.Remove(subNodeName);
+            foreach (var connections in _connections.Values)
+            {
+                connections.RemoveAll(node => string.Equals(node.Name, subNodeName, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return Task.CompletedTask;
         }
 
         public Task Connect(Node sourceNode, Node targetNode)

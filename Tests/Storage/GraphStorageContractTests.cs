@@ -134,6 +134,24 @@ partial class GraphStorageContractTests {
         CollectionAssert.AreEquivalent(attributes.ToList(), retrieved.Attributes.ToList());
     }
 }
+[TestCategory(nameof(IGraphStorage.Delete))]
+partial class GraphStorageContractTests {
+    [TestMethod]
+    public async Task ShouldRemoveNodeAndIncidentConnections() {
+        var first = await CreateNode();
+        var second = await CreateNode();
+        var third = await CreateNode();
+
+        await Storage.Connect(first, second);
+        await Storage.Connect(second, third);
+
+        await Storage.Delete(second.Name);
+
+        Assert.IsNull(await Storage.Get(second.Name));
+        Assert.IsFalse((await Storage.GetConnectedNodesAsync(first)).Any(x => x.Name == second.Name));
+        Assert.IsFalse((await Storage.GetConnectedNodesAsync(third)).Any(x => x.Name == second.Name));
+    }
+}
 [TestCategory(nameof(IGraphStorage.Connect))]
 partial class GraphStorageContractTests {
     [TestMethod]

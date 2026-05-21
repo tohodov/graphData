@@ -70,6 +70,20 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Task.CompletedTask;
     }
 
+    public async Task Delete(string name, Node? parent = null) {
+        var node = GetInternal(parent as NodeFileSystem, name);
+        if (node == null)
+            return;
+
+        var connections = await GetConnectedNodesAsync(node);
+        foreach (var connection in connections) {
+            var reciprocalLinkPath = Path.Combine(GetNodePath(connection.Name), node.Name);
+            DeleteLinkIfExists(reciprocalLinkPath);
+        }
+
+        DeleteDirectoryWithoutFollowingLinks(node.GetInfo());
+    }
+
     public Task Connect(Node left, Node right) {
         var sourcePath = GetNodePath(left.Name);
         var targetPath = GetNodePath(right.Name);
@@ -180,5 +194,35 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             logger.LogError(ex, "Failed to create link from {Source} to {Target}", sourcePath, targetPath);
             throw;
         }
+    }
+
+    private static void DeleteLinkIfExists(string path) {
+        if (!Directory.Exists(path) && !File.Exists(path))
+            return;
+
+        var attributes = File.GetAttributes(path);
+        if (attributes.HasFlag(FileAttributes.Directory))
+            Directory.Delete(path);
+        else
+            File.Delete(path);
+    }
+
+    private static void DeleteDirectoryWithoutFollowingLinks(DirectoryInfo directory) {
+        if (!directory.Exists)
+            return;
+
+        foreach (var entry in directory.EnumerateFileSystemInfos()) {
+            if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) {
+                entry.Delete();
+                continue;
+            }
+
+            if (entry is DirectoryInfo childDirectory)
+                DeleteDirectoryWithoutFollowingLinks(childDirectory);
+            else
+                entry.Delete();
+        }
+
+        directory.Delete();
     }
 }

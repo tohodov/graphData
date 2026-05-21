@@ -41,6 +41,11 @@ public sealed class NodeService(IGraphStorage storage)
         return _storage.Update(name, attributes);
     }
 
+    public Task Delete(string name)
+    {
+        return _storage.Delete(name);
+    }
+
     public Task ConnectNodes(Node first, Node second)
     {
         if(first == second)

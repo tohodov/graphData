@@ -124,6 +124,50 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         }
     }
 
+    public async Task Delete(string subNodeName, Node? parent = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(subNodeName);
+
+        var nodeName = GetNodeName(parent, subNodeName);
+        var existingConnections = await ReadConnectionsWithLockAsync(nodeName).ConfigureAwait(false);
+        var metadataLock = GetMetadataLock(nodeName);
+        await metadataLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var metadataPath = GetMetadataPath(nodeName);
+            if (!File.Exists(metadataPath))
+            {
+                return;
+            }
+
+            File.Delete(metadataPath);
+        }
+        finally
+        {
+            metadataLock.Release();
+        }
+
+        var connectionLock = GetConnectionLock(nodeName);
+        await connectionLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var connectionsPath = GetConnectionsPath(nodeName);
+            if (File.Exists(connectionsPath))
+            {
+                File.Delete(connectionsPath);
+            }
+        }
+        finally
+        {
+            connectionLock.Release();
+        }
+
+        foreach (var connection in existingConnections)
+        {
+            await RemoveConnectionAsync(connection, nodeName).ConfigureAwait(false);
+        }
+    }
+
     public async Task Connect(Node sourceNode, Node targetNode)
     {
         ArgumentNullException.ThrowIfNull(sourceNode);
@@ -354,6 +398,25 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
         var updated = new HashSet<string>(connections, StringComparer.OrdinalIgnoreCase) { targetNodeName };
         await WriteConnectionsAsync(sourceNodeName, updated).ConfigureAwait(false);
+    }
+
+    private async Task RemoveConnectionAsync(string sourceNodeName, string targetNodeName)
+    {
+        var connectionLock = GetConnectionLock(sourceNodeName);
+        await connectionLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var connections = await ReadConnectionsAsync(sourceNodeName).ConfigureAwait(false);
+            var updated = new HashSet<string>(connections, StringComparer.OrdinalIgnoreCase);
+            if (updated.Remove(targetNodeName))
+            {
+                await WriteConnectionsAsync(sourceNodeName, updated).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            connectionLock.Release();
+        }
     }
 
     private async Task<IReadOnlyCollection<string>> ReadConnectionsAsync(string nodeName)

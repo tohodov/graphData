@@ -4,15 +4,14 @@
   background: #f6f7f9;
   color: #172124;
   --surface: #ffffff;
-  --surface-soft: #edf1f3;
-  --line: #d7dee3;
-  --line-strong: #9facb4;
+  --surface-soft: #eef2f4;
+  --line: #d8e0e4;
+  --line-strong: #9daab2;
   --text-soft: #617077;
   --accent: #0f766e;
   --accent-strong: #0b5f59;
   --accent-warm: #b45309;
   --danger: #b42318;
-  --shadow: 0 16px 38px rgba(22, 31, 35, 0.08);
 }
 
 * {
@@ -39,8 +38,8 @@ button {
   border-radius: 6px;
   background: var(--surface);
   color: #172124;
-  min-height: 36px;
-  padding: 0 14px;
+  min-height: 34px;
+  padding: 0 12px;
   cursor: pointer;
   transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
 }
@@ -54,19 +53,19 @@ button:active {
   transform: translateY(1px);
 }
 
-button[disabled] {
-  cursor: progress;
-  opacity: 0.7;
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
 }
 
 input {
-  min-width: 220px;
-  min-height: 36px;
+  width: 100%;
+  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #ffffff;
   color: #172124;
-  padding: 0 12px;
+  padding: 0 10px;
   outline: none;
 }
 
@@ -83,7 +82,7 @@ input:focus {
 
 .toolbar {
   display: grid;
-  grid-template-columns: auto minmax(300px, 520px) auto minmax(160px, 1fr);
+  grid-template-columns: auto minmax(280px, 500px) auto minmax(160px, 1fr);
   gap: 12px;
   align-items: center;
   min-height: 64px;
@@ -131,25 +130,30 @@ input:focus {
 }
 
 .root-form,
-.toolbar-actions {
+.toolbar-actions,
+.inline-form,
+.button-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.root-form input {
+.root-form input,
+.inline-form input {
   flex: 1 1 auto;
 }
 
-.root-form button {
+.root-form button,
+.stack-form button[type="submit"] {
   background: var(--accent);
   border-color: var(--accent);
   color: #ffffff;
   font-weight: 650;
 }
 
-.root-form button:hover {
-  background: var(--accent-strong);
+.danger-button {
+  border-color: rgba(180, 35, 24, 0.32);
+  color: var(--danger);
 }
 
 .status {
@@ -164,7 +168,7 @@ input:focus {
 .workspace {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 380px;
 }
 
 .graph-surface {
@@ -211,20 +215,55 @@ input:focus {
   letter-spacing: 0;
 }
 
-.inspector {
+.side-panel {
   min-width: 0;
   border-left: 1px solid var(--line);
   background: var(--surface);
-  padding: 18px;
-  overflow: auto;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
-.inspector-header {
-  padding-bottom: 16px;
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 10px;
   border-bottom: 1px solid var(--line);
 }
 
-.eyebrow {
+.tab-button.active {
+  border-color: var(--accent);
+  background: #e8f5f3;
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.tab-panel {
+  display: none;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px;
+}
+
+.tab-panel.active {
+  display: block;
+}
+
+.panel-block {
+  padding: 0 0 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.selected-node h1 {
+  margin: 7px 0 12px;
+  font-size: 23px;
+  line-height: 1.18;
+  overflow-wrap: anywhere;
+}
+
+.eyebrow,
+.stack-form label span {
   display: block;
   color: var(--text-soft);
   font-size: 12px;
@@ -233,48 +272,76 @@ input:focus {
   text-transform: uppercase;
 }
 
-.inspector h1 {
-  margin: 7px 0 0;
-  font-size: 24px;
-  line-height: 1.16;
-  overflow-wrap: anywhere;
-}
-
-.node-meta {
-  margin: 16px 0 0;
-  display: grid;
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
+  margin-bottom: 10px;
 }
 
-.node-meta div {
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 9px;
-}
-
-.node-meta dt {
-  color: var(--text-soft);
-  font-size: 12px;
-  margin-bottom: 3px;
-  overflow-wrap: anywhere;
-}
-
-.node-meta dd {
-  margin: 0;
-  color: #172124;
-  overflow-wrap: anywhere;
-}
-
-.inspector-section {
-  margin-top: 22px;
-}
-
-.neighbor-list {
+.attribute-editor {
   display: grid;
   gap: 8px;
-  margin-top: 10px;
 }
 
-.neighbor-row {
+.attribute-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr) 34px;
+  gap: 6px;
+}
+
+.icon-button {
+  min-width: 34px;
+  padding: 0;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.compact-form .eyebrow,
+.panel-block > .eyebrow {
+  margin-bottom: 9px;
+}
+
+.stack-form {
+  display: grid;
+  gap: 12px;
+}
+
+.stack-form label {
+  display: grid;
+  gap: 5px;
+}
+
+.two-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.check-line {
+  align-self: end;
+  display: flex !important;
+  grid-template-columns: none !important;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px !important;
+  min-height: 34px;
+}
+
+.check-line input {
+  width: 16px;
+  min-height: 16px;
+}
+
+.neighbor-list,
+.result-list {
+  display: grid;
+  gap: 8px;
+}
+
+.neighbor-row,
+.result-row {
   display: grid;
   grid-template-columns: 10px minmax(0, 1fr);
   align-items: center;
@@ -283,6 +350,30 @@ input:focus {
   text-align: left;
   min-height: 38px;
   padding: 8px 10px;
+}
+
+.result-row {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.result-row strong,
+.result-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-row span {
+  color: var(--text-soft);
+  font-size: 12px;
+}
+
+.result-summary {
+  color: var(--text-soft);
+  font-size: 13px;
+  padding: 2px 0 4px;
 }
 
 .neighbor-dot {
@@ -362,7 +453,16 @@ input:focus {
   pointer-events: none;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 980px) {
+  body {
+    overflow: auto;
+  }
+
+  .app-shell {
+    min-height: 100vh;
+    height: auto;
+  }
+
   .toolbar {
     grid-template-columns: 1fr;
     align-items: stretch;
@@ -370,11 +470,6 @@ input:focus {
 
   .brand {
     justify-content: center;
-  }
-
-  .root-form,
-  .toolbar-actions {
-    width: 100%;
   }
 
   .toolbar-actions button,
@@ -388,10 +483,10 @@ input:focus {
 
   .workspace {
     grid-template-columns: 1fr;
-    grid-template-rows: minmax(0, 1fr) 220px;
+    grid-template-rows: minmax(540px, 60vh) auto;
   }
 
-  .inspector {
+  .side-panel {
     border-left: 0;
     border-top: 1px solid var(--line);
   }

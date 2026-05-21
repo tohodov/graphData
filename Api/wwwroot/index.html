@@ -15,7 +15,7 @@
       </div>
       <form id="root-form" class="root-form">
         <input id="root-input" type="text" autocomplete="off" spellcheck="false" placeholder="Имя узла">
-        <button type="submit">Загрузить</button>
+        <button type="submit">Открыть</button>
       </form>
       <div class="toolbar-actions">
         <button id="fit-button" type="button">Подогнать</button>
@@ -26,7 +26,7 @@
 
     <section class="workspace">
       <div class="graph-surface">
-        <svg id="graph" role="img" aria-label="GraphData graph viewer">
+        <svg id="graph" role="img" aria-label="Редактор графа GraphData">
           <g id="viewport"></g>
         </svg>
         <div id="empty-state" class="empty-state">
@@ -34,16 +34,116 @@
         </div>
       </div>
 
-      <aside class="inspector">
-        <div class="inspector-header">
-          <span class="eyebrow">Узел</span>
-          <h1 id="selected-name">-</h1>
-        </div>
-        <dl id="node-meta" class="node-meta"></dl>
-        <div class="inspector-section">
-          <span class="eyebrow">Соседи</span>
-          <div id="neighbor-list" class="neighbor-list"></div>
-        </div>
+      <aside class="side-panel">
+        <nav class="tabs" aria-label="Разделы редактора">
+          <button class="tab-button active" type="button" data-tab="node">Узел</button>
+          <button class="tab-button" type="button" data-tab="search">Поиск</button>
+          <button class="tab-button" type="button" data-tab="subgraph">Подграф</button>
+        </nav>
+
+        <section id="tab-node" class="tab-panel active">
+          <div class="panel-block selected-node">
+            <span class="eyebrow">Выбран</span>
+            <h1 id="selected-name">-</h1>
+            <div class="button-row">
+              <button id="save-node-button" type="button">Сохранить</button>
+              <button id="delete-node-button" class="danger-button" type="button">Удалить</button>
+            </div>
+          </div>
+
+          <div class="panel-block">
+            <div class="section-heading">
+              <span class="eyebrow">Атрибуты</span>
+              <button id="add-attribute-button" type="button">Добавить</button>
+            </div>
+            <div id="attribute-editor" class="attribute-editor"></div>
+          </div>
+
+          <form id="create-node-form" class="panel-block compact-form">
+            <span class="eyebrow">Создать узел</span>
+            <div class="inline-form">
+              <input id="create-node-name" type="text" autocomplete="off" spellcheck="false" placeholder="Имя нового узла">
+              <button type="submit">Создать</button>
+            </div>
+          </form>
+
+          <form id="connect-form" class="panel-block compact-form">
+            <span class="eyebrow">Соединить с выбранным</span>
+            <div class="inline-form">
+              <input id="connect-target-name" type="text" autocomplete="off" spellcheck="false" placeholder="Имя узла">
+              <button type="submit">Связать</button>
+            </div>
+          </form>
+
+          <div class="panel-block">
+            <span class="eyebrow">Соседи</span>
+            <div id="neighbor-list" class="neighbor-list"></div>
+          </div>
+        </section>
+
+        <section id="tab-search" class="tab-panel">
+          <form id="search-form" class="stack-form">
+            <label>
+              <span>Текст</span>
+              <input id="search-text" type="text" autocomplete="off" spellcheck="false">
+            </label>
+            <label>
+              <span>Потомок узла</span>
+              <input id="search-descendant" type="text" autocomplete="off" spellcheck="false">
+            </label>
+            <div class="two-cols">
+              <label>
+                <span>Глубина</span>
+                <input id="search-descendant-depth" type="number" min="0" value="8">
+              </label>
+              <label>
+                <span>Лимит</span>
+                <input id="search-limit" type="number" min="1" max="500" value="50">
+              </label>
+            </div>
+            <label>
+              <span>Связан со всеми</span>
+              <input id="search-connected-all" type="text" autocomplete="off" spellcheck="false" placeholder="a, b, c">
+            </label>
+            <label>
+              <span>Связан с любым</span>
+              <input id="search-connected-any" type="text" autocomplete="off" spellcheck="false" placeholder="a, b, c">
+            </label>
+            <div class="two-cols">
+              <label>
+                <span>Глубина связей</span>
+                <input id="search-connected-depth" type="number" min="0" value="2">
+              </label>
+              <label class="check-line">
+                <input id="search-include-self" type="checkbox">
+                <span>Включать себя</span>
+              </label>
+            </div>
+            <button type="submit">Найти</button>
+          </form>
+          <div id="search-results" class="result-list"></div>
+        </section>
+
+        <section id="tab-subgraph" class="tab-panel">
+          <form id="subgraph-form" class="stack-form">
+            <label>
+              <span>Корни</span>
+              <input id="subgraph-roots" type="text" autocomplete="off" spellcheck="false" placeholder="a, b, c">
+            </label>
+            <div class="two-cols">
+              <label>
+                <span>Глубина</span>
+                <input id="subgraph-depth" type="number" min="0" value="1">
+              </label>
+              <label class="check-line">
+                <input id="subgraph-include-disconnected" type="checkbox">
+                <span>Оставлять корни</span>
+              </label>
+            </div>
+            <button type="submit">Загрузить</button>
+          </form>
+          <div id="subgraph-results" class="result-list"></div>
+        </section>
       </aside>
     </section>
   </main>

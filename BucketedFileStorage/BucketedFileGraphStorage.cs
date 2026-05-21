@@ -121,6 +121,37 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         }
     }
 
+    public async Task Delete(string subNodeName, Node? parent = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(subNodeName);
+
+        var nodeName = GetNodeName(parent, subNodeName);
+        var existingConnections = await ReadConnectionsWithLockAsync(nodeName).ConfigureAwait(false);
+        var metadataBucketKey = GetBucketKey(nodeName);
+        var metadataLock = GetMetadataLock(metadataBucketKey);
+        await metadataLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var nodes = await ReadMetadataBucketAsync(metadataBucketKey).ConfigureAwait(false);
+            if (!nodes.Remove(nodeName))
+            {
+                return;
+            }
+
+            await WriteMetadataBucketAsync(metadataBucketKey, nodes).ConfigureAwait(false);
+        }
+        finally
+        {
+            metadataLock.Release();
+        }
+
+        await RemoveConnectionEntryAsync(nodeName).ConfigureAwait(false);
+        foreach (var connection in existingConnections)
+        {
+            await RemoveConnectionAsync(connection, nodeName).ConfigureAwait(false);
+        }
+    }
+
     public async Task Connect(Node sourceNode, Node targetNode)
     {
         ArgumentNullException.ThrowIfNull(sourceNode);
@@ -367,6 +398,45 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             if (!connections.ContainsKey(nodeName))
             {
                 connections[nodeName] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                await WriteConnectionsBucketAsync(bucketKey, connections).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            connectionLock.Release();
+        }
+    }
+
+    private async Task RemoveConnectionEntryAsync(string nodeName)
+    {
+        var bucketKey = GetBucketKey(nodeName);
+        var connectionLock = GetConnectionsLock(bucketKey);
+        await connectionLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var connections = await ReadConnectionsBucketAsync(bucketKey).ConfigureAwait(false);
+            if (connections.Remove(nodeName))
+            {
+                await WriteConnectionsBucketAsync(bucketKey, connections).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            connectionLock.Release();
+        }
+    }
+
+    private async Task RemoveConnectionAsync(string sourceNodeName, string targetNodeName)
+    {
+        var bucketKey = GetBucketKey(sourceNodeName);
+        var connectionLock = GetConnectionsLock(bucketKey);
+        await connectionLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var connections = await ReadConnectionsBucketAsync(bucketKey).ConfigureAwait(false);
+            if (connections.TryGetValue(sourceNodeName, out var set) && set.Remove(targetNodeName))
+            {
+                connections[sourceNodeName] = set;
                 await WriteConnectionsBucketAsync(bucketKey, connections).ConfigureAwait(false);
             }
         }

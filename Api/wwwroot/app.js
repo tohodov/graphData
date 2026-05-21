@@ -7,8 +7,19 @@ const resetButton = document.querySelector("#reset-button");
 const statusOutput = document.querySelector("#status");
 const emptyState = document.querySelector("#empty-state");
 const selectedName = document.querySelector("#selected-name");
-const nodeMeta = document.querySelector("#node-meta");
+const attributeEditor = document.querySelector("#attribute-editor");
+const addAttributeButton = document.querySelector("#add-attribute-button");
+const saveNodeButton = document.querySelector("#save-node-button");
+const deleteNodeButton = document.querySelector("#delete-node-button");
+const createNodeForm = document.querySelector("#create-node-form");
+const createNodeName = document.querySelector("#create-node-name");
+const connectForm = document.querySelector("#connect-form");
+const connectTargetName = document.querySelector("#connect-target-name");
 const neighborList = document.querySelector("#neighbor-list");
+const searchForm = document.querySelector("#search-form");
+const searchResults = document.querySelector("#search-results");
+const subgraphForm = document.querySelector("#subgraph-form");
+const subgraphResults = document.querySelector("#subgraph-results");
 
 const svgNs = "http://www.w3.org/2000/svg";
 const nodeRadius = 34;
@@ -27,6 +38,10 @@ const state = {
   simulationHandle: null,
   busy: false
 };
+
+document.querySelectorAll(".tab-button").forEach(button => {
+  button.addEventListener("click", () => setActiveTab(button.dataset.tab));
+});
 
 const params = new URLSearchParams(window.location.search);
 const initialNode = params.get("node");
@@ -50,6 +65,43 @@ resetButton.addEventListener("click", () => {
   state.velocities.clear();
   render();
   setStatus("");
+});
+
+addAttributeButton.addEventListener("click", () => addAttributeRow("", ""));
+saveNodeButton.addEventListener("click", saveSelectedNode);
+deleteNodeButton.addEventListener("click", deleteSelectedNode);
+
+createNodeForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const name = createNodeName.value.trim();
+  if (!name) {
+    setStatus("Введите имя нового узла");
+    return;
+  }
+
+  await createNode(name);
+});
+
+connectForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  const sourceName = state.selectedName;
+  const targetName = connectTargetName.value.trim();
+  if (!sourceName || !targetName) {
+    setStatus("Выберите узел и укажите цель связи");
+    return;
+  }
+
+  await connectNodes(sourceName, targetName);
+});
+
+searchForm.addEventListener("submit", event => {
+  event.preventDefault();
+  searchNodes();
+});
+
+subgraphForm.addEventListener("submit", event => {
+  event.preventDefault();
+  loadSubgraph();
 });
 
 svg.addEventListener("pointerdown", event => {
@@ -139,23 +191,16 @@ async function loadRoot(name) {
   fitView();
 }
 
-async function loadNode(name, fromName) {
+async function loadNode(name, fromName, options = {}) {
+  const select = options.select ?? true;
   setBusy(true);
   try {
-    const response = await fetch(`/api/graph/nodes?name=${encodeURIComponent(name)}`);
-    if (response.status === 404) {
-      setStatus(`Узел "${name}" не найден`);
-      return;
-    }
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `HTTP ${response.status}`);
-    }
-
-    const expansion = await response.json();
+    const expansion = await apiJson(`/api/graph/nodes?name=${encodeURIComponent(name)}`);
     state.loaded.set(expansion.name, expansion);
-    state.selectedName = expansion.name;
+    if (select) {
+      state.selectedName = expansion.name;
+    }
+
     seedPosition(expansion.name, fromName, 0);
     if (fromName && !state.parentByNode.has(expansion.name)) {
       state.parentByNode.set(expansion.name, fromName);
@@ -169,10 +214,181 @@ async function loadNode(name, fromName) {
     runSimulation(34);
     setStatus(`Развернуто узлов: ${state.loaded.size}`);
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "Не удалось загрузить узел");
+    setStatus(error.message);
   } finally {
     setBusy(false);
   }
+}
+
+async function createNode(name) {
+  setBusy(true);
+  try {
+    const created = await apiJson("/api/graph/nodes", {
+      method: "POST",
+      body: JSON.stringify({ name })
+    });
+    createNodeName.value = "";
+    state.rootName = state.rootName ?? created.name;
+    state.selectedName = created.name;
+    seedPosition(created.name, state.rootName === created.name ? null : state.rootName, state.loaded.size);
+    state.loaded.set(created.name, created);
+    render();
+    setActiveTab("node");
+    setStatus(`Создан узел "${created.name}"`);
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function saveSelectedNode() {
+  const nodeName = state.selectedName;
+  if (!nodeName) {
+    setStatus("Узел не выбран");
+    return;
+  }
+
+  setBusy(true);
+  try {
+    await apiJson(`/api/graph/nodes?name=${encodeURIComponent(nodeName)}`, {
+      method: "PUT",
+      body: JSON.stringify({ attributes: readAttributeEditor() }),
+      expectJson: false
+    });
+    await loadNode(nodeName, null, { select: true });
+    setStatus(`Сохранен узел "${nodeName}"`);
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function deleteSelectedNode() {
+  const nodeName = state.selectedName;
+  if (!nodeName) {
+    setStatus("Узел не выбран");
+    return;
+  }
+
+  setBusy(true);
+  try {
+    await apiJson(`/api/graph/nodes?name=${encodeURIComponent(nodeName)}`, {
+      method: "DELETE",
+      expectJson: false
+    });
+    removeLocalNode(nodeName);
+    render();
+    setStatus(`Удален узел "${nodeName}"`);
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function connectNodes(sourceName, targetName) {
+  setBusy(true);
+  try {
+    await apiJson("/api/graph/connections", {
+      method: "POST",
+      body: JSON.stringify({ sourceName, targetName }),
+      expectJson: false
+    });
+    connectTargetName.value = "";
+    await loadNode(sourceName, null, { select: true });
+    setStatus(`Связаны "${sourceName}" и "${targetName}"`);
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function searchNodes() {
+  const connectedDepth = readNumber("#search-connected-depth", 2);
+  const includeSelf = document.querySelector("#search-include-self").checked;
+  const descendantNode = document.querySelector("#search-descendant").value.trim();
+  const query = {
+    text: document.querySelector("#search-text").value.trim() || null,
+    limit: readNumber("#search-limit", 50),
+    connectedToAll: parseCsv(document.querySelector("#search-connected-all").value)
+      .map(nodeName => ({ nodeName, maxDepth: connectedDepth, includeSelf })),
+    connectedToAny: parseCsv(document.querySelector("#search-connected-any").value)
+      .map(nodeName => ({ nodeName, maxDepth: connectedDepth, includeSelf }))
+  };
+
+  if (descendantNode) {
+    query.descendantOf = {
+      nodeName: descendantNode,
+      maxDepth: readNumber("#search-descendant-depth", 8)
+    };
+  }
+
+  setBusy(true);
+  try {
+    const response = await apiJson("/api/graph/search/nodes", {
+      method: "POST",
+      body: JSON.stringify(query)
+    });
+    renderSearchResults(response.matches ?? []);
+    setStatus(`Найдено: ${(response.matches ?? []).length}`);
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function loadSubgraph() {
+  const roots = parseCsv(document.querySelector("#subgraph-roots").value);
+  if (roots.length === 0) {
+    setStatus("Укажите корневые узлы");
+    return;
+  }
+
+  setBusy(true);
+  try {
+    const response = await apiJson("/api/graph/subgraph", {
+      method: "POST",
+      body: JSON.stringify({
+        rootNodeIds: roots,
+        maxDepth: readNumber("#subgraph-depth", 1),
+        includeDisconnectedRoots: document.querySelector("#subgraph-include-disconnected").checked
+      })
+    });
+    loadSubgraphIntoViewer(response, roots);
+    renderSubgraphResults(response);
+    setStatus(`Подграф: ${(response.nodes ?? []).length} узлов, ${(response.edges ?? []).length} ребер`);
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function loadSubgraphIntoViewer(response, roots) {
+  state.loaded.clear();
+  state.parentByNode.clear();
+  state.positions.clear();
+  state.velocities.clear();
+  state.rootName = roots[0] ?? response.nodes?.[0]?.name ?? null;
+  state.selectedName = state.rootName;
+
+  const nodes = response.nodes ?? [];
+  const edges = response.edges ?? [];
+  nodes.forEach((node, index) => {
+    state.loaded.set(node.name, {
+      ...node,
+      edges: edges.filter(edge => edge.sourceName === node.name || edge.targetName === node.name)
+    });
+    seedSubgraphPosition(node.name, index, nodes.length);
+  });
+
+  render();
+  runSimulation(40);
+  fitView();
 }
 
 function collapseNode(name) {
@@ -192,15 +408,37 @@ function collapseNode(name) {
   };
 
   visit(name);
-  removed.forEach(nodeName => {
-    state.loaded.delete(nodeName);
-    state.parentByNode.delete(nodeName);
-  });
-
+  removed.forEach(nodeName => removeLocalNode(nodeName, false, false));
   state.selectedName = fallbackSelection;
   render();
   runSimulation(18);
   setStatus(`Развернуто узлов: ${state.loaded.size}`);
+}
+
+function removeLocalNode(name, selectFallback = true, pruneEdges = true) {
+  state.loaded.delete(name);
+  if (pruneEdges) {
+    state.positions.delete(name);
+    state.velocities.delete(name);
+  }
+  state.parentByNode.delete(name);
+  for (const [child, parent] of [...state.parentByNode.entries()]) {
+    if (parent === name) {
+      state.parentByNode.delete(child);
+    }
+  }
+
+  if (pruneEdges) {
+    for (const expansion of state.loaded.values()) {
+      expansion.edges = (expansion.edges ?? [])
+        .filter(edge => edge.sourceName !== name && edge.targetName !== name);
+    }
+  }
+
+  if (selectFallback && state.selectedName === name) {
+    state.selectedName = state.loaded.keys().next().value ?? null;
+    state.rootName = state.selectedName;
+  }
 }
 
 function handleEndpointClick(edge, anchorName) {
@@ -244,7 +482,7 @@ function buildGraph() {
       attributes: expansion.attributes ?? {}
     });
 
-    expansion.edges.forEach(edge => {
+    (expansion.edges ?? []).forEach(edge => {
       const key = edgeKey(edge.sourceName, edge.targetName);
       if (!edges.has(key)) {
         edges.set(key, {
@@ -317,21 +555,12 @@ function renderEndpointButton(layer, point, edge, anchorName, collapsed, hiddenN
     transform: `translate(${point.x} ${point.y})`,
     role: "button",
     tabindex: "0",
-    "aria-label": collapsed
-      ? `Развернуть ${otherName}`
-      : `Свернуть или выбрать ${otherName}`
+    "aria-label": collapsed ? `Развернуть ${otherName}` : `Выбрать ${otherName}`
   });
   const title = createSvg("title", {});
-  title.textContent = collapsed
-    ? `Развернуть ${otherName}`
-    : `Свернуть или выбрать ${otherName}`;
+  title.textContent = collapsed ? `Развернуть ${otherName}` : `Выбрать ${otherName}`;
 
-  const hit = createSvg("circle", {
-    class: "edge-button-hit",
-    r: 17,
-    cx: 0,
-    cy: 0
-  });
+  const hit = createSvg("circle", { class: "edge-button-hit", r: 17, cx: 0, cy: 0 });
   const core = createSvg("circle", {
     class: "edge-button-core",
     r: collapsed ? 8 : 6,
@@ -367,19 +596,8 @@ function renderNode(layer, node) {
     transform: `translate(${position.x} ${position.y})`,
     tabindex: "0"
   });
-
-  const circle = createSvg("circle", {
-    class: "node-shell",
-    r: nodeRadius,
-    cx: 0,
-    cy: 0
-  });
-
-  const label = createSvg("text", {
-    class: "node-label",
-    x: 0,
-    y: 0
-  });
+  const circle = createSvg("circle", { class: "node-shell", r: nodeRadius, cx: 0, cy: 0 });
+  const label = createSvg("text", { class: "node-label", x: 0, y: 0 });
   label.textContent = trimName(node.name, 18);
 
   group.addEventListener("click", event => {
@@ -405,32 +623,12 @@ function renderNode(layer, node) {
 function renderInspector(graph) {
   const selected = graph.nodes.find(node => node.name === state.selectedName);
   selectedName.textContent = selected?.name ?? "-";
-  nodeMeta.replaceChildren();
+  updateEditorState();
+  renderAttributeEditor(selected?.attributes ?? {});
   neighborList.replaceChildren();
 
   if (!selected) {
     return;
-  }
-
-  const entries = Object.entries(selected.attributes ?? {});
-  if (entries.length === 0) {
-    const row = document.createElement("div");
-    const term = document.createElement("dt");
-    const detail = document.createElement("dd");
-    term.textContent = "attributes";
-    detail.textContent = "-";
-    row.append(term, detail);
-    nodeMeta.append(row);
-  } else {
-    entries.forEach(([key, value]) => {
-      const row = document.createElement("div");
-      const term = document.createElement("dt");
-      const detail = document.createElement("dd");
-      term.textContent = key;
-      detail.textContent = value;
-      row.append(term, detail);
-      nodeMeta.append(row);
-    });
   }
 
   const neighbors = graph.edges
@@ -459,6 +657,94 @@ function renderInspector(graph) {
   });
 }
 
+function renderAttributeEditor(attributes) {
+  const focused = document.activeElement;
+  if (focused?.closest("#attribute-editor")) {
+    return;
+  }
+
+  attributeEditor.replaceChildren();
+  const entries = Object.entries(attributes);
+  if (entries.length === 0) {
+    addAttributeRow("", "");
+    return;
+  }
+
+  entries.forEach(([key, value]) => addAttributeRow(key, value));
+}
+
+function addAttributeRow(key, value) {
+  const row = document.createElement("div");
+  row.className = "attribute-row";
+  const keyInput = document.createElement("input");
+  keyInput.className = "attribute-key";
+  keyInput.placeholder = "Ключ";
+  keyInput.value = key;
+  const valueInput = document.createElement("input");
+  valueInput.className = "attribute-value";
+  valueInput.placeholder = "Значение";
+  valueInput.value = value;
+  const removeButton = document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "icon-button";
+  removeButton.textContent = "×";
+  removeButton.addEventListener("click", () => row.remove());
+  row.append(keyInput, valueInput, removeButton);
+  attributeEditor.append(row);
+}
+
+function readAttributeEditor() {
+  const attributes = {};
+  attributeEditor.querySelectorAll(".attribute-row").forEach(row => {
+    const key = row.querySelector(".attribute-key").value.trim();
+    const value = row.querySelector(".attribute-value").value;
+    if (key) {
+      attributes[key] = value;
+    }
+  });
+  return attributes;
+}
+
+function renderSearchResults(matches) {
+  searchResults.replaceChildren();
+  matches.forEach(match => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "result-row";
+    button.innerHTML = `<strong></strong><span></span>`;
+    button.querySelector("strong").textContent = match.node.name;
+    button.querySelector("span").textContent = `score ${match.score} ${match.matchedBy?.join(" ") ?? ""}`;
+    button.addEventListener("click", () => {
+      rootInput.value = match.node.name;
+      loadRoot(match.node.name);
+      setActiveTab("node");
+    });
+    searchResults.append(button);
+  });
+}
+
+function renderSubgraphResults(response) {
+  subgraphResults.replaceChildren();
+  const nodes = response.nodes ?? [];
+  const edges = response.edges ?? [];
+  const summary = document.createElement("div");
+  summary.className = "result-summary";
+  summary.textContent = `${nodes.length} узлов, ${edges.length} ребер`;
+  subgraphResults.append(summary);
+  nodes.forEach(node => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "result-row";
+    button.textContent = node.name;
+    button.addEventListener("click", () => {
+      state.selectedName = node.name;
+      setActiveTab("node");
+      render();
+    });
+    subgraphResults.append(button);
+  });
+}
+
 function seedPosition(name, fromName, index) {
   if (state.positions.has(name)) {
     return;
@@ -476,6 +762,16 @@ function seedPosition(name, fromName, index) {
   state.positions.set(name, {
     x: source.x + Math.cos(angle) * distance,
     y: source.y + Math.sin(angle) * distance
+  });
+  state.velocities.set(name, { x: 0, y: 0 });
+}
+
+function seedSubgraphPosition(name, index, count) {
+  const radius = Math.max(120, Math.min(320, count * 32));
+  const angle = count <= 1 ? 0 : (Math.PI * 2 * index) / count;
+  state.positions.set(name, {
+    x: Math.cos(angle) * radius,
+    y: Math.sin(angle) * radius
   });
   state.velocities.set(name, { x: 0, y: 0 });
 }
@@ -597,6 +893,46 @@ function fitView() {
   applyView();
 }
 
+async function apiJson(url, options = {}) {
+  const response = await fetch(url, {
+    method: options.method ?? "GET",
+    headers: { "Content-Type": "application/json" },
+    body: options.body
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(text || `HTTP ${response.status}`);
+  }
+
+  if (options.expectJson === false || response.status === 204) {
+    return null;
+  }
+
+  return response.json();
+}
+
+function setActiveTab(name) {
+  document.querySelectorAll(".tab-button").forEach(button => {
+    button.classList.toggle("active", button.dataset.tab === name);
+  });
+  document.querySelectorAll(".tab-panel").forEach(panel => {
+    panel.classList.toggle("active", panel.id === `tab-${name}`);
+  });
+}
+
+function parseCsv(value) {
+  return value
+    .split(",")
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+function readNumber(selector, fallback) {
+  const value = Number.parseInt(document.querySelector(selector).value, 10);
+  return Number.isFinite(value) ? value : fallback;
+}
+
 function pointOnCircle(anchor, target, radius) {
   let dx = target.x - anchor.x;
   let dy = target.y - anchor.y;
@@ -649,5 +985,21 @@ function setStatus(message) {
 
 function setBusy(value) {
   state.busy = value;
-  rootForm.querySelector("button").disabled = value;
+  document.querySelectorAll("button").forEach(button => {
+    if (!button.classList.contains("tab-button")) {
+      button.disabled = value;
+    }
+  });
+  if (!value) {
+    updateEditorState();
+  }
 }
+
+function updateEditorState() {
+  const hasSelection = Boolean(state.selectedName && state.loaded.has(state.selectedName));
+  saveNodeButton.disabled = state.busy || !hasSelection;
+  deleteNodeButton.disabled = state.busy || !hasSelection;
+  connectForm.querySelector("button").disabled = state.busy || !hasSelection;
+}
+
+render();
