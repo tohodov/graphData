@@ -13,7 +13,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace GraphData.Tests.Api;
 
 [TestClass]
-public sealed class GraphViewerControllerTests
+public sealed class GraphControllerTests
 {
     [TestMethod]
     public async Task GetNodeAsync_ReturnsNodeWithNeighborEdges()
@@ -23,31 +23,68 @@ public sealed class GraphViewerControllerTests
         var storage = new FakeGraphStorage([first, second]);
         storage.Connect(first.Name, second);
 
-        var controller = new GraphViewerController(new NodeService(storage));
+        var controller = CreateController(storage);
         var result = await controller.GetNodeAsync(first.Name);
 
         var ok = result.Result as OkObjectResult;
         Assert.IsNotNull(ok);
 
-        var response = ok.Value as GraphViewerNodeResponse;
+        var response = ok.Value as NodeResponse;
         Assert.IsNotNull(response);
-        Assert.AreEqual(first.Name, response.Node.Name);
-        Assert.AreEqual("root", response.Node.Attributes["kind"]);
+        Assert.AreEqual(first.Name, response.Name);
+        Assert.AreEqual("root", response.Attributes["kind"]);
 
         var edge = response.Edges.Single();
         Assert.AreEqual(first.Name, edge.SourceName);
         Assert.AreEqual(second.Name, edge.TargetName);
-        Assert.AreEqual("leaf", edge.TargetNode.Attributes["kind"]);
     }
 
     [TestMethod]
     public async Task GetNodeAsync_ReturnsNotFoundForMissingNode()
     {
-        var controller = new GraphViewerController(new NodeService(new FakeGraphStorage([])));
+        var controller = CreateController(new FakeGraphStorage([]));
 
         var result = await controller.GetNodeAsync("missing");
 
         Assert.IsInstanceOfType(result.Result, typeof(NotFoundResult));
+    }
+
+    [TestMethod]
+    public async Task GetSubgraphAsync_ReturnsTopLevelEdgesWithoutDuplicatingThemOnNodes()
+    {
+        var first = new TestNode("1");
+        var second = new TestNode("2");
+        var third = new TestNode("3");
+        first.SetConnections([second]);
+        second.SetConnections([first, third]);
+        third.SetConnections([second]);
+        var storage = new FakeGraphStorage([first, second, third]);
+        storage.Connect(first.Name, second);
+        storage.Connect(second.Name, third);
+
+        var controller = CreateController(storage);
+        var result = await controller.GetSubgraphAsync(new SubgraphRequest
+        {
+            RootNodeIds = [first.Name],
+            MaxDepth = 1
+        });
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+
+        var response = ok.Value as SubgraphResponse;
+        Assert.IsNotNull(response);
+        CollectionAssert.AreEquivalent(new[] { "1", "2" }, response.Nodes.Select(static node => node.Name).ToArray());
+        Assert.IsTrue(response.Nodes.All(static node => node.Edges.Count == 0));
+
+        var edge = response.Edges.Single();
+        Assert.AreEqual(first.Name, edge.SourceName);
+        Assert.AreEqual(second.Name, edge.TargetName);
+    }
+
+    private static GraphController CreateController(FakeGraphStorage storage)
+    {
+        return new GraphController(new NodeService(storage), new GraphSearchService(storage));
     }
 
     private sealed class FakeGraphStorage(IEnumerable<TestNode> nodes) : IGraphStorage
@@ -95,7 +132,27 @@ public sealed class GraphViewerControllerTests
 
         public Task<Subgraph> GetSubgraphAsync(SubgraphQuery query)
         {
-            throw new NotSupportedException();
+            var allowed = query.RootNodeIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (query.MaxDepth > 0)
+            {
+                foreach (var root in query.RootNodeIds)
+                {
+                    if (_connections.TryGetValue(root, out var connections))
+                    {
+                        foreach (var connection in connections)
+                        {
+                            allowed.Add(connection.Name);
+                        }
+                    }
+                }
+            }
+
+            var nodes = allowed
+                .Select(name => _nodes.GetValueOrDefault(name))
+                .Where(static node => node is not null)
+                .Cast<Node>()
+                .ToArray();
+            return Task.FromResult(new Subgraph { Nodes = nodes });
         }
 
         internal void Connect(string sourceName, Node target)
@@ -112,15 +169,23 @@ public sealed class GraphViewerControllerTests
 
     private sealed record TestNode(
         string NodeName,
-        IReadOnlyDictionary<string, string> AttributeSnapshot) : Node
+        IReadOnlyDictionary<string, string>? AttributeSnapshot = null) : Node
     {
+        private IReadOnlyCollection<Node> _nodes = Array.Empty<Node>();
+
         public override string Name => NodeName;
 
         public override IReadOnlyDictionary<string, Edge> Edges { get; } =
             new Dictionary<string, Edge>(StringComparer.OrdinalIgnoreCase);
 
-        public override IReadOnlyCollection<Node> Nodes { get; } = Array.Empty<Node>();
+        public override IReadOnlyCollection<Node> Nodes => _nodes;
 
-        public override IReadOnlyDictionary<string, string> Attributes => AttributeSnapshot;
+        public override IReadOnlyDictionary<string, string> Attributes =>
+            AttributeSnapshot ?? new Dictionary<string, string>();
+
+        internal void SetConnections(IReadOnlyCollection<Node> nodes)
+        {
+            _nodes = nodes;
+        }
     }
 }

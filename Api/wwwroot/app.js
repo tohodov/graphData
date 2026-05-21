@@ -142,7 +142,7 @@ async function loadRoot(name) {
 async function loadNode(name, fromName) {
   setBusy(true);
   try {
-    const response = await fetch(`/api/graph-viewer/nodes?name=${encodeURIComponent(name)}`);
+    const response = await fetch(`/api/graph/nodes?name=${encodeURIComponent(name)}`);
     if (response.status === 404) {
       setStatus(`Узел "${name}" не найден`);
       return;
@@ -154,15 +154,15 @@ async function loadNode(name, fromName) {
     }
 
     const expansion = await response.json();
-    state.loaded.set(expansion.node.name, expansion);
-    state.selectedName = expansion.node.name;
-    seedPosition(expansion.node.name, fromName, 0);
-    if (fromName && !state.parentByNode.has(expansion.node.name)) {
-      state.parentByNode.set(expansion.node.name, fromName);
+    state.loaded.set(expansion.name, expansion);
+    state.selectedName = expansion.name;
+    seedPosition(expansion.name, fromName, 0);
+    if (fromName && !state.parentByNode.has(expansion.name)) {
+      state.parentByNode.set(expansion.name, fromName);
     }
 
     expansion.edges.forEach((edge, index) => {
-      seedPosition(edge.targetName, expansion.node.name, index);
+      seedPosition(getOtherEndpoint(edge, expansion.name), expansion.name, index);
     });
 
     render();
@@ -239,10 +239,9 @@ function buildGraph() {
   const edges = new Map();
 
   for (const expansion of state.loaded.values()) {
-    const source = expansion.node;
-    nodes.set(source.name, {
-      name: source.name,
-      attributes: source.attributes ?? {}
+    nodes.set(expansion.name, {
+      name: expansion.name,
+      attributes: expansion.attributes ?? {}
     });
 
     expansion.edges.forEach(edge => {
@@ -633,6 +632,10 @@ function createSvg(name, attrs) {
 
 function edgeKey(a, b) {
   return a.localeCompare(b, "ru") < 0 ? `${a}\u0000${b}` : `${b}\u0000${a}`;
+}
+
+function getOtherEndpoint(edge, nodeName) {
+  return edge.sourceName === nodeName ? edge.targetName : edge.sourceName;
 }
 
 function trimName(name, limit) {

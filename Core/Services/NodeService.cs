@@ -31,14 +31,14 @@ public sealed class NodeService(IGraphStorage storage)
         return (node, connections);
     }
 
-    public async Task<Node> Create(Node? parent, string name)
+    public async Task<Node> Create(Node? parent, string name, Dictionary<string, string>? attributes = null)
     {
-        return await _storage.Create(name, parent);
+        return await _storage.Create(name, parent, attributes);
     }
 
-    public Task Update(Node node)
+    public Task Update(string name, IDictionary<string, string> attributes)
     {
-        return _storage.Update(node.Name, node.Attributes.ToDictionary());
+        return _storage.Update(name, attributes);
     }
 
     public Task ConnectNodes(Node first, Node second)

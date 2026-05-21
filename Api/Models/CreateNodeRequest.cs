@@ -1,6 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-using GraphData.Core.Models;
-
 namespace GraphData.Api.Models;
 
 public sealed class CreateNodeRequest

@@ -1,7 +1,7 @@
 @GraphData.Api_HostAddress = http://localhost:5058
 
 ### Create a node
-POST {{GraphData.Api_HostAddress}}/api/nodes
+POST {{GraphData.Api_HostAddress}}/api/graph/nodes
 Content-Type: application/json
 
 {
@@ -12,10 +12,15 @@ Content-Type: application/json
 }
 
 ### Get node details
-# Replace {id} with an existing node identifier
-GET {{GraphData.Api_HostAddress}}/api/nodes/{id}
+# Replace Sample%20node with an existing node name
+GET {{GraphData.Api_HostAddress}}/api/graph/nodes?name=Sample%20node
 Accept: application/json
 
 ### Connect two nodes
-# Replace {sourceId} and {targetId}
-POST {{GraphData.Api_HostAddress}}/api/nodes/{sourceId}/connect/{targetId}
+POST {{GraphData.Api_HostAddress}}/api/graph/connections
+Content-Type: application/json
+
+{
+  "sourceName": "Sample node",
+  "targetName": "Another node"
+}
