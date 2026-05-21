@@ -158,6 +158,10 @@ public sealed class GraphController(
                 Matches = matches.Select(static match => new NodeSearchMatchResponse
                 {
                     Node = ToNodeResponse(match.Node),
+                    Bindings = match.Bindings.ToDictionary(
+                        static binding => binding.Key,
+                        static binding => ToNodeResponse(binding.Value),
+                        StringComparer.OrdinalIgnoreCase),
                     Score = match.Score,
                     MatchedBy = match.MatchedBy
                 }).ToArray()

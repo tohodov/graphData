@@ -67,10 +67,19 @@ partial class GraphStorageContractTests {
 
         var service = new GraphSearchService(Storage);
         var matches = await service.SearchNodesAsync(new NodeSearchQuery {
-            Text = "double-action",
-            DescendantOf = new HierarchySearchPattern {
-                NodeName = pistols.Name,
-                MaxDepth = 3
+            Return = ["n"],
+            Where = new AllNodeSearchExpression {
+                Expressions = [
+                    new NodeTextSearchExpression {
+                        Node = Var("n"),
+                        Value = "double-action"
+                    },
+                    new NodeDescendantSearchExpression {
+                        Ancestor = Literal(pistols.Name),
+                        Descendant = Var("n"),
+                        MaxDepth = 3
+                    }
+                ]
             }
         });
 
@@ -94,21 +103,94 @@ partial class GraphStorageContractTests {
 
         var service = new GraphSearchService(Storage);
         var matches = await service.SearchNodesAsync(new NodeSearchQuery {
-            ConnectedToAll = [
-                new ConnectionSearchPattern {
-                    NodeName = america.Name,
-                    MaxDepth = 1
-                },
-                new ConnectionSearchPattern {
-                    NodeName = assaultRifles.Name,
-                    MaxDepth = 1
-                }
-            ]
+            Return = ["n"],
+            Where = new AllNodeSearchExpression {
+                Expressions = [
+                    new NodePathSearchExpression {
+                        Left = Var("n"),
+                        Right = Literal(america.Name),
+                        MaxDepth = 1
+                    },
+                    new NodePathSearchExpression {
+                        Left = Var("n"),
+                        Right = Literal(assaultRifles.Name),
+                        MaxDepth = 1
+                    }
+                ]
+            }
         });
 
         Assert.AreEqual(1, matches.Count);
         Assert.AreEqual(m16.Name, matches.Single().Node.Name);
     }
+
+    [TestMethod]
+    public async Task Search_ShouldReturnSolutionsForVariableConnectedToAttributeMatch() {
+        var source = await Storage.Create("source");
+        var marker = await Storage.Create("marker", attributes: new Dictionary<string, string> {
+            ["id"] = "Y"
+        });
+        var unrelated = await Storage.Create("unrelated", attributes: new Dictionary<string, string> {
+            ["id"] = "Y"
+        });
+
+        await Storage.Connect(source, marker);
+
+        var service = new GraphSearchService(Storage);
+        var matches = await service.SearchNodesAsync(new NodeSearchQuery {
+            Return = ["n", "x"],
+            Where = new AllNodeSearchExpression {
+                Expressions = [
+                    new NodeConnectedSearchExpression {
+                        Left = Var("n"),
+                        Right = Var("x")
+                    },
+                    new NodeAttributeSearchExpression {
+                        Node = Var("x"),
+                        Key = "id",
+                        Value = "Y"
+                    }
+                ]
+            }
+        });
+
+        Assert.AreEqual(1, matches.Count);
+        var match = matches.Single();
+        Assert.AreEqual(source.Name, match.Bindings["n"].Name);
+        Assert.AreEqual(marker.Name, match.Bindings["x"].Name);
+        Assert.AreNotEqual(unrelated.Name, match.Bindings["x"].Name);
+    }
+
+    [TestMethod]
+    public async Task Search_ShouldFindIsolatedNodesWithNegatedExistentialRelation() {
+        var isolated = await Storage.Create("isolated");
+        var connected = await Storage.Create("connected");
+        var neighbor = await Storage.Create("neighbor");
+
+        await Storage.Connect(connected, neighbor);
+
+        var service = new GraphSearchService(Storage);
+        var matches = await service.SearchNodesAsync(new NodeSearchQuery {
+            Return = ["x"],
+            Where = new NotNodeSearchExpression {
+                Expression = new ExistsNodeSearchExpression {
+                    Variables = ["y"],
+                    Expression = new NodeConnectedSearchExpression {
+                        Left = Var("x"),
+                        Right = Var("y")
+                    }
+                }
+            }
+        });
+
+        CollectionAssert.AreEquivalent(
+            new[] { isolated.Name },
+            matches.Select(static match => match.Node.Name).ToArray());
+    }
+
+    private static NodeVariableSearchSelector Var(string name) => new() { Name = name };
+
+    private static NodeLiteralSearchSelector Literal(string name) => new() { Name = name };
 }
 [TestCategory(nameof(IGraphStorage.Get))]
 partial class GraphStorageContractTests {

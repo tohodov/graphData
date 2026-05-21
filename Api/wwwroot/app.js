@@ -17,6 +17,7 @@ const connectForm = document.querySelector("#connect-form");
 const connectTargetName = document.querySelector("#connect-target-name");
 const neighborList = document.querySelector("#neighbor-list");
 const searchForm = document.querySelector("#search-form");
+const searchQueryJson = document.querySelector("#search-query-json");
 const searchResults = document.querySelector("#search-results");
 const subgraphForm = document.querySelector("#subgraph-form");
 const subgraphResults = document.querySelector("#subgraph-results");
@@ -43,12 +44,18 @@ document.querySelectorAll(".tab-button").forEach(button => {
   button.addEventListener("click", () => setActiveTab(button.dataset.tab));
 });
 
+document.querySelectorAll("[data-query-template]").forEach(button => {
+  button.addEventListener("click", () => setSearchQueryTemplate(button.dataset.queryTemplate));
+});
+
 const params = new URLSearchParams(window.location.search);
 const initialNode = params.get("node");
 if (initialNode) {
   rootInput.value = initialNode;
   loadRoot(initialNode);
 }
+
+setSearchQueryTemplate("all");
 
 rootForm.addEventListener("submit", event => {
   event.preventDefault();
@@ -306,24 +313,120 @@ async function connectNodes(sourceName, targetName) {
   }
 }
 
-async function searchNodes() {
-  const connectedDepth = readNumber("#search-connected-depth", 2);
-  const includeSelf = document.querySelector("#search-include-self").checked;
-  const descendantNode = document.querySelector("#search-descendant").value.trim();
-  const query = {
-    text: document.querySelector("#search-text").value.trim() || null,
-    limit: readNumber("#search-limit", 50),
-    connectedToAll: parseCsv(document.querySelector("#search-connected-all").value)
-      .map(nodeName => ({ nodeName, maxDepth: connectedDepth, includeSelf })),
-    connectedToAny: parseCsv(document.querySelector("#search-connected-any").value)
-      .map(nodeName => ({ nodeName, maxDepth: connectedDepth, includeSelf }))
+function setSearchQueryTemplate(name) {
+  const currentName = state.selectedName || rootInput.value.trim() || "node-name";
+  const templates = {
+    all: {
+      return: ["n"],
+      where: {
+        kind: "node",
+        node: variableSelector("n")
+      },
+      limit: 50
+    },
+    text: {
+      return: ["n"],
+      where: {
+        kind: "text",
+        node: variableSelector("n"),
+        value: "sample"
+      },
+      limit: 50
+    },
+    connected: {
+      return: ["n"],
+      where: {
+        kind: "connected",
+        left: variableSelector("n"),
+        right: literalSelector(currentName || "node-name")
+      },
+      limit: 50
+    },
+    neighborById: {
+      return: ["n", "x"],
+      where: {
+        kind: "all",
+        expressions: [
+          {
+            kind: "connected",
+            left: variableSelector("n"),
+            right: variableSelector("x")
+          },
+          {
+            kind: "attribute",
+            node: variableSelector("x"),
+            key: "id",
+            operator: "equals",
+            value: "Y"
+          }
+        ]
+      },
+      limit: 50
+    },
+    neighborConnected: {
+      return: ["n", "x", "z"],
+      where: {
+        kind: "all",
+        expressions: [
+          {
+            kind: "connected",
+            left: variableSelector("n"),
+            right: variableSelector("x")
+          },
+          {
+            kind: "connected",
+            left: variableSelector("x"),
+            right: variableSelector("z")
+          }
+        ]
+      },
+      limit: 50
+    },
+    isolated: {
+      return: ["x"],
+      where: {
+        kind: "all",
+        expressions: [
+          {
+            kind: "node",
+            node: variableSelector("x")
+          },
+          {
+            kind: "not",
+            expression: {
+              kind: "exists",
+              variables: ["y"],
+              expression: {
+                kind: "connected",
+                left: variableSelector("x"),
+                right: variableSelector("y")
+              }
+            }
+          }
+        ]
+      },
+      limit: 50
+    }
   };
 
-  if (descendantNode) {
-    query.descendantOf = {
-      nodeName: descendantNode,
-      maxDepth: readNumber("#search-descendant-depth", 8)
-    };
+  searchQueryJson.value = JSON.stringify(templates[name] ?? templates.all, null, 2);
+}
+
+function variableSelector(name) {
+  return { kind: "var", name };
+}
+
+function literalSelector(name) {
+  return { kind: "literal", name };
+}
+
+async function searchNodes() {
+  let query;
+  try {
+    query = JSON.parse(searchQueryJson.value.trim());
+  } catch (error) {
+    setStatus(`JSON: ${error.message}`);
+    return;
   }
 
   setBusy(true);
@@ -333,7 +436,7 @@ async function searchNodes() {
       body: JSON.stringify(query)
     });
     renderSearchResults(response.matches ?? []);
-    setStatus(`Найдено: ${(response.matches ?? []).length}`);
+    setStatus(`Найдено решений: ${(response.matches ?? []).length}`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -713,7 +816,10 @@ function renderSearchResults(matches) {
     button.className = "result-row";
     button.innerHTML = `<strong></strong><span></span>`;
     button.querySelector("strong").textContent = match.node.name;
-    button.querySelector("span").textContent = `score ${match.score} ${match.matchedBy?.join(" ") ?? ""}`;
+    const bindings = Object.entries(match.bindings ?? {})
+      .map(([variable, node]) => `${variable}=${node.name}`)
+      .join(" · ");
+    button.querySelector("span").textContent = bindings || `score ${match.score} ${match.matchedBy?.join(" ") ?? ""}`;
     button.addEventListener("click", () => {
       rootInput.value = match.node.name;
       loadRoot(match.node.name);

@@ -29,7 +29,8 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
@@ -58,18 +59,32 @@ button:disabled {
   opacity: 0.58;
 }
 
-input {
+input,
+textarea {
   width: 100%;
-  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: #ffffff;
   color: #172124;
-  padding: 0 10px;
   outline: none;
 }
 
-input:focus {
+input {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+textarea {
+  min-height: 300px;
+  padding: 10px;
+  resize: vertical;
+  font-family: "Cascadia Mono", "JetBrains Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+input:focus,
+textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
 }
@@ -317,6 +332,20 @@ input:focus {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
+}
+
+.query-template-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.query-template-grid button {
+  min-width: 0;
+  padding-inline: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .check-line {

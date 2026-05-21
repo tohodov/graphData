@@ -43,7 +43,12 @@ POST {{GraphData.Api_HostAddress}}/api/graph/search/nodes
 Content-Type: application/json
 
 {
-  "text": "Sample",
+  "return": [ "n" ],
+  "where": {
+    "kind": "text",
+    "node": { "kind": "var", "name": "n" },
+    "value": "Sample"
+  },
   "limit": 20
 }
 

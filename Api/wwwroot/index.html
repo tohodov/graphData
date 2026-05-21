@@ -84,42 +84,18 @@
         <section id="tab-search" class="tab-panel">
           <form id="search-form" class="stack-form">
             <label>
-              <span>Текст</span>
-              <input id="search-text" type="text" autocomplete="off" spellcheck="false">
+              <span>JSON запрос</span>
+              <textarea id="search-query-json" rows="18" autocomplete="off" spellcheck="false"></textarea>
             </label>
-            <label>
-              <span>Потомок узла</span>
-              <input id="search-descendant" type="text" autocomplete="off" spellcheck="false">
-            </label>
-            <div class="two-cols">
-              <label>
-                <span>Глубина</span>
-                <input id="search-descendant-depth" type="number" min="0" value="8">
-              </label>
-              <label>
-                <span>Лимит</span>
-                <input id="search-limit" type="number" min="1" max="500" value="50">
-              </label>
+            <div class="query-template-grid">
+              <button type="button" data-query-template="all">Все узлы</button>
+              <button type="button" data-query-template="text">Текст</button>
+              <button type="button" data-query-template="connected">Связан с узлом</button>
+              <button type="button" data-query-template="neighborById">Сосед с id</button>
+              <button type="button" data-query-template="neighborConnected">Сосед связан с Z</button>
+              <button type="button" data-query-template="isolated">Изолированные</button>
             </div>
-            <label>
-              <span>Связан со всеми</span>
-              <input id="search-connected-all" type="text" autocomplete="off" spellcheck="false" placeholder="a, b, c">
-            </label>
-            <label>
-              <span>Связан с любым</span>
-              <input id="search-connected-any" type="text" autocomplete="off" spellcheck="false" placeholder="a, b, c">
-            </label>
-            <div class="two-cols">
-              <label>
-                <span>Глубина связей</span>
-                <input id="search-connected-depth" type="number" min="0" value="2">
-              </label>
-              <label class="check-line">
-                <input id="search-include-self" type="checkbox">
-                <span>Включать себя</span>
-              </label>
-            </div>
-            <button type="submit">Найти</button>
+            <button type="submit">Найти решения</button>
           </form>
           <div id="search-results" class="result-list"></div>
         </section>

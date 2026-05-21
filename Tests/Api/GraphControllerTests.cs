@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using GraphData.Api.Controllers;
 using GraphData.Api.Models;
@@ -104,12 +105,90 @@ public sealed class GraphControllerTests
         Assert.AreEqual(second.Name, edge.TargetName);
     }
 
+    [TestMethod]
+    public async Task SearchNodesAsync_ReturnsVariableBindings()
+    {
+        var first = new TestNode("1", new Dictionary<string, string> { ["id"] = "source" });
+        var second = new TestNode("2", new Dictionary<string, string> { ["id"] = "Y" });
+        var storage = new FakeGraphStorage([first, second]);
+        storage.Connect(first.Name, second);
+        storage.Connect(second.Name, first);
+
+        var controller = CreateController(storage);
+        var result = await controller.SearchNodesAsync(new NodeSearchQuery
+        {
+            Return = ["n", "x"],
+            Where = new AllNodeSearchExpression
+            {
+                Expressions = [
+                    new NodeConnectedSearchExpression {
+                        Left = new NodeVariableSearchSelector { Name = "n" },
+                        Right = new NodeVariableSearchSelector { Name = "x" }
+                    },
+                    new NodeAttributeSearchExpression {
+                        Node = new NodeVariableSearchSelector { Name = "x" },
+                        Key = "id",
+                        Value = "Y"
+                    }
+                ]
+            }
+        });
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+
+        var response = ok.Value as NodeSearchResponse;
+        Assert.IsNotNull(response);
+        var match = response.Matches.Single();
+        Assert.AreEqual(first.Name, match.Bindings["n"].Name);
+        Assert.AreEqual(second.Name, match.Bindings["x"].Name);
+    }
+
+    [TestMethod]
+    public void NodeSearchQueryJson_ShouldDeserializePredicateTree()
+    {
+        const string json = """
+            {
+              "return": [ "n", "x" ],
+              "where": {
+                "kind": "all",
+                "expressions": [
+                  {
+                    "kind": "connected",
+                    "left": { "kind": "var", "name": "n" },
+                    "right": { "kind": "var", "name": "x" }
+                  },
+                  {
+                    "kind": "attribute",
+                    "node": { "kind": "var", "name": "x" },
+                    "key": "id",
+                    "operator": "equals",
+                    "value": "Y"
+                  }
+                ]
+              },
+              "limit": 20
+            }
+            """;
+
+        var query = JsonSerializer.Deserialize<NodeSearchQuery>(
+            json,
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+
+        Assert.IsNotNull(query);
+        CollectionAssert.AreEquivalent(new[] { "n", "x" }, query.Return);
+        Assert.IsInstanceOfType(query.Where, typeof(AllNodeSearchExpression));
+        var all = (AllNodeSearchExpression)query.Where!;
+        Assert.IsInstanceOfType(all.Expressions[0], typeof(NodeConnectedSearchExpression));
+        Assert.IsInstanceOfType(all.Expressions[1], typeof(NodeAttributeSearchExpression));
+    }
+
     private static GraphController CreateController(FakeGraphStorage storage)
     {
         return new GraphController(new NodeService(storage), new GraphSearchService(storage));
     }
 
-    private sealed class FakeGraphStorage(IEnumerable<TestNode> nodes) : IGraphStorage
+    private sealed class FakeGraphStorage(IEnumerable<TestNode> nodes) : IGraphStorage, IGraphNodeCatalog
     {
         private readonly Dictionary<string, TestNode> _nodes = nodes.ToDictionary(
             static node => node.Name,
@@ -164,6 +243,11 @@ public sealed class GraphControllerTests
                 _connections.TryGetValue(node.Name, out var connections)
                     ? connections
                     : Array.Empty<Node>());
+        }
+
+        public Task<IReadOnlyCollection<Node>> GetAllNodesAsync()
+        {
+            return Task.FromResult<IReadOnlyCollection<Node>>(_nodes.Values.ToArray());
         }
 
         public Task<Subgraph> GetSubgraphAsync(SubgraphQuery query)

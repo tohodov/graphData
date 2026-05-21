@@ -114,45 +114,11 @@ public sealed class GraphDataTools(
     }
 
     [McpServerTool]
-    [Description("Searches graph nodes by text and structural graph patterns such as descendants of a node and nodes connected to all/any anchor nodes.")]
+    [Description("Searches graph nodes with a constraint JSON query. The query returns variable bindings that satisfy predicates such as node, text, attribute, connected, path, descendant, degree, any/all/not/exists.")]
     public async Task<string> SearchNodes(
-        [Description("Optional text to match against node names and string attributes.")] string? text = null,
-        [Description("Optional ancestor node name. Results must be below this node in path hierarchy, for example 'weapons/pistols/...'.")] string? descendantOf = null,
-        [Description("Maximum hierarchy depth below descendantOf.")] int descendantMaxDepth = 8,
-        [Description("Optional anchor node names. Results must be connected to every listed anchor within connectedToAllMaxDepth.")] string[]? connectedToAll = null,
-        [Description("Maximum graph distance for connectedToAll anchors.")] int connectedToAllMaxDepth = 2,
-        [Description("Optional anchor node names. Results must be connected to at least one listed anchor within connectedToAnyMaxDepth.")] string[]? connectedToAny = null,
-        [Description("Maximum graph distance for connectedToAny anchors.")] int connectedToAnyMaxDepth = 2,
-        [Description("Maximum number of matches to return.")] int limit = 50) {
-        if (descendantMaxDepth < 0 || connectedToAllMaxDepth < 0 || connectedToAnyMaxDepth < 0)
-            return ToJson(new { success = false, error = "Depth values must be non-negative." });
-
-        var query = new NodeSearchQuery {
-            Text = text,
-            DescendantOf = string.IsNullOrWhiteSpace(descendantOf)
-                ? null
-                : new HierarchySearchPattern {
-                    NodeName = descendantOf,
-                    MaxDepth = descendantMaxDepth
-                },
-            ConnectedToAll = (connectedToAll ?? Array.Empty<string>())
-                .Where(static name => !string.IsNullOrWhiteSpace(name))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Select(name => new ConnectionSearchPattern {
-                    NodeName = name,
-                    MaxDepth = connectedToAllMaxDepth
-                })
-                .ToArray(),
-            ConnectedToAny = (connectedToAny ?? Array.Empty<string>())
-                .Where(static name => !string.IsNullOrWhiteSpace(name))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .Select(name => new ConnectionSearchPattern {
-                    NodeName = name,
-                    MaxDepth = connectedToAnyMaxDepth
-                })
-                .ToArray(),
-            Limit = limit
-        };
+        [Description("Constraint query. Example: {\"return\":[\"n\"],\"where\":{\"kind\":\"all\",\"expressions\":[{\"kind\":\"connected\",\"left\":{\"kind\":\"var\",\"name\":\"n\"},\"right\":{\"kind\":\"var\",\"name\":\"x\"}},{\"kind\":\"attribute\",\"node\":{\"kind\":\"var\",\"name\":\"x\"},\"key\":\"id\",\"operator\":\"equals\",\"value\":\"Y\"}]},\"limit\":50}")] NodeSearchQuery query) {
+        if (query is null)
+            return ToJson(new { success = false, error = "Query must be provided." });
 
         try {
             var matches = await _searchService.SearchNodesAsync(query);
@@ -160,6 +126,10 @@ public sealed class GraphDataTools(
                 success = true,
                 matches = matches.Select(static match => new {
                     node = ToResponse(match.Node),
+                    bindings = match.Bindings.ToDictionary(
+                        static pair => pair.Key,
+                        static pair => ToResponse(pair.Value),
+                        StringComparer.OrdinalIgnoreCase),
                     score = match.Score,
                     matchedBy = match.MatchedBy
                 }).ToArray()
