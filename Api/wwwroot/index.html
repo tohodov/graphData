@@ -95,7 +95,10 @@
               <button type="button" data-query-template="neighborConnected">Сосед связан с Z</button>
               <button type="button" data-query-template="isolated">Изолированные</button>
             </div>
-            <button type="submit">Найти решения</button>
+            <div class="button-row">
+              <button id="search-submit-button" type="submit">Найти решения</button>
+              <button id="search-stop-button" type="button" disabled>Остановить</button>
+            </div>
           </form>
           <div id="search-results" class="result-list"></div>
         </section>

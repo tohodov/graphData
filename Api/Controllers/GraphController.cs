@@ -1,5 +1,6 @@
-using System.Runtime.CompilerServices;
+using System.Text.Json;
 using GraphData.Api.Models;
+using GraphData.Api.Runtime;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -12,6 +13,8 @@ public sealed class GraphController(
     NodeService nodeService,
     GraphSearchService searchService) : ControllerBase
 {
+    private static readonly JsonSerializerOptions StreamJsonOptions = GraphJsonSerializerOptions.Create();
+
     private readonly NodeService _nodeService = nodeService;
     private readonly GraphSearchService _searchService = searchService;
 
@@ -144,33 +147,7 @@ public sealed class GraphController(
     }
 
     [HttpPost("search/nodes")]
-    public async Task<ActionResult<NodeSearchResponse>> SearchNodesAsync([FromBody] NodeSearchQuery request)
-    {
-        if (request is null)
-        {
-            return BadRequest();
-        }
-
-        try
-        {
-            var matches = await _searchService.SearchNodesAsync(request);
-            return Ok(new NodeSearchResponse
-            {
-                Matches = matches.Select(ToSearchMatchResponse).ToArray()
-            });
-        }
-        catch (ArgumentException ex)
-        {
-            return BadRequest(ex.Message);
-        }
-        catch (NotSupportedException ex)
-        {
-            return StatusCode(StatusCodes.Status501NotImplemented, ex.Message);
-        }
-    }
-
-    [HttpPost("search/nodes/stream")]
-    public ActionResult<IAsyncEnumerable<NodeSearchMatchResponse>> SearchNodesStreamAsync(
+    public async Task<IActionResult> SearchNodesAsync(
         [FromBody] NodeSearchQuery request,
         CancellationToken cancellationToken)
     {
@@ -179,16 +156,48 @@ public sealed class GraphController(
             return BadRequest();
         }
 
-        return Ok(StreamSearchNodesAsync(request, cancellationToken));
-    }
-
-    private async IAsyncEnumerable<NodeSearchMatchResponse> StreamSearchNodesAsync(
-        NodeSearchQuery request,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
-        await foreach (var match in _searchService.SearchNodesStreamAsync(request, cancellationToken))
+        try
         {
-            yield return ToSearchMatchResponse(match);
+            await using var matches = _searchService
+                .SearchNodesStreamAsync(request, cancellationToken)
+                .GetAsyncEnumerator(cancellationToken);
+            var hasMatch = await matches.MoveNextAsync();
+
+            Response.StatusCode = StatusCodes.Status200OK;
+            Response.ContentType = "application/x-ndjson; charset=utf-8";
+
+            while (hasMatch)
+            {
+                await JsonSerializer.SerializeAsync(
+                    Response.Body,
+                    ToSearchMatchResponse(matches.Current),
+                    StreamJsonOptions,
+                    cancellationToken);
+                await Response.WriteAsync("\n", cancellationToken);
+                await Response.Body.FlushAsync(cancellationToken);
+
+                hasMatch = await matches.MoveNextAsync();
+            }
+
+            return new EmptyResult();
+        }
+        catch (ArgumentException ex)
+        {
+            if (Response.HasStarted)
+            {
+                throw;
+            }
+
+            return BadRequest(ex.Message);
+        }
+        catch (NotSupportedException ex)
+        {
+            if (Response.HasStarted)
+            {
+                throw;
+            }
+
+            return StatusCode(StatusCodes.Status501NotImplemented, ex.Message);
         }
     }
 

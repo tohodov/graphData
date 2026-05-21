@@ -1,15 +1,19 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using GraphData.Api.Controllers;
 using GraphData.Api.Models;
+using GraphData.Api.Runtime;
 using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
 using GraphData.Tests;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -114,7 +118,7 @@ public sealed class GraphControllerTests
         await scope.Storage.Connect(first, second);
 
         var controller = CreateController(scope.Storage);
-        var result = await controller.SearchNodesAsync(new NodeSearchQuery
+        var matches = await SearchNodesAsync(controller, new NodeSearchQuery
         {
             Return = ["n", "x"],
             Where = new AllNodeSearchExpression
@@ -133,18 +137,13 @@ public sealed class GraphControllerTests
             }
         });
 
-        var ok = result.Result as OkObjectResult;
-        Assert.IsNotNull(ok);
-
-        var response = ok.Value as NodeSearchResponse;
-        Assert.IsNotNull(response);
-        var match = response.Matches.Single();
+        var match = matches.Single();
         Assert.AreEqual(first.Name, match.Bindings["n"].Name);
         Assert.AreEqual(second.Name, match.Bindings["x"].Name);
     }
 
     [TestMethod]
-    public async Task SearchNodesStreamAsync_ReturnsAsyncEnumerableBindings()
+    public async Task SearchNodesAsync_WritesNdjsonMatches()
     {
         await using var scope = TestGraphStorageScope.Create();
         var first = await scope.Storage.Create("1");
@@ -152,37 +151,24 @@ public sealed class GraphControllerTests
         await scope.Storage.Connect(first, second);
 
         var controller = CreateController(scope.Storage);
-        var result = controller.SearchNodesStreamAsync(
-            new NodeSearchQuery
-            {
-                Return = ["n", "x"],
-                Where = new AllNodeSearchExpression
-                {
-                    Expressions = [
-                        new NodeConnectedSearchExpression {
-                            Left = new NodeVariableSearchSelector { Name = "n" },
-                            Right = new NodeVariableSearchSelector { Name = "x" }
-                        },
-                        new NodeAttributeSearchExpression {
-                            Node = new NodeVariableSearchSelector { Name = "x" },
-                            Key = "id",
-                            Value = "Y"
-                        }
-                    ]
-                }
-            },
-            CancellationToken.None);
-
-        var ok = result.Result as OkObjectResult;
-        Assert.IsNotNull(ok);
-        var stream = ok.Value as IAsyncEnumerable<NodeSearchMatchResponse>;
-        Assert.IsNotNull(stream);
-
-        var matches = new List<NodeSearchMatchResponse>();
-        await foreach (var match in stream)
+        var matches = await SearchNodesAsync(controller, new NodeSearchQuery
         {
-            matches.Add(match);
-        }
+            Return = ["n", "x"],
+            Where = new AllNodeSearchExpression
+            {
+                Expressions = [
+                    new NodeConnectedSearchExpression {
+                        Left = new NodeVariableSearchSelector { Name = "n" },
+                        Right = new NodeVariableSearchSelector { Name = "x" }
+                    },
+                    new NodeAttributeSearchExpression {
+                        Node = new NodeVariableSearchSelector { Name = "x" },
+                        Key = "id",
+                        Value = "Y"
+                    }
+                ]
+            }
+        });
 
         var streamed = matches.Single();
         Assert.AreEqual(first.Name, streamed.Bindings["n"].Name);
@@ -196,27 +182,27 @@ public sealed class GraphControllerTests
             {
               "return": [ "n", "x" ],
               "where": {
-                "kind": "all",
                 "expressions": [
                   {
-                    "kind": "connected",
                     "left": { "kind": "var", "name": "n" },
-                    "right": { "kind": "var", "name": "x" }
+                    "right": { "kind": "var", "name": "x" },
+                    "kind": "connected"
                   },
                   {
-                    "kind": "attribute",
                     "node": { "kind": "var", "name": "x" },
                     "key": "id",
                     "operator": "equals",
-                    "value": "Y"
+                    "value": "Y",
+                    "kind": "attribute"
                   }
-                ]
+                ],
+                "kind": "all"
               },
               "orderBy": [
                 {
-                  "kind": "degree",
                   "variable": "n",
-                  "direction": "descending"
+                  "direction": "descending",
+                  "kind": "degree"
                 }
               ],
               "limit": 20
@@ -225,7 +211,7 @@ public sealed class GraphControllerTests
 
         var query = JsonSerializer.Deserialize<NodeSearchQuery>(
             json,
-            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            GraphJsonSerializerOptions.Create());
 
         Assert.IsNotNull(query);
         CollectionAssert.AreEquivalent(new[] { "n", "x" }, query.Return);
@@ -238,6 +224,34 @@ public sealed class GraphControllerTests
 
     private static GraphController CreateController(IGraphStorage storage)
     {
-        return new GraphController(new NodeService(storage), new GraphSearchService(storage));
+        var controller = new GraphController(new NodeService(storage), new GraphSearchService(storage));
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext()
+        };
+        controller.ControllerContext.HttpContext.Response.Body = new MemoryStream();
+        return controller;
+    }
+
+    private static async Task<IReadOnlyCollection<NodeSearchMatchResponse>> SearchNodesAsync(
+        GraphController controller,
+        NodeSearchQuery query)
+    {
+        var result = await controller.SearchNodesAsync(query, CancellationToken.None);
+
+        Assert.IsInstanceOfType(result, typeof(EmptyResult));
+        StringAssert.Contains(controller.Response.ContentType, "application/x-ndjson");
+
+        controller.Response.Body.Position = 0;
+        using var reader = new StreamReader(controller.Response.Body, Encoding.UTF8, leaveOpen: true);
+        var content = await reader.ReadToEndAsync();
+
+        return content
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(line => JsonSerializer.Deserialize<NodeSearchMatchResponse>(
+                line,
+                GraphJsonSerializerOptions.Create()))
+            .Cast<NodeSearchMatchResponse>()
+            .ToArray();
     }
 }

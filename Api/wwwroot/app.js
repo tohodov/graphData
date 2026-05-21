@@ -18,6 +18,8 @@ const connectTargetName = document.querySelector("#connect-target-name");
 const neighborList = document.querySelector("#neighbor-list");
 const searchForm = document.querySelector("#search-form");
 const searchQueryJson = document.querySelector("#search-query-json");
+const searchSubmitButton = document.querySelector("#search-submit-button");
+const searchStopButton = document.querySelector("#search-stop-button");
 const searchResults = document.querySelector("#search-results");
 const subgraphForm = document.querySelector("#subgraph-form");
 const subgraphResults = document.querySelector("#subgraph-results");
@@ -37,6 +39,7 @@ const state = {
   dragging: null,
   pointer: null,
   simulationHandle: null,
+  searchAbort: null,
   busy: false
 };
 
@@ -104,6 +107,10 @@ connectForm.addEventListener("submit", async event => {
 searchForm.addEventListener("submit", event => {
   event.preventDefault();
   searchNodes();
+});
+
+searchStopButton.addEventListener("click", () => {
+  state.searchAbort?.abort();
 });
 
 subgraphForm.addEventListener("submit", event => {
@@ -429,19 +436,87 @@ async function searchNodes() {
     return;
   }
 
-  setBusy(true);
+  state.searchAbort?.abort();
+  const controller = new AbortController();
+  state.searchAbort = controller;
+  setSearchStreaming(true);
+  renderSearchResults([]);
+
+  let count = 0;
   try {
-    const response = await apiJson("/api/graph/search/nodes", {
+    const response = await fetch("/api/graph/search/nodes", {
       method: "POST",
-      body: JSON.stringify(query)
+      headers: {
+        "Accept": "application/x-ndjson",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(query),
+      signal: controller.signal
     });
-    renderSearchResults(response.matches ?? []);
-    setStatus(`Найдено решений: ${(response.matches ?? []).length}`);
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || `HTTP ${response.status}`);
+    }
+
+    await readNdjsonStream(response, match => {
+      count += 1;
+      appendSearchResult(match);
+      setStatus(`Найдено решений: ${count}`);
+    });
+
+    setStatus(`Найдено решений: ${count}`);
   } catch (error) {
-    setStatus(error.message);
+    if (error.name === "AbortError") {
+      setStatus(`Поиск остановлен: ${count}`);
+    } else {
+      setStatus(error.message);
+    }
   } finally {
-    setBusy(false);
+    if (state.searchAbort === controller) {
+      state.searchAbort = null;
+      setSearchStreaming(false);
+    }
   }
+}
+
+async function readNdjsonStream(response, onItem) {
+  if (!response.body) {
+    parseNdjsonLines(await response.text(), onItem);
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    parseNdjsonLines(lines.join("\n"), onItem);
+  }
+
+  buffer += decoder.decode();
+  parseNdjsonLines(buffer, onItem);
+}
+
+function parseNdjsonLines(text, onItem) {
+  text
+    .split("\n")
+    .map(line => line.trim())
+    .filter(Boolean)
+    .forEach(line => onItem(JSON.parse(line)));
+}
+
+function setSearchStreaming(value) {
+  searchSubmitButton.disabled = value;
+  searchStopButton.disabled = !value;
 }
 
 async function loadSubgraph() {
@@ -810,23 +885,25 @@ function readAttributeEditor() {
 
 function renderSearchResults(matches) {
   searchResults.replaceChildren();
-  matches.forEach(match => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "result-row";
-    button.innerHTML = `<strong></strong><span></span>`;
-    button.querySelector("strong").textContent = match.node.name;
-    const bindings = Object.entries(match.bindings ?? {})
-      .map(([variable, node]) => `${variable}=${node.name}`)
-      .join(" · ");
-    button.querySelector("span").textContent = bindings || `score ${match.score} ${match.matchedBy?.join(" ") ?? ""}`;
-    button.addEventListener("click", () => {
-      rootInput.value = match.node.name;
-      loadRoot(match.node.name);
-      setActiveTab("node");
-    });
-    searchResults.append(button);
+  matches.forEach(appendSearchResult);
+}
+
+function appendSearchResult(match) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "result-row";
+  button.innerHTML = `<strong></strong><span></span>`;
+  button.querySelector("strong").textContent = match.node.name;
+  const bindings = Object.entries(match.bindings ?? {})
+    .map(([variable, node]) => `${variable}=${node.name}`)
+    .join(" · ");
+  button.querySelector("span").textContent = bindings || `score ${match.score} ${match.matchedBy?.join(" ") ?? ""}`;
+  button.addEventListener("click", () => {
+    rootInput.value = match.node.name;
+    loadRoot(match.node.name);
+    setActiveTab("node");
   });
+  searchResults.append(button);
 }
 
 function renderSubgraphResults(response) {
@@ -1106,6 +1183,9 @@ function updateEditorState() {
   saveNodeButton.disabled = state.busy || !hasSelection;
   deleteNodeButton.disabled = state.busy || !hasSelection;
   connectForm.querySelector("button").disabled = state.busy || !hasSelection;
+  if (!state.searchAbort) {
+    setSearchStreaming(false);
+  }
 }
 
 render();

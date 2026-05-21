@@ -1,12 +1,4 @@
-using System;
-using System.Collections.Generic;
-
 namespace GraphData.Api.Models;
-
-public sealed class NodeSearchResponse
-{
-    public ICollection<NodeSearchMatchResponse> Matches { get; set; } = Array.Empty<NodeSearchMatchResponse>();
-}
 
 public sealed class NodeSearchMatchResponse
 {
