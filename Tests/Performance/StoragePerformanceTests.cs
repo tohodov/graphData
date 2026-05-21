@@ -31,8 +31,13 @@ public sealed class StoragePerformanceTests
         PerformanceTestGate.EnsureEnabled(storageKind);
 
         var graph = CreateGraph(nodeCount, connectionsPerNode, seed);
-        await using var scope = PerformanceStorageScope.Create(storageKind);
-        var run = new PerformanceRun(storageKind.ToString(), graph, "storage-operations");
+        AssertGraphContainsCycleWhenPossible(graph);
+
+        const string scenario = "storage-operations";
+        await using var scope = PerformanceStorageScope.Create(storageKind, scenario);
+        AssertStorageRoot(scope, scenario);
+
+        var run = new PerformanceRun(storageKind.ToString(), graph, scenario, scope.RootPath);
         var nodesByName = new Dictionary<string, Node>(StringComparer.OrdinalIgnoreCase);
 
         await run.MeasureEachAsync("create", graph.Nodes, async node =>
@@ -141,8 +146,13 @@ public sealed class StoragePerformanceTests
         operationCount = PerformanceTestGate.GetInt("GRAPH_DATA_PERF_LOAD_OPERATIONS", operationCount);
 
         var graph = CreateGraph(nodeCount, connectionsPerNode, seed);
-        await using var scope = PerformanceStorageScope.Create(storageKind);
-        var run = new PerformanceRun(storageKind.ToString(), graph, "concurrent-read-load");
+        AssertGraphContainsCycleWhenPossible(graph);
+
+        const string scenario = "concurrent-read-load";
+        await using var scope = PerformanceStorageScope.Create(storageKind, scenario);
+        AssertStorageRoot(scope, scenario);
+
+        var run = new PerformanceRun(storageKind.ToString(), graph, scenario, scope.RootPath);
         var nodesByName = await PopulateGraphAsync(scope.Storage, graph).ConfigureAwait(false);
         var workItems = graph.GetSampleNodeNames(operationCount, seedOffset: 2000);
         var errors = new ConcurrentQueue<Exception>();
@@ -215,6 +225,22 @@ public sealed class StoragePerformanceTests
         connectionsPerNode = PerformanceTestGate.GetInt("GRAPH_DATA_PERF_CONNECTIONS_PER_NODE", connectionsPerNode, minValue: 0);
         seed = PerformanceTestGate.GetInt("GRAPH_DATA_PERF_SEED", seed, minValue: 0);
         return GeneratedGraph.Create(nodeCount, connectionsPerNode, seed);
+    }
+
+    private static void AssertGraphContainsCycleWhenPossible(GeneratedGraph graph)
+    {
+        if (graph.NodeCount >= 3 && graph.ConnectionsPerNode > 0)
+        {
+            Assert.IsTrue(graph.ContainsCycle, "Generated performance graph must contain cycles.");
+        }
+    }
+
+    private static void AssertStorageRoot(PerformanceStorageScope scope, string scenario)
+    {
+        var expectedBaseRoot = PerformanceTestGate.GetStorageBaseRoot();
+        StringAssert.StartsWith(scope.RootPath, expectedBaseRoot);
+        StringAssert.Contains(scope.RootPath, scenario);
+        StringAssert.Contains(scope.RootPath, scope.Kind.ToString());
     }
 
     private static PerformanceStorageKind ParseStorageKind(string value)

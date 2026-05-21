@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -42,6 +43,23 @@ internal static class PerformanceTestGate
     {
         var value = Environment.GetEnvironmentVariable(variableName);
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    public static string GetStorageBaseRoot()
+    {
+        var configured = GetString("GRAPH_DATA_PERF_STORAGE_ROOT");
+        if (configured is not null)
+        {
+            return Path.GetFullPath(configured);
+        }
+
+        const string preferredRoot = @"E:\TTT";
+        if (Directory.Exists(preferredRoot))
+        {
+            return preferredRoot;
+        }
+
+        return Path.Combine(Path.GetTempPath(), "GraphDataPerformanceStorage");
     }
 
     private static bool IsEnabled()

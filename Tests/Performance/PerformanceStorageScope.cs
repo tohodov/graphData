@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using GraphData.BucketedFileStorage;
 using GraphData.BucketedFileStorage.Options;
@@ -35,11 +36,14 @@ internal sealed class PerformanceStorageScope : IAsyncDisposable
 
     public IGraphStorage Storage { get; }
 
-    public static PerformanceStorageScope Create(PerformanceStorageKind kind)
+    public static PerformanceStorageScope Create(PerformanceStorageKind kind, string scenario)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(scenario);
+
         var rootPath = Path.Combine(
-            Path.GetTempPath(),
+            PerformanceTestGate.GetStorageBaseRoot(),
             "GraphDataPerformanceTests",
+            SanitizePathSegment(scenario),
             kind.ToString(),
             Guid.NewGuid().ToString("N"));
 
@@ -86,5 +90,15 @@ internal sealed class PerformanceStorageScope : IAsyncDisposable
                 Directory.Delete(RootPath, recursive: true);
             }
         }
+    }
+
+    private static string SanitizePathSegment(string value)
+    {
+        var invalidCharacters = Path.GetInvalidFileNameChars();
+        var chars = value
+            .Select(character => invalidCharacters.Contains(character) ? '-' : character)
+            .ToArray();
+
+        return new string(chars);
     }
 }

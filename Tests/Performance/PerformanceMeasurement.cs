@@ -20,11 +20,12 @@ internal sealed class PerformanceRun
     private readonly DateTimeOffset _startedAtUtc = DateTimeOffset.UtcNow;
     private readonly List<PerformanceSample> _samples = [];
 
-    public PerformanceRun(string storageKind, GeneratedGraph graph, string scenario)
+    public PerformanceRun(string storageKind, GeneratedGraph graph, string scenario, string storageRootPath)
     {
         StorageKind = storageKind;
         Graph = graph;
         Scenario = scenario;
+        StorageRootPath = storageRootPath;
     }
 
     public string StorageKind { get; }
@@ -32,6 +33,8 @@ internal sealed class PerformanceRun
     public GeneratedGraph Graph { get; }
 
     public string Scenario { get; }
+
+    public string StorageRootPath { get; }
 
     public async Task MeasureAsync(string operation, int count, Func<Task> work)
     {
@@ -68,7 +71,8 @@ internal sealed class PerformanceRun
     {
         context.WriteLine($"Performance scenario: {Scenario}");
         context.WriteLine($"Storage: {StorageKind}");
-        context.WriteLine($"Graph: nodes={Graph.NodeCount}, connectionsPerNode={Graph.ConnectionsPerNode}, edges={Graph.Edges.Count}, seed={Graph.Seed}");
+        context.WriteLine($"Storage root: {StorageRootPath}");
+        context.WriteLine($"Graph: nodes={Graph.NodeCount}, connectionsPerNode={Graph.ConnectionsPerNode}, edges={Graph.Edges.Count}, seed={Graph.Seed}, containsCycle={Graph.ContainsCycle}");
         context.WriteLine("operation | count | elapsed ms | avg us/op | min us | p50 us | p95 us | max us | cpu ms | cpu % | allocated MB | managed delta MB | working set delta MB | private delta MB | GC");
 
         foreach (var sample in _samples)
@@ -121,6 +125,8 @@ internal sealed class PerformanceRun
             Graph.ConnectionsPerNode,
             Graph.Edges.Count,
             Graph.Seed,
+            Graph.ContainsCycle,
+            StorageRootPath,
             Environment.ProcessorCount,
             Environment.MachineName,
             Environment.Version.ToString(),
@@ -146,6 +152,8 @@ internal sealed record PerformanceReport(
     int ConnectionsPerNode,
     int EdgeCount,
     int Seed,
+    bool ContainsCycle,
+    string StorageRootPath,
     int ProcessorCount,
     string MachineName,
     string RuntimeVersion,

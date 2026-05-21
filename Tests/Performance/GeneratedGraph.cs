@@ -8,6 +8,7 @@ internal sealed record GeneratedGraph(
     int NodeCount,
     int ConnectionsPerNode,
     int Seed,
+    bool ContainsCycle,
     IReadOnlyList<GeneratedGraphNode> Nodes,
     IReadOnlyList<GeneratedGraphEdge> Edges)
 {
@@ -36,7 +37,13 @@ internal sealed record GeneratedGraph(
             .ToArray();
 
         var edges = GenerateEdges(nodeCount, connectionsPerNode, seed);
-        return new GeneratedGraph(nodeCount, connectionsPerNode, seed, nodes, edges);
+        var containsCycle = ContainsUndirectedCycle(nodeCount, edges);
+        if (nodeCount >= 3 && connectionsPerNode > 0 && !containsCycle)
+        {
+            throw new InvalidOperationException("Generated performance graph must contain at least one cycle.");
+        }
+
+        return new GeneratedGraph(nodeCount, connectionsPerNode, seed, containsCycle, nodes, edges);
     }
 
     public IReadOnlyList<string> GetSampleNodeNames(int count, int seedOffset)
@@ -63,9 +70,9 @@ internal sealed record GeneratedGraph(
         var desiredEdgeCount = Math.Min(maxEdgeCount, nodeCount * connectionsPerNode);
         var edges = new HashSet<GeneratedGraphEdge>();
 
-        for (var index = 0; index < nodeCount - 1 && edges.Count < desiredEdgeCount; index++)
+        for (var index = 0; index < nodeCount && edges.Count < desiredEdgeCount; index++)
         {
-            edges.Add(GeneratedGraphEdge.Create(index, index + 1));
+            edges.Add(GeneratedGraphEdge.Create(index, (index + 1) % nodeCount));
         }
 
         var random = new Random(seed);
@@ -91,6 +98,59 @@ internal sealed record GeneratedGraph(
             .OrderBy(static edge => edge.SourceIndex)
             .ThenBy(static edge => edge.TargetIndex)
             .ToArray();
+    }
+
+    private static bool ContainsUndirectedCycle(int nodeCount, IEnumerable<GeneratedGraphEdge> edges)
+    {
+        var parents = Enumerable.Range(0, nodeCount).ToArray();
+        var ranks = new int[nodeCount];
+
+        foreach (var edge in edges)
+        {
+            if (!Union(edge.SourceIndex, edge.TargetIndex))
+            {
+                return true;
+            }
+        }
+
+        return false;
+
+        int Find(int index)
+        {
+            while (parents[index] != index)
+            {
+                parents[index] = parents[parents[index]];
+                index = parents[index];
+            }
+
+            return index;
+        }
+
+        bool Union(int first, int second)
+        {
+            var firstRoot = Find(first);
+            var secondRoot = Find(second);
+            if (firstRoot == secondRoot)
+            {
+                return false;
+            }
+
+            if (ranks[firstRoot] < ranks[secondRoot])
+            {
+                parents[firstRoot] = secondRoot;
+            }
+            else if (ranks[firstRoot] > ranks[secondRoot])
+            {
+                parents[secondRoot] = firstRoot;
+            }
+            else
+            {
+                parents[secondRoot] = firstRoot;
+                ranks[firstRoot]++;
+            }
+
+            return true;
+        }
     }
 }
 
