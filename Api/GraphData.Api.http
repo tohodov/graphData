@@ -52,6 +52,19 @@ Content-Type: application/json
   "limit": 20
 }
 
+### Stream search node matches
+POST {{GraphData.Api_HostAddress}}/api/graph/search/nodes/stream
+Content-Type: application/json
+
+{
+  "return": [ "n" ],
+  "where": {
+    "kind": "node",
+    "node": { "kind": "var", "name": "n" }
+  },
+  "limit": 20
+}
+
 ### Load subgraph
 POST {{GraphData.Api_HostAddress}}/api/graph/subgraph
 Content-Type: application/json

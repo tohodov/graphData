@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using GraphData.Api.Models;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
@@ -155,16 +156,7 @@ public sealed class GraphController(
             var matches = await _searchService.SearchNodesAsync(request);
             return Ok(new NodeSearchResponse
             {
-                Matches = matches.Select(static match => new NodeSearchMatchResponse
-                {
-                    Node = ToNodeResponse(match.Node),
-                    Bindings = match.Bindings.ToDictionary(
-                        static binding => binding.Key,
-                        static binding => ToNodeResponse(binding.Value),
-                        StringComparer.OrdinalIgnoreCase),
-                    Score = match.Score,
-                    MatchedBy = match.MatchedBy
-                }).ToArray()
+                Matches = matches.Select(ToSearchMatchResponse).ToArray()
             });
         }
         catch (ArgumentException ex)
@@ -174,6 +166,29 @@ public sealed class GraphController(
         catch (NotSupportedException ex)
         {
             return StatusCode(StatusCodes.Status501NotImplemented, ex.Message);
+        }
+    }
+
+    [HttpPost("search/nodes/stream")]
+    public ActionResult<IAsyncEnumerable<NodeSearchMatchResponse>> SearchNodesStreamAsync(
+        [FromBody] NodeSearchQuery request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return BadRequest();
+        }
+
+        return Ok(StreamSearchNodesAsync(request, cancellationToken));
+    }
+
+    private async IAsyncEnumerable<NodeSearchMatchResponse> StreamSearchNodesAsync(
+        NodeSearchQuery request,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        await foreach (var match in _searchService.SearchNodesStreamAsync(request, cancellationToken))
+        {
+            yield return ToSearchMatchResponse(match);
         }
     }
 
@@ -209,6 +224,20 @@ public sealed class GraphController(
             Name = node.Name,
             Attributes = new Dictionary<string, string>(node.Attributes),
             Edges = edges?.ToArray() ?? Array.Empty<EdgeResponse>()
+        };
+    }
+
+    private static NodeSearchMatchResponse ToSearchMatchResponse(NodeSearchMatch match)
+    {
+        return new NodeSearchMatchResponse
+        {
+            Node = ToNodeResponse(match.Node),
+            Bindings = match.Bindings.ToDictionary(
+                static binding => binding.Key,
+                static binding => ToNodeResponse(binding.Value),
+                StringComparer.OrdinalIgnoreCase),
+            Score = match.Score,
+            MatchedBy = match.MatchedBy
         };
     }
 

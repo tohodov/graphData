@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.CompilerServices;
 using System.Text;
 using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
@@ -19,27 +20,88 @@ public sealed class GraphSearchService(IGraphStorage storage)
 
         var graph = await SearchGraph.CreateAsync(_storage).ConfigureAwait(false);
         var returnVariables = NormalizeReturnVariables(query.Return);
-        var effectiveWhere = BuildEffectiveWhere(query.Where, returnVariables);
-        var initial = new SearchSolution(new Dictionary<string, Node>(StringComparer.OrdinalIgnoreCase), 0, []);
-        var solutions = Evaluate(effectiveWhere, [initial], graph);
+        var solutions = EnumerateSolutions(query, graph, returnVariables);
         var distinctSolutions = DistinctByReturnVariables(solutions, returnVariables);
         var limit = NormalizeLimit(query.Limit);
 
-        return distinctSolutions
-            .OrderByDescending(static solution => solution.Score)
-            .ThenBy(solution => string.Join('\u001f', returnVariables.Select(variable => solution.Bindings[variable].Name)), StringComparer.OrdinalIgnoreCase)
+        return OrderSolutions(distinctSolutions, query.OrderBy, returnVariables, graph)
             .Take(limit)
-            .Select(solution => new NodeSearchMatch
-            {
-                Node = solution.Bindings[returnVariables[0]],
-                Bindings = returnVariables.ToDictionary(
-                    static variable => variable,
-                    variable => solution.Bindings[variable],
-                    StringComparer.OrdinalIgnoreCase),
-                Score = Math.Round(Math.Max(1, solution.Score), 4),
-                MatchedBy = solution.MatchedBy.Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
-            })
+            .Select(solution => ToMatch(solution, returnVariables))
             .ToArray();
+    }
+
+    public async IAsyncEnumerable<NodeSearchMatch> SearchNodesStreamAsync(
+        NodeSearchQuery query,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        Validate(query);
+
+        if ((query.OrderBy ?? []).Length > 0)
+        {
+            foreach (var match in await SearchNodesAsync(query).ConfigureAwait(false))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return match;
+            }
+
+            yield break;
+        }
+
+        var graph = await SearchGraph.CreateAsync(_storage).ConfigureAwait(false);
+        var returnVariables = NormalizeReturnVariables(query.Return);
+        var limit = NormalizeLimit(query.Limit);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var yielded = 0;
+
+        foreach (var solution in EnumerateSolutions(query, graph, returnVariables))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (returnVariables.Any(variable => !solution.Bindings.ContainsKey(variable)))
+            {
+                continue;
+            }
+
+            var key = GetReturnKey(solution, returnVariables);
+            if (!seen.Add(key))
+            {
+                continue;
+            }
+
+            yield return ToMatch(solution, returnVariables);
+            yielded++;
+
+            if (yielded >= limit)
+            {
+                yield break;
+            }
+
+            await Task.Yield();
+        }
+    }
+
+    private static IEnumerable<SearchSolution> EnumerateSolutions(
+        NodeSearchQuery query,
+        SearchGraph graph,
+        string[] returnVariables)
+    {
+        var effectiveWhere = BuildEffectiveWhere(query.Where, returnVariables);
+        var initial = new SearchSolution(new Dictionary<string, Node>(StringComparer.OrdinalIgnoreCase), 0, []);
+        return Evaluate(effectiveWhere, [initial], graph);
+    }
+
+    private static NodeSearchMatch ToMatch(SearchSolution solution, string[] returnVariables)
+    {
+        return new NodeSearchMatch
+        {
+            Node = solution.Bindings[returnVariables[0]],
+            Bindings = returnVariables.ToDictionary(
+                static variable => variable,
+                variable => solution.Bindings[variable],
+                StringComparer.OrdinalIgnoreCase),
+            Score = Math.Round(Math.Max(1, solution.Score), 4),
+            MatchedBy = solution.MatchedBy.Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+        };
     }
 
     private static AllNodeSearchExpression BuildEffectiveWhere(NodeSearchExpression? where, string[] returnVariables)
@@ -596,7 +658,7 @@ public sealed class GraphSearchService(IGraphStorage storage)
                 continue;
             }
 
-            var key = string.Join('\u001f', returnVariables.Select(variable => NormalizeNodeName(solution.Bindings[variable].Name)));
+            var key = GetReturnKey(solution, returnVariables);
             if (!distinct.TryGetValue(key, out var existing) || solution.Score > existing.Score)
             {
                 distinct[key] = solution;
@@ -604,6 +666,65 @@ public sealed class GraphSearchService(IGraphStorage storage)
         }
 
         return distinct.Values;
+    }
+
+    private static string GetReturnKey(SearchSolution solution, string[] returnVariables)
+    {
+        return string.Join('\u001f', returnVariables.Select(variable => NormalizeNodeName(solution.Bindings[variable].Name)));
+    }
+
+    private static IOrderedEnumerable<SearchSolution> OrderSolutions(
+        IEnumerable<SearchSolution> solutions,
+        NodeSearchOrder[]? orders,
+        string[] returnVariables,
+        SearchGraph graph)
+    {
+        IOrderedEnumerable<SearchSolution>? ordered = null;
+        if (orders is not null)
+        {
+            foreach (var order in orders)
+            {
+                ordered = ApplyOrder(solutions, ordered, order, graph);
+            }
+        }
+
+        ordered ??= solutions.OrderByDescending(static solution => solution.Score);
+        return ordered.ThenBy(
+            solution => string.Join('\u001f', returnVariables.Select(variable => solution.Bindings[variable].Name)),
+            StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IOrderedEnumerable<SearchSolution> ApplyOrder(
+        IEnumerable<SearchSolution> solutions,
+        IOrderedEnumerable<SearchSolution>? ordered,
+        NodeSearchOrder order,
+        SearchGraph graph)
+    {
+        return order switch
+        {
+            NodeSearchScoreOrder score => ApplyOrderKey(solutions, ordered, static solution => solution.Score, IsDescending(score.Direction)),
+            NodeSearchNameOrder name => ApplyOrderKey(solutions, ordered, solution => solution.Bindings[name.Variable].Name, IsDescending(name.Direction)),
+            NodeSearchDegreeOrder degree => ApplyOrderKey(solutions, ordered, solution => graph.GetDegree(solution.Bindings[degree.Variable]), IsDescending(degree.Direction)),
+            _ => throw new NotSupportedException($"Unsupported search order type '{order.GetType().Name}'.")
+        };
+    }
+
+    private static IOrderedEnumerable<SearchSolution> ApplyOrderKey<TKey>(
+        IEnumerable<SearchSolution> solutions,
+        IOrderedEnumerable<SearchSolution>? ordered,
+        Func<SearchSolution, TKey> keySelector,
+        bool descending)
+    {
+        if (ordered is null)
+        {
+            return descending
+                ? solutions.OrderByDescending(keySelector)
+                : solutions.OrderBy(keySelector);
+        }
+
+        return descending
+            ? ordered.ThenByDescending(keySelector)
+            : ordered.ThenBy(keySelector);
     }
 
     private static void Validate(NodeSearchQuery query)
@@ -621,6 +742,36 @@ public sealed class GraphSearchService(IGraphStorage storage)
         if (query.Where is not null)
         {
             Validate(query.Where);
+        }
+
+        foreach (var order in query.OrderBy ?? [])
+        {
+            Validate(order);
+        }
+    }
+
+    private static void Validate(NodeSearchOrder order)
+    {
+        switch (order)
+        {
+            case NodeSearchScoreOrder:
+                break;
+
+            case NodeSearchNameOrder name:
+                ArgumentException.ThrowIfNullOrWhiteSpace(name.Variable);
+                break;
+
+            case NodeSearchDegreeOrder degree:
+                ArgumentException.ThrowIfNullOrWhiteSpace(degree.Variable);
+                break;
+
+            default:
+                throw new NotSupportedException($"Unsupported search order type '{order.GetType().Name}'.");
+        }
+
+        if (!IsAscending(order.Direction) && !IsDescending(order.Direction))
+        {
+            throw new ArgumentException($"Unsupported order direction '{order.Direction}'.");
         }
     }
 
@@ -902,6 +1053,16 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static bool IsOperator(string actual, string expected)
     {
         return string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAscending(string direction)
+    {
+        return string.Equals(direction, SearchOrderDirections.Ascending, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsDescending(string direction)
+    {
+        return string.Equals(direction, SearchOrderDirections.Descending, StringComparison.OrdinalIgnoreCase);
     }
 
     private static double PathScore(int distance)

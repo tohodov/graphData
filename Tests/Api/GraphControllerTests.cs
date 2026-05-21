@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using GraphData.Api.Controllers;
 using GraphData.Api.Models;
 using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
+using GraphData.Tests;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -19,12 +21,12 @@ public sealed class GraphControllerTests
     [TestMethod]
     public async Task GetNodeAsync_ReturnsNodeWithNeighborEdges()
     {
-        var first = new TestNode("1", new Dictionary<string, string> { ["kind"] = "root" });
-        var second = new TestNode("2", new Dictionary<string, string> { ["kind"] = "leaf" });
-        var storage = new FakeGraphStorage([first, second]);
-        storage.Connect(first.Name, second);
+        await using var scope = TestGraphStorageScope.Create();
+        var first = await scope.Storage.Create("1", attributes: new Dictionary<string, string> { ["kind"] = "root" });
+        var second = await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["kind"] = "leaf" });
+        await scope.Storage.Connect(first, second);
 
-        var controller = CreateController(storage);
+        var controller = CreateController(scope.Storage);
         var result = await controller.GetNodeAsync(first.Name);
 
         var ok = result.Result as OkObjectResult;
@@ -43,7 +45,8 @@ public sealed class GraphControllerTests
     [TestMethod]
     public async Task GetNodeAsync_ReturnsNotFoundForMissingNode()
     {
-        var controller = CreateController(new FakeGraphStorage([]));
+        await using var scope = TestGraphStorageScope.Create();
+        var controller = CreateController(scope.Storage);
 
         var result = await controller.GetNodeAsync("missing");
 
@@ -53,8 +56,8 @@ public sealed class GraphControllerTests
     [TestMethod]
     public async Task CreateNodeAsync_ReturnsCreatedNodeWithLocation()
     {
-        var storage = new FakeGraphStorage([]);
-        var controller = CreateController(storage);
+        await using var scope = TestGraphStorageScope.Create();
+        var controller = CreateController(scope.Storage);
 
         var result = await controller.CreateNodeAsync(new CreateNodeRequest
         {
@@ -75,17 +78,14 @@ public sealed class GraphControllerTests
     [TestMethod]
     public async Task GetSubgraphAsync_ReturnsTopLevelEdgesWithoutDuplicatingThemOnNodes()
     {
-        var first = new TestNode("1");
-        var second = new TestNode("2");
-        var third = new TestNode("3");
-        first.SetConnections([second]);
-        second.SetConnections([first, third]);
-        third.SetConnections([second]);
-        var storage = new FakeGraphStorage([first, second, third]);
-        storage.Connect(first.Name, second);
-        storage.Connect(second.Name, third);
+        await using var scope = TestGraphStorageScope.Create();
+        var first = await scope.Storage.Create("1");
+        var second = await scope.Storage.Create("2");
+        var third = await scope.Storage.Create("3");
+        await scope.Storage.Connect(first, second);
+        await scope.Storage.Connect(second, third);
 
-        var controller = CreateController(storage);
+        var controller = CreateController(scope.Storage);
         var result = await controller.GetSubgraphAsync(new SubgraphRequest
         {
             RootNodeIds = [first.Name],
@@ -108,13 +108,12 @@ public sealed class GraphControllerTests
     [TestMethod]
     public async Task SearchNodesAsync_ReturnsVariableBindings()
     {
-        var first = new TestNode("1", new Dictionary<string, string> { ["id"] = "source" });
-        var second = new TestNode("2", new Dictionary<string, string> { ["id"] = "Y" });
-        var storage = new FakeGraphStorage([first, second]);
-        storage.Connect(first.Name, second);
-        storage.Connect(second.Name, first);
+        await using var scope = TestGraphStorageScope.Create();
+        var first = await scope.Storage.Create("1", attributes: new Dictionary<string, string> { ["id"] = "source" });
+        var second = await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["id"] = "Y" });
+        await scope.Storage.Connect(first, second);
 
-        var controller = CreateController(storage);
+        var controller = CreateController(scope.Storage);
         var result = await controller.SearchNodesAsync(new NodeSearchQuery
         {
             Return = ["n", "x"],
@@ -145,6 +144,52 @@ public sealed class GraphControllerTests
     }
 
     [TestMethod]
+    public async Task SearchNodesStreamAsync_ReturnsAsyncEnumerableBindings()
+    {
+        await using var scope = TestGraphStorageScope.Create();
+        var first = await scope.Storage.Create("1");
+        var second = await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["id"] = "Y" });
+        await scope.Storage.Connect(first, second);
+
+        var controller = CreateController(scope.Storage);
+        var result = controller.SearchNodesStreamAsync(
+            new NodeSearchQuery
+            {
+                Return = ["n", "x"],
+                Where = new AllNodeSearchExpression
+                {
+                    Expressions = [
+                        new NodeConnectedSearchExpression {
+                            Left = new NodeVariableSearchSelector { Name = "n" },
+                            Right = new NodeVariableSearchSelector { Name = "x" }
+                        },
+                        new NodeAttributeSearchExpression {
+                            Node = new NodeVariableSearchSelector { Name = "x" },
+                            Key = "id",
+                            Value = "Y"
+                        }
+                    ]
+                }
+            },
+            CancellationToken.None);
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+        var stream = ok.Value as IAsyncEnumerable<NodeSearchMatchResponse>;
+        Assert.IsNotNull(stream);
+
+        var matches = new List<NodeSearchMatchResponse>();
+        await foreach (var match in stream)
+        {
+            matches.Add(match);
+        }
+
+        var streamed = matches.Single();
+        Assert.AreEqual(first.Name, streamed.Bindings["n"].Name);
+        Assert.AreEqual(second.Name, streamed.Bindings["x"].Name);
+    }
+
+    [TestMethod]
     public void NodeSearchQueryJson_ShouldDeserializePredicateTree()
     {
         const string json = """
@@ -167,6 +212,13 @@ public sealed class GraphControllerTests
                   }
                 ]
               },
+              "orderBy": [
+                {
+                  "kind": "degree",
+                  "variable": "n",
+                  "direction": "descending"
+                }
+              ],
               "limit": 20
             }
             """;
@@ -181,131 +233,11 @@ public sealed class GraphControllerTests
         var all = (AllNodeSearchExpression)query.Where!;
         Assert.IsInstanceOfType(all.Expressions[0], typeof(NodeConnectedSearchExpression));
         Assert.IsInstanceOfType(all.Expressions[1], typeof(NodeAttributeSearchExpression));
+        Assert.IsInstanceOfType(query.OrderBy.Single(), typeof(NodeSearchDegreeOrder));
     }
 
-    private static GraphController CreateController(FakeGraphStorage storage)
+    private static GraphController CreateController(IGraphStorage storage)
     {
         return new GraphController(new NodeService(storage), new GraphSearchService(storage));
-    }
-
-    private sealed class FakeGraphStorage(IEnumerable<TestNode> nodes) : IGraphStorage, IGraphNodeCatalog
-    {
-        private readonly Dictionary<string, TestNode> _nodes = nodes.ToDictionary(
-            static node => node.Name,
-            StringComparer.OrdinalIgnoreCase);
-
-        private readonly Dictionary<string, List<Node>> _connections = new(StringComparer.OrdinalIgnoreCase);
-
-        public Task<Node> Create(string name, Node? parent = null, Dictionary<string, string>? attributes = null)
-        {
-            var node = new TestNode(name, attributes ?? new Dictionary<string, string>());
-            _nodes[name] = node;
-            return Task.FromResult<Node>(node);
-        }
-
-        public Task<Node?> Get(Node? parent, string subNodeName)
-        {
-            return Task.FromResult<Node?>(_nodes.GetValueOrDefault(subNodeName));
-        }
-
-        public Task<Node?> Get(NodeQuery query)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task Update(string subNodeName, IDictionary<string, string> attributes, Node? parent = null)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task Delete(string subNodeName, Node? parent = null)
-        {
-            _nodes.Remove(subNodeName);
-            _connections.Remove(subNodeName);
-            foreach (var connections in _connections.Values)
-            {
-                connections.RemoveAll(node => string.Equals(node.Name, subNodeName, StringComparison.OrdinalIgnoreCase));
-            }
-
-            return Task.CompletedTask;
-        }
-
-        public Task Connect(Node sourceNode, Node targetNode)
-        {
-            Connect(sourceNode.Name, targetNode);
-            Connect(targetNode.Name, sourceNode);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node)
-        {
-            return Task.FromResult<IReadOnlyCollection<Node>>(
-                _connections.TryGetValue(node.Name, out var connections)
-                    ? connections
-                    : Array.Empty<Node>());
-        }
-
-        public Task<IReadOnlyCollection<Node>> GetAllNodesAsync()
-        {
-            return Task.FromResult<IReadOnlyCollection<Node>>(_nodes.Values.ToArray());
-        }
-
-        public Task<Subgraph> GetSubgraphAsync(SubgraphQuery query)
-        {
-            var allowed = query.RootNodeIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (query.MaxDepth > 0)
-            {
-                foreach (var root in query.RootNodeIds)
-                {
-                    if (_connections.TryGetValue(root, out var connections))
-                    {
-                        foreach (var connection in connections)
-                        {
-                            allowed.Add(connection.Name);
-                        }
-                    }
-                }
-            }
-
-            var nodes = allowed
-                .Select(name => _nodes.GetValueOrDefault(name))
-                .Where(static node => node is not null)
-                .Cast<Node>()
-                .ToArray();
-            return Task.FromResult(new Subgraph { Nodes = nodes });
-        }
-
-        internal void Connect(string sourceName, Node target)
-        {
-            if (!_connections.TryGetValue(sourceName, out var connections))
-            {
-                connections = [];
-                _connections[sourceName] = connections;
-            }
-
-            connections.Add(target);
-        }
-    }
-
-    private sealed record TestNode(
-        string NodeName,
-        IReadOnlyDictionary<string, string>? AttributeSnapshot = null) : Node
-    {
-        private IReadOnlyCollection<Node> _nodes = Array.Empty<Node>();
-
-        public override string Name => NodeName;
-
-        public override IReadOnlyDictionary<string, Edge> Edges { get; } =
-            new Dictionary<string, Edge>(StringComparer.OrdinalIgnoreCase);
-
-        public override IReadOnlyCollection<Node> Nodes => _nodes;
-
-        public override IReadOnlyDictionary<string, string> Attributes =>
-            AttributeSnapshot ?? new Dictionary<string, string>();
-
-        internal void SetConnections(IReadOnlyCollection<Node> nodes)
-        {
-            _nodes = nodes;
-        }
     }
 }

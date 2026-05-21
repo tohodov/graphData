@@ -9,7 +9,30 @@ public sealed record NodeSearchQuery
 
     public NodeSearchExpression? Where { get; init; }
 
+    public NodeSearchOrder[] OrderBy { get; init; } = [];
+
     public int Limit { get; init; } = 50;
+}
+
+[JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
+[JsonDerivedType(typeof(NodeSearchScoreOrder), "score")]
+[JsonDerivedType(typeof(NodeSearchNameOrder), "name")]
+[JsonDerivedType(typeof(NodeSearchDegreeOrder), "degree")]
+public abstract record NodeSearchOrder
+{
+    public string Direction { get; init; } = SearchOrderDirections.Ascending;
+}
+
+public sealed record NodeSearchScoreOrder : NodeSearchOrder;
+
+public sealed record NodeSearchNameOrder : NodeSearchOrder
+{
+    public required string Variable { get; init; }
+}
+
+public sealed record NodeSearchDegreeOrder : NodeSearchOrder
+{
+    public required string Variable { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
@@ -167,6 +190,12 @@ public static class SearchOperators
     public const string GreaterThanOrEqual = "greaterThanOrEqual";
     public const string LessThan = "lessThan";
     public const string LessThanOrEqual = "lessThanOrEqual";
+}
+
+public static class SearchOrderDirections
+{
+    public const string Ascending = "ascending";
+    public const string Descending = "descending";
 }
 
 public sealed record NodeSearchMatch
