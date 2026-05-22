@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using GraphData.Core.Abstractions;
@@ -52,14 +53,14 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
     public Task<Node?> Get(Node? parent, string nodeId) => Task.FromResult<Node?>(GetInternal(parent as NodeFileSystem, nodeId));
     internal NodeFileSystem? GetInternal(NodeFileSystem? parent, string nodeId) {
-        DirectoryInfo? info;
-        if (parent == null)
-            info = root.EnumerateDirectories().Where(x => x.Name == nodeId).FirstOrDefault();
-        else
-            info = new DirectoryInfo(Path.Combine(parent.Path, nodeId));
-        if (info == null || !info.Exists)
+        var path = parent == null
+            ? GetNodePath(nodeId)
+            : Path.Combine(parent.Path, nodeId);
+
+        if (!Directory.Exists(path))
             return null;
-        return new NodeFileSystem(info);
+
+        return new NodeFileSystem(nodeId, parent == null ? options.RootPath : parent.Path);
     }
 
     public Task Update(string name, IDictionary<string, string> attributes, Node? parent = null) {
@@ -92,11 +93,17 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Task.CompletedTask;
     }
 
-    public async Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node) {
-        var internalNode = node as NodeFileSystem ?? await Get(node.Name) as NodeFileSystem;
-        if (internalNode == null)
-            throw new Exception();
-        return internalNode.Nodes;
+    public Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node) {
+        var nodePath = GetNodePath(node.Name);
+        if (!Directory.Exists(nodePath))
+            throw new DirectoryNotFoundException(nodePath);
+
+        var connected = EnumerateNeighborIds(nodePath)
+            .Where(neighborId => !string.Equals(neighborId, node.Name, StringComparison.OrdinalIgnoreCase))
+            .Select(neighborId => (Node)new NodeFileSystem(neighborId, options.RootPath))
+            .ToArray();
+
+        return Task.FromResult<IReadOnlyCollection<Node>>(connected);
     }
 
     public Task<IReadOnlyCollection<Node>> GetAllNodesAsync() {
@@ -112,7 +119,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
             var current = stack.Pop();
             foreach (var directory in current.EnumerateDirectories()) {
-                if (directory.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
                     continue;
 
                 var relativePath = Path.GetRelativePath(root.FullName, directory.FullName);
@@ -127,15 +134,16 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     public async Task<Subgraph> GetSubgraphAsync(SubgraphQuery query) {
-        var visited = new HashSet<string>();
-        var discovered = new HashSet<string>(query.RootNodeIds);
+        var comparer = StringComparer.OrdinalIgnoreCase;
+        var visited = new HashSet<string>(comparer);
+        var discovered = new HashSet<string>(query.RootNodeIds, comparer);
         var queue = new Queue<(string NodeId, int Depth)>();
 
         foreach (var root in query.RootNodeIds) {
             queue.Enqueue((root, 0));
         }
 
-        var nodes = new Dictionary<string, Node>();
+        var nodes = new Dictionary<string, Node>(comparer);
 
         while (queue.Count > 0) {
             cancellationTokens.Token.ThrowIfCancellationRequested();
@@ -145,25 +153,22 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
                 continue;
             }
 
-            var node = await Get(nodeId);
-            if (node is null) {
+            var nodePath = GetNodePath(nodeId);
+            if (!Directory.Exists(nodePath)) {
                 continue;
             }
 
-            var connections = await GetConnectedNodesAsync(node);
-            var relevantConnections = new HashSet<string>();
+            nodes[nodeId] = new NodeFileSystem(nodeId, options.RootPath);
 
-            foreach (var connection in connections) {
-                if (depth < query.MaxDepth && discovered.Add(connection.Name)) {
-                    queue.Enqueue((connection.Name, depth + 1));
-                }
-
-                if (discovered.Contains(connection.Name)) {
-                    relevantConnections.Add(connection.Name);
-                }
+            if (depth >= query.MaxDepth) {
+                continue;
             }
 
-            nodes[nodeId] = NodeFileSystem.Create(nodeId, options.RootPath);
+            foreach (var neighborId in EnumerateNeighborIds(nodePath)) {
+                if (!string.Equals(neighborId, nodeId, StringComparison.OrdinalIgnoreCase) && discovered.Add(neighborId)) {
+                    queue.Enqueue((neighborId, depth + 1));
+                }
+            }
         }
 
         return nodes.Count == 0
@@ -181,10 +186,24 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return nodeName.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/').Trim('/');
     }
 
+    private static IEnumerable<string> EnumerateNeighborIds(string nodePath) {
+        var directory = new DirectoryInfo(nodePath);
+
+        foreach (var entry in directory.EnumerateFileSystemInfos()) {
+            if (string.Equals(entry.Name, "node.json", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if ((entry.Attributes & FileAttributes.ReparsePoint) == 0)
+                continue;
+
+            yield return entry.Name;
+        }
+    }
+
     private void CreateLinkIfMissing(string sourcePath, string targetPath, string name) {
         var linkPath = Path.Combine(sourcePath, name);
         try {
-            if (Directory.Exists(linkPath) || File.Exists(linkPath)) {
+            if (FileSystemEntryExists(linkPath)) {
                 return;
             }
 
@@ -196,12 +215,23 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         }
     }
 
+    private static bool FileSystemEntryExists(string path) {
+        try {
+            _ = File.GetAttributes(path);
+            return true;
+        } catch (FileNotFoundException) {
+            return false;
+        } catch (DirectoryNotFoundException) {
+            return false;
+        }
+    }
+
     private static void DeleteLinkIfExists(string path) {
-        if (!Directory.Exists(path) && !File.Exists(path))
+        if (!FileSystemEntryExists(path))
             return;
 
         var attributes = File.GetAttributes(path);
-        if (attributes.HasFlag(FileAttributes.Directory))
+        if ((attributes & FileAttributes.Directory) != 0)
             Directory.Delete(path);
         else
             File.Delete(path);
@@ -212,7 +242,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             return;
 
         foreach (var entry in directory.EnumerateFileSystemInfos()) {
-            if (entry.Attributes.HasFlag(FileAttributes.ReparsePoint)) {
+            if ((entry.Attributes & FileAttributes.ReparsePoint) != 0) {
                 entry.Delete();
                 continue;
             }

@@ -75,7 +75,7 @@ internal record NodeFileSystem : Node {
         foreach (var entry in directory.EnumerateFileSystemInfos()) {
             if (string.Equals(entry.Name, MetadataFileName, StringComparison.OrdinalIgnoreCase))
                 continue;
-            var isReparse = entry.Attributes.HasFlag(FileAttributes.ReparsePoint);
+            var isReparse = (entry.Attributes & FileAttributes.ReparsePoint) != 0;
             if (!isReparse)
                 continue;
             string? targetPath = null;
