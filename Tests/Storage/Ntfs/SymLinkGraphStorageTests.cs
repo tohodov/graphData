@@ -116,6 +116,75 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
         Assert.AreEqual(Path.GetFullPath(expectedSecondTarget), new DirectoryInfo(secondLink).LinkTarget);
     }
 
+    [TestMethod]
+    public async Task CreateNodeAsync_ShouldPreserveNamesWithInvalidFileNameCharacters()
+    {
+        const string nodeName = "KG Test: Ручное стрелковое оружие";
+
+        var node = await Storage.Create(nodeName, attributes: new Dictionary<string, string>
+        {
+            ["kind"] = "weapon"
+        });
+
+        Assert.AreEqual(nodeName, node.Name);
+
+        var stored = await Storage.Get(nodeName);
+
+        Assert.IsNotNull(stored);
+        Assert.AreEqual(nodeName, stored.Name);
+        Assert.AreEqual("weapon", stored.Attributes["kind"]);
+
+        var nodeDirectories = Directory.EnumerateDirectories(options.RootPath).ToArray();
+        Assert.AreEqual(1, nodeDirectories.Length);
+        Assert.AreNotEqual(nodeName, Path.GetFileName(nodeDirectories[0]));
+        Assert.IsTrue(File.Exists(Path.Combine(nodeDirectories[0], options.MetadataFileName)));
+
+        var catalogNodes = await ((IGraphNodeCatalog)Storage).GetAllNodesAsync();
+        Assert.IsTrue(catalogNodes.Any(x => x.Name == nodeName));
+    }
+
+    [TestMethod]
+    public async Task ConnectNodesAsync_ShouldPreserveConnectionsForNamesWithInvalidFileNameCharacters()
+    {
+        const string firstName = "KG Test: Ручное стрелковое оружие";
+        const string secondName = "Target: связанный узел";
+
+        var first = await Storage.Create(firstName);
+        var second = await Storage.Create(secondName);
+
+        await Storage.Connect(first, second);
+
+        var firstConnections = await Storage.GetConnectedNodesAsync(first);
+        var secondConnections = await Storage.GetConnectedNodesAsync(second);
+
+        Assert.IsTrue(firstConnections.Any(x => x.Name == secondName));
+        Assert.IsTrue(secondConnections.Any(x => x.Name == firstName));
+    }
+
+    [TestMethod]
+    public async Task CreateNodeAsync_ShouldPreserveInvalidChildName()
+    {
+        const string childName = "KG Test: Ручное стрелковое оружие";
+        const string childPath = "weapon/KG Test: Ручное стрелковое оружие";
+        var parent = await Storage.Create("weapon");
+
+        var child = await Storage.Create(childName, parent, attributes: new Dictionary<string, string>
+        {
+            ["kind"] = "weapon"
+        });
+
+        Assert.AreEqual(childName, child.Name);
+
+        var stored = await Storage.Get(childPath);
+
+        Assert.IsNotNull(stored);
+        Assert.AreEqual(childPath, stored.Name);
+        Assert.AreEqual("weapon", stored.Attributes["kind"]);
+
+        var catalogNodes = await ((IGraphNodeCatalog)Storage).GetAllNodesAsync();
+        Assert.IsTrue(catalogNodes.Any(x => x.Name == childPath));
+    }
+
     private static IReadOnlyList<string> SnapshotFileSystem(string root)
     {
         var entries = new List<string>();

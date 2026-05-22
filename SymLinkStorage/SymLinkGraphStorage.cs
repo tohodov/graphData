@@ -30,6 +30,8 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     public async Task<Node> Create(string name, Node? parent = null, Dictionary<string, string>? attributes = null) {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
         var parentNodeInternal = parent == null ? null : parent as NodeFileSystem ?? await Get(parent.Name) as NodeFileSystem;
         if (parentNodeInternal != null)
             return NodeFileSystem.Create(name, parentNodeInternal, attributes);
@@ -37,6 +39,8 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     public Task<Node?> Get(string name) {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+
         var nodePath = GetNodePath(name);
         if (!Directory.Exists(nodePath))
             return Task.FromResult<Node?>(null);
@@ -53,9 +57,11 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
     public Task<Node?> Get(Node? parent, string nodeId) => Task.FromResult<Node?>(GetInternal(parent as NodeFileSystem, nodeId));
     internal NodeFileSystem? GetInternal(NodeFileSystem? parent, string nodeId) {
+        ArgumentException.ThrowIfNullOrWhiteSpace(nodeId);
+
         var path = parent == null
             ? GetNodePath(nodeId)
-            : Path.Combine(parent.Path, nodeId);
+            : NodeNamePathCodec.CombinePath(parent.Path, nodeId);
 
         if (!Directory.Exists(path))
             return null;
@@ -78,7 +84,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
         var connections = await GetConnectedNodesAsync(node);
         foreach (var connection in connections) {
-            var reciprocalLinkPath = Path.Combine(GetNodePath(connection.Name), node.Name);
+            var reciprocalLinkPath = Path.Combine(GetNodePath(connection.Name), NodeNamePathCodec.EncodeFileName(node.Name));
             DeleteLinkIfExists(reciprocalLinkPath);
         }
 
@@ -86,6 +92,13 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     public Task Connect(Node left, Node right) {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+
+        if (string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase)) {
+            return Task.CompletedTask;
+        }
+
         var sourcePath = GetNodePath(left.Name);
         var targetPath = GetNodePath(right.Name);
         CreateLinkIfMissing(sourcePath, targetPath, right.Name);
@@ -124,7 +137,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
                 var relativePath = Path.GetRelativePath(root.FullName, directory.FullName);
                 if (!string.IsNullOrWhiteSpace(relativePath) && relativePath != ".")
-                    nodes.Add(new NodeFileSystem(NormalizeNodeName(relativePath), options.RootPath));
+                    nodes.Add(new NodeFileSystem(NormalizeNodeName(NodeNamePathCodec.DecodePath(relativePath)), options.RootPath));
 
                 stack.Push(directory);
             }
@@ -179,7 +192,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     private string GetNodePath(string name) {
-        return Path.Combine(options.RootPath, name);
+        return NodeNamePathCodec.CombinePath(options.RootPath, name);
     }
 
     private static string NormalizeNodeName(string nodeName) {
@@ -196,12 +209,12 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             if ((entry.Attributes & FileAttributes.ReparsePoint) == 0)
                 continue;
 
-            yield return entry.Name;
+            yield return NodeNamePathCodec.DecodeFileName(entry.Name);
         }
     }
 
     private void CreateLinkIfMissing(string sourcePath, string targetPath, string name) {
-        var linkPath = Path.Combine(sourcePath, name);
+        var linkPath = Path.Combine(sourcePath, NodeNamePathCodec.EncodeFileName(name));
         try {
             if (FileSystemEntryExists(linkPath)) {
                 return;
