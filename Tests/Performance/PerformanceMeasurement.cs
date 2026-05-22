@@ -67,6 +67,41 @@ internal sealed class PerformanceRun
         _samples.Add(PerformanceSample.Create(operation, items.Count, stopwatch.Elapsed, start, finish, itemDurations));
     }
 
+    public async Task MeasureEachAsync<T>(
+        string operation,
+        IReadOnlyCollection<T> items,
+        Func<T, Task<int>> work,
+        string valueName)
+    {
+        var itemDurations = new List<TimeSpan>(items.Count);
+        var values = new List<int>(items.Count);
+        var start = ResourceSnapshot.Capture();
+        var stopwatch = Stopwatch.StartNew();
+
+        foreach (var item in items)
+        {
+            var itemStopwatch = Stopwatch.StartNew();
+            var value = await work(item).ConfigureAwait(false);
+            itemStopwatch.Stop();
+
+            itemDurations.Add(itemStopwatch.Elapsed);
+            values.Add(value);
+        }
+
+        stopwatch.Stop();
+        var finish = ResourceSnapshot.Capture();
+
+        _samples.Add(PerformanceSample.Create(
+            operation,
+            items.Count,
+            stopwatch.Elapsed,
+            start,
+            finish,
+            itemDurations,
+            values,
+            valueName));
+    }
+
     public void WriteReport(TestContext context)
     {
         context.WriteLine($"Performance scenario: {Scenario}");
@@ -74,7 +109,7 @@ internal sealed class PerformanceRun
         context.WriteLine($"Run id: {PerformanceTestGate.RunId}");
         context.WriteLine($"Storage root: {StorageRootPath}");
         context.WriteLine($"Graph: nodes={Graph.NodeCount}, connectionsPerNode={Graph.ConnectionsPerNode}, edges={Graph.Edges.Count}, seed={Graph.Seed}, containsCycle={Graph.ContainsCycle}");
-        context.WriteLine("operation | count | elapsed ms | avg us/op | min us | p50 us | p95 us | max us | cpu ms | cpu % | allocated MB | managed delta MB | working set delta MB | private delta MB | GC");
+        context.WriteLine("operation | count | elapsed ms | avg us/op | min us | p50 us | p95 us | max us | cpu ms | cpu % | allocated MB | managed delta MB | working set delta MB | private delta MB | GC | metrics");
 
         foreach (var sample in _samples)
         {
@@ -95,7 +130,8 @@ internal sealed class PerformanceRun
                     Format(sample.ManagedMemoryDeltaMegabytes),
                     Format(sample.WorkingSetDeltaMegabytes),
                     Format(sample.PrivateMemoryDeltaMegabytes),
-                    $"{sample.Gen0Collections}/{sample.Gen1Collections}/{sample.Gen2Collections}"));
+                    $"{sample.Gen0Collections}/{sample.Gen1Collections}/{sample.Gen2Collections}",
+                    FormatMetrics(sample.Metrics)));
         }
 
         var reportPath = WriteJsonReport();
@@ -146,6 +182,13 @@ internal sealed class PerformanceRun
             ? value.Value.ToString("0.###", CultureInfo.InvariantCulture)
             : "-";
     }
+
+    private static string FormatMetrics(IReadOnlyDictionary<string, double> metrics)
+    {
+        return metrics.Count == 0
+            ? "-"
+            : string.Join(", ", metrics.Select(metric => $"{metric.Key}={Format(metric.Value)}"));
+    }
 }
 
 internal sealed record PerformanceReport(
@@ -181,7 +224,8 @@ internal sealed record PerformanceSample(
     double? MinMicroseconds,
     double? P50Microseconds,
     double? P95Microseconds,
-    double? MaxMicroseconds)
+    double? MaxMicroseconds,
+    IReadOnlyDictionary<string, double> Metrics)
 {
     public static PerformanceSample Create(
         string operation,
@@ -189,7 +233,9 @@ internal sealed record PerformanceSample(
         TimeSpan elapsed,
         ResourceSnapshot start,
         ResourceSnapshot finish,
-        IReadOnlyCollection<TimeSpan>? itemDurations)
+        IReadOnlyCollection<TimeSpan>? itemDurations,
+        IReadOnlyCollection<int>? resultValues = null,
+        string? resultValueName = null)
     {
         var elapsedMilliseconds = elapsed.TotalMilliseconds;
         var cpuMilliseconds = (finish.TotalProcessorTime - start.TotalProcessorTime).TotalMilliseconds;
@@ -217,7 +263,32 @@ internal sealed record PerformanceSample(
             sortedDurations is { Length: > 0 } ? sortedDurations[0] : null,
             Percentile(sortedDurations, 50),
             Percentile(sortedDurations, 95),
-            sortedDurations is { Length: > 0 } ? sortedDurations[^1] : null);
+            sortedDurations is { Length: > 0 } ? sortedDurations[^1] : null,
+            BuildValueMetrics(resultValues, resultValueName));
+    }
+
+    private static IReadOnlyDictionary<string, double> BuildValueMetrics(
+        IReadOnlyCollection<int>? values,
+        string? valueName)
+    {
+        if (values is null || values.Count == 0 || string.IsNullOrWhiteSpace(valueName))
+        {
+            return new Dictionary<string, double>();
+        }
+
+        var sortedValues = values
+            .Select(static value => (double)value)
+            .Order()
+            .ToArray();
+
+        return new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
+        {
+            [$"{valueName}Min"] = sortedValues[0],
+            [$"{valueName}Avg"] = sortedValues.Average(),
+            [$"{valueName}P50"] = Percentile(sortedValues, 50) ?? 0,
+            [$"{valueName}P95"] = Percentile(sortedValues, 95) ?? 0,
+            [$"{valueName}Max"] = sortedValues[^1]
+        };
     }
 
     private static double? Percentile(double[]? sortedValues, int percentile)

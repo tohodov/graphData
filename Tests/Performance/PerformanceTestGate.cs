@@ -41,6 +41,26 @@ internal static class PerformanceTestGate
             : defaultValue;
     }
 
+    public static IReadOnlyList<int> GetIntList(string variableName, IReadOnlyList<int> defaultValues, int minValue = 0)
+    {
+        var value = Environment.GetEnvironmentVariable(variableName);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return defaultValues;
+        }
+
+        var parsed = value
+            .Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(part => int.TryParse(part, out var number) ? Math.Max(minValue, number) : (int?)null)
+            .Where(static number => number.HasValue)
+            .Select(static number => number!.Value)
+            .Distinct()
+            .Order()
+            .ToArray();
+
+        return parsed.Length == 0 ? defaultValues : parsed;
+    }
+
     public static string? GetString(string variableName)
     {
         var value = Environment.GetEnvironmentVariable(variableName);

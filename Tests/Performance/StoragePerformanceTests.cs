@@ -201,6 +201,55 @@ public sealed class StoragePerformanceTests
         run.WriteReport(TestContext);
     }
 
+    [DataTestMethod]
+    [DataRow("PerNodeFile", 500, 3, 1729)]
+    [DataRow("BucketedFile", 500, 3, 1729)]
+    [DataRow("SymLink", 500, 3, 1729)]
+    public async Task RandomSubgraphReads_ShouldRecordDetailedTimings(
+        string storageKindName,
+        int nodeCount,
+        int connectionsPerNode,
+        int seed)
+    {
+        var storageKind = ParseStorageKind(storageKindName);
+        PerformanceTestGate.EnsureEnabled(storageKind);
+
+        var graph = CreateGraph(nodeCount, connectionsPerNode, seed);
+        AssertGraphContainsCycleWhenPossible(graph);
+
+        const string scenario = "subgraph-random-reads";
+        await using var scope = PerformanceStorageScope.Create(storageKind, scenario);
+        AssertStorageRoot(scope, scenario);
+
+        var run = new PerformanceRun(storageKind.ToString(), graph, scenario, scope.RootPath);
+        await PopulateGraphAsync(scope.Storage, graph).ConfigureAwait(false);
+
+        var sampleCount = PerformanceTestGate.GetInt("GRAPH_DATA_PERF_SUBGRAPH_SAMPLE_COUNT", Math.Min(25, graph.NodeCount));
+        var depths = PerformanceTestGate.GetIntList("GRAPH_DATA_PERF_SUBGRAPH_DEPTHS", [1, 2, 3], minValue: 0);
+        var multiRootCount = PerformanceTestGate.GetInt("GRAPH_DATA_PERF_SUBGRAPH_ROOT_COUNT", 3);
+        var singleRootQueries = graph.GetSampleNodeNames(sampleCount, seedOffset: 3000)
+            .Select(static root => new SubgraphQueryInput([root]))
+            .ToArray();
+        var multiRootQueries = CreateMultiRootSubgraphQueries(graph, sampleCount, multiRootCount);
+
+        foreach (var depth in depths)
+        {
+            await run.MeasureEachAsync(
+                $"subgraph-single-root-depth-{depth}",
+                singleRootQueries,
+                query => ReadSubgraphNodeCountAsync(scope.Storage, query, depth),
+                valueName: "nodes").ConfigureAwait(false);
+
+            await run.MeasureEachAsync(
+                $"subgraph-{multiRootCount}-roots-depth-{depth}",
+                multiRootQueries,
+                query => ReadSubgraphNodeCountAsync(scope.Storage, query, depth),
+                valueName: "nodes").ConfigureAwait(false);
+        }
+
+        run.WriteReport(TestContext);
+    }
+
     private static async Task<Dictionary<string, Node>> PopulateGraphAsync(IGraphStorage storage, GeneratedGraph graph)
     {
         var nodesByName = new Dictionary<string, Node>(StringComparer.OrdinalIgnoreCase);
@@ -217,6 +266,33 @@ public sealed class StoragePerformanceTests
         }
 
         return nodesByName;
+    }
+
+    private static async Task<int> ReadSubgraphNodeCountAsync(
+        IGraphStorage storage,
+        SubgraphQueryInput input,
+        int depth)
+    {
+        var subgraph = await storage.GetSubgraphAsync(SubgraphQuery.FromRoots(input.Roots, maxDepth: depth)).ConfigureAwait(false);
+        Assert.IsTrue(subgraph.Nodes.Count > 0);
+        return subgraph.Nodes.Count;
+    }
+
+    private static IReadOnlyCollection<SubgraphQueryInput> CreateMultiRootSubgraphQueries(
+        GeneratedGraph graph,
+        int sampleCount,
+        int rootCount)
+    {
+        rootCount = Math.Clamp(rootCount, 1, graph.NodeCount);
+        var names = graph.GetSampleNodeNames(sampleCount * rootCount, seedOffset: 4000);
+        return Enumerable.Range(0, sampleCount)
+            .Select(index => new SubgraphQueryInput(
+                names
+                    .Skip(index * rootCount)
+                    .Take(rootCount)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray()))
+            .ToArray();
     }
 
     private static GeneratedGraph CreateGraph(int nodeCount, int connectionsPerNode, int seed)
@@ -255,4 +331,6 @@ public sealed class StoragePerformanceTests
     {
         return new NodeVariableSearchSelector { Name = name };
     }
+
+    private sealed record SubgraphQueryInput(IReadOnlyCollection<string> Roots);
 }
