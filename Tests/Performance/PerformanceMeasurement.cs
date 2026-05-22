@@ -10,18 +10,15 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.Performance;
 
-internal sealed class PerformanceRun
-{
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
+internal sealed class PerformanceRun {
+    private static readonly JsonSerializerOptions JsonOptions = new() {
         WriteIndented = true
     };
 
     private readonly DateTimeOffset _startedAtUtc = DateTimeOffset.UtcNow;
     private readonly List<PerformanceSample> _samples = [];
 
-    public PerformanceRun(string storageKind, GeneratedGraph graph, string scenario, string storageRootPath)
-    {
+    public PerformanceRun(string storageKind, GeneratedGraph graph, string scenario, string storageRootPath) {
         StorageKind = storageKind;
         Graph = graph;
         Scenario = scenario;
@@ -36,8 +33,7 @@ internal sealed class PerformanceRun
 
     public string StorageRootPath { get; }
 
-    public async Task MeasureAsync(string operation, int count, Func<Task> work)
-    {
+    public async Task MeasureAsync(string operation, int count, Func<Task> work) {
         var start = ResourceSnapshot.Capture();
         var stopwatch = Stopwatch.StartNew();
         await work().ConfigureAwait(false);
@@ -47,14 +43,12 @@ internal sealed class PerformanceRun
         _samples.Add(PerformanceSample.Create(operation, count, stopwatch.Elapsed, start, finish, null));
     }
 
-    public async Task MeasureEachAsync<T>(string operation, IReadOnlyCollection<T> items, Func<T, Task> work)
-    {
+    public async Task MeasureEachAsync<T>(string operation, IReadOnlyCollection<T> items, Func<T, Task> work) {
         var itemDurations = new List<TimeSpan>(items.Count);
         var start = ResourceSnapshot.Capture();
         var stopwatch = Stopwatch.StartNew();
 
-        foreach (var item in items)
-        {
+        foreach (var item in items) {
             var itemStopwatch = Stopwatch.StartNew();
             await work(item).ConfigureAwait(false);
             itemStopwatch.Stop();
@@ -71,15 +65,13 @@ internal sealed class PerformanceRun
         string operation,
         IReadOnlyCollection<T> items,
         Func<T, Task<int>> work,
-        string valueName)
-    {
+        string valueName) {
         var itemDurations = new List<TimeSpan>(items.Count);
         var values = new List<int>(items.Count);
         var start = ResourceSnapshot.Capture();
         var stopwatch = Stopwatch.StartNew();
 
-        foreach (var item in items)
-        {
+        foreach (var item in items) {
             var itemStopwatch = Stopwatch.StartNew();
             var value = await work(item).ConfigureAwait(false);
             itemStopwatch.Stop();
@@ -102,8 +94,7 @@ internal sealed class PerformanceRun
             valueName));
     }
 
-    public void WriteReport(TestContext context)
-    {
+    public void WriteReport(PerformanceStorageScope scope, TestContext context) {
         context.WriteLine($"Performance scenario: {Scenario}");
         context.WriteLine($"Storage: {StorageKind}");
         context.WriteLine($"Run id: {PerformanceTestGate.RunId}");
@@ -111,8 +102,7 @@ internal sealed class PerformanceRun
         context.WriteLine($"Graph: nodes={Graph.NodeCount}, connectionsPerNode={Graph.ConnectionsPerNode}, edges={Graph.Edges.Count}, seed={Graph.Seed}, containsCycle={Graph.ContainsCycle}");
         context.WriteLine("operation | count | elapsed ms | avg us/op | min us | p50 us | p95 us | max us | cpu ms | cpu % | allocated MB | managed delta MB | working set delta MB | private delta MB | GC | metrics");
 
-        foreach (var sample in _samples)
-        {
+        foreach (var sample in _samples) {
             context.WriteLine(
                 string.Join(
                     " | ",
@@ -133,28 +123,12 @@ internal sealed class PerformanceRun
                     $"{sample.Gen0Collections}/{sample.Gen1Collections}/{sample.Gen2Collections}",
                     FormatMetrics(sample.Metrics)));
         }
-
-        var reportPath = WriteJsonReport();
+        var reportPath = WriteJsonReport(scope.RootPath);
         context.WriteLine($"JSON report: {reportPath}");
     }
 
-    private string WriteJsonReport()
-    {
-        var root = PerformanceTestGate.GetString("GRAPH_DATA_PERF_OUTPUT_DIR")
-            ?? Path.Combine(PerformanceTestGate.GetStorageBaseRoot(), "GraphDataPerformanceResults");
-        root = Path.Combine(root, PerformanceTestGate.RunId);
-        Directory.CreateDirectory(root);
-
-        var fileName = string.Join(
-            "-",
-            "graphdata",
-            Scenario,
-            StorageKind,
-            $"nodes{Graph.NodeCount}",
-            $"edges{Graph.Edges.Count}",
-            $"seed{Graph.Seed}",
-            DateTime.UtcNow.ToString("yyyyMMddTHHmmssfff", CultureInfo.InvariantCulture)) + ".json";
-
+    private string WriteJsonReport(string root) {
+        var fileName = "TestResult.json";
         var path = Path.Combine(root, fileName);
         var report = new PerformanceReport(
             Scenario,
@@ -176,15 +150,13 @@ internal sealed class PerformanceRun
         return path;
     }
 
-    private static string Format(double? value)
-    {
+    private static string Format(double? value) {
         return value.HasValue
             ? value.Value.ToString("0.###", CultureInfo.InvariantCulture)
             : "-";
     }
 
-    private static string FormatMetrics(IReadOnlyDictionary<string, double> metrics)
-    {
+    private static string FormatMetrics(IReadOnlyDictionary<string, double> metrics) {
         return metrics.Count == 0
             ? "-"
             : string.Join(", ", metrics.Select(metric => $"{metric.Key}={Format(metric.Value)}"));
@@ -225,8 +197,7 @@ internal sealed record PerformanceSample(
     double? P50Microseconds,
     double? P95Microseconds,
     double? MaxMicroseconds,
-    IReadOnlyDictionary<string, double> Metrics)
-{
+    IReadOnlyDictionary<string, double> Metrics) {
     public static PerformanceSample Create(
         string operation,
         int count,
@@ -235,8 +206,7 @@ internal sealed record PerformanceSample(
         ResourceSnapshot finish,
         IReadOnlyCollection<TimeSpan>? itemDurations,
         IReadOnlyCollection<int>? resultValues = null,
-        string? resultValueName = null)
-    {
+        string? resultValueName = null) {
         var elapsedMilliseconds = elapsed.TotalMilliseconds;
         var cpuMilliseconds = (finish.TotalProcessorTime - start.TotalProcessorTime).TotalMilliseconds;
         var elapsedForCpu = elapsed.TotalSeconds <= 0 ? 0 : elapsed.TotalSeconds * Environment.ProcessorCount;
@@ -269,10 +239,8 @@ internal sealed record PerformanceSample(
 
     private static IReadOnlyDictionary<string, double> BuildValueMetrics(
         IReadOnlyCollection<int>? values,
-        string? valueName)
-    {
-        if (values is null || values.Count == 0 || string.IsNullOrWhiteSpace(valueName))
-        {
+        string? valueName) {
+        if (values is null || values.Count == 0 || string.IsNullOrWhiteSpace(valueName)) {
             return new Dictionary<string, double>();
         }
 
@@ -281,8 +249,7 @@ internal sealed record PerformanceSample(
             .Order()
             .ToArray();
 
-        return new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
-        {
+        return new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase) {
             [$"{valueName}Min"] = sortedValues[0],
             [$"{valueName}Avg"] = sortedValues.Average(),
             [$"{valueName}P50"] = Percentile(sortedValues, 50) ?? 0,
@@ -291,18 +258,15 @@ internal sealed record PerformanceSample(
         };
     }
 
-    private static double? Percentile(double[]? sortedValues, int percentile)
-    {
-        if (sortedValues is null || sortedValues.Length == 0)
-        {
+    private static double? Percentile(double[]? sortedValues, int percentile) {
+        if (sortedValues is null || sortedValues.Length == 0) {
             return null;
         }
 
         var rank = percentile / 100.0 * (sortedValues.Length - 1);
         var lower = (int)Math.Floor(rank);
         var upper = (int)Math.Ceiling(rank);
-        if (lower == upper)
-        {
+        if (lower == upper) {
             return sortedValues[lower];
         }
 
@@ -310,8 +274,7 @@ internal sealed record PerformanceSample(
         return sortedValues[lower] + (sortedValues[upper] - sortedValues[lower]) * weight;
     }
 
-    private static double ToMegabytes(long bytes)
-    {
+    private static double ToMegabytes(long bytes) {
         return bytes / 1024d / 1024d;
     }
 }
@@ -324,10 +287,8 @@ internal sealed record ResourceSnapshot(
     long PrivateMemoryBytes,
     int Gen0Collections,
     int Gen1Collections,
-    int Gen2Collections)
-{
-    public static ResourceSnapshot Capture()
-    {
+    int Gen2Collections) {
+    public static ResourceSnapshot Capture() {
         using var process = Process.GetCurrentProcess();
         process.Refresh();
 

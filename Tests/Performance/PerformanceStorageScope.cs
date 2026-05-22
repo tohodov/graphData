@@ -13,7 +13,7 @@ using SymLinkStorage;
 
 namespace GraphData.Tests.Performance;
 
-internal enum PerformanceStorageKind
+public enum PerformanceStorageKind
 {
     PerNodeFile,
     BucketedFile,
