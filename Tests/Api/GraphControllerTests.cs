@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using GraphData.Api.Controllers;
 using GraphData.Api.Models;
 using GraphData.Api.Runtime;
+using GraphData.Api.Services;
 using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
@@ -77,6 +78,30 @@ public sealed class GraphControllerTests
         Assert.IsNotNull(response);
         Assert.AreEqual("new node", response.Name);
         Assert.AreEqual("demo", response.Attributes["kind"]);
+    }
+
+    [TestMethod]
+    public async Task CreateNodeAsync_CreatesChildWhenParentNameIsProvided()
+    {
+        await using var scope = TestGraphStorageScope.Create();
+        var parent = await scope.Storage.Create("parent");
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.CreateNodeAsync(new CreateNodeRequest
+        {
+            Name = "child",
+            ParentName = parent.Name
+        });
+
+        var created = result.Result as CreatedResult;
+        Assert.IsNotNull(created);
+
+        var response = created.Value as NodeResponse;
+        Assert.IsNotNull(response);
+        Assert.AreEqual("parent/child", response.Name);
+
+        var stored = await scope.Storage.Get("parent/child");
+        Assert.IsNotNull(stored);
     }
 
     [TestMethod]
@@ -224,7 +249,8 @@ public sealed class GraphControllerTests
 
     private static GraphController CreateController(IGraphStorage storage)
     {
-        var controller = new GraphController(new NodeService(storage), new GraphSearchService(storage));
+        var controller = new GraphController(
+            new GraphApiService(new NodeService(storage), new GraphSearchService(storage)));
         controller.ControllerContext = new ControllerContext
         {
             HttpContext = new DefaultHttpContext()

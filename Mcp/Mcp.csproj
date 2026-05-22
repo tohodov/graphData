@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\Api\Api.csproj" />
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
     <ProjectReference Include="..\McpTracker\Client\Client.csproj" />
@@ -22,6 +23,7 @@
     <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <_GetChildProjectCopyToPublishDirectoryItems>false</_GetChildProjectCopyToPublishDirectoryItems>
   </PropertyGroup>
 
 </Project>

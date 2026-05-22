@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Text.Json;
-using GraphData.Core.Abstractions;
+using GraphData.Api.Models;
+using GraphData.Api.Runtime;
+using GraphData.Api.Services;
 using GraphData.Core.Models;
 using ModelContextProtocol.Server;
 
@@ -8,27 +10,31 @@ namespace GraphData.Mcp.Tools;
 
 [McpServerToolType]
 public sealed class GraphDataTools(
-    IGraphStorage storage,
-    GraphData.Core.Services.IncrementalGraphExpansionService expansionService,
-    GraphData.Core.Services.GraphSearchService searchService) {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) {
-        WriteIndented = true
-    };
+    GraphApiService graphApi,
+    GraphData.Core.Services.IncrementalGraphExpansionService expansionService) {
+    private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
-    private readonly IGraphStorage _storage = storage;
+    private readonly GraphApiService _graphApi = graphApi;
     private readonly GraphData.Core.Services.IncrementalGraphExpansionService _expansionService = expansionService;
-    private readonly GraphData.Core.Services.GraphSearchService _searchService = searchService;
 
     [McpServerTool]
-    [Description("Gets a graph node by name and returns its attributes and connected node names.")]
+    [Description("Gets a graph node by name and returns the same node shape as the HTTP API: attributes plus edges.")]
     public async Task<string> GetNode(
         [Description("Node name to look up.")] string name) {
-        var node = await _storage.Get(name);
-        if (node is null)
+        var result = await _graphApi.GetNodeAsync(name);
+        if (result.Status is GraphApiStatus.Ok && result.Value is not null) {
+            return ToJson(new {
+                found = true,
+                node = result.Value
+            });
+        }
+
+        if (result.Status is GraphApiStatus.NotFound)
             return ToJson(new { found = false, name });
+
         return ToJson(new {
-            found = true,
-            node = ToResponse(node)
+            found = false,
+            error = GetError(result.Status, result.Error)
         });
     }
 
@@ -38,17 +44,13 @@ public sealed class GraphDataTools(
         [Description("Name for the new node.")] string name,
         [Description("Optional parent node name. Leave empty to create a root node.")] string? parentName = null,
         [Description("Optional string attributes for the node.")] Dictionary<string, string>? attributes = null) {
-        Node? parent = null;
-        if (!string.IsNullOrWhiteSpace(parentName)) {
-            parent = await _storage.Get(parentName);
-            if (parent is null)
-                return ToJson(new { success = false, error = $"Parent node '{parentName}' was not found." });
-        }
-        var node = await _storage.Create(name, parent, attributes);
-        return ToJson(new {
-            success = true,
-            node = ToResponse(node)
+        var result = await _graphApi.CreateNodeAsync(new CreateNodeRequest {
+            Name = name,
+            ParentName = parentName,
+            Attributes = attributes
         });
+
+        return ToMutationJson(result, "node");
     }
 
     [McpServerTool]
@@ -56,15 +58,21 @@ public sealed class GraphDataTools(
     public async Task<string> UpdateNodeAttributes(
         [Description("Name of the node to update.")] string name,
         [Description("Complete replacement set of string attributes.")] Dictionary<string, string> attributes) {
-        var node = await _storage.Get(name);
-        if (node is null)
-            return ToJson(new { success = false, error = $"Node '{name}' was not found." });
-        await _storage.Update(name, attributes);
-        var updated = await _storage.Get(name);
-        return ToJson(new {
-            success = true,
-            node = updated is null ? null : ToResponse(updated)
+        var result = await _graphApi.UpdateNodeAsync(name, new UpdateNodeRequest {
+            Attributes = attributes
         });
+
+        return ToMutationJson(result, "node");
+    }
+
+    [McpServerTool]
+    [Description("Deletes an existing graph node by name.")]
+    public async Task<string> DeleteNode(
+        [Description("Name of the node to delete.")] string name) {
+        var result = await _graphApi.DeleteNodeAsync(name);
+        return result.Succeeded
+            ? ToJson(new { success = true })
+            : ToJson(ToErrorResponse(result.Status, result.Error));
     }
 
     [McpServerTool]
@@ -72,44 +80,40 @@ public sealed class GraphDataTools(
     public async Task<string> ConnectNodes(
         [Description("Name of the first node.")] string sourceName,
         [Description("Name of the second node.")] string targetName) {
-        if (string.Equals(sourceName, targetName, StringComparison.OrdinalIgnoreCase))
-            return ToJson(new { success = false, error = "Source and target nodes must be different." });
-        var source = await _storage.Get(sourceName);
-        var target = await _storage.Get(targetName);
-        if (source is null || target is null) {
-            return ToJson(new {
-                success = false,
-                missingNodes = new[] {
-                    source is null ? sourceName : null,
-                    target is null ? targetName : null
-                }.Where(static value => value is not null)
-            });
-        }
-        await _storage.Connect(source, target);
-        return ToJson(new {
-            success = true,
-            source = sourceName,
-            target = targetName
+        var result = await _graphApi.ConnectNodesAsync(new ConnectNodesRequest {
+            SourceName = sourceName,
+            TargetName = targetName
         });
+
+        return result.Succeeded
+            ? ToJson(new {
+                success = true,
+                source = sourceName,
+                target = targetName
+            })
+            : ToJson(ToErrorResponse(result.Status, result.Error));
     }
 
     [McpServerTool]
-    [Description("Returns a subgraph discovered from root node names up to the requested depth.")]
+    [Description("Returns the same subgraph shape as the HTTP API: nodes plus top-level edges.")]
     public async Task<string> GetSubgraph(
         [Description("Root node names for graph traversal.")] string[] rootNodeIds,
         [Description("Maximum traversal depth. Use 0 to return only roots.")] int maxDepth = 1,
         [Description("Whether disconnected roots should be included when supported by the storage provider.")] bool includeDisconnectedRoots = false) {
-        if (maxDepth < 0)
-            return ToJson(new { success = false, error = "Max depth must be non-negative." });
-        var query = new SubgraphQuery {
-            RootNodeIds = rootNodeIds.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+        var result = await _graphApi.GetSubgraphAsync(new SubgraphRequest {
+            RootNodeIds = rootNodeIds,
             MaxDepth = maxDepth,
             IncludeDisconnectedRoots = includeDisconnectedRoots
-        };
-        var subgraph = await _storage.GetSubgraphAsync(query);
+        });
+
+        if (!result.Succeeded || result.Value is null)
+            return ToJson(ToErrorResponse(result.Status, result.Error));
+
         return ToJson(new {
             success = true,
-            nodes = subgraph.Nodes.Select(ToResponse).ToArray()
+            subgraph = result.Value,
+            nodes = result.Value.Nodes,
+            edges = result.Value.Edges
         });
     }
 
@@ -120,25 +124,13 @@ public sealed class GraphDataTools(
         if (query is null)
             return ToJson(new { success = false, error = "Query must be provided." });
 
-        try {
-            var matches = await _searchService.SearchNodesAsync(query);
-            return ToJson(new {
+        var result = await _graphApi.SearchNodesAsync(query);
+        return result.Succeeded && result.Value is not null
+            ? ToJson(new {
                 success = true,
-                matches = matches.Select(static match => new {
-                    node = ToResponse(match.Node),
-                    bindings = match.Bindings.ToDictionary(
-                        static pair => pair.Key,
-                        static pair => ToResponse(pair.Value),
-                        StringComparer.OrdinalIgnoreCase),
-                    score = match.Score,
-                    matchedBy = match.MatchedBy
-                }).ToArray()
-            });
-        } catch (ArgumentException ex) {
-            return ToJson(new { success = false, error = ex.Message });
-        } catch (NotSupportedException ex) {
-            return ToJson(new { success = false, error = ex.Message });
-        }
+                matches = result.Value
+            })
+            : ToJson(ToErrorResponse(result.Status, result.Error));
     }
 
     [McpServerTool]
@@ -148,27 +140,55 @@ public sealed class GraphDataTools(
         if (request.RootContextNodes.Length == 0)
             return ToJson(new { success = false, error = "At least one root context node is required." });
         var result = await _expansionService.ApplyStepAsync(request);
+        var contextSubgraph = GraphResponseMapper.ToSubgraphResponse(result.ContextSubgraph);
         return ToJson(new {
             success = true,
             createdNodes = result.CreatedNodes,
             updatedNodes = result.UpdatedNodes,
             connectedPairs = result.ConnectedPairs,
-            contextNodes = result.ContextSubgraph.Nodes.Select(ToResponse).ToArray()
+            contextSubgraph,
+            contextNodes = contextSubgraph.Nodes,
+            contextEdges = contextSubgraph.Edges
         });
     }
-    private static object ToResponse(Node node) {
+
+    private static string ToMutationJson<T>(GraphApiResponse<T> result, string valuePropertyName) {
+        if (!result.Succeeded || result.Value is null)
+            return ToJson(ToErrorResponse(result.Status, result.Error));
+
+        return ToJson(new Dictionary<string, object?> {
+            ["success"] = true,
+            [valuePropertyName] = result.Value
+        });
+    }
+
+    private static object ToErrorResponse(GraphApiStatus status, string? error) {
         return new {
-            name = node.Name,
-            attributes = node.Attributes,
-            connectedNodes = node.Nodes
-                .Select(static connected => connected.Name)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(static name => name)
-                .ToArray()
+            success = false,
+            status = status.ToString(),
+            error = GetError(status, error)
+        };
+    }
+
+    private static string GetError(GraphApiStatus status, string? error) {
+        if (!string.IsNullOrWhiteSpace(error))
+            return error;
+
+        return status switch {
+            GraphApiStatus.BadRequest => "Request is invalid.",
+            GraphApiStatus.NotFound => "Resource was not found.",
+            GraphApiStatus.NotImplemented => "Operation is not supported.",
+            _ => "Operation failed."
         };
     }
 
     private static string ToJson(object value) {
         return JsonSerializer.Serialize(value, JsonOptions);
+    }
+
+    private static JsonSerializerOptions CreateJsonOptions() {
+        var options = GraphJsonSerializerOptions.Create();
+        options.WriteIndented = true;
+        return options;
     }
 }

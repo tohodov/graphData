@@ -1,3 +1,5 @@
+using GraphData.Api.Runtime;
+using GraphData.Api.Services;
 using GraphData.Core.Extensions;
 using GraphData.Mcp.Runtime;
 using Microsoft.Extensions.Configuration;
@@ -29,11 +31,12 @@ builder.AddTracker();
 
 builder.Services.AddSingleton<ICancellationTokenAccessor, McpCancellationTokenAccessor>();
 builder.Services.AddGraphCore();
+builder.Services.AddScoped<GraphApiService>();
 builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
     .WithMcpTrackerMessageFilters()
-    .WithToolsFromAssembly();
+    .WithToolsFromAssembly(serializerOptions: GraphJsonSerializerOptions.Create());
 
 await builder.Build().RunAsync();
