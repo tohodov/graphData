@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace GraphData.Api.Runtime;
 
@@ -14,5 +15,10 @@ public static class GraphJsonSerializerOptions
     public static void Configure(JsonSerializerOptions options)
     {
         options.AllowOutOfOrderMetadataProperties = true;
+
+        if (options.TypeInfoResolver is null)
+        {
+            options.TypeInfoResolver = new DefaultJsonTypeInfoResolver();
+        }
     }
 }
