@@ -9,13 +9,10 @@ using ModelContextProtocol.Server;
 namespace GraphData.Mcp.Tools;
 
 [McpServerToolType]
-public sealed class GraphDataTools(
-    GraphApiService graphApi,
-    GraphData.Core.Services.IncrementalGraphExpansionService expansionService) {
+public sealed class GraphDataTools(GraphApiService graphApi) {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
     private readonly GraphApiService _graphApi = graphApi;
-    private readonly GraphData.Core.Services.IncrementalGraphExpansionService _expansionService = expansionService;
 
     [McpServerTool]
     [Description("Gets a graph node by name and returns the same node shape as the HTTP API: attributes plus edges.")]
@@ -131,25 +128,6 @@ public sealed class GraphDataTools(
                 matches = result.Value
             })
             : ToJson(ToErrorResponse(result.Status, result.Error));
-    }
-
-    [McpServerTool]
-    [Description("Applies one incremental knowledge-graph expansion step (upsert nodes, connect nodes, and return refreshed context subgraph).")]
-    public async Task<string> ApplyIncrementalExpansionStep(
-        [Description("Expansion payload containing root context nodes, node upserts, and new connections.")] IncrementalExpansionRequest request) {
-        if (request.RootContextNodes.Length == 0)
-            return ToJson(new { success = false, error = "At least one root context node is required." });
-        var result = await _expansionService.ApplyStepAsync(request);
-        var contextSubgraph = GraphResponseMapper.ToSubgraphResponse(result.ContextSubgraph);
-        return ToJson(new {
-            success = true,
-            createdNodes = result.CreatedNodes,
-            updatedNodes = result.UpdatedNodes,
-            connectedPairs = result.ConnectedPairs,
-            contextSubgraph,
-            contextNodes = contextSubgraph.Nodes,
-            contextEdges = contextSubgraph.Edges
-        });
     }
 
     private static string ToMutationJson<T>(GraphApiResponse<T> result, string valuePropertyName) {
