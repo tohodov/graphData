@@ -105,6 +105,84 @@ public sealed class GraphControllerTests
     }
 
     [TestMethod]
+    public async Task CreateNodeAsync_ReturnsBadRequestForInvalidNodeName()
+    {
+        await using var scope = TestGraphStorageScope.Create();
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.CreateNodeAsync(new CreateNodeRequest
+        {
+            Name = "KG Test: Ручное стрелковое оружие"
+        });
+
+        var badRequest = result.Result as BadRequestObjectResult;
+        Assert.IsNotNull(badRequest);
+        var message = badRequest.Value as string;
+        Assert.IsNotNull(message);
+        StringAssert.Contains(message, "invalid character ':'");
+        StringAssert.Contains(message, NodeNameValidator.AllowedCharactersDescription);
+    }
+
+    [TestMethod]
+    public async Task CreateNodeAsync_ReturnsBadRequestForReservedNodeNameSegment()
+    {
+        await using var scope = TestGraphStorageScope.Create();
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.CreateNodeAsync(new CreateNodeRequest
+        {
+            Name = "devices/CON"
+        });
+
+        var badRequest = result.Result as BadRequestObjectResult;
+        Assert.IsNotNull(badRequest);
+        var message = badRequest.Value as string;
+        Assert.IsNotNull(message);
+        StringAssert.Contains(message, "segment 'CON' is reserved");
+    }
+
+    [TestMethod]
+    public async Task ConnectNodesAsync_ReturnsBadRequestForInvalidTargetName()
+    {
+        await using var scope = TestGraphStorageScope.Create();
+        var source = await scope.Storage.Create("source");
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.ConnectNodesAsync(new ConnectNodesRequest
+        {
+            SourceName = source.Name,
+            TargetName = "target:name"
+        });
+
+        var badRequest = result as BadRequestObjectResult;
+        Assert.IsNotNull(badRequest);
+        var message = badRequest.Value as string;
+        Assert.IsNotNull(message);
+        StringAssert.Contains(message, "Target node name contains invalid character ':'");
+    }
+
+    [TestMethod]
+    public async Task SearchNodesAsync_ReturnsBadRequestForInvalidLiteralNodeName()
+    {
+        await using var scope = TestGraphStorageScope.Create();
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.SearchNodesAsync(new NodeSearchQuery
+        {
+            Where = new NodeExistsSearchExpression
+            {
+                Node = new NodeLiteralSearchSelector { Name = "bad:name" }
+            }
+        }, CancellationToken.None);
+
+        var badRequest = result as BadRequestObjectResult;
+        Assert.IsNotNull(badRequest);
+        var message = badRequest.Value as string;
+        Assert.IsNotNull(message);
+        StringAssert.Contains(message, "invalid character ':'");
+    }
+
+    [TestMethod]
     public async Task GetSubgraphAsync_ReturnsTopLevelEdgesWithoutDuplicatingThemOnNodes()
     {
         await using var scope = TestGraphStorageScope.Create();

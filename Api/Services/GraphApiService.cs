@@ -14,9 +14,9 @@ public sealed class GraphApiService(
 
     public async Task<GraphApiResponse<NodeResponse>> GetNodeAsync(string name)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        if (!NodeNameValidator.TryValidate(name, out var validationError))
         {
-            return GraphApiResponse<NodeResponse>.BadRequest("Node name must be provided.");
+            return GraphApiResponse<NodeResponse>.BadRequest(validationError);
         }
 
         var response = await GetNodeResponseAsync(name);
@@ -27,14 +27,24 @@ public sealed class GraphApiService(
 
     public async Task<GraphApiResponse<NodeResponse>> CreateNodeAsync(CreateNodeRequest? request)
     {
-        if (request is null || string.IsNullOrWhiteSpace(request.Name))
+        if (request is null)
         {
-            return GraphApiResponse<NodeResponse>.BadRequest("Node name must be provided.");
+            return GraphApiResponse<NodeResponse>.BadRequest();
+        }
+
+        if (!NodeNameValidator.TryValidate(request.Name, out var validationError))
+        {
+            return GraphApiResponse<NodeResponse>.BadRequest(validationError);
         }
 
         Node? parent = null;
         if (!string.IsNullOrWhiteSpace(request.ParentName))
         {
+            if (!NodeNameValidator.TryValidate(request.ParentName, "Parent node name", out validationError))
+            {
+                return GraphApiResponse<NodeResponse>.BadRequest(validationError);
+            }
+
             parent = await _nodeService.Get(request.ParentName);
             if (parent is null)
             {
@@ -51,9 +61,9 @@ public sealed class GraphApiService(
         string name,
         UpdateNodeRequest? request)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        if (!NodeNameValidator.TryValidate(name, out var validationError))
         {
-            return GraphApiResponse<NodeResponse>.BadRequest("Node name must be provided.");
+            return GraphApiResponse<NodeResponse>.BadRequest(validationError);
         }
 
         if (request is null)
@@ -76,9 +86,9 @@ public sealed class GraphApiService(
 
     public async Task<GraphApiResponse> DeleteNodeAsync(string name)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        if (!NodeNameValidator.TryValidate(name, out var validationError))
         {
-            return GraphApiResponse.BadRequest("Node name must be provided.");
+            return GraphApiResponse.BadRequest(validationError);
         }
 
         var node = await _nodeService.Get(name);
@@ -93,11 +103,19 @@ public sealed class GraphApiService(
 
     public async Task<GraphApiResponse> ConnectNodesAsync(ConnectNodesRequest? request)
     {
-        if (request is null ||
-            string.IsNullOrWhiteSpace(request.SourceName) ||
-            string.IsNullOrWhiteSpace(request.TargetName))
+        if (request is null)
         {
-            return GraphApiResponse.BadRequest("SourceName and TargetName must be provided.");
+            return GraphApiResponse.BadRequest();
+        }
+
+        if (!NodeNameValidator.TryValidate(request.SourceName, "Source node name", out var validationError))
+        {
+            return GraphApiResponse.BadRequest(validationError);
+        }
+
+        if (!NodeNameValidator.TryValidate(request.TargetName, "Target node name", out validationError))
+        {
+            return GraphApiResponse.BadRequest(validationError);
         }
 
         if (string.Equals(request.SourceName, request.TargetName, StringComparison.OrdinalIgnoreCase))
@@ -132,6 +150,14 @@ public sealed class GraphApiService(
         if (roots.Length == 0)
         {
             return GraphApiResponse<SubgraphResponse>.Ok(new SubgraphResponse());
+        }
+
+        foreach (var root in roots)
+        {
+            if (!NodeNameValidator.TryValidate(root, "Root node name", out var validationError))
+            {
+                return GraphApiResponse<SubgraphResponse>.BadRequest(validationError);
+            }
         }
 
         var subgraph = await _nodeService.GetSubgraph(new SubgraphQuery

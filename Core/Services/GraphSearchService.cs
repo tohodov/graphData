@@ -878,7 +878,7 @@ public sealed class GraphSearchService(IGraphStorage storage)
                 break;
 
             case NodeLiteralSearchSelector literal:
-                ArgumentException.ThrowIfNullOrWhiteSpace(literal.Name);
+                NodeNameValidator.Validate(literal.Name, nameof(literal.Name));
                 break;
 
             default:

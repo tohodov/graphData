@@ -61,7 +61,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
         var path = parent == null
             ? GetNodePath(nodeId)
-            : NodeNamePathCodec.CombinePath(parent.Path, nodeId);
+            : Path.Combine(parent.Path, nodeId);
 
         if (!Directory.Exists(path))
             return null;
@@ -84,7 +84,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
         var connections = await GetConnectedNodesAsync(node);
         foreach (var connection in connections) {
-            var reciprocalLinkPath = Path.Combine(GetNodePath(connection.Name), NodeNamePathCodec.EncodeFileName(node.Name));
+            var reciprocalLinkPath = Path.Combine(GetNodePath(connection.Name), node.Name);
             DeleteLinkIfExists(reciprocalLinkPath);
         }
 
@@ -137,7 +137,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
                 var relativePath = Path.GetRelativePath(root.FullName, directory.FullName);
                 if (!string.IsNullOrWhiteSpace(relativePath) && relativePath != ".")
-                    nodes.Add(new NodeFileSystem(NormalizeNodeName(NodeNamePathCodec.DecodePath(relativePath)), options.RootPath));
+                    nodes.Add(new NodeFileSystem(NormalizeNodeName(relativePath), options.RootPath));
 
                 stack.Push(directory);
             }
@@ -192,7 +192,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     private string GetNodePath(string name) {
-        return NodeNamePathCodec.CombinePath(options.RootPath, name);
+        return Path.Combine(options.RootPath, name);
     }
 
     private static string NormalizeNodeName(string nodeName) {
@@ -209,12 +209,12 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             if ((entry.Attributes & FileAttributes.ReparsePoint) == 0)
                 continue;
 
-            yield return NodeNamePathCodec.DecodeFileName(entry.Name);
+            yield return entry.Name;
         }
     }
 
     private void CreateLinkIfMissing(string sourcePath, string targetPath, string name) {
-        var linkPath = Path.Combine(sourcePath, NodeNamePathCodec.EncodeFileName(name));
+        var linkPath = Path.Combine(sourcePath, name);
         try {
             if (FileSystemEntryExists(linkPath)) {
                 return;

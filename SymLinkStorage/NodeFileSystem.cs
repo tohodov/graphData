@@ -12,12 +12,11 @@ internal record NodeFileSystem : Node {
     const string MetadataFileName = "node.json";
 
     readonly string parentPath;
-    readonly string? pathOverride;
     IReadOnlyDictionary<string, Edge>? edges;
     IReadOnlyCollection<Node>? nodes;
     IReadOnlyDictionary<string, string>? attributes;
 
-    public string Path => pathOverride ?? NodeNamePathCodec.CombinePath(parentPath, Name);
+    public string Path => Combine(parentPath, Name);
     public string MetadataPath => Combine(Path, MetadataFileName);
 
     public override string Name { get; }
@@ -47,7 +46,7 @@ internal record NodeFileSystem : Node {
     }
 
     public NodeFileSystem(DirectoryInfo info) {
-        Name = NodeNamePathCodec.DecodeFileName(info.Name);
+        Name = info.Name;
         parentPath = info.Parent?.FullName ?? "";
     }
     public NodeFileSystem(string name, string storageRootPath) {
@@ -57,15 +56,6 @@ internal record NodeFileSystem : Node {
     public NodeFileSystem(string name, NodeFileSystem parent) {
         Name = name;
         parentPath = parent.Path;
-    }
-    NodeFileSystem(string name, string storageRootPath, string fullPath) {
-        Name = name;
-        parentPath = storageRootPath;
-        pathOverride = fullPath;
-    }
-
-    internal static NodeFileSystem FromPath(string name, string fullPath) {
-        return new NodeFileSystem(name, GetDirectoryName(fullPath) ?? "", fullPath);
     }
 
     public bool IsExists() => Directory.Exists(Path);
@@ -99,8 +89,7 @@ internal record NodeFileSystem : Node {
             }
             yield return new SymLink {
                 Directory = Path,
-                Path = entry.FullName,
-                Name = NodeNamePathCodec.DecodeFileName(entry.Name),
+                Name = entry.Name,
                 TargetPath = targetPath ?? string.Empty
             };
         }
@@ -137,7 +126,7 @@ internal record EdgeFileSystem : Edge {
 
     public SymLink Link { get; }
     public NodeFileSystem Parent { get; }
-    public NodeFileSystem Child => child ??= NodeFileSystem.FromPath(Link.Name, Link.Path);
+    public NodeFileSystem Child => child ??= new NodeFileSystem(Link.Name, Parent);
 
     public override Node Node1 => Parent;
     public override Node Node2 => Child;
