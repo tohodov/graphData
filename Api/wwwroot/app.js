@@ -209,7 +209,7 @@ async function loadNode(name, fromName, options = {}) {
   const select = options.select ?? true;
   setBusy(true);
   try {
-    const expansion = await apiJson(`/api/graph/nodes?name=${encodeURIComponent(name)}`);
+    const expansion = await apiJson(`/api/graph/nodes?${toPathQuery(name)}`);
     state.loaded.set(expansion.name, expansion);
     if (select) {
       state.selectedName = expansion.name;
@@ -265,7 +265,7 @@ async function saveSelectedNode() {
 
   setBusy(true);
   try {
-    await apiJson(`/api/graph/nodes?name=${encodeURIComponent(nodeName)}`, {
+    await apiJson(`/api/graph/nodes?${toPathQuery(nodeName)}`, {
       method: "PUT",
       body: JSON.stringify({ attributes: readAttributeEditor() }),
       expectJson: false
@@ -288,7 +288,7 @@ async function deleteSelectedNode() {
 
   setBusy(true);
   try {
-    await apiJson(`/api/graph/nodes?name=${encodeURIComponent(nodeName)}`, {
+    await apiJson(`/api/graph/nodes?${toPathQuery(nodeName)}`, {
       method: "DELETE",
       expectJson: false
     });
@@ -307,7 +307,10 @@ async function connectNodes(sourceName, targetName) {
   try {
     await apiJson("/api/graph/connections", {
       method: "POST",
-      body: JSON.stringify({ sourceName, targetName }),
+      body: JSON.stringify({
+        sourcePath: toPath(sourceName),
+        targetPath: toPath(targetName)
+      }),
       expectJson: false
     });
     connectTargetName.value = "";
@@ -427,6 +430,16 @@ function literalSelector(name) {
   return { kind: "literal", name };
 }
 
+function toPath(name) {
+  return name.split("/").filter(Boolean);
+}
+
+function toPathQuery(name) {
+  return toPath(name)
+    .map(segment => `path=${encodeURIComponent(segment)}`)
+    .join("&");
+}
+
 async function searchNodes() {
   let query;
   try {
@@ -531,7 +544,7 @@ async function loadSubgraph() {
     const response = await apiJson("/api/graph/subgraph", {
       method: "POST",
       body: JSON.stringify({
-        rootNodeIds: roots,
+        rootPaths: roots.map(toPath),
         maxDepth: readNumber("#subgraph-depth", 1),
         includeDisconnectedRoots: document.querySelector("#subgraph-include-disconnected").checked
       })

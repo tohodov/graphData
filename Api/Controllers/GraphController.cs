@@ -16,9 +16,9 @@ public sealed class GraphController(GraphApiService graphApi) : ControllerBase
     private readonly GraphApiService _graphApi = graphApi;
 
     [HttpGet("nodes")]
-    public async Task<ActionResult<NodeResponse>> GetNodeAsync([FromQuery] string name)
+    public async Task<ActionResult<NodeResponse>> GetNodeAsync([FromQuery] string[] path)
     {
-        var result = await _graphApi.GetNodeAsync(name);
+        var result = await _graphApi.GetNodeAsync(path);
         return ToActionResult(result);
     }
 
@@ -28,8 +28,9 @@ public sealed class GraphController(GraphApiService graphApi) : ControllerBase
         var result = await _graphApi.CreateNodeAsync(request);
         if (result.Status is GraphApiStatus.Created && result.Value is not null)
         {
-            var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { name = result.Value.Name })
-                ?? $"/api/graph/nodes?name={Uri.EscapeDataString(result.Value.Name)}";
+            var path = result.Value.Name.Split('/');
+            var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { path })
+                ?? $"/api/graph/nodes?{string.Join('&', path.Select(static segment => $"path={Uri.EscapeDataString(segment)}"))}";
             return Created(location, result.Value);
         }
 
@@ -37,16 +38,16 @@ public sealed class GraphController(GraphApiService graphApi) : ControllerBase
     }
 
     [HttpPut("nodes")]
-    public async Task<IActionResult> UpdateNodeAsync([FromQuery] string name, [FromBody] UpdateNodeRequest request)
+    public async Task<IActionResult> UpdateNodeAsync([FromQuery] string[] path, [FromBody] UpdateNodeRequest request)
     {
-        var result = await _graphApi.UpdateNodeAsync(name, request);
+        var result = await _graphApi.UpdateNodeAsync(path, request);
         return result.Succeeded ? NoContent() : ToActionResult(result.Status, result.Error);
     }
 
     [HttpDelete("nodes")]
-    public async Task<IActionResult> DeleteNodeAsync([FromQuery] string name)
+    public async Task<IActionResult> DeleteNodeAsync([FromQuery] string[] path)
     {
-        var result = await _graphApi.DeleteNodeAsync(name);
+        var result = await _graphApi.DeleteNodeAsync(path);
         return ToActionResult(result);
     }
 

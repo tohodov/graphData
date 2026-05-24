@@ -12,9 +12,9 @@ public sealed class GraphApiService(
     private readonly NodeService _nodeService = nodeService;
     private readonly GraphSearchService _searchService = searchService;
 
-    public async Task<GraphApiResponse<NodeResponse>> GetNodeAsync(string name)
+    public async Task<GraphApiResponse<NodeResponse>> GetNodeAsync(IReadOnlyCollection<string>? path)
     {
-        if (!NodeNameValidator.TryValidate(name, out var validationError))
+        if (!NodePath.TryJoin(path, "Node path", out var name, out var validationError))
         {
             return GraphApiResponse<NodeResponse>.BadRequest(validationError);
         }
@@ -32,24 +32,24 @@ public sealed class GraphApiService(
             return GraphApiResponse<NodeResponse>.BadRequest();
         }
 
-        if (!NodeNameValidator.TryValidate(request.Name, out var validationError))
+        if (!NodeNameValidator.TryValidateSegment(request.Name, "Node name", out var validationError))
         {
             return GraphApiResponse<NodeResponse>.BadRequest(validationError);
         }
 
         Node? parent = null;
-        if (!string.IsNullOrWhiteSpace(request.ParentName))
+        if (request.ParentPath is { Length: > 0 })
         {
-            if (!NodeNameValidator.TryValidate(request.ParentName, "Parent node name", out validationError))
+            if (!NodePath.TryJoin(request.ParentPath, "Parent node path", out var parentName, out validationError))
             {
                 return GraphApiResponse<NodeResponse>.BadRequest(validationError);
             }
 
-            parent = await _nodeService.Get(request.ParentName);
+            parent = await _nodeService.Get(parentName);
             if (parent is null)
             {
                 return GraphApiResponse<NodeResponse>.NotFound(
-                    $"Parent node '{request.ParentName}' was not found.");
+                    $"Parent node '{parentName}' was not found.");
             }
         }
 
@@ -58,10 +58,10 @@ public sealed class GraphApiService(
     }
 
     public async Task<GraphApiResponse<NodeResponse>> UpdateNodeAsync(
-        string name,
+        IReadOnlyCollection<string>? path,
         UpdateNodeRequest? request)
     {
-        if (!NodeNameValidator.TryValidate(name, out var validationError))
+        if (!NodePath.TryJoin(path, "Node path", out var name, out var validationError))
         {
             return GraphApiResponse<NodeResponse>.BadRequest(validationError);
         }
@@ -84,9 +84,9 @@ public sealed class GraphApiService(
             : GraphApiResponse<NodeResponse>.Ok(response);
     }
 
-    public async Task<GraphApiResponse> DeleteNodeAsync(string name)
+    public async Task<GraphApiResponse> DeleteNodeAsync(IReadOnlyCollection<string>? path)
     {
-        if (!NodeNameValidator.TryValidate(name, out var validationError))
+        if (!NodePath.TryJoin(path, "Node path", out var name, out var validationError))
         {
             return GraphApiResponse.BadRequest(validationError);
         }
@@ -108,23 +108,23 @@ public sealed class GraphApiService(
             return GraphApiResponse.BadRequest();
         }
 
-        if (!NodeNameValidator.TryValidate(request.SourceName, "Source node name", out var validationError))
+        if (!NodePath.TryJoin(request.SourcePath, "Source node path", out var sourceName, out var validationError))
         {
             return GraphApiResponse.BadRequest(validationError);
         }
 
-        if (!NodeNameValidator.TryValidate(request.TargetName, "Target node name", out validationError))
+        if (!NodePath.TryJoin(request.TargetPath, "Target node path", out var targetName, out validationError))
         {
             return GraphApiResponse.BadRequest(validationError);
         }
 
-        if (string.Equals(request.SourceName, request.TargetName, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(sourceName, targetName, StringComparison.OrdinalIgnoreCase))
         {
-            return GraphApiResponse.BadRequest("SourceName and TargetName must be different.");
+            return GraphApiResponse.BadRequest("SourcePath and TargetPath must be different.");
         }
 
-        var source = await _nodeService.Get(request.SourceName);
-        var target = await _nodeService.Get(request.TargetName);
+        var source = await _nodeService.Get(sourceName);
+        var target = await _nodeService.Get(targetName);
         if (source is null || target is null)
         {
             return GraphApiResponse.NotFound();
@@ -146,19 +146,24 @@ public sealed class GraphApiService(
             return GraphApiResponse<SubgraphResponse>.BadRequest("MaxDepth must be non-negative.");
         }
 
-        var roots = request.RootNodeIds?.Distinct(StringComparer.OrdinalIgnoreCase).ToArray() ?? [];
-        if (roots.Length == 0)
+        var rootPaths = request.RootPaths ?? [];
+        if (rootPaths.Count == 0)
         {
             return GraphApiResponse<SubgraphResponse>.Ok(new SubgraphResponse());
         }
 
-        foreach (var root in roots)
+        var joinedRoots = new List<string>();
+        foreach (var root in rootPaths)
         {
-            if (!NodeNameValidator.TryValidate(root, "Root node name", out var validationError))
+            if (!NodePath.TryJoin(root, "Root node path", out var joinedRoot, out var validationError))
             {
                 return GraphApiResponse<SubgraphResponse>.BadRequest(validationError);
             }
+
+            joinedRoots.Add(joinedRoot);
         }
+
+        var roots = joinedRoots.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
 
         var subgraph = await _nodeService.GetSubgraph(new SubgraphQuery
         {

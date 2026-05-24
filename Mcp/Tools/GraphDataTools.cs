@@ -15,10 +15,10 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     private readonly GraphApiService _graphApi = graphApi;
 
     [McpServerTool]
-    [Description("Gets a graph node by name and returns the same node shape as the HTTP API: attributes plus edges.")]
+    [Description("Gets a graph node by path and returns the same node shape as the HTTP API: attributes plus edges.")]
     public async Task<string> GetNode(
-        [Description("Node name to look up.")] string name) {
-        var result = await _graphApi.GetNodeAsync(name);
+        [Description("Root-relative node path segments to look up.")] string[] path) {
+        var result = await _graphApi.GetNodeAsync(path);
         if (result.Status is GraphApiStatus.Ok && result.Value is not null) {
             return ToJson(new {
                 found = true,
@@ -27,7 +27,7 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
         }
 
         if (result.Status is GraphApiStatus.NotFound)
-            return ToJson(new { found = false, name });
+            return ToJson(new { found = false, path });
 
         return ToJson(new {
             found = false,
@@ -38,12 +38,12 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     [McpServerTool]
     [Description("Creates a graph node, optionally under an existing parent node, with optional string attributes.")]
     public async Task<string> CreateNode(
-        [Description("Name for the new node.")] string name,
-        [Description("Optional parent node name. Leave empty to create a root node.")] string? parentName = null,
+        [Description("Local id for the new node.")] string name,
+        [Description("Optional parent node path segments. Leave empty to create a root node.")] string[]? parentPath = null,
         [Description("Optional string attributes for the node.")] Dictionary<string, string>? attributes = null) {
         var result = await _graphApi.CreateNodeAsync(new CreateNodeRequest {
             Name = name,
-            ParentName = parentName,
+            ParentPath = parentPath,
             Attributes = attributes
         });
 
@@ -53,9 +53,9 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     [McpServerTool]
     [Description("Replaces all attributes for an existing graph node.")]
     public async Task<string> UpdateNodeAttributes(
-        [Description("Name of the node to update.")] string name,
+        [Description("Root-relative path segments of the node to update.")] string[] path,
         [Description("Complete replacement set of string attributes.")] Dictionary<string, string> attributes) {
-        var result = await _graphApi.UpdateNodeAsync(name, new UpdateNodeRequest {
+        var result = await _graphApi.UpdateNodeAsync(path, new UpdateNodeRequest {
             Attributes = attributes
         });
 
@@ -63,10 +63,10 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     }
 
     [McpServerTool]
-    [Description("Deletes an existing graph node by name.")]
+    [Description("Deletes an existing graph node by path.")]
     public async Task<string> DeleteNode(
-        [Description("Name of the node to delete.")] string name) {
-        var result = await _graphApi.DeleteNodeAsync(name);
+        [Description("Root-relative path segments of the node to delete.")] string[] path) {
+        var result = await _graphApi.DeleteNodeAsync(path);
         return result.Succeeded
             ? ToJson(new { success = true })
             : ToJson(ToErrorResponse(result.Status, result.Error));
@@ -75,18 +75,18 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     [McpServerTool]
     [Description("Creates an undirected connection between two existing graph nodes.")]
     public async Task<string> ConnectNodes(
-        [Description("Name of the first node.")] string sourceName,
-        [Description("Name of the second node.")] string targetName) {
+        [Description("Root-relative path segments of the first node.")] string[] sourcePath,
+        [Description("Root-relative path segments of the second node.")] string[] targetPath) {
         var result = await _graphApi.ConnectNodesAsync(new ConnectNodesRequest {
-            SourceName = sourceName,
-            TargetName = targetName
+            SourcePath = sourcePath,
+            TargetPath = targetPath
         });
 
         return result.Succeeded
             ? ToJson(new {
                 success = true,
-                source = sourceName,
-                target = targetName
+                sourcePath,
+                targetPath
             })
             : ToJson(ToErrorResponse(result.Status, result.Error));
     }
@@ -94,11 +94,11 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     [McpServerTool]
     [Description("Returns the same subgraph shape as the HTTP API: nodes plus top-level edges.")]
     public async Task<string> GetSubgraph(
-        [Description("Root node names for graph traversal.")] string[] rootNodeIds,
+        [Description("Root node path segments for graph traversal.")] string[][] rootPaths,
         [Description("Maximum traversal depth. Use 0 to return only roots.")] int maxDepth = 1,
         [Description("Whether disconnected roots should be included when supported by the storage provider.")] bool includeDisconnectedRoots = false) {
         var result = await _graphApi.GetSubgraphAsync(new SubgraphRequest {
-            RootNodeIds = rootNodeIds,
+            RootPaths = rootPaths,
             MaxDepth = maxDepth,
             IncludeDisconnectedRoots = includeDisconnectedRoots
         });

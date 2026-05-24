@@ -32,7 +32,7 @@ public sealed class GraphControllerTests
         await scope.Storage.Connect(first, second);
 
         var controller = CreateController(scope.Storage);
-        var result = await controller.GetNodeAsync(first.Name);
+        var result = await controller.GetNodeAsync([first.Name]);
 
         var ok = result.Result as OkObjectResult;
         Assert.IsNotNull(ok);
@@ -53,7 +53,7 @@ public sealed class GraphControllerTests
         await using var scope = TestGraphStorageScope.Create();
         var controller = CreateController(scope.Storage);
 
-        var result = await controller.GetNodeAsync("missing");
+        var result = await controller.GetNodeAsync(["missing"]);
 
         Assert.IsInstanceOfType(result.Result, typeof(NotFoundResult));
     }
@@ -72,7 +72,7 @@ public sealed class GraphControllerTests
 
         var created = result.Result as CreatedResult;
         Assert.IsNotNull(created);
-        StringAssert.Contains(created.Location, "/api/graph/nodes?name=new%20node");
+        StringAssert.Contains(created.Location, "/api/graph/nodes?path=new%20node");
 
         var response = created.Value as NodeResponse;
         Assert.IsNotNull(response);
@@ -81,7 +81,7 @@ public sealed class GraphControllerTests
     }
 
     [TestMethod]
-    public async Task CreateNodeAsync_CreatesChildWhenParentNameIsProvided()
+    public async Task CreateNodeAsync_CreatesChildWhenParentPathIsProvided()
     {
         await using var scope = TestGraphStorageScope.Create();
         var parent = await scope.Storage.Create("parent");
@@ -90,7 +90,7 @@ public sealed class GraphControllerTests
         var result = await controller.CreateNodeAsync(new CreateNodeRequest
         {
             Name = "child",
-            ParentName = parent.Name
+            ParentPath = [parent.Name]
         });
 
         var created = result.Result as CreatedResult;
@@ -102,6 +102,23 @@ public sealed class GraphControllerTests
 
         var stored = await scope.Storage.Get("parent/child");
         Assert.IsNotNull(stored);
+    }
+
+    [TestMethod]
+    public async Task GetNodeAsync_ResolvesChildByPathSegments()
+    {
+        await using var scope = TestGraphStorageScope.Create();
+        var parent = await scope.Storage.Create("parent");
+        var child = await scope.Storage.Create("child", parent);
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.GetNodeAsync(["parent", "child"]);
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+        var response = ok.Value as NodeResponse;
+        Assert.IsNotNull(response);
+        Assert.AreEqual(child.Name, response.Name);
     }
 
     [TestMethod]
@@ -120,7 +137,7 @@ public sealed class GraphControllerTests
         var message = badRequest.Value as string;
         Assert.IsNotNull(message);
         StringAssert.Contains(message, "invalid character ':'");
-        StringAssert.Contains(message, NodeNameValidator.AllowedCharactersDescription);
+        StringAssert.Contains(message, NodeNameValidator.AllowedSegmentCharactersDescription);
     }
 
     [TestMethod]
@@ -131,7 +148,7 @@ public sealed class GraphControllerTests
 
         var result = await controller.CreateNodeAsync(new CreateNodeRequest
         {
-            Name = "devices/CON"
+            Name = "CON"
         });
 
         var badRequest = result.Result as BadRequestObjectResult;
@@ -150,15 +167,15 @@ public sealed class GraphControllerTests
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest
         {
-            SourceName = source.Name,
-            TargetName = "target:name"
+            SourcePath = [source.Name],
+            TargetPath = ["target:name"]
         });
 
         var badRequest = result as BadRequestObjectResult;
         Assert.IsNotNull(badRequest);
         var message = badRequest.Value as string;
         Assert.IsNotNull(message);
-        StringAssert.Contains(message, "Target node name contains invalid character ':'");
+        StringAssert.Contains(message, "Target node path segment contains invalid character ':'");
     }
 
     [TestMethod]
@@ -195,7 +212,7 @@ public sealed class GraphControllerTests
         var controller = CreateController(scope.Storage);
         var result = await controller.GetSubgraphAsync(new SubgraphRequest
         {
-            RootNodeIds = [first.Name],
+            RootPaths = [[first.Name]],
             MaxDepth = 1
         });
 

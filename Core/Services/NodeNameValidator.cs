@@ -4,6 +4,8 @@ public static class NodeNameValidator
 {
     public const string AllowedCharactersDescription =
         "Allowed characters: Unicode letters and digits, spaces, '.', '_', '-', and '/' as a hierarchy separator.";
+    public const string AllowedSegmentCharactersDescription =
+        "Allowed characters: Unicode letters and digits, spaces, '.', '_', and '-'.";
 
     public static bool TryValidate(string? nodeName, out string error)
     {
@@ -75,6 +77,53 @@ public static class NodeNameValidator
         return true;
     }
 
+    public static bool TryValidateSegment(string? segment, string subject, out string error)
+    {
+        if (string.IsNullOrWhiteSpace(segment))
+        {
+            error = $"{subject} must be provided.";
+            return false;
+        }
+
+        for (var i = 0; i < segment.Length; i++)
+        {
+            var ch = segment[i];
+            if (IsAllowedSegmentCharacter(ch))
+            {
+                continue;
+            }
+
+            var display = ch == '\\'
+                ? "\\"
+                : char.IsControl(ch)
+                    ? $"U+{(int)ch:X4}"
+                    : ch.ToString();
+            error = $"{subject} contains invalid character '{display}' at position {i + 1}. {AllowedSegmentCharactersDescription}";
+            return false;
+        }
+
+        if (segment is "." or "..")
+        {
+            error = $"{subject} segment '{segment}' is not allowed.";
+            return false;
+        }
+
+        if (segment.EndsWith(' ') || segment.EndsWith('.'))
+        {
+            error = $"{subject} segment '{segment}' must not end with space or '.'.";
+            return false;
+        }
+
+        if (IsReservedWindowsDeviceName(segment))
+        {
+            error = $"{subject} segment '{segment}' is reserved.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     public static void Validate(string? nodeName, string paramName)
     {
         if (!TryValidate(nodeName, out var error))
@@ -87,6 +136,12 @@ public static class NodeNameValidator
     {
         return char.IsLetterOrDigit(ch)
             || ch is ' ' or '.' or '_' or '-' or '/';
+    }
+
+    private static bool IsAllowedSegmentCharacter(char ch)
+    {
+        return char.IsLetterOrDigit(ch)
+            || ch is ' ' or '.' or '_' or '-';
     }
 
     private static bool IsReservedWindowsDeviceName(string segment)
