@@ -87,10 +87,13 @@ internal record NodeFileSystem : Node {
                 var asDir = new DirectoryInfo(entry.FullName);
                 targetPath = asDir.LinkTarget;
             }
+            var nodeName = GraphData.SymLinkStorage.SymLinkGraphStorage.FromLinkName(entry.Name);
+            var targetFullPath = GraphData.SymLinkStorage.SymLinkGraphStorage.ResolveLinkTargetPath(entry.FullName, targetPath);
             yield return new SymLink {
                 Directory = Path,
-                Name = entry.Name,
-                TargetPath = targetPath ?? string.Empty
+                Name = nodeName,
+                TargetPath = targetFullPath,
+                TargetRootPath = GraphData.SymLinkStorage.SymLinkGraphStorage.GetStorageRootPath(targetFullPath, nodeName)
             };
         }
     }
@@ -126,7 +129,7 @@ internal record EdgeFileSystem : Edge {
 
     public SymLink Link { get; }
     public NodeFileSystem Parent { get; }
-    public NodeFileSystem Child => child ??= new NodeFileSystem(Link.Name, Parent);
+    public NodeFileSystem Child => child ??= new NodeFileSystem(Link.Name, Link.TargetRootPath);
 
     public override Node Node1 => Parent;
     public override Node Node2 => Child;

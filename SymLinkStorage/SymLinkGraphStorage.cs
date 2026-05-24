@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using GraphData.Core.Abstractions;
@@ -14,6 +15,7 @@ namespace GraphData.SymLinkStorage;
 
 public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
+    internal const string EncodedLinkNamePrefix = ".graphdata-node-";
 
     readonly DirectoryInfo root;
     readonly NtfsGraphStorageOptions options;
@@ -84,7 +86,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
         var connections = await GetConnectedNodesAsync(node);
         foreach (var connection in connections) {
-            var reciprocalLinkPath = Path.Combine(GetNodePath(connection.Name), node.Name);
+            var reciprocalLinkPath = GetLinkPath(connection.Name, node.Name);
             DeleteLinkIfExists(reciprocalLinkPath);
         }
 
@@ -195,8 +197,57 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Path.Combine(options.RootPath, name);
     }
 
-    private static string NormalizeNodeName(string nodeName) {
+    private string GetLinkPath(string sourceNodeName, string targetNodeName) {
+        return Path.Combine(GetNodePath(sourceNodeName), ToLinkName(targetNodeName));
+    }
+
+    internal static string NormalizeNodeName(string nodeName) {
         return nodeName.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/').Trim('/');
+    }
+
+    internal static string ToLinkName(string nodeName) {
+        var normalized = NormalizeNodeName(nodeName);
+        if (!normalized.Contains('/', StringComparison.Ordinal) &&
+            !normalized.StartsWith(EncodedLinkNamePrefix, StringComparison.OrdinalIgnoreCase)) {
+            return normalized;
+        }
+
+        return EncodedLinkNamePrefix + Convert.ToHexString(Encoding.UTF8.GetBytes(normalized)).ToLowerInvariant();
+    }
+
+    internal static string FromLinkName(string linkName) {
+        if (!linkName.StartsWith(EncodedLinkNamePrefix, StringComparison.OrdinalIgnoreCase))
+            return NormalizeNodeName(linkName);
+
+        var encoded = linkName[EncodedLinkNamePrefix.Length..];
+        return Encoding.UTF8.GetString(Convert.FromHexString(encoded));
+    }
+
+    internal static string ResolveLinkTargetPath(string linkFullPath, string? targetPath) {
+        if (string.IsNullOrWhiteSpace(targetPath))
+            return string.Empty;
+
+        if (Path.IsPathRooted(targetPath))
+            return Path.GetFullPath(targetPath);
+
+        var linkDirectory = Path.GetDirectoryName(linkFullPath) ?? string.Empty;
+        return Path.GetFullPath(Path.Combine(linkDirectory, targetPath));
+    }
+
+    internal static string GetStorageRootPath(string nodePath, string nodeName) {
+        if (string.IsNullOrWhiteSpace(nodePath))
+            return string.Empty;
+
+        var originalPath = Path.GetFullPath(nodePath);
+        var current = originalPath;
+        foreach (var segment in NormalizeNodeName(nodeName).Split('/').Reverse()) {
+            if (!string.Equals(Path.GetFileName(current), segment, StringComparison.OrdinalIgnoreCase))
+                return Directory.GetParent(originalPath)?.FullName ?? string.Empty;
+
+            current = Directory.GetParent(current)?.FullName ?? string.Empty;
+        }
+
+        return current;
     }
 
     private static IEnumerable<string> EnumerateNeighborIds(string nodePath) {
@@ -209,12 +260,12 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             if ((entry.Attributes & FileAttributes.ReparsePoint) == 0)
                 continue;
 
-            yield return entry.Name;
+            yield return FromLinkName(entry.Name);
         }
     }
 
-    private void CreateLinkIfMissing(string sourcePath, string targetPath, string name) {
-        var linkPath = Path.Combine(sourcePath, name);
+    private void CreateLinkIfMissing(string sourcePath, string targetPath, string targetNodeName) {
+        var linkPath = Path.Combine(sourcePath, ToLinkName(targetNodeName));
         try {
             if (FileSystemEntryExists(linkPath)) {
                 return;

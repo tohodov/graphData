@@ -7,6 +7,7 @@ public enum GraphApiStatus
     NoContent,
     BadRequest,
     NotFound,
+    InternalServerError,
     NotImplemented
 }
 
@@ -22,6 +23,9 @@ public sealed record GraphApiResponse(GraphApiStatus Status, string? Error = nul
 
     public static GraphApiResponse NotFound(string? error = null) =>
         new(GraphApiStatus.NotFound, error);
+
+    public static GraphApiResponse InternalServerError(string? error = null) =>
+        new(GraphApiStatus.InternalServerError, error);
 }
 
 public sealed record GraphApiResponse<T>(
@@ -41,6 +45,9 @@ public sealed record GraphApiResponse<T>(
 
     public static GraphApiResponse<T> NotFound(string? error = null) =>
         new(GraphApiStatus.NotFound, Error: error);
+
+    public static GraphApiResponse<T> InternalServerError(string? error = null) =>
+        new(GraphApiStatus.InternalServerError, Error: error);
 
     public static GraphApiResponse<T> NotImplemented(string? error = null) =>
         new(GraphApiStatus.NotImplemented, Error: error);

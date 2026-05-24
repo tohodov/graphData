@@ -13,10 +13,14 @@ using GraphData.Api.Services;
 using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
+using GraphData.SymLinkStorage;
 using GraphData.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using SymLinkStorage;
 
 namespace GraphData.Tests.Api;
 
@@ -176,6 +180,77 @@ public sealed class GraphControllerTests
         var message = badRequest.Value as string;
         Assert.IsNotNull(message);
         StringAssert.Contains(message, "Target node path segment contains invalid character ':'");
+    }
+
+    [TestMethod]
+    public async Task ConnectNodesAsync_ConnectsRootToChildWithSymLinkStorage()
+    {
+        await using var scope = SymLinkGraphStorageScope.Create();
+        var root = await scope.Storage.Create("small_arms_test_graph");
+        var child = await scope.Storage.Create("weapons", root);
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.ConnectNodesAsync(new ConnectNodesRequest
+        {
+            SourcePath = ["small_arms_test_graph"],
+            TargetPath = ["small_arms_test_graph", "weapons"]
+        });
+
+        Assert.IsInstanceOfType(result, typeof(NoContentResult));
+
+        child = (await scope.Storage.Get("small_arms_test_graph/weapons"))!;
+        var rootConnections = await scope.Storage.GetConnectedNodesAsync(root);
+        var childConnections = await scope.Storage.GetConnectedNodesAsync(child);
+        Assert.IsTrue(rootConnections.Any(node => node.Name == child.Name));
+        Assert.IsTrue(childConnections.Any(node => node.Name == root.Name));
+    }
+
+    [TestMethod]
+    public async Task ConnectNodesAsync_ConnectsNestedSiblingsWithSymLinkStorage()
+    {
+        await using var scope = SymLinkGraphStorageScope.Create();
+        var root = await scope.Storage.Create("small_arms_test_graph");
+        var weapons = await scope.Storage.Create("weapons", root);
+        var categories = await scope.Storage.Create("categories", root);
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.ConnectNodesAsync(new ConnectNodesRequest
+        {
+            SourcePath = ["small_arms_test_graph", "weapons"],
+            TargetPath = ["small_arms_test_graph", "categories"]
+        });
+
+        Assert.IsInstanceOfType(result, typeof(NoContentResult));
+
+        weapons = (await scope.Storage.Get("small_arms_test_graph/weapons"))!;
+        categories = (await scope.Storage.Get("small_arms_test_graph/categories"))!;
+        var weaponConnections = await scope.Storage.GetConnectedNodesAsync(weapons);
+        var categoryConnections = await scope.Storage.GetConnectedNodesAsync(categories);
+        Assert.IsTrue(weaponConnections.Any(node => node.Name == categories.Name));
+        Assert.IsTrue(categoryConnections.Any(node => node.Name == weapons.Name));
+    }
+
+    [TestMethod]
+    public async Task ConnectNodesAsync_ReturnsInternalErrorDetailsWhenConnectFails()
+    {
+        await using var scope = TestGraphStorageScope.Create();
+        var source = await scope.Storage.Create("source");
+        var target = await scope.Storage.Create("target");
+        var controller = CreateController(new ConnectThrowingGraphStorage(scope.Storage));
+
+        var result = await controller.ConnectNodesAsync(new ConnectNodesRequest
+        {
+            SourcePath = [source.Name],
+            TargetPath = [target.Name]
+        });
+
+        var objectResult = result as ObjectResult;
+        Assert.IsNotNull(objectResult);
+        Assert.AreEqual(StatusCodes.Status500InternalServerError, objectResult.StatusCode);
+        var message = objectResult.Value as string;
+        Assert.IsNotNull(message);
+        StringAssert.Contains(message, "InvalidOperationException");
+        StringAssert.Contains(message, "diagnostic connect failure");
     }
 
     [TestMethod]
@@ -374,5 +449,90 @@ public sealed class GraphControllerTests
                 GraphJsonSerializerOptions.Create()))
             .Cast<NodeSearchMatchResponse>()
             .ToArray();
+    }
+
+    private sealed class SymLinkGraphStorageScope : IAsyncDisposable
+    {
+        private readonly string _rootPath;
+
+        private SymLinkGraphStorageScope(string rootPath)
+        {
+            _rootPath = rootPath;
+            Storage = new SymLinkGraphStorage(
+                Options.Create(new NtfsGraphStorageOptions { RootPath = rootPath }),
+                new CancellationTokensAccessorMock(),
+                NullLogger<SymLinkGraphStorage>.Instance);
+        }
+
+        public IGraphStorage Storage { get; }
+
+        public static SymLinkGraphStorageScope Create()
+        {
+            var rootPath = Path.Combine(
+                Path.GetTempPath(),
+                "GraphDataTests",
+                "SymLinkApi",
+                Guid.NewGuid().ToString("N"));
+            return new SymLinkGraphStorageScope(rootPath);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DeleteDirectoryWithoutFollowingLinks(new DirectoryInfo(_rootPath));
+            return ValueTask.CompletedTask;
+        }
+
+        private static void DeleteDirectoryWithoutFollowingLinks(DirectoryInfo directory)
+        {
+            if (!directory.Exists)
+            {
+                return;
+            }
+
+            foreach (var entry in directory.EnumerateFileSystemInfos())
+            {
+                if ((entry.Attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    entry.Delete();
+                    continue;
+                }
+
+                if (entry is DirectoryInfo childDirectory)
+                {
+                    DeleteDirectoryWithoutFollowingLinks(childDirectory);
+                }
+                else
+                {
+                    entry.Delete();
+                }
+            }
+
+            directory.Delete();
+        }
+    }
+
+    private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage
+    {
+        public Task<Node> Create(string name, Node? parent = null, Dictionary<string, string>? attributes = null) =>
+            inner.Create(name, parent, attributes);
+
+        public Task<Node?> Get(string basisNodeName) => inner.Get(basisNodeName);
+
+        public Task<Node?> Get(Node? parent, string subNodeName) => inner.Get(parent, subNodeName);
+
+        public Task<Node?> Get(NodeQuery query) => inner.Get(query);
+
+        public Task Update(string subNodeName, IDictionary<string, string> attributes, Node? parent = null) =>
+            inner.Update(subNodeName, attributes, parent);
+
+        public Task Delete(string subNodeName, Node? parent = null) => inner.Delete(subNodeName, parent);
+
+        public Task Connect(Node sourceNode, Node targetNode) =>
+            throw new InvalidOperationException("diagnostic connect failure");
+
+        public Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node) =>
+            inner.GetConnectedNodesAsync(node);
+
+        public Task<Subgraph> GetSubgraphAsync(SubgraphQuery query) => inner.GetSubgraphAsync(query);
     }
 }

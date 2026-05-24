@@ -130,7 +130,15 @@ public sealed class GraphApiService(
             return GraphApiResponse.NotFound();
         }
 
-        await _nodeService.ConnectNodes(source, target);
+        try
+        {
+            await _nodeService.ConnectNodes(source, target);
+        }
+        catch (Exception ex)
+        {
+            return GraphApiResponse.InternalServerError(ex.ToString());
+        }
+
         return GraphApiResponse.NoContent();
     }
 

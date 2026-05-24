@@ -155,6 +155,7 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
         return status switch {
             GraphApiStatus.BadRequest => "Request is invalid.",
             GraphApiStatus.NotFound => "Resource was not found.",
+            GraphApiStatus.InternalServerError => "Internal server error.",
             GraphApiStatus.NotImplemented => "Operation is not supported.",
             _ => "Operation failed."
         };

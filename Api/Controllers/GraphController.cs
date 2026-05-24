@@ -128,6 +128,7 @@ public sealed class GraphController(GraphApiService graphApi) : ControllerBase
             GraphApiStatus.Created when result.Value is not null => Created(string.Empty, result.Value),
             GraphApiStatus.BadRequest => BadRequest(result.Error),
             GraphApiStatus.NotFound => NotFound(),
+            GraphApiStatus.InternalServerError => StatusCode(StatusCodes.Status500InternalServerError, result.Error),
             GraphApiStatus.NotImplemented => StatusCode(StatusCodes.Status501NotImplemented, result.Error),
             _ => StatusCode(StatusCodes.Status500InternalServerError)
         };
@@ -145,6 +146,7 @@ public sealed class GraphController(GraphApiService graphApi) : ControllerBase
             GraphApiStatus.NoContent => NoContent(),
             GraphApiStatus.BadRequest => BadRequest(error),
             GraphApiStatus.NotFound => NotFound(),
+            GraphApiStatus.InternalServerError => StatusCode(StatusCodes.Status500InternalServerError, error),
             GraphApiStatus.NotImplemented => StatusCode(StatusCodes.Status501NotImplemented, error),
             _ => StatusCode(StatusCodes.Status500InternalServerError)
         };
