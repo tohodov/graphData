@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using GraphData.Core.Abstractions;
@@ -15,7 +14,6 @@ namespace GraphData.SymLinkStorage;
 
 public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
-    internal const string EncodedLinkNamePrefix = ".graphdata-node-";
 
     readonly DirectoryInfo root;
     readonly NtfsGraphStorageOptions options;
@@ -98,6 +96,10 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         ArgumentNullException.ThrowIfNull(right);
 
         if (string.Equals(left.Name, right.Name, StringComparison.OrdinalIgnoreCase)) {
+            return Task.CompletedTask;
+        }
+
+        if (IsHierarchyConnection(left.Name, right.Name)) {
             return Task.CompletedTask;
         }
 
@@ -198,29 +200,15 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     private string GetLinkPath(string sourceNodeName, string targetNodeName) {
-        return Path.Combine(GetNodePath(sourceNodeName), ToLinkName(targetNodeName));
+        return Path.Combine(GetNodePath(sourceNodeName), GetLinkName(targetNodeName));
     }
 
     internal static string NormalizeNodeName(string nodeName) {
         return nodeName.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/').Trim('/');
     }
 
-    internal static string ToLinkName(string nodeName) {
-        var normalized = NormalizeNodeName(nodeName);
-        if (!normalized.Contains('/', StringComparison.Ordinal) &&
-            !normalized.StartsWith(EncodedLinkNamePrefix, StringComparison.OrdinalIgnoreCase)) {
-            return normalized;
-        }
-
-        return EncodedLinkNamePrefix + Convert.ToHexString(Encoding.UTF8.GetBytes(normalized)).ToLowerInvariant();
-    }
-
-    internal static string FromLinkName(string linkName) {
-        if (!linkName.StartsWith(EncodedLinkNamePrefix, StringComparison.OrdinalIgnoreCase))
-            return NormalizeNodeName(linkName);
-
-        var encoded = linkName[EncodedLinkNamePrefix.Length..];
-        return Encoding.UTF8.GetString(Convert.FromHexString(encoded));
+    internal static string GetLinkName(string nodeName) {
+        return NormalizeNodeName(nodeName).Split('/').Last();
     }
 
     internal static string ResolveLinkTargetPath(string linkFullPath, string? targetPath) {
@@ -250,7 +238,15 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return current;
     }
 
-    private static IEnumerable<string> EnumerateNeighborIds(string nodePath) {
+    private static bool IsHierarchyConnection(string leftName, string rightName) {
+        var left = NormalizeNodeName(leftName);
+        var right = NormalizeNodeName(rightName);
+
+        return right.StartsWith(left + '/', StringComparison.OrdinalIgnoreCase) ||
+            left.StartsWith(right + '/', StringComparison.OrdinalIgnoreCase);
+    }
+
+    private IEnumerable<string> EnumerateNeighborIds(string nodePath) {
         var directory = new DirectoryInfo(nodePath);
 
         foreach (var entry in directory.EnumerateFileSystemInfos()) {
@@ -260,12 +256,12 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             if ((entry.Attributes & FileAttributes.ReparsePoint) == 0)
                 continue;
 
-            yield return FromLinkName(entry.Name);
+            yield return GetLinkTargetNodeName(entry);
         }
     }
 
     private void CreateLinkIfMissing(string sourcePath, string targetPath, string targetNodeName) {
-        var linkPath = Path.Combine(sourcePath, ToLinkName(targetNodeName));
+        var linkPath = Path.Combine(sourcePath, GetLinkName(targetNodeName));
         try {
             if (FileSystemEntryExists(linkPath)) {
                 return;
@@ -277,6 +273,28 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             logger.LogError(ex, "Failed to create link from {Source} to {Target}", sourcePath, targetPath);
             throw;
         }
+    }
+
+    private string GetLinkTargetNodeName(FileSystemInfo entry) {
+        var targetPath = entry switch {
+            DirectoryInfo directory => directory.LinkTarget,
+            FileInfo file => file.LinkTarget,
+            _ => new DirectoryInfo(entry.FullName).LinkTarget
+        };
+
+        var targetFullPath = ResolveLinkTargetPath(entry.FullName, targetPath);
+        if (string.IsNullOrWhiteSpace(targetFullPath))
+            return NormalizeNodeName(entry.Name);
+
+        var relativePath = Path.GetRelativePath(root.FullName, targetFullPath);
+        if (relativePath == "." ||
+            relativePath == ".." ||
+            relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) ||
+            relativePath.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal) ||
+            Path.IsPathRooted(relativePath))
+            return NormalizeNodeName(entry.Name);
+
+        return NormalizeNodeName(relativePath);
     }
 
     private static bool FileSystemEntryExists(string path) {

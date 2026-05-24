@@ -183,11 +183,11 @@ public sealed class GraphControllerTests
     }
 
     [TestMethod]
-    public async Task ConnectNodesAsync_ConnectsRootToChildWithSymLinkStorage()
+    public async Task ConnectNodesAsync_ReturnsNoContentForExistingHierarchyConnectionWithSymLinkStorage()
     {
         await using var scope = SymLinkGraphStorageScope.Create();
         var root = await scope.Storage.Create("small_arms_test_graph");
-        var child = await scope.Storage.Create("weapons", root);
+        await scope.Storage.Create("weapons", root);
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest
@@ -198,11 +198,12 @@ public sealed class GraphControllerTests
 
         Assert.IsInstanceOfType(result, typeof(NoContentResult));
 
-        child = (await scope.Storage.Get("small_arms_test_graph/weapons"))!;
-        var rootConnections = await scope.Storage.GetConnectedNodesAsync(root);
-        var childConnections = await scope.Storage.GetConnectedNodesAsync(child);
-        Assert.IsTrue(rootConnections.Any(node => node.Name == child.Name));
-        Assert.IsTrue(childConnections.Any(node => node.Name == root.Name));
+        var rootPath = Path.Combine(scope.RootPath, "small_arms_test_graph");
+        var childPath = Path.Combine(rootPath, "weapons");
+        Assert.IsTrue(Directory.Exists(childPath));
+        Assert.IsFalse(File.GetAttributes(childPath).HasFlag(FileAttributes.ReparsePoint));
+        Assert.IsFalse(Directory.EnumerateFileSystemEntries(rootPath)
+            .Any(path => Path.GetFileName(path).StartsWith(".graphdata-node-", StringComparison.OrdinalIgnoreCase)));
     }
 
     [TestMethod]
@@ -224,6 +225,16 @@ public sealed class GraphControllerTests
 
         weapons = (await scope.Storage.Get("small_arms_test_graph/weapons"))!;
         categories = (await scope.Storage.Get("small_arms_test_graph/categories"))!;
+
+        var weaponLinkPath = Path.Combine(scope.RootPath, "small_arms_test_graph", "weapons", "categories");
+        var categoryLinkPath = Path.Combine(scope.RootPath, "small_arms_test_graph", "categories", "weapons");
+        Assert.IsTrue(File.GetAttributes(weaponLinkPath).HasFlag(FileAttributes.ReparsePoint));
+        Assert.IsTrue(File.GetAttributes(categoryLinkPath).HasFlag(FileAttributes.ReparsePoint));
+        Assert.IsFalse(Directory.EnumerateFileSystemEntries(Path.Combine(scope.RootPath, "small_arms_test_graph", "weapons"))
+            .Any(path => Path.GetFileName(path).StartsWith(".graphdata-node-", StringComparison.OrdinalIgnoreCase)));
+        Assert.IsFalse(Directory.EnumerateFileSystemEntries(Path.Combine(scope.RootPath, "small_arms_test_graph", "categories"))
+            .Any(path => Path.GetFileName(path).StartsWith(".graphdata-node-", StringComparison.OrdinalIgnoreCase)));
+
         var weaponConnections = await scope.Storage.GetConnectedNodesAsync(weapons);
         var categoryConnections = await scope.Storage.GetConnectedNodesAsync(categories);
         Assert.IsTrue(weaponConnections.Any(node => node.Name == categories.Name));
@@ -465,6 +476,8 @@ public sealed class GraphControllerTests
         }
 
         public IGraphStorage Storage { get; }
+
+        public string RootPath => _rootPath;
 
         public static SymLinkGraphStorageScope Create()
         {

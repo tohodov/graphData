@@ -87,8 +87,8 @@ internal record NodeFileSystem : Node {
                 var asDir = new DirectoryInfo(entry.FullName);
                 targetPath = asDir.LinkTarget;
             }
-            var nodeName = GraphData.SymLinkStorage.SymLinkGraphStorage.FromLinkName(entry.Name);
             var targetFullPath = GraphData.SymLinkStorage.SymLinkGraphStorage.ResolveLinkTargetPath(entry.FullName, targetPath);
+            var nodeName = GetLinkTargetNodeName(entry.Name, targetFullPath);
             yield return new SymLink {
                 Directory = Path,
                 Name = nodeName,
@@ -96,6 +96,23 @@ internal record NodeFileSystem : Node {
                 TargetRootPath = GraphData.SymLinkStorage.SymLinkGraphStorage.GetStorageRootPath(targetFullPath, nodeName)
             };
         }
+    }
+
+    string GetLinkTargetNodeName(string linkName, string targetFullPath) {
+        var rootPath = GraphData.SymLinkStorage.SymLinkGraphStorage.GetStorageRootPath(Path, Name);
+        if (string.IsNullOrWhiteSpace(rootPath) || string.IsNullOrWhiteSpace(targetFullPath))
+            return GraphData.SymLinkStorage.SymLinkGraphStorage.NormalizeNodeName(linkName);
+
+        var relativePath = System.IO.Path.GetRelativePath(rootPath, targetFullPath);
+        if (relativePath == "." ||
+            relativePath == ".." ||
+            relativePath.StartsWith(".." + DirectorySeparatorChar, StringComparison.Ordinal) ||
+            relativePath.StartsWith(".." + AltDirectorySeparatorChar, StringComparison.Ordinal) ||
+            System.IO.Path.IsPathRooted(relativePath)) {
+            return GraphData.SymLinkStorage.SymLinkGraphStorage.NormalizeNodeName(linkName);
+        }
+
+        return GraphData.SymLinkStorage.SymLinkGraphStorage.NormalizeNodeName(relativePath);
     }
 
     async Task WriteMetadataAsync(Dictionary<string, string> data) {
