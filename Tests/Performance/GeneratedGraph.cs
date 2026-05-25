@@ -27,7 +27,7 @@ internal sealed record GeneratedGraph(
         var nodes = Enumerable.Range(0, nodeCount)
             .Select(index => new GeneratedGraphNode(
                 index,
-                $"node-{index:D6}",
+                new([$"node-{index:D6}"]),
                 new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["kind"] = "generated",
@@ -46,25 +46,20 @@ internal sealed record GeneratedGraph(
         return new GeneratedGraph(nodeCount, connectionsPerNode, seed, containsCycle, nodes, edges);
     }
 
-    public IReadOnlyList<string> GetSampleNodeNames(int count, int seedOffset)
+    public IReadOnlyList<NodePath> GetSampleNodeNames(int count, int seedOffset)
     {
         if (count <= 0)
-        {
-            return Array.Empty<string>();
-        }
-
+            return Array.Empty<NodePath>();
         var random = new Random(Seed + seedOffset);
         return Enumerable.Range(0, count)
-            .Select(_ => Nodes[random.Next(Nodes.Count)].Name)
+            .Select(_ => Nodes[random.Next(Nodes.Count)].Path)
             .ToArray();
     }
 
     private static GeneratedGraphEdge[] GenerateEdges(int nodeCount, int connectionsPerNode, int seed)
     {
         if (nodeCount < 2 || connectionsPerNode == 0)
-        {
             return Array.Empty<GeneratedGraphEdge>();
-        }
 
         var maxEdgeCount = nodeCount * (nodeCount - 1) / 2;
         var desiredEdgeCount = Math.Min(maxEdgeCount, nodeCount * connectionsPerNode);
@@ -156,7 +151,7 @@ internal sealed record GeneratedGraph(
 
 internal sealed record GeneratedGraphNode(
     int Index,
-    string Name,
+    NodePath Path,
     Dictionary<string, string> Attributes);
 
 internal sealed record GeneratedGraphEdge(int SourceIndex, int TargetIndex)

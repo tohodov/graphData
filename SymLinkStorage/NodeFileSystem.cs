@@ -16,10 +16,11 @@ internal record NodeFileSystem : Node {
     IReadOnlyCollection<Node>? nodes;
     IReadOnlyDictionary<string, string>? attributes;
 
-    public string Path => Combine(parentPath, Name);
-    public string MetadataPath => Combine(Path, MetadataFileName);
+    public string FolderPath => Combine(parentPath, LocalId); //TODO инкапсулировать
+    public string MetadataPath => Combine(FolderPath, MetadataFileName);
 
-    public override string Name { get; }
+    public override string LocalId { get; }
+    public override NodePath GlobalId => new NodePath(FolderPath.Split('\\', '/'));//TODO удалить RootPath
     public override IReadOnlyDictionary<string, Edge> Edges => edges ??= GetEdges().ToDictionary(static x => x.Link.Name, static x => (Edge)x, StringComparer.OrdinalIgnoreCase);
     public override IReadOnlyCollection<Node> Nodes => nodes ??= Edges.Values.SelectMany(x => new[] { x.Node1, x.Node2 }).Except([this]).Distinct().ToArray();
     public override IReadOnlyDictionary<string, string> Attributes {
@@ -27,7 +28,7 @@ internal record NodeFileSystem : Node {
             if (attributes is not null)
                 return attributes;
             try {
-                var metadata = new FileInfo(Combine(Path, MetadataFileName));
+                var metadata = new FileInfo(Combine(FolderPath, MetadataFileName));
                 if (!metadata.Exists) {
                     attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                     return attributes;
@@ -43,23 +44,27 @@ internal record NodeFileSystem : Node {
                 return attributes;
             }
         }
+        set {
+            WriteMetadata(value.ToDictionary());
+            attributes = value;
+        }
     }
 
     public NodeFileSystem(DirectoryInfo info) {
-        Name = info.Name;
+        LocalId = info.Name;
         parentPath = info.Parent?.FullName ?? "";
     }
     public NodeFileSystem(string name, string storageRootPath) {
-        Name = name;
+        LocalId = name;
         parentPath = storageRootPath;
     }
     public NodeFileSystem(string name, NodeFileSystem parent) {
-        Name = name;
-        parentPath = parent.Path;
+        LocalId = name;
+        parentPath = parent.FolderPath;
     }
 
-    public bool IsExists() => Directory.Exists(Path);
-    public DirectoryInfo GetInfo() => new DirectoryInfo(Path);
+    public bool IsExists() => Directory.Exists(FolderPath);
+    public DirectoryInfo GetInfo() => new DirectoryInfo(FolderPath);
 
     public IEnumerable<EdgeFileSystem> GetEdges() {
         if (!IsExists())
@@ -69,7 +74,7 @@ internal record NodeFileSystem : Node {
     }
 
     IEnumerable<SymLink> GetSymLinks() {
-        var directory = new DirectoryInfo(Path);
+        var directory = new DirectoryInfo(FolderPath);
         var edges = new List<EdgeFileSystem>();
 
         foreach (var entry in directory.EnumerateFileSystemInfos()) {
@@ -87,54 +92,26 @@ internal record NodeFileSystem : Node {
                 var asDir = new DirectoryInfo(entry.FullName);
                 targetPath = asDir.LinkTarget;
             }
-            var targetFullPath = GraphData.SymLinkStorage.SymLinkGraphStorage.ResolveLinkTargetPath(entry.FullName, targetPath);
-            var nodeName = GetLinkTargetNodeName(entry.Name, targetFullPath);
             yield return new SymLink {
-                Directory = Path,
-                Name = nodeName,
-                TargetPath = targetFullPath,
-                TargetRootPath = GraphData.SymLinkStorage.SymLinkGraphStorage.GetStorageRootPath(targetFullPath, nodeName)
+                Directory = FolderPath,
+                Name = entry.Name,
+                TargetPath = entry.FullName
             };
         }
     }
 
-    string GetLinkTargetNodeName(string linkName, string targetFullPath) {
-        var rootPath = GraphData.SymLinkStorage.SymLinkGraphStorage.GetStorageRootPath(Path, Name);
-        if (string.IsNullOrWhiteSpace(rootPath) || string.IsNullOrWhiteSpace(targetFullPath))
-            return GraphData.SymLinkStorage.SymLinkGraphStorage.NormalizeNodeName(linkName);
-
-        var relativePath = System.IO.Path.GetRelativePath(rootPath, targetFullPath);
-        if (relativePath == "." ||
-            relativePath == ".." ||
-            relativePath.StartsWith(".." + DirectorySeparatorChar, StringComparison.Ordinal) ||
-            relativePath.StartsWith(".." + AltDirectorySeparatorChar, StringComparison.Ordinal) ||
-            System.IO.Path.IsPathRooted(relativePath)) {
-            return GraphData.SymLinkStorage.SymLinkGraphStorage.NormalizeNodeName(linkName);
-        }
-
-        return GraphData.SymLinkStorage.SymLinkGraphStorage.NormalizeNodeName(relativePath);
-    }
-
-    async Task WriteMetadataAsync(Dictionary<string, string> data) {
+    async Task WriteMetadataAsync(Dictionary<string, string> data) {//TODO занести в базовый
         await using var stream = new FileStream(MetadataPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
         await JsonSerializer.SerializeAsync(stream, data, GraphData.SymLinkStorage.SymLinkGraphStorage.SerializerOptions);
     }
-    public void WriteMetadata(IDictionary<string, string> data) {
+    public void WriteMetadata(IDictionary<string, string> data) {//TODO занести в базовый
         attributes = null;
         using var stream = new FileStream(MetadataPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
         JsonSerializer.Serialize(stream, data, GraphData.SymLinkStorage.SymLinkGraphStorage.SerializerOptions);
     }
-
-    internal static NodeFileSystem Create(string name, string storageRootPath, Dictionary<string, string>? attributes = null) {
-        var node = new NodeFileSystem(name, storageRootPath);
-        Directory.CreateDirectory(node.Path);
-        if(attributes != null)
-            node.WriteMetadata(attributes);
-        return node;
-    }
     internal static NodeFileSystem Create(string name, NodeFileSystem parent, Dictionary<string, string>? attributes = null) {
-        var node = new NodeFileSystem(name, parent.Path);
-        Directory.CreateDirectory(node.Path);
+        var node = new NodeFileSystem(name, parent.FolderPath);
+        Directory.CreateDirectory(node.FolderPath);
         if (attributes != null)
             node.WriteMetadata(attributes);
         return node;
@@ -146,7 +123,7 @@ internal record EdgeFileSystem : Edge {
 
     public SymLink Link { get; }
     public NodeFileSystem Parent { get; }
-    public NodeFileSystem Child => child ??= new NodeFileSystem(Link.Name, Link.TargetRootPath);
+    public NodeFileSystem Child => child ??= new NodeFileSystem(Link.Name, Parent);
 
     public override Node Node1 => Parent;
     public override Node Node2 => Child;

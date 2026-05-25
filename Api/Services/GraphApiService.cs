@@ -5,228 +5,109 @@ using GraphData.Core.Services;
 
 namespace GraphData.Api.Services;
 
-public sealed class GraphApiService(
-    NodeService nodeService,
-    GraphSearchService searchService)
-{
+public sealed class GraphApiService(NodeService nodeService, GraphSearchService searchService) {
     private readonly NodeService _nodeService = nodeService;
     private readonly GraphSearchService _searchService = searchService;
 
-    public async Task<GraphApiResponse<NodeResponse>> GetNodeAsync(IReadOnlyCollection<string>? path)
-    {
-        if (!NodePath.TryJoin(path, "Node path", out var name, out var validationError))
-        {
-            return GraphApiResponse<NodeResponse>.BadRequest(validationError);
-        }
-
-        var response = await GetNodeResponseAsync(name);
+    public async Task<GraphApiResponse<NodeResponse>> GetNodeAsync(NodePath path) {
+        var response = await GetNodeResponseAsync(path);
         return response is null
             ? GraphApiResponse<NodeResponse>.NotFound()
             : GraphApiResponse<NodeResponse>.Ok(response);
     }
 
-    public async Task<GraphApiResponse<NodeResponse>> CreateNodeAsync(CreateNodeRequest? request)
-    {
-        if (request is null)
-        {
-            return GraphApiResponse<NodeResponse>.BadRequest();
-        }
-
+    public async Task<GraphApiResponse<NodeResponse>> CreateNodeAsync(CreateNodeRequest request) {
         if (!NodeNameValidator.TryValidateSegment(request.Name, "Node name", out var validationError))
-        {
             return GraphApiResponse<NodeResponse>.BadRequest(validationError);
-        }
 
         Node? parent = null;
-        if (request.ParentPath is { Length: > 0 })
-        {
-            if (!NodePath.TryJoin(request.ParentPath, "Parent node path", out var parentName, out validationError))
-            {
-                return GraphApiResponse<NodeResponse>.BadRequest(validationError);
-            }
-
-            parent = await _nodeService.Get(parentName);
+        if (request.ParentPath is { Length: > 0 }) {
+            parent = await _nodeService.Get((NodePath)request.ParentPath);
             if (parent is null)
-            {
-                return GraphApiResponse<NodeResponse>.NotFound(
-                    $"Parent node '{parentName}' was not found.");
-            }
+                return GraphApiResponse<NodeResponse>.NotFound($"Parent node '{request.ParentPath}' was not found.");
         }
-
         var created = await _nodeService.Create(parent, request.Name, request.Attributes);
-        return GraphApiResponse<NodeResponse>.Created(GraphResponseMapper.ToNodeResponse(created));
+        return GraphApiResponse<NodeResponse>.Ok(GraphResponseMapper.ToNodeResponse(created));
     }
 
-    public async Task<GraphApiResponse<NodeResponse>> UpdateNodeAsync(
-        IReadOnlyCollection<string>? path,
-        UpdateNodeRequest? request)
-    {
-        if (!NodePath.TryJoin(path, "Node path", out var name, out var validationError))
-        {
-            return GraphApiResponse<NodeResponse>.BadRequest(validationError);
-        }
-
-        if (request is null)
-        {
-            return GraphApiResponse<NodeResponse>.BadRequest();
-        }
-
-        var node = await _nodeService.Get(name);
+    public async Task<GraphApiResponse<NodeResponse>> UpdateNodeAsync(NodePath path, UpdateNodeRequest request) {
+        var node = await _nodeService.Get(path);
         if (node is null)
-        {
             return GraphApiResponse<NodeResponse>.NotFound();
-        }
-
-        await _nodeService.Update(name, request.Attributes ?? new Dictionary<string, string>());
-        var response = await GetNodeResponseAsync(name);
+        await _nodeService.Update(path, request.Attributes);
+        var response = await GetNodeResponseAsync(path);
         return response is null
             ? GraphApiResponse<NodeResponse>.NotFound()
             : GraphApiResponse<NodeResponse>.Ok(response);
     }
 
-    public async Task<GraphApiResponse> DeleteNodeAsync(IReadOnlyCollection<string>? path)
-    {
-        if (!NodePath.TryJoin(path, "Node path", out var name, out var validationError))
-        {
-            return GraphApiResponse.BadRequest(validationError);
-        }
-
-        var node = await _nodeService.Get(name);
+    public async Task<GraphApiResponse> DeleteNodeAsync(NodePath path) {
+        var node = await _nodeService.Get(path);//TODO оптимизировать двойное чтение
         if (node is null)
-        {
             return GraphApiResponse.NotFound();
-        }
-
-        await _nodeService.Delete(name);
-        return GraphApiResponse.NoContent();
+        await _nodeService.Delete(path);//TODO оптимизировать двойное чтение
+        return GraphApiResponse.Ok();
     }
 
-    public async Task<GraphApiResponse> ConnectNodesAsync(ConnectNodesRequest? request)
-    {
-        if (request is null)
-        {
-            return GraphApiResponse.BadRequest();
-        }
-
-        if (!NodePath.TryJoin(request.SourcePath, "Source node path", out var sourceName, out var validationError))
-        {
-            return GraphApiResponse.BadRequest(validationError);
-        }
-
-        if (!NodePath.TryJoin(request.TargetPath, "Target node path", out var targetName, out validationError))
-        {
-            return GraphApiResponse.BadRequest(validationError);
-        }
-
-        if (string.Equals(sourceName, targetName, StringComparison.OrdinalIgnoreCase))
-        {
+    public async Task<GraphApiResponse> ConnectNodesAsync(ConnectNodesRequest request) {
+        if (request.SourcePath.SequenceEqual(request.TargetPath))
             return GraphApiResponse.BadRequest("SourcePath and TargetPath must be different.");
-        }
-
-        var source = await _nodeService.Get(sourceName);
-        var target = await _nodeService.Get(targetName);
+        var source = await _nodeService.Get(request.SourcePath);
+        var target = await _nodeService.Get(request.TargetPath);
         if (source is null || target is null)
-        {
             return GraphApiResponse.NotFound();
-        }
-
-        try
-        {
+        try {
             await _nodeService.ConnectNodes(source, target);
-        }
-        catch (Exception ex)
-        {
+        } catch (Exception ex) {
             return GraphApiResponse.InternalServerError(ex.ToString());
         }
-
-        return GraphApiResponse.NoContent();
+        return GraphApiResponse.Ok();
     }
 
-    public async Task<GraphApiResponse<SubgraphResponse>> GetSubgraphAsync(SubgraphRequest? request)
-    {
-        if (request is null)
-        {
-            return GraphApiResponse<SubgraphResponse>.BadRequest();
-        }
-
+    public async Task<GraphApiResponse<SubgraphResponse>> GetSubgraphAsync(SubgraphRequest request) {
         if (request.MaxDepth < 0)
-        {
             return GraphApiResponse<SubgraphResponse>.BadRequest("MaxDepth must be non-negative.");
-        }
-
-        var rootPaths = request.RootPaths ?? [];
-        if (rootPaths.Count == 0)
-        {
+        if (request.Nodes.Count == 0)
             return GraphApiResponse<SubgraphResponse>.Ok(new SubgraphResponse());
-        }
-
-        var joinedRoots = new List<string>();
-        foreach (var root in rootPaths)
-        {
-            if (!NodePath.TryJoin(root, "Root node path", out var joinedRoot, out var validationError))
-            {
-                return GraphApiResponse<SubgraphResponse>.BadRequest(validationError);
-            }
-
-            joinedRoots.Add(joinedRoot);
-        }
-
-        var roots = joinedRoots.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-
-        var subgraph = await _nodeService.GetSubgraph(new SubgraphQuery
-        {
-            RootNodeIds = roots,
+        var subgraph = await _nodeService.GetSubgraph(new SubgraphQuery {
+            Nodes = request.Nodes.Select(x => (NodePath)x).ToArray(),
             MaxDepth = request.MaxDepth,
-            IncludeDisconnectedRoots = request.IncludeDisconnectedRoots
         });
 
         return GraphApiResponse<SubgraphResponse>.Ok(GraphResponseMapper.ToSubgraphResponse(subgraph));
     }
 
     public async Task<GraphApiResponse<IReadOnlyCollection<NodeSearchMatchResponse>>> SearchNodesAsync(
-        NodeSearchQuery? request)
-    {
-        if (request is null)
-        {
+        NodeSearchQuery? request) {
+        if (request is null) {
             return GraphApiResponse<IReadOnlyCollection<NodeSearchMatchResponse>>.BadRequest();
         }
 
-        try
-        {
+        try {
             var matches = await _searchService.SearchNodesAsync(request);
             return GraphApiResponse<IReadOnlyCollection<NodeSearchMatchResponse>>.Ok(
                 matches.Select(GraphResponseMapper.ToSearchMatchResponse).ToArray());
-        }
-        catch (ArgumentException ex)
-        {
+        } catch (ArgumentException ex) {
             return GraphApiResponse<IReadOnlyCollection<NodeSearchMatchResponse>>.BadRequest(ex.Message);
-        }
-        catch (NotSupportedException ex)
-        {
+        } catch (NotSupportedException ex) {
             return GraphApiResponse<IReadOnlyCollection<NodeSearchMatchResponse>>.NotImplemented(ex.Message);
         }
     }
 
     public async IAsyncEnumerable<NodeSearchMatchResponse> SearchNodesStreamAsync(
         NodeSearchQuery request,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
-    {
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
         await foreach (var match in _searchService
                            .SearchNodesStreamAsync(request, cancellationToken)
-                           .WithCancellation(cancellationToken))
-        {
+                           .WithCancellation(cancellationToken)) {
             yield return GraphResponseMapper.ToSearchMatchResponse(match);
         }
     }
 
-    private async Task<NodeResponse?> GetNodeResponseAsync(string name)
-    {
-        var neighborhood = await _nodeService.GetNeighborhood(name);
+    private async Task<NodeResponse?> GetNodeResponseAsync(NodePath path) {
+        var neighborhood = await _nodeService.GetNeighborhood(path);
         if (neighborhood is null)
-        {
             return null;
-        }
-
         var (node, connections) = neighborhood.Value;
         return GraphResponseMapper.ToNodeResponse(
             node,

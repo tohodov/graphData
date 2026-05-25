@@ -30,7 +30,7 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { isolated.Name },
+            new[] { isolated.LocalId },
             Names(matches));
     }
 
@@ -71,7 +71,7 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { first.Name, second.Name },
+            new[] { first.LocalId, second.LocalId },
             Names(matches));
     }
 
@@ -112,7 +112,7 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEqual(
-            new[] { hub.Name, mid.Name },
+            new[] { hub.LocalId, mid.LocalId },
             Names(matches));
     }
 
@@ -139,13 +139,13 @@ public sealed class GraphSearchFunctionalTests
             Return = ["x"],
             Where = All(
                 Attribute("x", "role", "candidate"),
-                Connected("x", Literal(a.Name)),
-                Connected("x", Literal(b.Name)),
-                Connected("x", Literal(c.Name)))
+                Connected("x", Literal(a.LocalId)),
+                Connected("x", Literal(b.LocalId)),
+                Connected("x", Literal(c.LocalId)))
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { target.Name },
+            new[] { target.LocalId },
             Names(matches));
     }
 
@@ -170,12 +170,12 @@ public sealed class GraphSearchFunctionalTests
             Return = ["x"],
             Where = All(
                 Attribute("x", "role", "candidate"),
-                Path("x", Literal(a.Name), maxDepth: 3),
-                Path("x", Literal(b.Name), maxDepth: 3))
+                Path("x", Literal(a.LocalId), maxDepth: 3),
+                Path("x", Literal(b.LocalId), maxDepth: 3))
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { target.Name },
+            new[] { target.LocalId },
             Names(matches));
     }
 
@@ -200,14 +200,14 @@ public sealed class GraphSearchFunctionalTests
                 new AnyNodeSearchExpression
                 {
                     Expressions = [
-                        Connected("x", Literal(a.Name)),
-                        Connected("x", Literal(b.Name))
+                        Connected("x", Literal(a.LocalId)),
+                        Connected("x", Literal(b.LocalId))
                     ]
                 })
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { first.Name, second.Name },
+            new[] { first.LocalId, second.LocalId },
             Names(matches));
     }
 
@@ -226,14 +226,14 @@ public sealed class GraphSearchFunctionalTests
             Return = ["x"],
             Where = new NodeDescendantSearchExpression
             {
-                Ancestor = Literal(root.Name),
+                Ancestor = Literal(root.LocalId),
                 Descendant = Var("x"),
                 MaxDepth = 2
             }
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { pistols.Name, revolvers.Name },
+            new[] { pistols.LocalId, revolvers.LocalId },
             Names(matches));
     }
 
@@ -269,7 +269,7 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { match.Name },
+            new[] { match.LocalId },
             Names(matches));
     }
 
@@ -293,7 +293,7 @@ public sealed class GraphSearchFunctionalTests
         }
 
         CollectionAssert.AreEquivalent(
-            new[] { first.Name, second.Name },
+            new[] { first.LocalId, second.LocalId },
             Names(matches));
     }
 
@@ -306,7 +306,7 @@ public sealed class GraphSearchFunctionalTests
 
     private static string[] Names(IEnumerable<NodeSearchMatch> matches)
     {
-        return matches.Select(static match => match.Node.Name).ToArray();
+        return matches.Select(static match => match.Node.LocalId).ToArray();
     }
 
     private static AllNodeSearchExpression All(params NodeSearchExpression[] expressions)

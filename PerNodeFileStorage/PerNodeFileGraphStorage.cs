@@ -77,58 +77,30 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
     public async Task<Node?> Get(Node? parent, string subNodeName)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(subNodeName);
-
         var nodeName = GetNodeName(parent, subNodeName);
         var document = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
         return document is null ? null : CreateNode(document);
     }
 
-    public async Task<Node?> Get(NodeQuery query)
+    public async Task<Node?> Get(NodePath path)
     {
-        ArgumentNullException.ThrowIfNull(query);
-
         Node? node = null;
-        foreach (var part in query.SelectRecursive(static x => x.Child))
+        foreach (var part in path)
         {
-            node = await Get(node, part.Name).ConfigureAwait(false);
+            node = await Get(node, part).ConfigureAwait(false);
             if (node is null)
-            {
                 return null;
-            }
         }
 
         return node;
     }
 
-    public async Task Update(string subNodeName, IDictionary<string, string> attributes, Node? parent = null)
+    public async Task Delete(NodePath path)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(subNodeName);
-        ArgumentNullException.ThrowIfNull(attributes);
-
-        var nodeName = GetNodeName(parent, subNodeName);
-        var metadataLock = GetMetadataLock(nodeName);
-        await metadataLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            if (!File.Exists(GetMetadataPath(nodeName)))
-            {
-                throw new FileNotFoundException($"Node '{nodeName}' does not exist.");
-            }
-
-            await WriteMetadataAsync(new NodeDocument(nodeName, CopyAttributes(attributes))).ConfigureAwait(false);
-        }
-        finally
-        {
-            metadataLock.Release();
-        }
-    }
-
-    public async Task Delete(string subNodeName, Node? parent = null)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(subNodeName);
-
-        var nodeName = GetNodeName(parent, subNodeName);
+        var node = await Get(path) as StoredNode;
+        if (node == null)
+            return;
+        var nodeName = node.NodeName;
         var existingConnections = await ReadConnectionsWithLockAsync(nodeName).ConfigureAwait(false);
         var metadataLock = GetMetadataLock(nodeName);
         await metadataLock.WaitAsync().ConfigureAwait(false);
@@ -136,10 +108,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         {
             var metadataPath = GetMetadataPath(nodeName);
             if (!File.Exists(metadataPath))
-            {
                 return;
-            }
-
             File.Delete(metadataPath);
         }
         finally
@@ -173,15 +142,15 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         ArgumentNullException.ThrowIfNull(sourceNode);
         ArgumentNullException.ThrowIfNull(targetNode);
 
-        if (string.Equals(sourceNode.Name, targetNode.Name, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(sourceNode.LocalId, targetNode.LocalId, StringComparison.OrdinalIgnoreCase))
         {
             return;
         }
 
-        await EnsureNodeExistsAsync(sourceNode.Name).ConfigureAwait(false);
-        await EnsureNodeExistsAsync(targetNode.Name).ConfigureAwait(false);
+        await EnsureNodeExistsAsync(sourceNode.LocalId).ConfigureAwait(false);
+        await EnsureNodeExistsAsync(targetNode.LocalId).ConfigureAwait(false);
 
-        var orderedNames = Order(sourceNode.Name, targetNode.Name).ToArray();
+        var orderedNames = Order(sourceNode.LocalId, targetNode.LocalId).ToArray();
         var locks = orderedNames.Select(GetConnectionLock).ToArray();
         foreach (var connectionLock in locks)
         {
@@ -190,8 +159,8 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
         try
         {
-            await AppendConnectionAsync(sourceNode.Name, targetNode.Name).ConfigureAwait(false);
-            await AppendConnectionAsync(targetNode.Name, sourceNode.Name).ConfigureAwait(false);
+            await AppendConnectionAsync(sourceNode.LocalId, targetNode.LocalId).ConfigureAwait(false);
+            await AppendConnectionAsync(targetNode.LocalId, sourceNode.LocalId).ConfigureAwait(false);
         }
         finally
         {
@@ -206,7 +175,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
     {
         ArgumentNullException.ThrowIfNull(node);
 
-        var connections = await ReadConnectionsWithLockAsync(node.Name).ConfigureAwait(false);
+        var connections = await ReadConnectionsWithLockAsync(node.LocalId).ConfigureAwait(false);
         var nodes = new List<Node>();
         foreach (var connection in connections)
         {
@@ -245,83 +214,6 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         }
 
         return nodes;
-    }
-
-    public async Task<Subgraph> GetSubgraphAsync(SubgraphQuery query)
-    {
-        ArgumentNullException.ThrowIfNull(query);
-
-        if (query.RootNodeIds.Count == 0)
-        {
-            return Subgraph.Empty;
-        }
-
-        var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var discovered = new HashSet<string>(query.RootNodeIds, StringComparer.OrdinalIgnoreCase);
-        var queue = new Queue<(string NodeName, int Depth)>();
-        var documents = new Dictionary<string, NodeDocument>(StringComparer.OrdinalIgnoreCase);
-        var connectionMap = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var root in query.RootNodeIds)
-        {
-            queue.Enqueue((root, 0));
-        }
-
-        while (queue.Count > 0)
-        {
-            var (nodeName, depth) = queue.Dequeue();
-            if (!visited.Add(nodeName))
-            {
-                continue;
-            }
-
-            var document = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
-            if (document is null)
-            {
-                continue;
-            }
-
-            documents[nodeName] = document;
-            var connections = await ReadConnectionsWithLockAsync(nodeName).ConfigureAwait(false);
-            var relevantConnections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var connection in connections)
-            {
-                if (depth < query.MaxDepth && discovered.Add(connection))
-                {
-                    queue.Enqueue((connection, depth + 1));
-                }
-
-                if (discovered.Contains(connection))
-                {
-                    relevantConnections.Add(connection);
-                }
-            }
-
-            connectionMap[nodeName] = relevantConnections;
-        }
-
-        if (documents.Count == 0)
-        {
-            return Subgraph.Empty;
-        }
-
-        var nodes = documents.ToDictionary(
-            static x => x.Key,
-            x => CreateNode(x.Value),
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (var (nodeName, connections) in connectionMap)
-        {
-            if (!nodes.TryGetValue(nodeName, out var node))
-            {
-                continue;
-            }
-
-            node.SetConnections(connections.Where(nodes.ContainsKey).Select(x => nodes[x]).ToArray());
-        }
-
-        return new Subgraph { Nodes = nodes.Values.ToArray() };
     }
 
     private async Task<NodeDocument?> ReadMetadataWithLockAsync(string nodeName)
@@ -487,7 +379,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
     {
         return parent is null
             ? subNodeName
-            : $"{parent.Name}/{subNodeName}";
+            : $"{parent.LocalId}/{subNodeName}";
     }
 
     private static IEnumerable<string> Order(string first, string second)
@@ -527,16 +419,17 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         private IReadOnlyDictionary<string, Edge>? _edges;
         private IReadOnlyCollection<Node> _nodes = Array.Empty<Node>();
 
-        public override string Name => NodeName;
+        public override string LocalId => NodeName;
+        public override NodePath GlobalId => throw new NotImplementedException(); //TODO
 
         public override IReadOnlyDictionary<string, Edge> Edges => _edges ??= _nodes.ToDictionary(
-            static x => x.Name,
+            static x => x.LocalId,
             x => (Edge)new StoredEdge(this, x),
             StringComparer.OrdinalIgnoreCase);
 
         public override IReadOnlyCollection<Node> Nodes => _nodes;
 
-        public override IReadOnlyDictionary<string, string> Attributes => AttributesSnapshot;
+        public override IReadOnlyDictionary<string, string> Attributes { get => AttributesSnapshot; set => throw new NotImplementedException(); } //TODO
 
         internal IReadOnlyDictionary<string, string> AttributesSnapshot { get; init; } =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);

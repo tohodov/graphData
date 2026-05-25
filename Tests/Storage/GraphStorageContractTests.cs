@@ -49,11 +49,11 @@ partial class GraphStorageContractTests {
     [TestMethod]
     public async Task ShouldPersistMetadata() {
         var created = await CreateNode();
-        var retrieved = await Storage.Get(created.Name);
+        var retrieved = await Storage.Get(created.LocalId);
 
         Assert.IsNotNull(retrieved);
-        Assert.AreEqual(created.Name, retrieved.Name);
-        Assert.AreEqual(created.Name, retrieved.Name);
+        Assert.AreEqual(created.LocalId, retrieved.LocalId);
+        Assert.AreEqual(created.LocalId, retrieved.LocalId);
         CollectionAssert.AreEquivalent(created.Attributes.ToList(), retrieved.Attributes.ToList());
     }
 }
@@ -75,7 +75,7 @@ partial class GraphStorageContractTests {
                         Value = "double-action"
                     },
                     new NodeDescendantSearchExpression {
-                        Ancestor = Literal(pistols.Name),
+                        Ancestor = Literal(pistols.LocalId),
                         Descendant = Var("n"),
                         MaxDepth = 3
                     }
@@ -85,7 +85,7 @@ partial class GraphStorageContractTests {
 
         Assert.AreEqual(1, matches.Count);
         var match = matches.Single();
-        Assert.AreEqual("pistols/double-action revolvers", match.Node.Name);
+        Assert.AreEqual("pistols/double-action revolvers", match.Node.LocalId);
         Assert.IsTrue(match.MatchedBy.Any(x => x.StartsWith("descendant-of:pistols", StringComparison.OrdinalIgnoreCase)));
         Assert.IsTrue(match.MatchedBy.Any(x => x.StartsWith("text:double-action", StringComparison.OrdinalIgnoreCase)));
     }
@@ -108,12 +108,12 @@ partial class GraphStorageContractTests {
                 Expressions = [
                     new NodePathSearchExpression {
                         Left = Var("n"),
-                        Right = Literal(america.Name),
+                        Right = Literal(america.LocalId),
                         MaxDepth = 1
                     },
                     new NodePathSearchExpression {
                         Left = Var("n"),
-                        Right = Literal(assaultRifles.Name),
+                        Right = Literal(assaultRifles.LocalId),
                         MaxDepth = 1
                     }
                 ]
@@ -121,7 +121,7 @@ partial class GraphStorageContractTests {
         });
 
         Assert.AreEqual(1, matches.Count);
-        Assert.AreEqual(m16.Name, matches.Single().Node.Name);
+        Assert.AreEqual(m16.LocalId, matches.Single().Node.LocalId);
     }
 
     [TestMethod]
@@ -156,9 +156,9 @@ partial class GraphStorageContractTests {
 
         Assert.AreEqual(1, matches.Count);
         var match = matches.Single();
-        Assert.AreEqual(source.Name, match.Bindings["n"].Name);
-        Assert.AreEqual(marker.Name, match.Bindings["x"].Name);
-        Assert.AreNotEqual(unrelated.Name, match.Bindings["x"].Name);
+        Assert.AreEqual(source.LocalId, match.Bindings["n"].LocalId);
+        Assert.AreEqual(marker.LocalId, match.Bindings["x"].LocalId);
+        Assert.AreNotEqual(unrelated.LocalId, match.Bindings["x"].LocalId);
     }
 
     [TestMethod]
@@ -184,8 +184,8 @@ partial class GraphStorageContractTests {
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { isolated.Name },
-            matches.Select(static match => match.Node.Name).ToArray());
+            new[] { isolated.LocalId },
+            matches.Select(static match => match.Node.LocalId).ToArray());
     }
 
     private static NodeVariableSearchSelector Var(string name) => new() { Name = name };
@@ -204,14 +204,12 @@ partial class GraphStorageContractTests {
 partial class GraphStorageContractTests {
     [TestMethod]
     public async Task ShouldPersistChanges() {
-        var node = await CreateNode();
+        var node = await CreateNode("node");
         var attributes = new Dictionary<string, string>(node.Attributes);
         attributes["type"] = "updated";
         attributes["extra"] = "value";
-
-        await Storage.Update(node.Name, attributes);
-        var retrieved = await Storage.Get(node.Name);
-
+        node.Attributes = attributes;
+        var retrieved = await Storage.Get(node.LocalId);
         Assert.IsNotNull(retrieved);
         CollectionAssert.AreEquivalent(attributes.ToList(), retrieved.Attributes.ToList());
     }
@@ -227,11 +225,11 @@ partial class GraphStorageContractTests {
         await Storage.Connect(first, second);
         await Storage.Connect(second, third);
 
-        await Storage.Delete(second.Name);
+        await Storage.Delete(second.GlobalId);
 
-        Assert.IsNull(await Storage.Get(second.Name));
-        Assert.IsFalse((await Storage.GetConnectedNodesAsync(first)).Any(x => x.Name == second.Name));
-        Assert.IsFalse((await Storage.GetConnectedNodesAsync(third)).Any(x => x.Name == second.Name));
+        Assert.IsNull(await Storage.Get(second.LocalId));
+        Assert.IsFalse((await Storage.GetConnectedNodesAsync(first)).Any(x => x.LocalId == second.LocalId));
+        Assert.IsFalse((await Storage.GetConnectedNodesAsync(third)).Any(x => x.LocalId == second.LocalId));
     }
 }
 [TestCategory(nameof(IGraphStorage.Connect))]
@@ -246,8 +244,8 @@ partial class GraphStorageContractTests {
         var firstConnections = await Storage.GetConnectedNodesAsync(first);
         var secondConnections = await Storage.GetConnectedNodesAsync(second);
 
-        Assert.IsTrue(firstConnections.Any(x => x.Name == second.Name));
-        Assert.IsTrue(secondConnections.Any(x => x.Name == first.Name));
+        Assert.IsTrue(firstConnections.Any(x => x.LocalId == second.LocalId));
+        Assert.IsTrue(secondConnections.Any(x => x.LocalId == first.LocalId));
     }
     [TestMethod]
     public async Task ShouldIgnoreSelfConnection() {
@@ -256,24 +254,24 @@ partial class GraphStorageContractTests {
         await Storage.Connect(node, node);
 
         var connections = (await Storage.GetConnectedNodesAsync(node)).ToList();
-        CollectionAssert.DoesNotContain(connections, node.Name);
+        CollectionAssert.DoesNotContain(connections, node.LocalId);
     }
 }
 [TestCategory(nameof(IGraphStorage.GetSubgraphAsync))]
 partial class GraphStorageContractTests {
     [TestMethod]
     public async Task ShouldRespectDepth() {
-        var first = await CreateNode();
-        var second = await CreateNode();
-        var third = await CreateNode();
-        var fourth = await CreateNode();
+        var first = await CreateNode("first");
+        var second = await CreateNode("second");
+        var third = await CreateNode("third");
+        var fourth = await CreateNode("fourth");
 
         await Storage.Connect(first, second);
         await Storage.Connect(second, third);
         await Storage.Connect(third, fourth);
 
         var query = new SubgraphQuery {
-            RootNodeIds = new[] { first.Name },
+            Nodes = [new NodePath([first.LocalId])],
             MaxDepth = 2
         };
 
@@ -285,8 +283,8 @@ partial class GraphStorageContractTests {
         Assert.IsTrue(subgraph.Nodes.Contains(third));
         Assert.IsFalse(subgraph.Nodes.Contains(fourth));
 
-        var children = subgraph.Nodes.First(x => x.Name == first.Name).Edges.Values.SelectMany(x => new[] { x.Node1, x.Node2 }).Distinct().Except([first]).ToArray();
-        Assert.IsTrue(children.Any(x => x.Name == second.Name));
-        Assert.IsFalse(children.Any(x => x.Name == third.Name));
+        var children = subgraph.Nodes.First(x => x.LocalId == first.LocalId).Edges.Values.SelectMany(x => new[] { x.Node1, x.Node2 }).Distinct().Except([first]).ToArray();
+        Assert.IsTrue(children.Any(x => x.LocalId == second.LocalId));
+        Assert.IsFalse(children.Any(x => x.LocalId == third.LocalId));
     }
 }

@@ -18,7 +18,7 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     [Description("Gets a graph node by path and returns the same node shape as the HTTP API: attributes plus edges.")]
     public async Task<string> GetNode(
         [Description("Root-relative node path segments to look up.")] string[] path) {
-        var result = await _graphApi.GetNodeAsync(path);
+        var result = await _graphApi.GetNodeAsync((NodePath)path);
         if (result.Status is GraphApiStatus.Ok && result.Value is not null) {
             return ToJson(new {
                 found = true,
@@ -55,7 +55,7 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     public async Task<string> UpdateNodeAttributes(
         [Description("Root-relative path segments of the node to update.")] string[] path,
         [Description("Complete replacement set of string attributes.")] Dictionary<string, string> attributes) {
-        var result = await _graphApi.UpdateNodeAsync(path, new UpdateNodeRequest {
+        var result = await _graphApi.UpdateNodeAsync((NodePath)path, new UpdateNodeRequest {
             Attributes = attributes
         });
 
@@ -66,8 +66,8 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     [Description("Deletes an existing graph node by path.")]
     public async Task<string> DeleteNode(
         [Description("Root-relative path segments of the node to delete.")] string[] path) {
-        var result = await _graphApi.DeleteNodeAsync(path);
-        return result.Succeeded
+        var result = await _graphApi.DeleteNodeAsync((NodePath)path);
+        return result.Status == GraphApiStatus.Ok
             ? ToJson(new { success = true })
             : ToJson(ToErrorResponse(result.Status, result.Error));
     }
@@ -78,11 +78,11 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
         [Description("Root-relative path segments of the first node.")] string[] sourcePath,
         [Description("Root-relative path segments of the second node.")] string[] targetPath) {
         var result = await _graphApi.ConnectNodesAsync(new ConnectNodesRequest {
-            SourcePath = sourcePath,
-            TargetPath = targetPath
+            SourcePath = (NodePath)sourcePath,
+            TargetPath = (NodePath)targetPath
         });
 
-        return result.Succeeded
+        return result.Status != GraphApiStatus.Ok
             ? ToJson(new {
                 success = true,
                 sourcePath,
@@ -95,15 +95,13 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     [Description("Returns the same subgraph shape as the HTTP API: nodes plus top-level edges.")]
     public async Task<string> GetSubgraph(
         [Description("Root node path segments for graph traversal.")] string[][] rootPaths,
-        [Description("Maximum traversal depth. Use 0 to return only roots.")] int maxDepth = 1,
-        [Description("Whether disconnected roots should be included when supported by the storage provider.")] bool includeDisconnectedRoots = false) {
+        [Description("Maximum traversal depth. Use 0 to return only roots.")] int maxDepth = 1) {
         var result = await _graphApi.GetSubgraphAsync(new SubgraphRequest {
-            RootPaths = rootPaths,
-            MaxDepth = maxDepth,
-            IncludeDisconnectedRoots = includeDisconnectedRoots
+            Nodes = rootPaths,
+            MaxDepth = maxDepth
         });
 
-        if (!result.Succeeded || result.Value is null)
+        if (result.Status != GraphApiStatus.Ok || result.Value is null)
             return ToJson(ToErrorResponse(result.Status, result.Error));
 
         return ToJson(new {
@@ -122,7 +120,7 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
             return ToJson(new { success = false, error = "Query must be provided." });
 
         var result = await _graphApi.SearchNodesAsync(query);
-        return result.Succeeded && result.Value is not null
+        return result.Status == GraphApiStatus.Ok && result.Value is not null
             ? ToJson(new {
                 success = true,
                 matches = result.Value
@@ -131,7 +129,7 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     }
 
     private static string ToMutationJson<T>(GraphApiResponse<T> result, string valuePropertyName) {
-        if (!result.Succeeded || result.Value is null)
+        if (result.Status != GraphApiStatus.Ok || result.Value is null)
             return ToJson(ToErrorResponse(result.Status, result.Error));
 
         return ToJson(new Dictionary<string, object?> {

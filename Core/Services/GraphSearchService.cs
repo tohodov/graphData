@@ -6,16 +6,13 @@ using GraphData.Core.Models;
 
 namespace GraphData.Core.Services;
 
-public sealed class GraphSearchService(IGraphStorage storage)
-{
+public sealed class GraphSearchService(IGraphStorage storage) {
     private const int DefaultLimit = 50;
     private const int MaxLimit = 500;
 
     private readonly IGraphStorage _storage = storage;
 
-    public async Task<IReadOnlyCollection<NodeSearchMatch>> SearchNodesAsync(NodeSearchQuery query)
-    {
-        ArgumentNullException.ThrowIfNull(query);
+    public async Task<IReadOnlyCollection<NodeSearchMatch>> SearchNodesAsync(NodeSearchQuery query) {
         Validate(query);
 
         var graph = await SearchGraph.CreateAsync(_storage).ConfigureAwait(false);
@@ -30,17 +27,11 @@ public sealed class GraphSearchService(IGraphStorage storage)
             .ToArray();
     }
 
-    public async IAsyncEnumerable<NodeSearchMatch> SearchNodesStreamAsync(
-        NodeSearchQuery query,
-        [EnumeratorCancellation] CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(query);
+    public async IAsyncEnumerable<NodeSearchMatch> SearchNodesStreamAsync(NodeSearchQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default) {
         Validate(query);
 
-        if ((query.OrderBy ?? []).Length > 0)
-        {
-            foreach (var match in await SearchNodesAsync(query).ConfigureAwait(false))
-            {
+        if ((query.OrderBy ?? []).Length > 0) {
+            foreach (var match in await SearchNodesAsync(query).ConfigureAwait(false)) {
                 cancellationToken.ThrowIfCancellationRequested();
                 yield return match;
             }
@@ -54,25 +45,21 @@ public sealed class GraphSearchService(IGraphStorage storage)
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var yielded = 0;
 
-        foreach (var solution in EnumerateSolutions(query, graph, returnVariables))
-        {
+        foreach (var solution in EnumerateSolutions(query, graph, returnVariables)) {
             cancellationToken.ThrowIfCancellationRequested();
-            if (returnVariables.Any(variable => !solution.Bindings.ContainsKey(variable)))
-            {
+            if (returnVariables.Any(variable => !solution.Bindings.ContainsKey(variable))) {
                 continue;
             }
 
             var key = GetReturnKey(solution, returnVariables);
-            if (!seen.Add(key))
-            {
+            if (!seen.Add(key)) {
                 continue;
             }
 
             yield return ToMatch(solution, returnVariables);
             yielded++;
 
-            if (yielded >= limit)
-            {
+            if (yielded >= limit) {
                 yield break;
             }
 
@@ -83,17 +70,14 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EnumerateSolutions(
         NodeSearchQuery query,
         SearchGraph graph,
-        string[] returnVariables)
-    {
+        string[] returnVariables) {
         var effectiveWhere = BuildEffectiveWhere(query.Where, returnVariables);
         var initial = new SearchSolution(new Dictionary<string, Node>(StringComparer.OrdinalIgnoreCase), 0, []);
         return Evaluate(effectiveWhere, [initial], graph);
     }
 
-    private static NodeSearchMatch ToMatch(SearchSolution solution, string[] returnVariables)
-    {
-        return new NodeSearchMatch
-        {
+    private static NodeSearchMatch ToMatch(SearchSolution solution, string[] returnVariables) {
+        return new NodeSearchMatch {
             Node = solution.Bindings[returnVariables[0]],
             Bindings = returnVariables.ToDictionary(
                 static variable => variable,
@@ -104,8 +88,7 @@ public sealed class GraphSearchService(IGraphStorage storage)
         };
     }
 
-    private static AllNodeSearchExpression BuildEffectiveWhere(NodeSearchExpression? where, string[] returnVariables)
-    {
+    private static AllNodeSearchExpression BuildEffectiveWhere(NodeSearchExpression? where, string[] returnVariables) {
         var bindableVariables = where is null
             ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             : GetBindableVariables(where);
@@ -115,8 +98,7 @@ public sealed class GraphSearchService(IGraphStorage storage)
             .Where(variable => !bindableVariables.Contains(variable))
             .Select(CreateReturnBinder));
 
-        if (where is not null)
-        {
+        if (where is not null) {
             expressions.Add(where);
         }
 
@@ -125,35 +107,28 @@ public sealed class GraphSearchService(IGraphStorage storage)
         return new AllNodeSearchExpression { Expressions = expressions.ToArray() };
     }
 
-    private static NodeExistsSearchExpression CreateReturnBinder(string variable)
-    {
-        return new NodeExistsSearchExpression
-        {
+    private static NodeExistsSearchExpression CreateReturnBinder(string variable) {
+        return new NodeExistsSearchExpression {
             Node = new NodeVariableSearchSelector { Name = variable }
         };
     }
 
-    private static HashSet<string> GetBindableVariables(NodeSearchExpression expression)
-    {
+    private static HashSet<string> GetBindableVariables(NodeSearchExpression expression) {
         var variables = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         AddBindableVariables(expression, variables);
         return variables;
     }
 
-    private static void AddBindableVariables(NodeSearchExpression expression, ISet<string> variables)
-    {
-        switch (expression)
-        {
+    private static void AddBindableVariables(NodeSearchExpression expression, ISet<string> variables) {
+        switch (expression) {
             case AllNodeSearchExpression all:
-                foreach (var child in all.Expressions)
-                {
+                foreach (var child in all.Expressions) {
                     AddBindableVariables(child, variables);
                 }
                 break;
 
             case AnyNodeSearchExpression any:
-                foreach (var child in any.Expressions)
-                {
+                foreach (var child in any.Expressions) {
                     AddBindableVariables(child, variables);
                 }
                 break;
@@ -205,10 +180,8 @@ public sealed class GraphSearchService(IGraphStorage storage)
         }
     }
 
-    private static void AddVariable(NodeSearchNodeSelector selector, ISet<string> variables)
-    {
-        if (selector is NodeVariableSearchSelector variable)
-        {
+    private static void AddVariable(NodeSearchNodeSelector selector, ISet<string> variables) {
+        if (selector is NodeVariableSearchSelector variable) {
             variables.Add(variable.Name);
         }
     }
@@ -216,10 +189,8 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> Evaluate(
         NodeSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
-        return expression switch
-        {
+        SearchGraph graph) {
+        return expression switch {
             AllNodeSearchExpression all => EvaluateAll(all, input, graph),
             AnyNodeSearchExpression any => EvaluateAny(any, input, graph),
             NotNodeSearchExpression not => EvaluateNot(not, input, graph),
@@ -257,11 +228,9 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateAll(
         AllNodeSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
+        SearchGraph graph) {
         var current = input;
-        foreach (var child in expression.Expressions.OrderBy(static child => child is NotNodeSearchExpression ? 1 : 0))
-        {
+        foreach (var child in expression.Expressions.OrderBy(static child => child is NotNodeSearchExpression ? 1 : 0)) {
             current = Evaluate(child, current, graph);
         }
 
@@ -271,14 +240,10 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateAny(
         AnyNodeSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
-        foreach (var solution in input)
-        {
-            foreach (var child in expression.Expressions)
-            {
-                foreach (var result in Evaluate(child, [solution], graph))
-                {
+        SearchGraph graph) {
+        foreach (var solution in input) {
+            foreach (var child in expression.Expressions) {
+                foreach (var result in Evaluate(child, [solution], graph)) {
                     yield return result;
                 }
             }
@@ -288,12 +253,9 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateNot(
         NotNodeSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
-        foreach (var solution in input)
-        {
-            if (!Evaluate(expression.Expression, [solution], graph).Any())
-            {
+        SearchGraph graph) {
+        foreach (var solution in input) {
+            if (!Evaluate(expression.Expression, [solution], graph).Any()) {
                 yield return solution.AddMatch("not");
             }
         }
@@ -302,15 +264,12 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateExists(
         ExistsNodeSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
-        foreach (var solution in input)
-        {
+        SearchGraph graph) {
+        foreach (var solution in input) {
             var inner = Evaluate(expression.Expression, [solution], graph)
                 .OrderByDescending(static result => result.Score)
                 .FirstOrDefault();
-            if (inner is null)
-            {
+            if (inner is null) {
                 continue;
             }
 
@@ -322,8 +281,7 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateNode(
         NodeExistsSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
+        SearchGraph graph) {
         return input.SelectMany(solution => BindSelector(
             solution,
             expression.Node,
@@ -335,21 +293,16 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateName(
         NodeNameSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
-        foreach (var solution in input)
-        {
-            foreach (var candidate in CandidateNodes(solution, expression.Node, graph))
-            {
-                if (!MatchesText(candidate.Name, expression.Operator, expression.Value))
-                {
+        SearchGraph graph) {
+        foreach (var solution in input) {
+            foreach (var candidate in CandidateNodes(solution, expression.Node, graph)) {
+                if (!MatchesText(candidate.LocalId, expression.Operator, expression.Value)) {
                     continue;
                 }
 
-                var score = GetTextComparisonScore(candidate.Name, expression.Operator, expression.Value);
+                var score = GetTextComparisonScore(candidate.LocalId, expression.Operator, expression.Value);
                 var bound = TryBind(solution, expression.Node, candidate, score, $"name:{expression.Operator}:{expression.Value}");
-                if (bound is not null)
-                {
+                if (bound is not null) {
                     yield return bound;
                 }
             }
@@ -359,20 +312,15 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateAttribute(
         NodeAttributeSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
-        foreach (var solution in input)
-        {
-            foreach (var candidate in CandidateNodes(solution, expression.Node, graph))
-            {
-                if (!MatchesAttribute(candidate, expression.Key, expression.Operator, expression.Value))
-                {
+        SearchGraph graph) {
+        foreach (var solution in input) {
+            foreach (var candidate in CandidateNodes(solution, expression.Node, graph)) {
+                if (!MatchesAttribute(candidate, expression.Key, expression.Operator, expression.Value)) {
                     continue;
                 }
 
                 var bound = TryBind(solution, expression.Node, candidate, 0.65, $"attribute:{expression.Key}:{expression.Operator}");
-                if (bound is not null)
-                {
+                if (bound is not null) {
                     yield return bound;
                 }
             }
@@ -382,21 +330,16 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateText(
         NodeTextSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
-        foreach (var solution in input)
-        {
-            foreach (var candidate in CandidateNodes(solution, expression.Node, graph))
-            {
+        SearchGraph graph) {
+        foreach (var solution in input) {
+            foreach (var candidate in CandidateNodes(solution, expression.Node, graph)) {
                 var score = GetTextScore(candidate, expression.Value);
-                if (score <= 0)
-                {
+                if (score <= 0) {
                     continue;
                 }
 
                 var bound = TryBind(solution, expression.Node, candidate, score, $"text:{expression.Value}");
-                if (bound is not null)
-                {
+                if (bound is not null) {
                     yield return bound;
                 }
             }
@@ -411,16 +354,12 @@ public sealed class GraphSearchService(IGraphStorage storage)
         bool includeSelf,
         IEnumerable<SearchSolution> input,
         SearchGraph graph,
-        string matchName)
-    {
-        foreach (var solution in input)
-        {
-            foreach (var (leftNode, rightNode, distance) in CandidatePaths(solution, left, right, minDepth, maxDepth, includeSelf, graph))
-            {
+        string matchName) {
+        foreach (var solution in input) {
+            foreach (var (leftNode, rightNode, distance) in CandidatePaths(solution, left, right, minDepth, maxDepth, includeSelf, graph)) {
                 var bound = TryBind(solution, left, leftNode, PathScore(distance), $"{matchName}:depth={distance}");
                 bound = bound is null ? null : TryBind(bound, right, rightNode);
-                if (bound is not null)
-                {
+                if (bound is not null) {
                     yield return bound;
                 }
             }
@@ -430,17 +369,13 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateDescendant(
         NodeDescendantSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
-        foreach (var solution in input)
-        {
-            foreach (var (ancestor, descendant, depth) in CandidateDescendants(solution, expression, graph))
-            {
-                var ancestorName = NormalizeNodeName(ancestor.Name);
+        SearchGraph graph) {
+        foreach (var solution in input) {
+            foreach (var (ancestor, descendant, depth) in CandidateDescendants(solution, expression, graph)) {
+                var ancestorName = NormalizeNodeName(ancestor.LocalId);
                 var bound = TryBind(solution, expression.Ancestor, ancestor, 0.3, $"ancestor:{ancestorName}");
                 bound = bound is null ? null : TryBind(bound, expression.Descendant, descendant, 0.75 + 0.25 / depth, $"descendant-of:{ancestorName} depth={depth}");
-                if (bound is not null)
-                {
+                if (bound is not null) {
                     yield return bound;
                 }
             }
@@ -450,21 +385,16 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateDegree(
         NodeDegreeSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
-        foreach (var solution in input)
-        {
-            foreach (var candidate in CandidateNodes(solution, expression.Node, graph))
-            {
+        SearchGraph graph) {
+        foreach (var solution in input) {
+            foreach (var candidate in CandidateNodes(solution, expression.Node, graph)) {
                 var degree = graph.GetDegree(candidate);
-                if (!MatchesNumber(degree, expression.Operator, expression.Value))
-                {
+                if (!MatchesNumber(degree, expression.Operator, expression.Value)) {
                     continue;
                 }
 
                 var bound = TryBind(solution, expression.Node, candidate, 0.45, $"degree:{expression.Operator}:{expression.Value}");
-                if (bound is not null)
-                {
+                if (bound is not null) {
                     yield return bound;
                 }
             }
@@ -474,21 +404,16 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateSame(
         NodeSameSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
-        foreach (var solution in input)
-        {
-            foreach (var (left, right) in CandidateNodePairs(solution, expression.Left, expression.Right, graph))
-            {
-                if (!SameNode(left, right))
-                {
+        SearchGraph graph) {
+        foreach (var solution in input) {
+            foreach (var (left, right) in CandidateNodePairs(solution, expression.Left, expression.Right, graph)) {
+                if (!SameNode(left, right)) {
                     continue;
                 }
 
                 var bound = TryBind(solution, expression.Left, left, 0.1, "same");
                 bound = bound is null ? null : TryBind(bound, expression.Right, right);
-                if (bound is not null)
-                {
+                if (bound is not null) {
                     yield return bound;
                 }
             }
@@ -498,31 +423,24 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<SearchSolution> EvaluateNotSame(
         NodeNotSameSearchExpression expression,
         IEnumerable<SearchSolution> input,
-        SearchGraph graph)
-    {
-        foreach (var solution in input)
-        {
-            foreach (var (left, right) in CandidateNodePairs(solution, expression.Left, expression.Right, graph))
-            {
-                if (SameNode(left, right))
-                {
+        SearchGraph graph) {
+        foreach (var solution in input) {
+            foreach (var (left, right) in CandidateNodePairs(solution, expression.Left, expression.Right, graph)) {
+                if (SameNode(left, right)) {
                     continue;
                 }
 
                 var bound = TryBind(solution, expression.Left, left, 0.1, "not-same");
                 bound = bound is null ? null : TryBind(bound, expression.Right, right);
-                if (bound is not null)
-                {
+                if (bound is not null) {
                     yield return bound;
                 }
             }
         }
     }
 
-    private static IEnumerable<Node> CandidateNodes(SearchSolution solution, NodeSearchNodeSelector selector, SearchGraph graph)
-    {
-        return selector switch
-        {
+    private static IEnumerable<Node> CandidateNodes(SearchSolution solution, NodeSearchNodeSelector selector, SearchGraph graph) {
+        return selector switch {
             NodeLiteralSearchSelector literal => graph.TryGetNode(literal.Name, out var node)
                 ? [node]
                 : [],
@@ -538,13 +456,10 @@ public sealed class GraphSearchService(IGraphStorage storage)
         NodeSearchNodeSelector selector,
         IEnumerable<Node> candidates,
         double score,
-        string match)
-    {
-        foreach (var candidate in candidates)
-        {
+        string match) {
+        foreach (var candidate in candidates) {
             var bound = TryBind(solution, selector, candidate, score, match);
-            if (bound is not null)
-            {
+            if (bound is not null) {
                 yield return bound;
             }
         }
@@ -555,25 +470,21 @@ public sealed class GraphSearchService(IGraphStorage storage)
         NodeSearchNodeSelector selector,
         Node candidate,
         double score = 0,
-        string? match = null)
-    {
-        switch (selector)
-        {
+        string? match = null) {
+        switch (selector) {
             case NodeLiteralSearchSelector literal:
-                return string.Equals(NormalizeNodeName(literal.Name), NormalizeNodeName(candidate.Name), StringComparison.OrdinalIgnoreCase)
+                return string.Equals(NormalizeNodeName(literal.Name), NormalizeNodeName(candidate.LocalId), StringComparison.OrdinalIgnoreCase)
                     ? solution.AddMatch(match, score)
                     : null;
 
             case NodeVariableSearchSelector variable:
-                if (solution.Bindings.TryGetValue(variable.Name, out var existing))
-                {
+                if (solution.Bindings.TryGetValue(variable.Name, out var existing)) {
                     return SameNode(existing, candidate)
                         ? solution.AddMatch(match, score)
                         : null;
                 }
 
-                var bindings = new Dictionary<string, Node>(solution.Bindings, StringComparer.OrdinalIgnoreCase)
-                {
+                var bindings = new Dictionary<string, Node>(solution.Bindings, StringComparer.OrdinalIgnoreCase) {
                     [variable.Name] = candidate
                 };
                 return new SearchSolution(bindings, solution.Score + score, AddMatch(solution.MatchedBy, match));
@@ -587,15 +498,12 @@ public sealed class GraphSearchService(IGraphStorage storage)
         SearchSolution solution,
         NodeSearchNodeSelector left,
         NodeSearchNodeSelector right,
-        SearchGraph graph)
-    {
+        SearchGraph graph) {
         var leftCandidates = CandidateNodes(solution, left, graph).ToArray();
         var rightCandidates = CandidateNodes(solution, right, graph).ToArray();
 
-        foreach (var leftNode in leftCandidates)
-        {
-            foreach (var rightNode in rightCandidates)
-            {
+        foreach (var leftNode in leftCandidates) {
+            foreach (var rightNode in rightCandidates) {
                 yield return (leftNode, rightNode);
             }
         }
@@ -608,20 +516,16 @@ public sealed class GraphSearchService(IGraphStorage storage)
         int minDepth,
         int maxDepth,
         bool includeSelf,
-        SearchGraph graph)
-    {
+        SearchGraph graph) {
         var leftCandidates = CandidateNodes(solution, left, graph).ToArray();
         var rightCandidates = CandidateNodes(solution, right, graph).ToArray();
         var rightNames = rightCandidates
-            .Select(static node => NormalizeNodeName(node.Name))
+            .Select(static node => NormalizeNodeName(node.LocalId))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var leftNode in leftCandidates)
-        {
-            foreach (var path in graph.GetReachable(leftNode, minDepth, maxDepth, includeSelf))
-            {
-                if (rightNames.Contains(NormalizeNodeName(path.Node.Name)))
-                {
+        foreach (var leftNode in leftCandidates) {
+            foreach (var path in graph.GetReachable(leftNode, minDepth, maxDepth, includeSelf)) {
+                if (rightNames.Contains(NormalizeNodeName(path.Node.LocalId))) {
                     yield return (leftNode, path.Node, path.Distance);
                 }
             }
@@ -631,15 +535,11 @@ public sealed class GraphSearchService(IGraphStorage storage)
     private static IEnumerable<(Node Ancestor, Node Descendant, int Depth)> CandidateDescendants(
         SearchSolution solution,
         NodeDescendantSearchExpression expression,
-        SearchGraph graph)
-    {
-        foreach (var ancestor in CandidateNodes(solution, expression.Ancestor, graph))
-        {
-            foreach (var descendant in CandidateNodes(solution, expression.Descendant, graph))
-            {
+        SearchGraph graph) {
+        foreach (var ancestor in CandidateNodes(solution, expression.Ancestor, graph)) {
+            foreach (var descendant in CandidateNodes(solution, expression.Descendant, graph)) {
                 var depth = graph.GetDescendantDepth(ancestor, descendant);
-                if (depth >= expression.MinDepth && depth <= expression.MaxDepth)
-                {
+                if (depth >= expression.MinDepth && depth <= expression.MaxDepth) {
                     yield return (ancestor, descendant, depth);
                 }
             }
@@ -648,19 +548,15 @@ public sealed class GraphSearchService(IGraphStorage storage)
 
     private static IReadOnlyCollection<SearchSolution> DistinctByReturnVariables(
         IEnumerable<SearchSolution> solutions,
-        string[] returnVariables)
-    {
+        string[] returnVariables) {
         var distinct = new Dictionary<string, SearchSolution>(StringComparer.OrdinalIgnoreCase);
-        foreach (var solution in solutions)
-        {
-            if (returnVariables.Any(variable => !solution.Bindings.ContainsKey(variable)))
-            {
+        foreach (var solution in solutions) {
+            if (returnVariables.Any(variable => !solution.Bindings.ContainsKey(variable))) {
                 continue;
             }
 
             var key = GetReturnKey(solution, returnVariables);
-            if (!distinct.TryGetValue(key, out var existing) || solution.Score > existing.Score)
-            {
+            if (!distinct.TryGetValue(key, out var existing) || solution.Score > existing.Score) {
                 distinct[key] = solution;
             }
         }
@@ -668,29 +564,25 @@ public sealed class GraphSearchService(IGraphStorage storage)
         return distinct.Values;
     }
 
-    private static string GetReturnKey(SearchSolution solution, string[] returnVariables)
-    {
-        return string.Join('\u001f', returnVariables.Select(variable => NormalizeNodeName(solution.Bindings[variable].Name)));
+    private static string GetReturnKey(SearchSolution solution, string[] returnVariables) {
+        return string.Join('\u001f', returnVariables.Select(variable => NormalizeNodeName(solution.Bindings[variable].LocalId)));
     }
 
     private static IOrderedEnumerable<SearchSolution> OrderSolutions(
         IEnumerable<SearchSolution> solutions,
         NodeSearchOrder[]? orders,
         string[] returnVariables,
-        SearchGraph graph)
-    {
+        SearchGraph graph) {
         IOrderedEnumerable<SearchSolution>? ordered = null;
-        if (orders is not null)
-        {
-            foreach (var order in orders)
-            {
+        if (orders is not null) {
+            foreach (var order in orders) {
                 ordered = ApplyOrder(solutions, ordered, order, graph);
             }
         }
 
         ordered ??= solutions.OrderByDescending(static solution => solution.Score);
         return ordered.ThenBy(
-            solution => string.Join('\u001f', returnVariables.Select(variable => solution.Bindings[variable].Name)),
+            solution => string.Join('\u001f', returnVariables.Select(variable => solution.Bindings[variable].LocalId)),
             StringComparer.OrdinalIgnoreCase);
     }
 
@@ -698,12 +590,10 @@ public sealed class GraphSearchService(IGraphStorage storage)
         IEnumerable<SearchSolution> solutions,
         IOrderedEnumerable<SearchSolution>? ordered,
         NodeSearchOrder order,
-        SearchGraph graph)
-    {
-        return order switch
-        {
+        SearchGraph graph) {
+        return order switch {
             NodeSearchScoreOrder score => ApplyOrderKey(solutions, ordered, static solution => solution.Score, IsDescending(score.Direction)),
-            NodeSearchNameOrder name => ApplyOrderKey(solutions, ordered, solution => solution.Bindings[name.Variable].Name, IsDescending(name.Direction)),
+            NodeSearchNameOrder name => ApplyOrderKey(solutions, ordered, solution => solution.Bindings[name.Variable].LocalId, IsDescending(name.Direction)),
             NodeSearchDegreeOrder degree => ApplyOrderKey(solutions, ordered, solution => graph.GetDegree(solution.Bindings[degree.Variable]), IsDescending(degree.Direction)),
             _ => throw new NotSupportedException($"Unsupported search order type '{order.GetType().Name}'.")
         };
@@ -713,10 +603,8 @@ public sealed class GraphSearchService(IGraphStorage storage)
         IEnumerable<SearchSolution> solutions,
         IOrderedEnumerable<SearchSolution>? ordered,
         Func<SearchSolution, TKey> keySelector,
-        bool descending)
-    {
-        if (ordered is null)
-        {
+        bool descending) {
+        if (ordered is null) {
             return descending
                 ? solutions.OrderByDescending(keySelector)
                 : solutions.OrderBy(keySelector);
@@ -727,33 +615,26 @@ public sealed class GraphSearchService(IGraphStorage storage)
             : ordered.ThenBy(keySelector);
     }
 
-    private static void Validate(NodeSearchQuery query)
-    {
-        if (query.Return is { Length: 0 })
-        {
+    private static void Validate(NodeSearchQuery query) {
+        if (query.Return is { Length: 0 }) {
             throw new ArgumentException("At least one return variable must be provided.", nameof(query));
         }
 
-        foreach (var variable in NormalizeReturnVariables(query.Return))
-        {
+        foreach (var variable in NormalizeReturnVariables(query.Return)) {
             ArgumentException.ThrowIfNullOrWhiteSpace(variable);
         }
 
-        if (query.Where is not null)
-        {
+        if (query.Where is not null) {
             Validate(query.Where);
         }
 
-        foreach (var order in query.OrderBy ?? [])
-        {
+        foreach (var order in query.OrderBy ?? []) {
             Validate(order);
         }
     }
 
-    private static void Validate(NodeSearchOrder order)
-    {
-        switch (order)
-        {
+    private static void Validate(NodeSearchOrder order) {
+        switch (order) {
             case NodeSearchScoreOrder:
                 break;
 
@@ -769,31 +650,25 @@ public sealed class GraphSearchService(IGraphStorage storage)
                 throw new NotSupportedException($"Unsupported search order type '{order.GetType().Name}'.");
         }
 
-        if (!IsAscending(order.Direction) && !IsDescending(order.Direction))
-        {
+        if (!IsAscending(order.Direction) && !IsDescending(order.Direction)) {
             throw new ArgumentException($"Unsupported order direction '{order.Direction}'.");
         }
     }
 
-    private static void Validate(NodeSearchExpression expression)
-    {
-        switch (expression)
-        {
+    private static void Validate(NodeSearchExpression expression) {
+        switch (expression) {
             case AllNodeSearchExpression all:
-                foreach (var child in all.Expressions)
-                {
+                foreach (var child in all.Expressions) {
                     Validate(child);
                 }
                 break;
 
             case AnyNodeSearchExpression any:
-                if (any.Expressions.Length == 0)
-                {
+                if (any.Expressions.Length == 0) {
                     throw new ArgumentException("'any' expression must contain at least one child expression.");
                 }
 
-                foreach (var child in any.Expressions)
-                {
+                foreach (var child in any.Expressions) {
                     Validate(child);
                 }
                 break;
@@ -818,8 +693,7 @@ public sealed class GraphSearchService(IGraphStorage storage)
             case NodeAttributeSearchExpression attribute:
                 Validate(attribute.Node);
                 ArgumentException.ThrowIfNullOrWhiteSpace(attribute.Key);
-                if (!IsOperator(attribute.Operator, SearchOperators.Exists))
-                {
+                if (!IsOperator(attribute.Operator, SearchOperators.Exists)) {
                     ArgumentException.ThrowIfNullOrWhiteSpace(attribute.Value);
                 }
                 break;
@@ -848,8 +722,7 @@ public sealed class GraphSearchService(IGraphStorage storage)
 
             case NodeDegreeSearchExpression degree:
                 Validate(degree.Node);
-                if (degree.Value < 0)
-                {
+                if (degree.Value < 0) {
                     throw new ArgumentOutOfRangeException(nameof(degree.Value), "Degree comparison value must be non-negative.");
                 }
                 break;
@@ -869,10 +742,8 @@ public sealed class GraphSearchService(IGraphStorage storage)
         }
     }
 
-    private static void Validate(NodeSearchNodeSelector selector)
-    {
-        switch (selector)
-        {
+    private static void Validate(NodeSearchNodeSelector selector) {
+        switch (selector) {
             case NodeVariableSearchSelector variable:
                 ArgumentException.ThrowIfNullOrWhiteSpace(variable.Name);
                 break;
@@ -886,21 +757,17 @@ public sealed class GraphSearchService(IGraphStorage storage)
         }
     }
 
-    private static void ValidateDepth(int minDepth, int maxDepth)
-    {
-        if (minDepth < 0 || maxDepth < 0)
-        {
+    private static void ValidateDepth(int minDepth, int maxDepth) {
+        if (minDepth < 0 || maxDepth < 0) {
             throw new ArgumentOutOfRangeException(nameof(minDepth), "Depth values must be non-negative.");
         }
 
-        if (maxDepth < minDepth)
-        {
+        if (maxDepth < minDepth) {
             throw new ArgumentOutOfRangeException(nameof(maxDepth), "Max depth must be greater than or equal to min depth.");
         }
     }
 
-    private static string[] NormalizeReturnVariables(string[]? returnVariables)
-    {
+    private static string[] NormalizeReturnVariables(string[]? returnVariables) {
         return (returnVariables is { Length: > 0 } ? returnVariables : ["n"])
             .Where(static variable => !string.IsNullOrWhiteSpace(variable))
             .Select(static variable => variable.Trim())
@@ -908,116 +775,93 @@ public sealed class GraphSearchService(IGraphStorage storage)
             .ToArray();
     }
 
-    private static bool MatchesAttribute(Node node, string key, string op, string? value)
-    {
-        if (!node.Attributes.TryGetValue(key, out var attributeValue))
-        {
+    private static bool MatchesAttribute(Node node, string key, string op, string? value) {
+        if (!node.Attributes.TryGetValue(key, out var attributeValue)) {
             return false;
         }
 
         return IsOperator(op, SearchOperators.Exists) || MatchesText(attributeValue, op, value ?? string.Empty);
     }
 
-    private static bool MatchesText(string source, string op, string value)
-    {
-        if (IsOperator(op, SearchOperators.Equal))
-        {
+    private static bool MatchesText(string source, string op, string value) {
+        if (IsOperator(op, SearchOperators.Equal)) {
             return string.Equals(source, value, StringComparison.OrdinalIgnoreCase);
         }
 
-        if (IsOperator(op, SearchOperators.NotEquals))
-        {
+        if (IsOperator(op, SearchOperators.NotEquals)) {
             return !string.Equals(source, value, StringComparison.OrdinalIgnoreCase);
         }
 
-        if (IsOperator(op, SearchOperators.Contains))
-        {
+        if (IsOperator(op, SearchOperators.Contains)) {
             return Contains(source, value);
         }
 
-        if (IsOperator(op, SearchOperators.StartsWith))
-        {
+        if (IsOperator(op, SearchOperators.StartsWith)) {
             return source.StartsWith(value, StringComparison.OrdinalIgnoreCase);
         }
 
-        if (IsOperator(op, SearchOperators.EndsWith))
-        {
+        if (IsOperator(op, SearchOperators.EndsWith)) {
             return source.EndsWith(value, StringComparison.OrdinalIgnoreCase);
         }
 
         throw new ArgumentException($"Unsupported text operator '{op}'.");
     }
 
-    private static bool MatchesNumber(int source, string op, int value)
-    {
-        if (IsOperator(op, SearchOperators.Equal))
-        {
+    private static bool MatchesNumber(int source, string op, int value) {
+        if (IsOperator(op, SearchOperators.Equal)) {
             return source == value;
         }
 
-        if (IsOperator(op, SearchOperators.NotEquals))
-        {
+        if (IsOperator(op, SearchOperators.NotEquals)) {
             return source != value;
         }
 
-        if (IsOperator(op, SearchOperators.GreaterThan))
-        {
+        if (IsOperator(op, SearchOperators.GreaterThan)) {
             return source > value;
         }
 
-        if (IsOperator(op, SearchOperators.GreaterThanOrEqual))
-        {
+        if (IsOperator(op, SearchOperators.GreaterThanOrEqual)) {
             return source >= value;
         }
 
-        if (IsOperator(op, SearchOperators.LessThan))
-        {
+        if (IsOperator(op, SearchOperators.LessThan)) {
             return source < value;
         }
 
-        if (IsOperator(op, SearchOperators.LessThanOrEqual))
-        {
+        if (IsOperator(op, SearchOperators.LessThanOrEqual)) {
             return source <= value;
         }
 
         throw new ArgumentException($"Unsupported number operator '{op}'.");
     }
 
-    private static double GetTextComparisonScore(string source, string op, string value)
-    {
-        if (IsOperator(op, SearchOperators.Equal) && string.Equals(source, value, StringComparison.OrdinalIgnoreCase))
-        {
+    private static double GetTextComparisonScore(string source, string op, string value) {
+        if (IsOperator(op, SearchOperators.Equal) && string.Equals(source, value, StringComparison.OrdinalIgnoreCase)) {
             return 1;
         }
 
-        if (IsOperator(op, SearchOperators.Contains) && Contains(source, value))
-        {
+        if (IsOperator(op, SearchOperators.Contains) && Contains(source, value)) {
             return 0.85;
         }
 
         return 0.4;
     }
 
-    private static double GetTextScore(Node node, string text)
-    {
+    private static double GetTextScore(Node node, string text) {
         var normalizedText = text.Trim();
-        if (normalizedText.Length == 0)
-        {
+        if (normalizedText.Length == 0) {
             return 0;
         }
 
-        if (string.Equals(node.Name, normalizedText, StringComparison.OrdinalIgnoreCase))
-        {
+        if (string.Equals(node.LocalId, normalizedText, StringComparison.OrdinalIgnoreCase)) {
             return 1;
         }
 
-        if (Contains(node.Name, normalizedText))
-        {
+        if (Contains(node.LocalId, normalizedText)) {
             return 0.85;
         }
 
-        if (node.Attributes.Any(attribute => Contains(attribute.Value, normalizedText)))
-        {
+        if (node.Attributes.Any(attribute => Contains(attribute.Value, normalizedText))) {
             return 0.65;
         }
 
@@ -1025,14 +869,12 @@ public sealed class GraphSearchService(IGraphStorage storage)
             .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(static term => term.Length > 1)
             .ToArray();
-        if (terms.Length == 0)
-        {
+        if (terms.Length == 0) {
             return 0;
         }
 
-        var searchable = new StringBuilder(node.Name);
-        foreach (var attribute in node.Attributes)
-        {
+        var searchable = new StringBuilder(node.LocalId);
+        foreach (var attribute in node.Attributes) {
             searchable.Append(' ').Append(attribute.Key).Append(' ').Append(attribute.Value);
         }
 
@@ -1042,170 +884,140 @@ public sealed class GraphSearchService(IGraphStorage storage)
             : 0;
     }
 
-    private static bool Contains(string source, string value)
-    {
+    private static bool Contains(string source, string value) {
         return CultureInfo.InvariantCulture.CompareInfo.IndexOf(
             source,
             value,
             CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
     }
 
-    private static bool IsOperator(string actual, string expected)
-    {
+    private static bool IsOperator(string actual, string expected) {
         return string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsAscending(string direction)
-    {
+    private static bool IsAscending(string direction) {
         return string.Equals(direction, SearchOrderDirections.Ascending, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsDescending(string direction)
-    {
+    private static bool IsDescending(string direction) {
         return string.Equals(direction, SearchOrderDirections.Descending, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static double PathScore(int distance)
-    {
+    private static double PathScore(int distance) {
         return distance <= 0 ? 1 : 0.7 / distance;
     }
 
-    private static bool SameNode(Node left, Node right)
-    {
-        return string.Equals(NormalizeNodeName(left.Name), NormalizeNodeName(right.Name), StringComparison.OrdinalIgnoreCase);
+    private static bool SameNode(Node left, Node right) {
+        return string.Equals(NormalizeNodeName(left.LocalId), NormalizeNodeName(right.LocalId), StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string NormalizeNodeName(string nodeName)
-    {
+    private static string NormalizeNodeName(string nodeName) {
         return nodeName.Replace('\\', '/').Trim('/');
     }
 
-    private static int NormalizeLimit(int limit)
-    {
+    private static int NormalizeLimit(int limit) {
         return Math.Clamp(limit <= 0 ? DefaultLimit : limit, 1, MaxLimit);
     }
 
-    private static IReadOnlyCollection<string> AddMatch(IReadOnlyCollection<string> matches, string? match)
-    {
+    private static IReadOnlyCollection<string> AddMatch(IReadOnlyCollection<string> matches, string? match) {
         if (string.IsNullOrWhiteSpace(match))
-        {
             return matches;
-        }
-
         return matches.Append(match).ToArray();
     }
 
     private sealed record SearchSolution(
         IReadOnlyDictionary<string, Node> Bindings,
         double Score,
-        IReadOnlyCollection<string> MatchedBy)
-    {
-        public SearchSolution AddMatch(string? match, double score = 0)
-        {
+        IReadOnlyCollection<string> MatchedBy) {
+        public SearchSolution AddMatch(string? match, double score = 0) {
             return string.IsNullOrWhiteSpace(match)
                 ? this with { Score = Score + score }
                 : this with { Score = Score + score, MatchedBy = GraphSearchService.AddMatch(MatchedBy, match) };
         }
     }
 
-    private sealed class SearchGraph
-    {
+    private sealed class SearchGraph {
         private readonly IReadOnlyDictionary<string, Node> _nodesByName;
         private readonly IReadOnlyDictionary<string, Node[]> _connectionsByName;
         private readonly Dictionary<string, NodeDistance[]> _reachableCache = new(StringComparer.OrdinalIgnoreCase);
 
         private SearchGraph(
             IReadOnlyCollection<Node> nodes,
-            IReadOnlyDictionary<string, Node[]> connectionsByName)
-        {
+            IReadOnlyDictionary<string, Node[]> connectionsByName) {
             Nodes = nodes;
-            _nodesByName = nodes.ToDictionary(static node => NormalizeNodeName(node.Name), StringComparer.OrdinalIgnoreCase);
+            _nodesByName = nodes.ToDictionary(static node => NormalizeNodeName(node.LocalId), StringComparer.OrdinalIgnoreCase);
             _connectionsByName = connectionsByName;
         }
 
         public IReadOnlyCollection<Node> Nodes { get; }
 
-        public static async Task<SearchGraph> CreateAsync(IGraphStorage storage)
-        {
-            if (storage is not IGraphNodeCatalog catalog)
-            {
+        public static async Task<SearchGraph> CreateAsync(IGraphStorage storage) {
+            if (storage is not IGraphNodeCatalog catalog) {
                 throw new NotSupportedException("The configured graph storage provider does not expose a node catalog.");
             }
 
             var nodes = (await catalog.GetAllNodesAsync().ConfigureAwait(false))
-                .OrderBy(static node => node.Name, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(static node => node.LocalId, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             var knownNodes = nodes
-                .Select(static node => NormalizeNodeName(node.Name))
+                .Select(static node => NormalizeNodeName(node.LocalId))
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
             var connections = new Dictionary<string, Node[]>(StringComparer.OrdinalIgnoreCase);
 
-            foreach (var node in nodes)
-            {
+            foreach (var node in nodes) {
                 var connected = await storage.GetConnectedNodesAsync(node).ConfigureAwait(false);
-                connections[NormalizeNodeName(node.Name)] = connected
-                    .Where(connection => knownNodes.Contains(NormalizeNodeName(connection.Name)))
-                    .OrderBy(static connection => connection.Name, StringComparer.OrdinalIgnoreCase)
+                connections[NormalizeNodeName(node.LocalId)] = connected
+                    .Where(connection => knownNodes.Contains(NormalizeNodeName(connection.LocalId)))
+                    .OrderBy(static connection => connection.LocalId, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
             }
 
             return new SearchGraph(nodes, connections);
         }
 
-        public bool TryGetNode(string name, out Node node)
-        {
+        public bool TryGetNode(string name, out Node node) {
             return _nodesByName.TryGetValue(NormalizeNodeName(name), out node!);
         }
 
-        public int GetDegree(Node node)
-        {
-            return _connectionsByName.TryGetValue(NormalizeNodeName(node.Name), out var connections)
+        public int GetDegree(Node node) {
+            return _connectionsByName.TryGetValue(NormalizeNodeName(node.LocalId), out var connections)
                 ? connections.Length
                 : 0;
         }
 
-        public IReadOnlyCollection<NodeDistance> GetReachable(Node start, int minDepth, int maxDepth, bool includeSelf)
-        {
-            var cacheKey = $"{NormalizeNodeName(start.Name)}\u001f{minDepth}\u001f{maxDepth}\u001f{includeSelf}";
-            if (_reachableCache.TryGetValue(cacheKey, out var cached))
-            {
+        public IReadOnlyCollection<NodeDistance> GetReachable(Node start, int minDepth, int maxDepth, bool includeSelf) {
+            var cacheKey = $"{NormalizeNodeName(start.LocalId)}\u001f{minDepth}\u001f{maxDepth}\u001f{includeSelf}";
+            if (_reachableCache.TryGetValue(cacheKey, out var cached)) {
                 return cached;
             }
 
             var result = new Dictionary<string, NodeDistance>(StringComparer.OrdinalIgnoreCase);
-            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { NormalizeNodeName(start.Name) };
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { NormalizeNodeName(start.LocalId) };
             var queue = new Queue<(Node Node, int Depth)>();
             queue.Enqueue((start, 0));
 
-            if (includeSelf && minDepth == 0)
-            {
-                result[NormalizeNodeName(start.Name)] = new NodeDistance(start, 0);
+            if (includeSelf && minDepth == 0) {
+                result[NormalizeNodeName(start.LocalId)] = new NodeDistance(start, 0);
             }
 
-            while (queue.Count > 0)
-            {
+            while (queue.Count > 0) {
                 var (node, depth) = queue.Dequeue();
-                if (depth >= maxDepth)
-                {
+                if (depth >= maxDepth) {
                     continue;
                 }
 
-                if (!_connectionsByName.TryGetValue(NormalizeNodeName(node.Name), out var connections))
-                {
+                if (!_connectionsByName.TryGetValue(NormalizeNodeName(node.LocalId), out var connections)) {
                     continue;
                 }
 
-                foreach (var connected in connections)
-                {
-                    if (!visited.Add(NormalizeNodeName(connected.Name)))
-                    {
+                foreach (var connected in connections) {
+                    if (!visited.Add(NormalizeNodeName(connected.LocalId))) {
                         continue;
                     }
 
                     var nextDepth = depth + 1;
-                    if (nextDepth >= minDepth)
-                    {
-                        result[NormalizeNodeName(connected.Name)] = new NodeDistance(connected, nextDepth);
+                    if (nextDepth >= minDepth) {
+                        result[NormalizeNodeName(connected.LocalId)] = new NodeDistance(connected, nextDepth);
                     }
 
                     queue.Enqueue((connected, nextDepth));
@@ -1214,32 +1026,28 @@ public sealed class GraphSearchService(IGraphStorage storage)
 
             var reachable = result.Values
                 .OrderBy(static value => value.Distance)
-                .ThenBy(static value => value.Node.Name, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(static value => value.Node.LocalId, StringComparer.OrdinalIgnoreCase)
                 .ToArray();
             _reachableCache[cacheKey] = reachable;
             return reachable;
         }
 
-        public int GetDescendantDepth(Node ancestor, Node descendant)
-        {
-            var ancestorName = NormalizeNodeName(ancestor.Name);
-            var descendantName = NormalizeNodeName(descendant.Name);
-            if (!IsStrictPathDescendant(ancestorName, descendantName))
-            {
+        public int GetDescendantDepth(Node ancestor, Node descendant) {
+            var ancestorName = NormalizeNodeName(ancestor.LocalId);
+            var descendantName = NormalizeNodeName(descendant.LocalId);
+            if (!IsStrictPathDescendant(ancestorName, descendantName)) {
                 return -1;
             }
 
             return CountPathSegments(descendantName) - CountPathSegments(ancestorName);
         }
 
-        private static bool IsStrictPathDescendant(string ancestorName, string nodeName)
-        {
+        private static bool IsStrictPathDescendant(string ancestorName, string nodeName) {
             return nodeName.Length > ancestorName.Length
                 && nodeName.StartsWith(ancestorName + "/", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static int CountPathSegments(string nodeName)
-        {
+        private static int CountPathSegments(string nodeName) {
             return NormalizeNodeName(nodeName).Split('/', StringSplitOptions.RemoveEmptyEntries).Length;
         }
     }
