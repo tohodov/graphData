@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GraphData.PerNodeFileStorage.Extensions;
 
+[Obsolete("пока SymLinkStorage основной", true)]
 public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddPerNodeFileStorage(this IServiceCollection services, IConfiguration configuration)

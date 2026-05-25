@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace GraphData.PerNodeFileStorage;
 
+[Obsolete("пока SymLinkStorage основной", true)]
 public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
@@ -43,7 +44,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         Directory.CreateDirectory(_connectionsRoot);
     }
 
-    public async Task<Node> Create(string name, Node? parent = null, Dictionary<string, string>? attributes = null)
+    public async Task<Node> Create(string name, Node? parent = null, IDictionary<string, string>? attributes = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
@@ -139,9 +140,6 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
     public async Task Connect(Node sourceNode, Node targetNode)
     {
-        ArgumentNullException.ThrowIfNull(sourceNode);
-        ArgumentNullException.ThrowIfNull(targetNode);
-
         if (string.Equals(sourceNode.LocalId, targetNode.LocalId, StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -170,6 +168,8 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             }
         }
     }
+
+    public async Task Disconnect(Node sourceNode, Node targetNode) => throw new NotImplementedException();
 
     public async Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node)
     {

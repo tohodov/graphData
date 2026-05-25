@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace GraphData.BucketedFileStorage.Extensions;
 
+[Obsolete("пока SymLinkStorage основной", true)]
 public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddBucketedFileStorage(this IServiceCollection services, IConfiguration configuration)

@@ -15,7 +15,9 @@ namespace GraphData.Tests.Performance;
 
 public enum PerformanceStorageKind
 {
+    [Obsolete("SymLink", true)]
     PerNodeFile,
+    [Obsolete("SymLink", true)]
     BucketedFile,
     SymLink
 }
@@ -48,13 +50,13 @@ internal sealed class PerformanceStorageScope : IAsyncDisposable
 
         IGraphStorage storage = kind switch
         {
-            PerformanceStorageKind.PerNodeFile => new PerNodeFileGraphStorage(
-                Options.Create(new PerNodeFileGraphStorageOptions { RootPath = rootPath }),
-                NullLogger<PerNodeFileGraphStorage>.Instance),
+            //PerformanceStorageKind.PerNodeFile => new PerNodeFileGraphStorage(
+            //    Options.Create(new PerNodeFileGraphStorageOptions { RootPath = rootPath }),
+            //    NullLogger<PerNodeFileGraphStorage>.Instance),
 
-            PerformanceStorageKind.BucketedFile => new BucketedFileGraphStorage(
-                Options.Create(new BucketedFileGraphStorageOptions { RootPath = rootPath }),
-                NullLogger<BucketedFileGraphStorage>.Instance),
+            //PerformanceStorageKind.BucketedFile => new BucketedFileGraphStorage(
+            //    Options.Create(new BucketedFileGraphStorageOptions { RootPath = rootPath }),
+            //    NullLogger<BucketedFileGraphStorage>.Instance),
 
             PerformanceStorageKind.SymLink => new SymLinkGraphStorage(
                 Options.Create(new NtfsGraphStorageOptions { RootPath = rootPath }),

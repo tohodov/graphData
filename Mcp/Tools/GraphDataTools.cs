@@ -4,6 +4,7 @@ using GraphData.Api.Models;
 using GraphData.Api.Runtime;
 using GraphData.Api.Services;
 using GraphData.Core.Models;
+using GraphData.Core.Services;
 using ModelContextProtocol.Server;
 
 namespace GraphData.Mcp.Tools;
@@ -41,11 +42,7 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
         [Description("Local id for the new node.")] string name,
         [Description("Optional parent node path segments. Leave empty to create a root node.")] string[]? parentPath = null,
         [Description("Optional string attributes for the node.")] Dictionary<string, string>? attributes = null) {
-        var result = await _graphApi.CreateNodeAsync(new CreateNodeRequest {
-            Name = name,
-            ParentPath = parentPath,
-            Attributes = attributes
-        });
+        var result = await _graphApi.Create(name, parentPath as NodePath, attributes);
 
         return ToMutationJson(result, "node");
     }
@@ -66,7 +63,7 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
     [Description("Deletes an existing graph node by path.")]
     public async Task<string> DeleteNode(
         [Description("Root-relative path segments of the node to delete.")] string[] path) {
-        var result = await _graphApi.DeleteNodeAsync((NodePath)path);
+        var result = await _graphApi.Delete((NodePath)path);
         return result.Status == GraphApiStatus.Ok
             ? ToJson(new { success = true })
             : ToJson(ToErrorResponse(result.Status, result.Error));
@@ -154,7 +151,6 @@ public sealed class GraphDataTools(GraphApiService graphApi) {
             GraphApiStatus.BadRequest => "Request is invalid.",
             GraphApiStatus.NotFound => "Resource was not found.",
             GraphApiStatus.InternalServerError => "Internal server error.",
-            GraphApiStatus.NotImplemented => "Operation is not supported.",
             _ => "Operation failed."
         };
     }

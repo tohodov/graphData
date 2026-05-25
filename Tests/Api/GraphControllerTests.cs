@@ -393,12 +393,10 @@ public sealed class GraphControllerTests {
         var all = (AllNodeSearchExpression)query.Where!;
         Assert.IsInstanceOfType(all.Expressions[0], typeof(NodeConnectedSearchExpression));
         Assert.IsInstanceOfType(all.Expressions[1], typeof(NodeAttributeSearchExpression));
-        Assert.IsInstanceOfType(query.OrderBy.Single(), typeof(NodeSearchDegreeOrder));
     }
 
     private static GraphController CreateController(IGraphStorage storage) {
-        var controller = new GraphController(
-            new GraphApiService(new NodeService(storage), new GraphSearchService(storage)));
+        var controller = new GraphController(new NodeService(storage, new GraphSearchService(storage)));
         controller.ControllerContext = new ControllerContext {
             HttpContext = new DefaultHttpContext()
         };
@@ -479,12 +477,13 @@ public sealed class GraphControllerTests {
     }
 
     private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage {
-        public Task<Node> Create(string name, Node? parent = null, Dictionary<string, string>? attributes = null) => inner.Create(name, parent, attributes);
+        public Task<Node> Create(string name, Node? parent = null, IDictionary<string, string>? attributes = null) => inner.Create(name, parent, attributes);
         public Task<Node?> Get(string basisNodeName) => inner.Get(basisNodeName);
         public Task<Node?> Get(Node? parent, string subNodeName) => inner.Get(parent, subNodeName);
         public Task<Node?> Get(NodePath query) => inner.Get(query);
         public Task Delete(NodePath query) => inner.Delete(query);
         public Task Connect(Node sourceNode, Node targetNode) => throw new InvalidOperationException("diagnostic connect failure");
+        public Task Disconnect(Node sourceNode, Node targetNode) => throw new InvalidOperationException("diagnostic connect failure");
         public Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node) => inner.GetConnectedNodesAsync(node);
         public Task<Subgraph> GetSubgraphAsync(SubgraphQuery query) => inner.GetSubgraphAsync(query);
     }

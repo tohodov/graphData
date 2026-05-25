@@ -13,7 +13,6 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ICancellationTokenAccessor, HttpContextCancellationTokenAccessor>();
 builder.Services.AddGraphCore();
-builder.Services.AddScoped<GraphApiService>();
 builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
 
 var app = builder.Build();

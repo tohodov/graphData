@@ -12,6 +12,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace GraphData.Tests.Storage.Files;
 
 [TestClass]
+[Obsolete("SymLink", true)]
 public sealed class PerNodeFileGraphStorageTests : GraphStorageContractTests
 {
     private PerNodeFileGraphStorageOptions options = null!;

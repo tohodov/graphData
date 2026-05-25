@@ -24,7 +24,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             root.Create();
     }
 
-    public async Task<Node> Create(string name, Node? parent = null, Dictionary<string, string>? attributes = null) {
+    public async Task<Node> Create(string name, Node? parent = null, IDictionary<string, string>? attributes = null) {
         var parentNodeInternal = parent == null ? null : parent as NodeFileSystem ?? await Get(parent.LocalId) as NodeFileSystem;
         if (parentNodeInternal != null)
             return NodeFileSystem.Create(name, parentNodeInternal, attributes);
@@ -85,6 +85,8 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         CreateLinkIfMissing(targetPath, sourcePath, left.LocalId);
         return Task.CompletedTask;
     }
+
+    public Task Disconnect(Node left, Node right) => throw new NotImplementedException();
 
     public Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node) {
         var nodePath = GetNodePath(node.LocalId);

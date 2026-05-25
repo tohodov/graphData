@@ -4,29 +4,31 @@ using System.Threading.Tasks;
 using GraphData.Core.Abstractions;
 using GraphData.PerNodeFileStorage;
 using GraphData.PerNodeFileStorage.Options;
+using GraphData.SymLinkStorage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using SymLinkStorage;
 
 namespace GraphData.Tests;
 
 internal sealed class TestGraphStorageScope : IAsyncDisposable
 {
-    private readonly PerNodeFileGraphStorageOptions _options;
+    private readonly NtfsGraphStorageOptions _options;
 
-    private TestGraphStorageScope(PerNodeFileGraphStorageOptions options)
+    private TestGraphStorageScope(NtfsGraphStorageOptions options)
     {
         _options = options;
-        Storage = new PerNodeFileGraphStorage(
+        Storage = new SymLinkGraphStorage(
             Options.Create(options),
-            NullLogger<PerNodeFileGraphStorage>.Instance);
+            new CancellationTokensAccessorMock(),
+            NullLogger<SymLinkGraphStorage>.Instance);
     }
 
     public IGraphStorage Storage { get; }
 
     public static TestGraphStorageScope Create()
     {
-        var options = new PerNodeFileGraphStorageOptions
-        {
+        var options = new NtfsGraphStorageOptions {
             RootPath = Path.Combine(Path.GetTempPath(), "GraphDataTests", Guid.NewGuid().ToString("N"))
         };
 

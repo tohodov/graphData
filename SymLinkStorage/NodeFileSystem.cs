@@ -109,7 +109,7 @@ internal record NodeFileSystem : Node {
         using var stream = new FileStream(MetadataPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
         JsonSerializer.Serialize(stream, data, GraphData.SymLinkStorage.SymLinkGraphStorage.SerializerOptions);
     }
-    internal static NodeFileSystem Create(string name, NodeFileSystem parent, Dictionary<string, string>? attributes = null) {
+    internal static NodeFileSystem Create(string name, NodeFileSystem parent, IDictionary<string, string>? attributes = null) {
         var node = new NodeFileSystem(name, parent.FolderPath);
         Directory.CreateDirectory(node.FolderPath);
         if (attributes != null)

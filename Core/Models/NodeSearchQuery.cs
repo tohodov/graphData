@@ -9,8 +9,6 @@ public sealed record NodeSearchQuery
 
     public NodeSearchExpression? Where { get; init; }
 
-    public NodeSearchOrder[] OrderBy { get; init; } = [];
-
     public int Limit { get; init; } = 50;
 }
 

@@ -39,7 +39,7 @@ public abstract partial class GraphStorageContractTests {
 
     protected abstract Task<IGraphStorage> CreateStorageAsync();
 
-    protected Task<Node> CreateNode(string? name = null) => Storage.Create(name ?? Guid.NewGuid().ToString(), null, new() {
+    protected Task<Node> CreateNode(string? name = null) => Storage.Create(name ?? Guid.NewGuid().ToString(), null, new Dictionary<string, string>() {
         { "type", "test" },
         { "created", DateTime.UtcNow.ToString("O")
     } });
@@ -66,7 +66,7 @@ partial class GraphStorageContractTests {
         await Storage.Create("rifles");
 
         var service = new GraphSearchService(Storage);
-        var matches = await service.SearchNodesAsync(new NodeSearchQuery {
+        var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
             Return = ["n"],
             Where = new AllNodeSearchExpression {
                 Expressions = [
@@ -81,9 +81,9 @@ partial class GraphStorageContractTests {
                     }
                 ]
             }
-        });
+        }).ToArrayAsync();
 
-        Assert.AreEqual(1, matches.Count);
+        Assert.AreEqual(1, matches.Length);
         var match = matches.Single();
         Assert.AreEqual("pistols/double-action revolvers", match.Node.LocalId);
         Assert.IsTrue(match.MatchedBy.Any(x => x.StartsWith("descendant-of:pistols", StringComparison.OrdinalIgnoreCase)));
@@ -102,7 +102,7 @@ partial class GraphStorageContractTests {
         await Storage.Connect(america, unrelated);
 
         var service = new GraphSearchService(Storage);
-        var matches = await service.SearchNodesAsync(new NodeSearchQuery {
+        var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
             Return = ["n"],
             Where = new AllNodeSearchExpression {
                 Expressions = [
@@ -118,9 +118,9 @@ partial class GraphStorageContractTests {
                     }
                 ]
             }
-        });
+        }).ToArrayAsync();
 
-        Assert.AreEqual(1, matches.Count);
+        Assert.AreEqual(1, matches.Length);
         Assert.AreEqual(m16.LocalId, matches.Single().Node.LocalId);
     }
 
@@ -137,7 +137,7 @@ partial class GraphStorageContractTests {
         await Storage.Connect(source, marker);
 
         var service = new GraphSearchService(Storage);
-        var matches = await service.SearchNodesAsync(new NodeSearchQuery {
+        var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
             Return = ["n", "x"],
             Where = new AllNodeSearchExpression {
                 Expressions = [
@@ -152,9 +152,9 @@ partial class GraphStorageContractTests {
                     }
                 ]
             }
-        });
+        }).ToArrayAsync();
 
-        Assert.AreEqual(1, matches.Count);
+        Assert.AreEqual(1, matches.Length);
         var match = matches.Single();
         Assert.AreEqual(source.LocalId, match.Bindings["n"].LocalId);
         Assert.AreEqual(marker.LocalId, match.Bindings["x"].LocalId);
@@ -170,7 +170,7 @@ partial class GraphStorageContractTests {
         await Storage.Connect(connected, neighbor);
 
         var service = new GraphSearchService(Storage);
-        var matches = await service.SearchNodesAsync(new NodeSearchQuery {
+        var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
             Return = ["x"],
             Where = new NotNodeSearchExpression {
                 Expression = new ExistsNodeSearchExpression {
@@ -181,7 +181,7 @@ partial class GraphStorageContractTests {
                     }
                 }
             }
-        });
+        }).ToArrayAsync();
 
         CollectionAssert.AreEquivalent(
             new[] { isolated.LocalId },

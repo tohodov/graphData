@@ -102,12 +102,6 @@ public sealed class GraphSearchFunctionalTests
         {
             Return = ["x"],
             Where = Node("x"),
-            OrderBy = [
-                new NodeSearchDegreeOrder {
-                    Variable = "x",
-                    Direction = SearchOrderDirections.Descending
-                }
-            ],
             Limit = 2
         });
 
@@ -301,7 +295,7 @@ public sealed class GraphSearchFunctionalTests
         IGraphStorage storage,
         NodeSearchQuery query)
     {
-        return await new GraphSearchService(storage).SearchNodesAsync(query);
+        return await new GraphSearchService(storage).SearchNodesStreamAsync(query).ToArrayAsync();
     }
 
     private static string[] Names(IEnumerable<NodeSearchMatch> matches)

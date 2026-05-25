@@ -12,32 +12,8 @@ public sealed class GraphSearchService(IGraphStorage storage) {
 
     private readonly IGraphStorage _storage = storage;
 
-    public async Task<IReadOnlyCollection<NodeSearchMatch>> SearchNodesAsync(NodeSearchQuery query) {
-        Validate(query);
-
-        var graph = await SearchGraph.CreateAsync(_storage).ConfigureAwait(false);
-        var returnVariables = NormalizeReturnVariables(query.Return);
-        var solutions = EnumerateSolutions(query, graph, returnVariables);
-        var distinctSolutions = DistinctByReturnVariables(solutions, returnVariables);
-        var limit = NormalizeLimit(query.Limit);
-
-        return OrderSolutions(distinctSolutions, query.OrderBy, returnVariables, graph)
-            .Take(limit)
-            .Select(solution => ToMatch(solution, returnVariables))
-            .ToArray();
-    }
-
     public async IAsyncEnumerable<NodeSearchMatch> SearchNodesStreamAsync(NodeSearchQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default) {
         Validate(query);
-
-        if ((query.OrderBy ?? []).Length > 0) {
-            foreach (var match in await SearchNodesAsync(query).ConfigureAwait(false)) {
-                cancellationToken.ThrowIfCancellationRequested();
-                yield return match;
-            }
-
-            yield break;
-        }
 
         var graph = await SearchGraph.CreateAsync(_storage).ConfigureAwait(false);
         var returnVariables = NormalizeReturnVariables(query.Return);
@@ -626,10 +602,6 @@ public sealed class GraphSearchService(IGraphStorage storage) {
 
         if (query.Where is not null) {
             Validate(query.Where);
-        }
-
-        foreach (var order in query.OrderBy ?? []) {
-            Validate(order);
         }
     }
 
