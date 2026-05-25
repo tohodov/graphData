@@ -5,6 +5,7 @@ using System.Text.Json;
 using GraphData.BucketedFileStorage.Options;
 using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
+using GraphData.Core.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -42,7 +43,96 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         Directory.CreateDirectory(_connectionsRoot);
     }
 
-    public async Task<Node> Create(string name, Node? parent = null, IDictionary<string, string>? attributes = null)
+    public async Task<ServiceResult<Node>> Create(string name, NodePath? parent = null, IDictionary<string, string>? attributes = null)
+    {
+        if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
+            return ServiceResult<Node>.BadRequest(validationError);
+
+        var parentNode = parent is { Count: > 0 }
+            ? await FindNodeAsync(parent).ConfigureAwait(false)
+            : null;
+        if (parent is { Count: > 0 } && parentNode is null)
+            return ServiceResult<Node>.NotFound($"Parent node '{parent}' was not found.");
+
+        var created = await CreateNodeAsync(name, parentNode, attributes).ConfigureAwait(false);
+        return ServiceResult<Node>.Ok(created);
+    }
+
+    public async Task<ServiceResult<Node>> Get(NodePath path)
+    {
+        var node = await FindNodeAsync(path).ConfigureAwait(false);
+        return node is null
+            ? ServiceResult<Node>.NotFound()
+            : ServiceResult<Node>.Ok(node);
+    }
+
+    public async Task<ServiceResult> Delete(NodePath path)
+    {
+        var node = await FindNodeAsync(path).ConfigureAwait(false) as StoredNode;
+        if (node == null)
+            return ServiceResult.NotFound();
+        var nodeName = node.NodeName;
+        var existingConnections = await ReadConnectionsWithLockAsync(nodeName).ConfigureAwait(false);
+        var metadataBucketKey = GetBucketKey(nodeName);
+        var metadataLock = GetMetadataLock(metadataBucketKey);
+        await metadataLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var nodes = await ReadMetadataBucketAsync(metadataBucketKey).ConfigureAwait(false);
+            if (!nodes.Remove(nodeName))
+                return ServiceResult.NotFound();
+
+            await WriteMetadataBucketAsync(metadataBucketKey, nodes).ConfigureAwait(false);
+        }
+        finally
+        {
+            metadataLock.Release();
+        }
+
+        await RemoveConnectionEntryAsync(nodeName).ConfigureAwait(false);
+        foreach (var connection in existingConnections)
+            await RemoveConnectionAsync(connection, nodeName).ConfigureAwait(false);
+
+        return ServiceResult.Ok();
+    }
+
+    public async Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath)
+    {
+        if (sourcePath.SequenceEqual(targetPath))
+            return ServiceResult.BadRequest("SourcePath and TargetPath must be different.");
+
+        var sourceNode = await FindNodeAsync(sourcePath).ConfigureAwait(false);
+        var targetNode = await FindNodeAsync(targetPath).ConfigureAwait(false);
+        if (sourceNode is null || targetNode is null)
+            return ServiceResult.NotFound();
+
+        try
+        {
+            await ConnectNodesAsync(sourceNode, targetNode).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return ServiceResult.InternalServerError(ex.ToString());
+        }
+
+        return ServiceResult.Ok();
+    }
+
+    public Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath) =>
+        Task.FromResult(ServiceResult.InternalServerError(new NotImplementedException().ToString()));
+
+    public async Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        if (await ReadMetadataWithLockAsync(node.LocalId).ConfigureAwait(false) is null)
+            return ServiceResult<IReadOnlyCollection<Node>>.NotFound();
+
+        var nodes = await GetConnectedNodesCoreAsync(node).ConfigureAwait(false);
+        return ServiceResult<IReadOnlyCollection<Node>>.Ok(nodes);
+    }
+
+    private async Task<Node> CreateNodeAsync(string name, Node? parent = null, IDictionary<string, string>? attributes = null)
     {
         var nodeName = GetNodeName(parent, name);
         var bucketKey = GetBucketKey(nodeName);
@@ -66,54 +156,26 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         return CreateNode(document);
     }
 
-    public async Task<Node?> Get(Node? parent, string subNodeName)
+    private async Task<Node?> FindNodeAsync(Node? parent, string subNodeName)
     {
         var nodeName = GetNodeName(parent, subNodeName);
         var document = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
         return document is null ? null : CreateNode(document);
     }
 
-    public async Task<Node?> Get(NodePath query)
+    private async Task<Node?> FindNodeAsync(NodePath query)
     {
         Node? node = null;
         foreach (var part in query)
         {
-            node = await Get(node, part).ConfigureAwait(false);
+            node = await FindNodeAsync(node, part).ConfigureAwait(false);
             if (node is null)
                 return null;
         }
         return node;
     }
 
-    public async Task Delete(NodePath path)
-    {
-        var node = await Get(path) as StoredNode;
-        if (node == null)
-            return;
-        var nodeName = node.NodeName;
-        var existingConnections = await ReadConnectionsWithLockAsync(nodeName).ConfigureAwait(false);
-        var metadataBucketKey = GetBucketKey(nodeName);
-        var metadataLock = GetMetadataLock(metadataBucketKey);
-        await metadataLock.WaitAsync().ConfigureAwait(false);
-        try
-        {
-            var nodes = await ReadMetadataBucketAsync(metadataBucketKey).ConfigureAwait(false);
-            if (!nodes.Remove(nodeName))
-                return;
-
-            await WriteMetadataBucketAsync(metadataBucketKey, nodes).ConfigureAwait(false);
-        }
-        finally
-        {
-            metadataLock.Release();
-        }
-
-        await RemoveConnectionEntryAsync(nodeName).ConfigureAwait(false);
-        foreach (var connection in existingConnections)
-            await RemoveConnectionAsync(connection, nodeName).ConfigureAwait(false);
-    }
-
-    public async Task Connect(Node sourceNode, Node targetNode)
+    private async Task ConnectNodesAsync(Node sourceNode, Node targetNode)
     {
         await EnsureNodeExistsAsync(sourceNode.LocalId).ConfigureAwait(false);
         await EnsureNodeExistsAsync(targetNode.LocalId).ConfigureAwait(false);
@@ -168,12 +230,8 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         }
     }
 
-    public Task Disconnect(Node sourceNode, Node targetNode) => throw new NotImplementedException();
-
-    public async Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node)
+    private async Task<IReadOnlyCollection<Node>> GetConnectedNodesCoreAsync(Node node)
     {
-        ArgumentNullException.ThrowIfNull(node);
-
         var connections = await ReadConnectionsWithLockAsync(node.LocalId).ConfigureAwait(false);
         var nodes = new List<Node>();
         foreach (var connection in connections)

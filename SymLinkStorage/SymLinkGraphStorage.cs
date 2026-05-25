@@ -1,6 +1,7 @@
 using System.Text.Json;
 using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
+using GraphData.Core.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SymLinkStorage;
@@ -24,81 +25,71 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             root.Create();
     }
 
-    public async Task<Node> Create(string name, Node? parent = null, IDictionary<string, string>? attributes = null) {
-        var parentNodeInternal = parent == null ? null : parent as NodeFileSystem ?? await Get(parent.LocalId) as NodeFileSystem;
-        if (parentNodeInternal != null)
-            return NodeFileSystem.Create(name, parentNodeInternal, attributes);
-        var node = new NodeFileSystem(name, options.RootPath);
-        Directory.CreateDirectory(node.FolderPath);
-        if (attributes != null)
-            node.WriteMetadata(attributes);
-        return node;
+    public Task<ServiceResult<Node>> Create(string name, NodePath? parent = null, IDictionary<string, string>? attributes = null) {
+        if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
+            return Task.FromResult(ServiceResult<Node>.BadRequest(validationError));
+
+        var parentNode = parent is { Count: > 0 }
+            ? FindNode(parent)
+            : null;
+        if (parent is { Count: > 0 } && parentNode is null)
+            return Task.FromResult(ServiceResult<Node>.NotFound($"Parent node '{parent}' was not found."));
+
+        var node = parentNode is null
+            ? CreateRootNode(name, attributes)
+            : NodeFileSystem.Create(name, parentNode, attributes);
+
+        return Task.FromResult(ServiceResult<Node>.Ok(node));
     }
 
-    public Task<Node?> Get(string name) {
-        var nodePath = GetNodePath(name);
-        if (!Directory.Exists(nodePath))
-            return Task.FromResult<Node?>(null);
-        return Task.FromResult<Node?>(new NodeFileSystem(name, options.RootPath));
-    }
-    public Task<Node?> Get(NodePath path) {
-        NodeFileSystem? node = null;
-        foreach (var part in path)
-            if (GetInternal(node, part) is NodeFileSystem child)//TODO сделать ООП реализацию и оптимизированную
-                node = child;
-            else
-                break;
-        return Task.FromResult<Node?>(node);
-    }
-    public Task<Node?> Get(Node? parent, string nodeId) => Task.FromResult<Node?>(GetInternal((NodeFileSystem)parent!, nodeId));
-    internal NodeFileSystem? GetInternal(NodeFileSystem? parent, string nodeId) {
-        var path = parent == null
-            ? GetNodePath(nodeId)
-            : Path.Combine(parent.FolderPath, nodeId);
-        if (!Directory.Exists(path))
-            return null;
-        return new NodeFileSystem(nodeId, parent == null ? options.RootPath : parent.FolderPath);
+    public Task<ServiceResult<Node>> Get(NodePath path) {
+        var node = FindNode(path);
+        return Task.FromResult(node is null
+            ? ServiceResult<Node>.NotFound()
+            : ServiceResult<Node>.Ok(node));
     }
 
-    public async Task Delete(NodePath path) {
-        var node = await Get(path) as NodeFileSystem;
-        if (node == null)
-            return;
-        var connections = await GetConnectedNodesAsync(node);
+    public Task<ServiceResult> Delete(NodePath path) {
+        var node = FindNode(path);
+        if (node is null)
+            return Task.FromResult(ServiceResult.NotFound());
+
+        var connections = GetConnectedNodes(node);
         foreach (var connection in connections)
             DeleteLinkIfExists(GetLinkPath(connection.LocalId, node.LocalId));
         DeleteDirectoryWithoutFollowingLinks(node.GetInfo());
+
+        return Task.FromResult(ServiceResult.Ok());
     }
 
-    public Task Connect(Node left, Node right) {
-        if (string.Equals(left.LocalId, right.LocalId, StringComparison.OrdinalIgnoreCase)) {
-            return Task.CompletedTask;
+    public Task<ServiceResult> Connect(NodePath leftPath, NodePath rightPath) {
+        if (leftPath.SequenceEqual(rightPath))
+            return Task.FromResult(ServiceResult.BadRequest("SourcePath and TargetPath must be different."));
+
+        var left = FindNode(leftPath);
+        var right = FindNode(rightPath);
+        if (left is null || right is null)
+            return Task.FromResult(ServiceResult.NotFound());
+
+        try {
+            ConnectNodes(left, right);
+        } catch (Exception ex) {
+            return Task.FromResult(ServiceResult.InternalServerError(ex.ToString()));
         }
 
-        if (IsHierarchyConnection(left.LocalId, right.LocalId)) {
-            return Task.CompletedTask;
-        }
-
-        var sourcePath = GetNodePath(left.LocalId);
-        var targetPath = GetNodePath(right.LocalId);
-        CreateLinkIfMissing(sourcePath, targetPath, right.LocalId);
-        CreateLinkIfMissing(targetPath, sourcePath, left.LocalId);
-        return Task.CompletedTask;
+        return Task.FromResult(ServiceResult.Ok());
     }
 
-    public Task Disconnect(Node left, Node right) => throw new NotImplementedException();
+    public Task<ServiceResult> Disconnect(NodePath leftPath, NodePath rightPath) {
+        return Task.FromResult(ServiceResult.InternalServerError(new NotImplementedException().ToString()));
+    }
 
-    public Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node) {
+    public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node) {
         var nodePath = GetNodePath(node.LocalId);
         if (!Directory.Exists(nodePath))
-            throw new DirectoryNotFoundException(nodePath);
+            return Task.FromResult(ServiceResult<IReadOnlyCollection<Node>>.NotFound());
 
-        var connected = EnumerateNeighborIds(nodePath)
-            .Where(neighborId => !string.Equals(neighborId, node.LocalId, StringComparison.OrdinalIgnoreCase))
-            .Select(neighborId => (Node)new NodeFileSystem(neighborId, options.RootPath))
-            .ToArray();
-
-        return Task.FromResult<IReadOnlyCollection<Node>>(connected);
+        return Task.FromResult(ServiceResult<IReadOnlyCollection<Node>>.Ok(GetConnectedNodes(node)));
     }
 
     public Task<IReadOnlyCollection<Node>> GetAllNodesAsync() {
@@ -126,6 +117,54 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         }
 
         return Task.FromResult<IReadOnlyCollection<Node>>(nodes);
+    }
+
+    internal NodeFileSystem? GetInternal(NodeFileSystem? parent, string nodeId) {
+        var path = parent == null
+            ? GetNodePath(nodeId)
+            : Path.Combine(parent.FolderPath, nodeId);
+        if (!Directory.Exists(path))
+            return null;
+        return new NodeFileSystem(nodeId, parent == null ? options.RootPath : parent.FolderPath);
+    }
+
+    private NodeFileSystem CreateRootNode(string name, IDictionary<string, string>? attributes) {
+        var node = new NodeFileSystem(name, options.RootPath);
+        Directory.CreateDirectory(node.FolderPath);
+        if (attributes != null)
+            node.WriteMetadata(attributes);
+        return node;
+    }
+
+    private NodeFileSystem? FindNode(NodePath path) {
+        NodeFileSystem? node = null;
+        foreach (var part in path) {
+            if (GetInternal(node, part) is not NodeFileSystem child)
+                return null;
+            node = child;
+        }
+        return node;
+    }
+
+    private void ConnectNodes(Node left, Node right) {
+        if (string.Equals(left.LocalId, right.LocalId, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (IsHierarchyConnection(left.LocalId, right.LocalId))
+            return;
+
+        var sourcePath = GetNodePath(left.LocalId);
+        var targetPath = GetNodePath(right.LocalId);
+        CreateLinkIfMissing(sourcePath, targetPath, right.LocalId);
+        CreateLinkIfMissing(targetPath, sourcePath, left.LocalId);
+    }
+
+    private IReadOnlyCollection<Node> GetConnectedNodes(Node node) {
+        var nodePath = GetNodePath(node.LocalId);
+        return EnumerateNeighborIds(nodePath)
+            .Where(neighborId => !string.Equals(neighborId, node.LocalId, StringComparison.OrdinalIgnoreCase))
+            .Select(neighborId => (Node)new NodeFileSystem(neighborId, options.RootPath))
+            .ToArray();
     }
 
     private string GetNodePath(string name) {

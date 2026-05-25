@@ -1,23 +1,36 @@
 using GraphData.Core.Models;
+using GraphData.Core.Services;
 
 namespace GraphData.Core.Abstractions;
 
 public interface IGraphStorage
 {
-    Task<Node> Create(string name, Node? parent = null, IDictionary<string, string>? attributes = null);
-    Task<Node?> Get(string basisNodeName) => Get(null, basisNodeName);
-    Task<Node?> Get(Node? parent, string subNodeName);
-    Task<Node?> Get(NodePath path);
-    async Task Update(NodePath path, IDictionary<string, string> attributes) {
-        var node = await Get(path);
-        if (node != null)
-            node.Attributes = attributes.ToDictionary();
+    Task<ServiceResult<Node>> Create(string name, NodePath? parent = null, IDictionary<string, string>? attributes = null);
+    Task<ServiceResult<Node>> Get(NodePath path);
+
+    async Task<ServiceResult> Update(NodePath path, IDictionary<string, string> attributes) {
+        var result = await Get(path);
+        if (result.Status != ServiceResultStatus.Ok || result.Value is null)
+            return ServiceResult.From(result);
+
+        try {
+            result.Value.Attributes = attributes.ToDictionary();
+        } catch (Exception ex) {
+            return ServiceResult.InternalServerError(ex.ToString());
+        }
+
+        return ServiceResult.Ok();
     }
-    Task Delete(NodePath path);
-    Task Connect(Node sourceNode, Node targetNode);
-    Task Disconnect(Node sourceNode, Node targetNode);
-    Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node);
-    async Task<Subgraph> GetSubgraphAsync(SubgraphQuery query) { //TODO переосмыслить
+
+    Task<ServiceResult> Delete(NodePath path);
+    Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath);
+    Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath);
+    Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node);
+
+    async Task<ServiceResult<Subgraph>> GetSubgraphAsync(SubgraphQuery query) { //TODO переосмыслить
+        if (query.Nodes.Count == 0)
+            return ServiceResult<Subgraph>.Ok(new Subgraph { Nodes = [] });
+
         var comparer = StringComparer.OrdinalIgnoreCase;
         var visited = new HashSet<NodePath>();//TODO хэш тут надо проверить
         var discovered = new HashSet<NodePath>(query.Nodes);//TODO хэш тут надо проверить
@@ -33,21 +46,27 @@ public interface IGraphStorage
             var (path, depth) = queue.Dequeue();
             if (!visited.Add(path))
                 continue;
-            var node = await Get(path);
-            if (node == null)
+
+            var result = await Get(path);
+            if (result.Status == ServiceResultStatus.NotFound)
                 continue;
+            if (result.Status != ServiceResultStatus.Ok || result.Value is null)
+                return ServiceResult<Subgraph>.From(result);
+
+            var node = result.Value;
             nodes[path] = node;
             if (depth >= query.MaxDepth)
                 continue;
+
             foreach (var neighborId in node.Nodes.Select(x => x.GlobalId))
                 if (!neighborId.SequenceEqual(path) && discovered.Add(neighborId))
                     queue.Enqueue((neighborId, depth + 1));
         }
 
-        return nodes.Count == 0
+        return ServiceResult<Subgraph>.Ok(nodes.Count == 0
             ? Subgraph.Empty
             : new Subgraph {
                 Nodes = nodes.Values
-            };
+            });
     }
 }

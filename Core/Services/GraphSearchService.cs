@@ -937,8 +937,12 @@ public sealed class GraphSearchService(IGraphStorage storage) {
             var connections = new Dictionary<string, Node[]>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var node in nodes) {
-                var connected = await storage.GetConnectedNodesAsync(node).ConfigureAwait(false);
-                connections[NormalizeNodeName(node.LocalId)] = connected
+                var connectedResult = await storage.GetConnectedNodesAsync(node).ConfigureAwait(false);
+                if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null) {
+                    throw new InvalidOperationException(connectedResult.Error ?? $"Failed to read connections for node '{node.LocalId}'.");
+                }
+
+                connections[NormalizeNodeName(node.LocalId)] = connectedResult.Value
                     .Where(connection => knownNodes.Contains(NormalizeNodeName(connection.LocalId)))
                     .OrderBy(static connection => connection.LocalId, StringComparer.OrdinalIgnoreCase)
                     .ToArray();
