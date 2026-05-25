@@ -39,17 +39,20 @@ public abstract partial class GraphStorageContractTests {
 
     protected abstract Task<IGraphStorage> CreateStorageAsync();
 
-    protected Task<Node> CreateNode(string? name = null) => Storage.Create(name ?? Guid.NewGuid().ToString(), null, new Dictionary<string, string>() {
-        { "type", "test" },
-        { "created", DateTime.UtcNow.ToString("O")
-    } });
+    protected async Task<Node> CreateNode(string? name = null) {
+        var result = await Storage.Create(name ?? Guid.NewGuid().ToString(), null, new Dictionary<string, string>() {
+            { "type", "test" },
+            { "created", DateTime.UtcNow.ToString("O") }
+        });
+        return result.Value!;
+    }
 }
 [TestCategory(nameof(IGraphStorage.Create))]
 partial class GraphStorageContractTests {
     [TestMethod]
     public async Task ShouldPersistMetadata() {
         var created = await CreateNode();
-        var retrieved = await Storage.Get(created.LocalId);
+        var retrieved = (await Storage.Get(created.LocalId)).Value!;
 
         Assert.IsNotNull(retrieved);
         Assert.AreEqual(created.LocalId, retrieved.LocalId);
@@ -61,7 +64,7 @@ partial class GraphStorageContractTests {
 partial class GraphStorageContractTests {
     [TestMethod]
     public async Task Search_ShouldFindTextMatchBelowHierarchyAncestor() {
-        var pistols = await Storage.Create("pistols");
+        var pistols = (await Storage.Create("pistols")).Value!;
         await Storage.Create("double-action revolvers", pistols);
         await Storage.Create("rifles");
 
@@ -92,10 +95,10 @@ partial class GraphStorageContractTests {
 
     [TestMethod]
     public async Task Search_ShouldFindNodesConnectedToAllAnchors() {
-        var america = await Storage.Create("america");
-        var assaultRifles = await Storage.Create("assault rifles");
-        var m16 = await Storage.Create("m16");
-        var unrelated = await Storage.Create("unrelated");
+        var america = (await Storage.Create("america")).Value!;
+        var assaultRifles = (await Storage.Create("assault rifles")).Value!;
+        var m16 = (await Storage.Create("m16")).Value!;
+        var unrelated = (await Storage.Create("unrelated")).Value!;
 
         await Storage.Connect(america, m16);
         await Storage.Connect(assaultRifles, m16);
@@ -126,13 +129,13 @@ partial class GraphStorageContractTests {
 
     [TestMethod]
     public async Task Search_ShouldReturnSolutionsForVariableConnectedToAttributeMatch() {
-        var source = await Storage.Create("source");
-        var marker = await Storage.Create("marker", attributes: new Dictionary<string, string> {
+        var source = (await Storage.Create("source")).Value!;
+        var marker = (await Storage.Create("marker", attributes: new Dictionary<string, string> {
             ["id"] = "Y"
-        });
-        var unrelated = await Storage.Create("unrelated", attributes: new Dictionary<string, string> {
+        })).Value!;
+        var unrelated = (await Storage.Create("unrelated", attributes: new Dictionary<string, string> {
             ["id"] = "Y"
-        });
+        })).Value!;
 
         await Storage.Connect(source, marker);
 
@@ -163,9 +166,9 @@ partial class GraphStorageContractTests {
 
     [TestMethod]
     public async Task Search_ShouldFindIsolatedNodesWithNegatedExistentialRelation() {
-        var isolated = await Storage.Create("isolated");
-        var connected = await Storage.Create("connected");
-        var neighbor = await Storage.Create("neighbor");
+        var isolated = (await Storage.Create("isolated")).Value!;
+        var connected = (await Storage.Create("connected")).Value!;
+        var neighbor = (await Storage.Create("neighbor")).Value!;
 
         await Storage.Connect(connected, neighbor);
 
@@ -209,7 +212,7 @@ partial class GraphStorageContractTests {
         attributes["type"] = "updated";
         attributes["extra"] = "value";
         node.Attributes = attributes;
-        var retrieved = await Storage.Get(node.LocalId);
+        var retrieved = (await Storage.Get(node.LocalId)).Value!;
         Assert.IsNotNull(retrieved);
         CollectionAssert.AreEquivalent(attributes.ToList(), retrieved.Attributes.ToList());
     }
@@ -228,8 +231,8 @@ partial class GraphStorageContractTests {
         await Storage.Delete(second.GlobalId);
 
         Assert.IsNull(await Storage.Get(second.LocalId));
-        Assert.IsFalse((await Storage.GetConnectedNodesAsync(first)).Any(x => x.LocalId == second.LocalId));
-        Assert.IsFalse((await Storage.GetConnectedNodesAsync(third)).Any(x => x.LocalId == second.LocalId));
+        Assert.IsFalse((await Storage.GetConnectedNodesAsync(first)).Value!.Any(x => x.LocalId == second.LocalId));
+        Assert.IsFalse((await Storage.GetConnectedNodesAsync(third)).Value!.Any(x => x.LocalId == second.LocalId));
     }
 }
 [TestCategory(nameof(IGraphStorage.Connect))]
@@ -241,8 +244,8 @@ partial class GraphStorageContractTests {
 
         await Storage.Connect(first, second);
 
-        var firstConnections = await Storage.GetConnectedNodesAsync(first);
-        var secondConnections = await Storage.GetConnectedNodesAsync(second);
+        var firstConnections = (await Storage.GetConnectedNodesAsync(first)).Value!;
+        var secondConnections = (await Storage.GetConnectedNodesAsync(second)).Value!;
 
         Assert.IsTrue(firstConnections.Any(x => x.LocalId == second.LocalId));
         Assert.IsTrue(secondConnections.Any(x => x.LocalId == first.LocalId));
@@ -253,7 +256,7 @@ partial class GraphStorageContractTests {
 
         await Storage.Connect(node, node);
 
-        var connections = (await Storage.GetConnectedNodesAsync(node)).ToList();
+        var connections = (await Storage.GetConnectedNodesAsync(node)).Value!.ToList();
         CollectionAssert.DoesNotContain(connections, node.LocalId);
     }
 }
@@ -275,7 +278,7 @@ partial class GraphStorageContractTests {
             MaxDepth = 2
         };
 
-        var subgraph = await Storage.GetSubgraphAsync(query);
+        var subgraph = (await Storage.GetSubgraphAsync(query)).Value!;
 
         Assert.AreEqual(3, subgraph.Nodes.Count);
         Assert.IsTrue(subgraph.Nodes.Contains(first));

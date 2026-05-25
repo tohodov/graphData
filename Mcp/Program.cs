@@ -31,7 +31,6 @@ builder.AddTracker();
 
 builder.Services.AddSingleton<ICancellationTokenAccessor, McpCancellationTokenAccessor>();
 builder.Services.AddGraphCore();
-builder.Services.AddScoped<GraphApiService>();
 builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
 builder.Services
     .AddMcpServer()

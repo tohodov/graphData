@@ -29,8 +29,8 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task GetNodeAsync_ReturnsNodeWithNeighborEdges() {
         await using var scope = TestGraphStorageScope.Create();
-        var first = await scope.Storage.Create("1", attributes: new Dictionary<string, string> { ["kind"] = "root" });
-        var second = await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["kind"] = "leaf" });
+        var first = (await scope.Storage.Create("1", attributes: new Dictionary<string, string> { ["kind"] = "root" })).Value!;
+        var second = (await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["kind"] = "leaf" })).Value!;
         await scope.Storage.Connect(first, second);
 
         var controller = CreateController(scope.Storage);
@@ -82,7 +82,7 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task CreateNodeAsync_CreatesChildWhenParentPathIsProvided() {
         await using var scope = TestGraphStorageScope.Create();
-        var parent = await scope.Storage.Create("parent");
+        var parent = (await scope.Storage.Create("parent")).Value!;
         var controller = CreateController(scope.Storage);
 
         var result = await controller.CreateNodeAsync(new CreateNodeRequest {
@@ -104,8 +104,8 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task GetNodeAsync_ResolvesChildByPathSegments() {
         await using var scope = TestGraphStorageScope.Create();
-        var parent = await scope.Storage.Create("parent");
-        var child = await scope.Storage.Create("child", parent);
+        var parent = (await scope.Storage.Create("parent")).Value!;
+        var child = (await scope.Storage.Create("child", parent)).Value!;
         var controller = CreateController(scope.Storage);
 
         var result = await controller.GetNodeAsync(["parent", "child"]);
@@ -153,7 +153,7 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task ConnectNodesAsync_ReturnsBadRequestForInvalidTargetName() {
         await using var scope = TestGraphStorageScope.Create();
-        var source = await scope.Storage.Create("source");
+        var source = (await scope.Storage.Create("source")).Value!;
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
@@ -171,7 +171,7 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task ConnectNodesAsync_ReturnsNoContentForExistingHierarchyConnectionWithSymLinkStorage() {
         await using var scope = SymLinkGraphStorageScope.Create();
-        var root = await scope.Storage.Create("small_arms_test_graph");
+        var root = (await scope.Storage.Create("small_arms_test_graph")).Value!;
         await scope.Storage.Create("weapons", root);
         var controller = CreateController(scope.Storage);
 
@@ -193,9 +193,9 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task ConnectNodesAsync_ConnectsNestedSiblingsWithSymLinkStorage() {
         await using var scope = SymLinkGraphStorageScope.Create();
-        var root = await scope.Storage.Create("small_arms_test_graph");
-        var weapons = await scope.Storage.Create("weapons", root);
-        var categories = await scope.Storage.Create("categories", root);
+        var root = (await scope.Storage.Create("small_arms_test_graph")).Value!;
+        var weapons = (await scope.Storage.Create("weapons", root)).Value!;
+        var categories = (await scope.Storage.Create("categories", root)).Value!;
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
@@ -205,8 +205,8 @@ public sealed class GraphControllerTests {
 
         Assert.IsInstanceOfType(result, typeof(NoContentResult));
 
-        weapons = (await scope.Storage.Get("small_arms_test_graph/weapons"))!;
-        categories = (await scope.Storage.Get("small_arms_test_graph/categories"))!;
+        weapons = (await scope.Storage.Get("small_arms_test_graph/weapons")).Value!;
+        categories = (await scope.Storage.Get("small_arms_test_graph/categories")).Value!;
 
         var weaponLinkPath = Path.Combine(scope.RootPath, "small_arms_test_graph", "weapons", "categories");
         var categoryLinkPath = Path.Combine(scope.RootPath, "small_arms_test_graph", "categories", "weapons");
@@ -217,8 +217,8 @@ public sealed class GraphControllerTests {
         Assert.IsFalse(Directory.EnumerateFileSystemEntries(Path.Combine(scope.RootPath, "small_arms_test_graph", "categories"))
             .Any(path => Path.GetFileName(path).StartsWith(".graphdata-node-", StringComparison.OrdinalIgnoreCase)));
 
-        var weaponConnections = await scope.Storage.GetConnectedNodesAsync(weapons);
-        var categoryConnections = await scope.Storage.GetConnectedNodesAsync(categories);
+        var weaponConnections = (await scope.Storage.GetConnectedNodesAsync(weapons)).Value!;
+        var categoryConnections = (await scope.Storage.GetConnectedNodesAsync(categories)).Value!;
         Assert.IsTrue(weaponConnections.Any(node => node.LocalId == categories.LocalId));
         Assert.IsTrue(categoryConnections.Any(node => node.LocalId == weapons.LocalId));
     }
@@ -226,8 +226,8 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task ConnectNodesAsync_ReturnsInternalErrorDetailsWhenConnectFails() {
         await using var scope = TestGraphStorageScope.Create();
-        var source = await scope.Storage.Create("source");
-        var target = await scope.Storage.Create("target");
+        var source = (await scope.Storage.Create("source")).Value!;
+        var target = (await scope.Storage.Create("target")).Value!;
         var controller = CreateController(new ConnectThrowingGraphStorage(scope.Storage));
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
@@ -265,9 +265,9 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task GetSubgraphAsync_ReturnsTopLevelEdgesWithoutDuplicatingThemOnNodes() {
         await using var scope = TestGraphStorageScope.Create();
-        var first = await scope.Storage.Create("1");
-        var second = await scope.Storage.Create("2");
-        var third = await scope.Storage.Create("3");
+        var first = (await scope.Storage.Create("1")).Value!;
+        var second = (await scope.Storage.Create("2")).Value!;
+        var third = (await scope.Storage.Create("3")).Value!;
         await scope.Storage.Connect(first, second);
         await scope.Storage.Connect(second, third);
 
@@ -293,8 +293,8 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task SearchNodesAsync_ReturnsVariableBindings() {
         await using var scope = TestGraphStorageScope.Create();
-        var first = await scope.Storage.Create("1", attributes: new Dictionary<string, string> { ["id"] = "source" });
-        var second = await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["id"] = "Y" });
+        var first = (await scope.Storage.Create("1", attributes: new Dictionary<string, string> { ["id"] = "source" })).Value!;
+        var second = (await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["id"] = "Y" })).Value!;
         await scope.Storage.Connect(first, second);
 
         var controller = CreateController(scope.Storage);
@@ -323,8 +323,8 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task SearchNodesAsync_WritesNdjsonMatches() {
         await using var scope = TestGraphStorageScope.Create();
-        var first = await scope.Storage.Create("1");
-        var second = await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["id"] = "Y" });
+        var first = (await scope.Storage.Create("1")).Value!;
+        var second = (await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["id"] = "Y" })).Value!;
         await scope.Storage.Connect(first, second);
 
         var controller = CreateController(scope.Storage);
@@ -396,7 +396,7 @@ public sealed class GraphControllerTests {
     }
 
     private static GraphController CreateController(IGraphStorage storage) {
-        var controller = new GraphController(new NodeService(storage, new GraphSearchService(storage)));
+        var controller = new GraphController(storage, new GraphSearchService(storage));
         controller.ControllerContext = new ControllerContext {
             HttpContext = new DefaultHttpContext()
         };
@@ -477,14 +477,20 @@ public sealed class GraphControllerTests {
     }
 
     private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage {
-        public Task<Node> Create(string name, Node? parent = null, IDictionary<string, string>? attributes = null) => inner.Create(name, parent, attributes);
-        public Task<Node?> Get(string basisNodeName) => inner.Get(basisNodeName);
-        public Task<Node?> Get(Node? parent, string subNodeName) => inner.Get(parent, subNodeName);
-        public Task<Node?> Get(NodePath query) => inner.Get(query);
-        public Task Delete(NodePath query) => inner.Delete(query);
-        public Task Connect(Node sourceNode, Node targetNode) => throw new InvalidOperationException("diagnostic connect failure");
-        public Task Disconnect(Node sourceNode, Node targetNode) => throw new InvalidOperationException("diagnostic connect failure");
-        public Task<IReadOnlyCollection<Node>> GetConnectedNodesAsync(Node node) => inner.GetConnectedNodesAsync(node);
-        public Task<Subgraph> GetSubgraphAsync(SubgraphQuery query) => inner.GetSubgraphAsync(query);
+        public Task<ServiceResult<Node>> Create(string name, NodePath? parent = null, IDictionary<string, string>? attributes = null) =>
+            inner.Create(name, parent, attributes);
+
+        public Task<ServiceResult<Node>> Get(NodePath query) => inner.Get(query);
+
+        public Task<ServiceResult> Delete(NodePath query) => inner.Delete(query);
+
+        public Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath) =>
+            Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
+
+        public Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath) =>
+            Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
+
+        public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node) =>
+            inner.GetConnectedNodesAsync(node);
     }
 }

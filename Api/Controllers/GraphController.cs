@@ -2,6 +2,7 @@ using System.Text.Json;
 using GraphData.Api.Models;
 using GraphData.Api.Runtime;
 using GraphData.Api.Services;
+using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -10,20 +11,21 @@ namespace GraphData.Api.Controllers;
 
 [ApiController]
 [Route("api/graph")]
-public sealed class GraphController(NodeService graphApi) : ControllerBase {
+public sealed class GraphController(IGraphStorage storage, GraphSearchService searchService) : ControllerBase {
     private static readonly JsonSerializerOptions StreamJsonOptions = GraphJsonSerializerOptions.Create();
 
-    private readonly NodeService _graphApi = graphApi;
+    private readonly IGraphStorage _storage = storage;
+    private readonly GraphSearchService _searchService = searchService;
 
     [HttpGet("nodes")]
     public async Task<ActionResult<NodeResponse>> GetNodeAsync([FromQuery] string[] path) {
-        var result = await _graphApi.Get(new NodePath(path));
+        var result = await _storage.Get(new NodePath(path));
         return ToActionResult<Node, NodeResponse>(result);
     }
 
     [HttpPost("nodes")]
     public async Task<ActionResult<NodeResponse>> CreateNodeAsync([FromBody] CreateNodeRequest request) {
-        var result = await _graphApi.Create(request.Name, (NodePath?)request.ParentPath, request.Attributes);
+        var result = await _storage.Create(request.Name, (NodePath?)request.ParentPath, request.Attributes);
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             var path = result.Value.GlobalId;
             var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { path }) ?? $"/api/graph/nodes?{string.Join('&', path.Select(static segment => $"path={Uri.EscapeDataString(segment)}"))}";
@@ -34,25 +36,25 @@ public sealed class GraphController(NodeService graphApi) : ControllerBase {
 
     [HttpPut("nodes")]
     public async Task<IActionResult> UpdateNodeAsync([FromQuery] string[] path, [FromBody] UpdateNodeRequest request) {
-        var result = await _graphApi.UpdateNodeAsync(new (path), request.Attributes);
+        var result = await _storage.Update(new NodePath(path), request.Attributes);
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult(result.Status, result.Error);
     }
 
     [HttpDelete("nodes")]
     public async Task<IActionResult> DeleteNodeAsync([FromQuery] string[] path) {
-        var result = await _graphApi.Delete(new NodePath(path));
+        var result = await _storage.Delete(new NodePath(path));
         return ToActionResult(result);
     }
 
     [HttpPost("connections")]
     public async Task<IActionResult> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
-        var result = await _graphApi.ConnectNodesAsync(request.SourcePath, request.TargetPath);
+        var result = await _storage.Connect(request.SourcePath, request.TargetPath);
         return ToActionResult(result);
     }
 
     [HttpPost("subgraph")]
     public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request) {
-        var result = await _graphApi.GetSubgraphAsync(new SubgraphQuery {
+        var result = await _storage.GetSubgraphAsync(new SubgraphQuery {
             Nodes = request.Nodes.Select(x => (NodePath)x).ToArray(),
             MaxDepth = request.MaxDepth,
         });
@@ -66,7 +68,7 @@ public sealed class GraphController(NodeService graphApi) : ControllerBase {
         if (request is null)
             return BadRequest();
         try {
-            await using var matches = _graphApi
+            await using var matches = _searchService
                 .SearchNodesStreamAsync(request, cancellationToken)
                 .GetAsyncEnumerator(cancellationToken);
             var hasMatch = await matches.MoveNextAsync();

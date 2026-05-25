@@ -38,7 +38,7 @@ public sealed class StoragePerformanceTests {
         var nodesByName = new Dictionary<IReadOnlyCollection<string>, Node>();
 
         await run.MeasureEachAsync("create", graph.Nodes, async node => {
-            nodesByName[node.Path] = await scope.Storage.Create(node.Path.Last(), attributes: node.Attributes).ConfigureAwait(false);
+            nodesByName[node.Path] = (await scope.Storage.Create(node.Path.Last(), attributes: node.Attributes).ConfigureAwait(false)).Value!;
         }).ConfigureAwait(false);
 
         await run.MeasureEachAsync("connect", graph.Edges, async edge => {
@@ -79,7 +79,7 @@ public sealed class StoragePerformanceTests {
         }
 
         await run.MeasureAsync("subgraph-depth-2", 1, async () => {
-            var subgraph = await scope.Storage.GetSubgraphAsync(new SubgraphQuery { Nodes = [graph.Nodes[0].Path], MaxDepth = 2 }).ConfigureAwait(false);
+            var subgraph = (await scope.Storage.GetSubgraphAsync(new SubgraphQuery { Nodes = [graph.Nodes[0].Path], MaxDepth = 2 }).ConfigureAwait(false)).Value!;
             Assert.IsTrue(subgraph.Nodes.Count > 0);
         }).ConfigureAwait(false);
 
@@ -151,7 +151,7 @@ public sealed class StoragePerformanceTests {
                         }
 
                         try {
-                            var node = await scope.Storage.Get(workItems[index]).ConfigureAwait(false);
+                            var node = (await scope.Storage.Get(workItems[index]).ConfigureAwait(false)).Value!;
                             Assert.IsNotNull(node);
 
                             if (index % 3 == 0) {
@@ -224,7 +224,7 @@ public sealed class StoragePerformanceTests {
     private static async Task<Dictionary<NodePath, Node>> PopulateGraphAsync(IGraphStorage storage, GeneratedGraph graph) {
         var nodesByName = new Dictionary<NodePath, Node>();
         foreach (var node in graph.Nodes) {
-            nodesByName[node.Path] = await storage.Create(node.Path.Single(), attributes: node.Attributes).ConfigureAwait(false);
+            nodesByName[node.Path] = (await storage.Create(node.Path.Single(), attributes: node.Attributes).ConfigureAwait(false)).Value!;
         }
 
         foreach (var edge in graph.Edges) {
@@ -240,7 +240,7 @@ public sealed class StoragePerformanceTests {
         IGraphStorage storage,
         SubgraphQueryInput input,
         int depth) {
-        var subgraph = await storage.GetSubgraphAsync(new SubgraphQuery { Nodes = input.Roots, MaxDepth = depth } ).ConfigureAwait(false);
+        var subgraph = (await storage.GetSubgraphAsync(new SubgraphQuery { Nodes = input.Roots, MaxDepth = depth } ).ConfigureAwait(false)).Value!;
         Assert.IsTrue(subgraph.Nodes.Count > 0);
         return subgraph.Nodes.Count;
     }

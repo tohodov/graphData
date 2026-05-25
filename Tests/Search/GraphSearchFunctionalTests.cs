@@ -16,9 +16,9 @@ public sealed class GraphSearchFunctionalTests
     public async Task Search_ShouldFindVerticesWithoutEdges()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var isolated = await scope.Storage.Create("isolated");
-        var connected = await scope.Storage.Create("connected");
-        var neighbor = await scope.Storage.Create("neighbor");
+        var isolated = (await scope.Storage.Create("isolated")).Value!;
+        var connected = (await scope.Storage.Create("connected")).Value!;
+        var neighbor = (await scope.Storage.Create("neighbor")).Value!;
         await scope.Storage.Connect(connected, neighbor);
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
@@ -38,7 +38,7 @@ public sealed class GraphSearchFunctionalTests
     public async Task Search_ShouldNotReturnIgnoredSelfConnectionsAsEdges()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var node = await scope.Storage.Create("self");
+        var node = (await scope.Storage.Create("self")).Value!;
         await scope.Storage.Connect(node, node);
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
@@ -54,8 +54,8 @@ public sealed class GraphSearchFunctionalTests
     public async Task Search_ShouldTreatZeroLengthPathAsSelfRelationWhenRequested()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var first = await scope.Storage.Create("first");
-        var second = await scope.Storage.Create("second");
+        var first = (await scope.Storage.Create("first")).Value!;
+        var second = (await scope.Storage.Create("second")).Value!;
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
         {
@@ -79,14 +79,14 @@ public sealed class GraphSearchFunctionalTests
     public async Task Search_ShouldReturnVerticesWithHighestDegreeFirst()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var hub = await scope.Storage.Create("hub");
-        var mid = await scope.Storage.Create("mid");
-        var h1 = await scope.Storage.Create("h1");
-        var h2 = await scope.Storage.Create("h2");
-        var h3 = await scope.Storage.Create("h3");
-        var h4 = await scope.Storage.Create("h4");
-        var m1 = await scope.Storage.Create("m1");
-        var m2 = await scope.Storage.Create("m2");
+        var hub = (await scope.Storage.Create("hub")).Value!;
+        var mid = (await scope.Storage.Create("mid")).Value!;
+        var h1 = (await scope.Storage.Create("h1")).Value!;
+        var h2 = (await scope.Storage.Create("h2")).Value!;
+        var h3 = (await scope.Storage.Create("h3")).Value!;
+        var h4 = (await scope.Storage.Create("h4")).Value!;
+        var m1 = (await scope.Storage.Create("m1")).Value!;
+        var m2 = (await scope.Storage.Create("m2")).Value!;
 
         foreach (var node in new[] { h1, h2, h3, h4 })
         {
@@ -114,11 +114,11 @@ public sealed class GraphSearchFunctionalTests
     public async Task Search_ShouldFindVerticesDirectlyConnectedToEveryAnchor()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var a = await scope.Storage.Create("a");
-        var b = await scope.Storage.Create("b");
-        var c = await scope.Storage.Create("c");
-        var target = await scope.Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
-        var partial = await scope.Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
+        var a = (await scope.Storage.Create("a")).Value!;
+        var b = (await scope.Storage.Create("b")).Value!;
+        var c = (await scope.Storage.Create("c")).Value!;
+        var target = (await scope.Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var partial = (await scope.Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
 
         foreach (var anchor in new[] { a, b, c })
         {
@@ -147,11 +147,11 @@ public sealed class GraphSearchFunctionalTests
     public async Task Search_ShouldFindVerticesConnectedToEveryAnchorWithinThreeSteps()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var a = await scope.Storage.Create("anchor-a");
-        var b = await scope.Storage.Create("anchor-b");
-        var target = await scope.Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
-        var tooFar = await scope.Storage.Create("too-far", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
-        var partial = await scope.Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
+        var a = (await scope.Storage.Create("anchor-a")).Value!;
+        var b = (await scope.Storage.Create("anchor-b")).Value!;
+        var target = (await scope.Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var tooFar = (await scope.Storage.Create("too-far", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var partial = (await scope.Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
 
         await ConnectPath(scope.Storage, target, "target-a-1", "target-a-2", a);
         await ConnectPath(scope.Storage, target, "target-b-1", b);
@@ -177,10 +177,10 @@ public sealed class GraphSearchFunctionalTests
     public async Task Search_ShouldFindVerticesConnectedToAnyAnchor()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var a = await scope.Storage.Create("a");
-        var b = await scope.Storage.Create("b");
-        var first = await scope.Storage.Create("first", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
-        var second = await scope.Storage.Create("second", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
+        var a = (await scope.Storage.Create("a")).Value!;
+        var b = (await scope.Storage.Create("b")).Value!;
+        var first = (await scope.Storage.Create("first", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var second = (await scope.Storage.Create("second", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
         await scope.Storage.Create("unrelated", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
 
         await scope.Storage.Connect(first, a);
@@ -209,9 +209,9 @@ public sealed class GraphSearchFunctionalTests
     public async Task Search_ShouldFindDescendantsWithinHierarchyDepth()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var root = await scope.Storage.Create("weapons");
-        var pistols = await scope.Storage.Create("pistols", root);
-        var revolvers = await scope.Storage.Create("revolvers", pistols);
+        var root = (await scope.Storage.Create("weapons")).Value!;
+        var pistols = (await scope.Storage.Create("pistols", root)).Value!;
+        var revolvers = (await scope.Storage.Create("revolvers", pistols)).Value!;
         await scope.Storage.Create("smith-wesson", revolvers);
         await scope.Storage.Create("vehicles");
 
@@ -235,13 +235,13 @@ public sealed class GraphSearchFunctionalTests
     public async Task Search_ShouldCombineTextAndAttributePredicates()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var match = await scope.Storage.Create(
+        var match = (await scope.Storage.Create(
             "alpha",
             attributes: new Dictionary<string, string>
             {
                 ["kind"] = "weapon",
                 ["description"] = "steel frame"
-            });
+            })).Value!;
         await scope.Storage.Create(
             "beta",
             attributes: new Dictionary<string, string>
@@ -271,8 +271,8 @@ public sealed class GraphSearchFunctionalTests
     public async Task SearchStream_ShouldYieldMatchesAsAsyncEnumerable()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var first = await scope.Storage.Create("first");
-        var second = await scope.Storage.Create("second");
+        var first = (await scope.Storage.Create("first")).Value!;
+        var second = (await scope.Storage.Create("second")).Value!;
 
         var service = new GraphSearchService(scope.Storage);
         var matches = new List<NodeSearchMatch>();
@@ -384,7 +384,7 @@ public sealed class GraphSearchFunctionalTests
             var next = segment switch
             {
                 Node node => node,
-                string name => await storage.Create(name),
+                string name => (await storage.Create(name)).Value!,
                 _ => throw new ArgumentException("Path segment must be a node or a node name.", nameof(path))
             };
 
