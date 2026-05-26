@@ -8,7 +8,7 @@ public static class GraphResponseMapper
     public static SubgraphResponse ToSubgraphResponse(Subgraph subgraph)
     {
         var nodeNames = subgraph.Nodes
-            .Select(static node => node.LocalId)
+            .Select(static node => node.LocalId.Value)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var edges = subgraph.Nodes
             .SelectMany(node => node.Nodes.Select(connected => ToEdgeResponse(node, connected)))
@@ -21,7 +21,7 @@ public static class GraphResponseMapper
         return new SubgraphResponse
         {
             Nodes = subgraph.Nodes
-                .OrderBy(static node => node.LocalId, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(static node => node.LocalId, NodeLocalId.OrdinalIgnoreCaseComparer)
                 .Select(static node => ToNodeResponse(node))
                 .ToArray(),
             Edges = edges
@@ -34,7 +34,7 @@ public static class GraphResponseMapper
     {
         return new NodeResponse
         {
-            Name = node.LocalId,
+            Name = node.LocalId.Value,
             Attributes = new Dictionary<string, string>(node.Attributes),
             Edges = edges?.ToArray() ?? Array.Empty<EdgeResponse>()
         };
@@ -56,7 +56,7 @@ public static class GraphResponseMapper
 
     public static EdgeResponse ToEdgeResponse(Node source, Node target)
     {
-        return ToEdgeResponse(source.LocalId, target.LocalId);
+        return ToEdgeResponse(source.LocalId.Value, target.LocalId.Value);
     }
 
     private static EdgeResponse ToEdgeResponse(string sourceName, string targetName)

@@ -2,7 +2,7 @@ namespace GraphData.Core.Models;
 
 public abstract record Node {
     public abstract NodeLocalId LocalId { get; }
-    public abstract NodePath GlobalId { get; }
+    public abstract NodeGlobalId GlobalId { get; }
 
     public abstract IReadOnlyDictionary<string, Edge> Edges { get; }
     public abstract IReadOnlyCollection<Node> Nodes { get; }

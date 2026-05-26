@@ -21,7 +21,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
     [Description("Gets a graph node by path and returns the same node shape as the HTTP API: attributes plus edges.")]
     public async Task<string> GetNode(
         [Description("Root-relative node path segments to look up.")] string[] path) {
-        var result = await _storage.Get(new NodePath(path));
+        var result = await _storage.Get(new NodeGlobalId(path));
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             return ToJson(new {
                 found = true,
@@ -44,7 +44,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
         [Description("Local id for the new node.")] string name,
         [Description("Optional parent node path segments. Leave empty to create a root node.")] string[]? parentPath = null,
         [Description("Optional string attributes for the node.")] Dictionary<string, string>? attributes = null) {
-        var result = await _storage.Create(name, parentPath is null ? null : new NodePath(parentPath), attributes);
+        var result = await _storage.Create(name, parentPath is null ? null : new NodeGlobalId(parentPath), attributes);
 
         return ToMutationJson(result, "node");
     }
@@ -54,7 +54,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
     public async Task<string> UpdateNodeAttributes(
         [Description("Root-relative path segments of the node to update.")] string[] path,
         [Description("Complete replacement set of string attributes.")] Dictionary<string, string> attributes) {
-        var result = await _storage.Update(new NodePath(path), attributes);
+        var result = await _storage.Update(new NodeGlobalId(path), attributes);
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new { success = true })
             : ToJson(ToErrorResponse(result.Status, result.Error));
@@ -64,7 +64,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
     [Description("Deletes an existing graph node by path.")]
     public async Task<string> DeleteNode(
         [Description("Root-relative path segments of the node to delete.")] string[] path) {
-        var result = await _storage.Delete(new NodePath(path));
+        var result = await _storage.Delete(new NodeGlobalId(path));
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new { success = true })
             : ToJson(ToErrorResponse(result.Status, result.Error));
@@ -75,7 +75,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
     public async Task<string> ConnectNodes(
         [Description("Root-relative path segments of the first node.")] string[] sourcePath,
         [Description("Root-relative path segments of the second node.")] string[] targetPath) {
-        var result = await _storage.Connect(new NodePath(sourcePath), new NodePath(targetPath));
+        var result = await _storage.Connect(new NodeGlobalId(sourcePath), new NodeGlobalId(targetPath));
 
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new {
@@ -92,7 +92,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
         [Description("Root node path segments for graph traversal.")] string[][] rootPaths,
         [Description("Maximum traversal depth. Use 0 to return only roots.")] int maxDepth = 1) {
         var result = await _storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = rootPaths.Select(static path => new NodePath(path)).ToArray(),
+            Nodes = rootPaths.Select(static path => new NodeGlobalId(path)).ToArray(),
             MaxDepth = maxDepth
         });
 

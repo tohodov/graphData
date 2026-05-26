@@ -88,7 +88,7 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
     public async Task CreateNodeAsync_ShouldCreateDirectoryAndMetadataFile()
     {
         var node = await CreateNode();
-        var nodeDirectory = Path.Combine(options.RootPath, node.LocalId);
+        var nodeDirectory = Path.Combine(options.RootPath, node.LocalId.Value);
         Assert.IsTrue(Directory.Exists(nodeDirectory));
 
         var metadataPath = Path.Combine(nodeDirectory, options.MetadataFileName);
@@ -103,14 +103,14 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
 
         await Storage.Connect(first.GlobalId, second.GlobalId);
 
-        var firstLink = Path.Combine(options.RootPath, first.LocalId, second.LocalId);
-        var secondLink = Path.Combine(options.RootPath, second.LocalId, first.LocalId);
+        var firstLink = Path.Combine(options.RootPath, first.LocalId.Value, second.LocalId.Value);
+        var secondLink = Path.Combine(options.RootPath, second.LocalId.Value, first.LocalId.Value);
 
         Assert.IsTrue(Directory.Exists(firstLink) || File.Exists(firstLink));
         Assert.IsTrue(Directory.Exists(secondLink) || File.Exists(secondLink));
 
-        var expectedFirstTarget = Path.Combine(options.RootPath, second.LocalId);
-        var expectedSecondTarget = Path.Combine(options.RootPath, first.LocalId);
+        var expectedFirstTarget = Path.Combine(options.RootPath, second.LocalId.Value);
+        var expectedSecondTarget = Path.Combine(options.RootPath, first.LocalId.Value);
 
         Assert.AreEqual(Path.GetFullPath(expectedFirstTarget), new DirectoryInfo(firstLink).LinkTarget);
         Assert.AreEqual(Path.GetFullPath(expectedSecondTarget), new DirectoryInfo(secondLink).LinkTarget);

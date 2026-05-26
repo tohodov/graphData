@@ -34,19 +34,19 @@ public sealed class GraphControllerTests {
         await scope.Storage.Connect(first.GlobalId, second.GlobalId);
 
         var controller = CreateController(scope.Storage);
-        var result = await controller.GetNodeAsync([first.LocalId]);
+        var result = await controller.GetNodeAsync([first.LocalId.Value]);
 
         var ok = result.Result as OkObjectResult;
         Assert.IsNotNull(ok);
 
         var response = ok.Value as NodeResponse;
         Assert.IsNotNull(response);
-        Assert.AreEqual(first.LocalId, response.Name);
+        Assert.AreEqual(first.LocalId.Value, response.Name);
         Assert.AreEqual("root", response.Attributes["kind"]);
 
         var edge = response.Edges.Single();
-        Assert.AreEqual(first.LocalId, edge.SourceName);
-        Assert.AreEqual(second.LocalId, edge.TargetName);
+        Assert.AreEqual(first.LocalId.Value, edge.SourceName);
+        Assert.AreEqual(second.LocalId.Value, edge.TargetName);
     }
 
     [TestMethod]
@@ -87,7 +87,7 @@ public sealed class GraphControllerTests {
 
         var result = await controller.CreateNodeAsync(new CreateNodeRequest {
             Name = "child",
-            ParentPath = [parent.LocalId]
+            ParentPath = [parent.LocalId.Value]
         });
 
         var created = result.Result as CreatedResult;
@@ -97,7 +97,7 @@ public sealed class GraphControllerTests {
         Assert.IsNotNull(response);
         Assert.AreEqual("parent/child", response.Name);
 
-        var stored = await scope.Storage.Get("parent/child");
+        var stored = await scope.Storage.Get(NodeGlobalId.Parse("parent/child"));
         Assert.IsNotNull(stored);
     }
 
@@ -114,7 +114,7 @@ public sealed class GraphControllerTests {
         Assert.IsNotNull(ok);
         var response = ok.Value as NodeResponse;
         Assert.IsNotNull(response);
-        Assert.AreEqual(child.LocalId, response.Name);
+        Assert.AreEqual(child.LocalId.Value, response.Name);
     }
 
     [TestMethod]
@@ -157,7 +157,7 @@ public sealed class GraphControllerTests {
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
-            SourcePath = new([source.LocalId]),
+            SourcePath = new([source.LocalId.Value]),
             TargetPath = new(["target:name"])
         });
 
@@ -205,8 +205,8 @@ public sealed class GraphControllerTests {
 
         Assert.IsInstanceOfType(result, typeof(NoContentResult));
 
-        weapons = (await scope.Storage.Get("small_arms_test_graph/weapons")).Value!;
-        categories = (await scope.Storage.Get("small_arms_test_graph/categories")).Value!;
+        weapons = (await scope.Storage.Get(NodeGlobalId.Parse("small_arms_test_graph/weapons"))).Value!;
+        categories = (await scope.Storage.Get(NodeGlobalId.Parse("small_arms_test_graph/categories"))).Value!;
 
         var weaponLinkPath = Path.Combine(scope.RootPath, "small_arms_test_graph", "weapons", "categories");
         var categoryLinkPath = Path.Combine(scope.RootPath, "small_arms_test_graph", "categories", "weapons");
@@ -219,8 +219,8 @@ public sealed class GraphControllerTests {
 
         var weaponConnections = (await scope.Storage.GetConnectedNodesAsync(weapons)).Value!;
         var categoryConnections = (await scope.Storage.GetConnectedNodesAsync(categories)).Value!;
-        Assert.IsTrue(weaponConnections.Any(node => node.LocalId == categories.LocalId));
-        Assert.IsTrue(categoryConnections.Any(node => node.LocalId == weapons.LocalId));
+        Assert.IsTrue(weaponConnections.Any(node => node.LocalId.Value == categories.LocalId.Value));
+        Assert.IsTrue(categoryConnections.Any(node => node.LocalId.Value == weapons.LocalId.Value));
     }
 
     [TestMethod]
@@ -231,8 +231,8 @@ public sealed class GraphControllerTests {
         var controller = CreateController(new ConnectThrowingGraphStorage(scope.Storage));
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
-            SourcePath = new([source.LocalId]),
-            TargetPath = new([target.LocalId])
+            SourcePath = new([source.LocalId.Value]),
+            TargetPath = new([target.LocalId.Value])
         });
 
         var objectResult = result as ObjectResult;
@@ -273,7 +273,7 @@ public sealed class GraphControllerTests {
 
         var controller = CreateController(scope.Storage);
         var result = await controller.GetSubgraphAsync(new SubgraphRequest {
-            Nodes = [[first.LocalId]],
+            Nodes = [[first.LocalId.Value]],
             MaxDepth = 1
         });
 
@@ -286,8 +286,8 @@ public sealed class GraphControllerTests {
         Assert.IsTrue(response.Nodes.All(static node => node.Edges.Count == 0));
 
         var edge = response.Edges.Single();
-        Assert.AreEqual(first.LocalId, edge.SourceName);
-        Assert.AreEqual(second.LocalId, edge.TargetName);
+        Assert.AreEqual(first.LocalId.Value, edge.SourceName);
+        Assert.AreEqual(second.LocalId.Value, edge.TargetName);
     }
 
     [TestMethod]
@@ -316,8 +316,8 @@ public sealed class GraphControllerTests {
         });
 
         var match = matches.Single();
-        Assert.AreEqual(first.LocalId, match.Bindings["n"].Name);
-        Assert.AreEqual(second.LocalId, match.Bindings["x"].Name);
+        Assert.AreEqual(first.LocalId.Value, match.Bindings["n"].Name);
+        Assert.AreEqual(second.LocalId.Value, match.Bindings["x"].Name);
     }
 
     [TestMethod]
@@ -346,8 +346,8 @@ public sealed class GraphControllerTests {
         });
 
         var streamed = matches.Single();
-        Assert.AreEqual(first.LocalId, streamed.Bindings["n"].Name);
-        Assert.AreEqual(second.LocalId, streamed.Bindings["x"].Name);
+        Assert.AreEqual(first.LocalId.Value, streamed.Bindings["n"].Name);
+        Assert.AreEqual(second.LocalId.Value, streamed.Bindings["x"].Name);
     }
 
     [TestMethod]
@@ -477,17 +477,17 @@ public sealed class GraphControllerTests {
     }
 
     private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage {
-        public Task<ServiceResult<Node>> Create(string name, NodePath? parent = null, IDictionary<string, string>? attributes = null) =>
+        public Task<ServiceResult<Node>> Create(string name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
             inner.Create(name, parent, attributes);
 
-        public Task<ServiceResult<Node>> Get(NodePath query) => inner.Get(query);
+        public Task<ServiceResult<Node>> Get(NodeGlobalId query) => inner.Get(query);
 
-        public Task<ServiceResult> Delete(NodePath query) => inner.Delete(query);
+        public Task<ServiceResult> Delete(NodeGlobalId query) => inner.Delete(query);
 
-        public Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath) =>
+        public Task<ServiceResult> Connect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
             Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
 
-        public Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath) =>
+        public Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
             Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
 
         public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node) =>

@@ -25,12 +25,12 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             root.Create();
     }
 
-    public Task<ServiceResult<Node>> Create(string name, NodePath? parent = null, IDictionary<string, string>? attributes = null) {
+    public Task<ServiceResult<Node>> Create(string name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) {
         if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
             return Task.FromResult(ServiceResult<Node>.BadRequest(validationError));
 
         var parentNode = parent is { Count: > 0 }
-            ? FindNode(parent)
+            ? FindNode(parent.Value)
             : null;
         if (parent is { Count: > 0 } && parentNode is null)
             return Task.FromResult(ServiceResult<Node>.NotFound($"Parent node '{parent}' was not found."));
@@ -42,27 +42,27 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Task.FromResult(ServiceResult<Node>.Ok(node));
     }
 
-    public Task<ServiceResult<Node>> Get(NodePath path) {
+    public Task<ServiceResult<Node>> Get(NodeGlobalId path) {
         var node = FindNode(path);
         return Task.FromResult(node is null
             ? ServiceResult<Node>.NotFound()
             : ServiceResult<Node>.Ok(node));
     }
 
-    public Task<ServiceResult> Delete(NodePath path) {
+    public Task<ServiceResult> Delete(NodeGlobalId path) {
         var node = FindNode(path);
         if (node is null)
             return Task.FromResult(ServiceResult.NotFound());
 
         var connections = GetConnectedNodes(node);
         foreach (var connection in connections)
-            DeleteLinkIfExists(GetLinkPath(connection.LocalId, node.LocalId));
+            DeleteLinkIfExists(GetLinkPath(connection.LocalId.Value, node.LocalId.Value));
         DeleteDirectoryWithoutFollowingLinks(node.GetInfo());
 
         return Task.FromResult(ServiceResult.Ok());
     }
 
-    public Task<ServiceResult> Connect(NodePath leftPath, NodePath rightPath) {
+    public Task<ServiceResult> Connect(NodeGlobalId leftPath, NodeGlobalId rightPath) {
         if (leftPath.SequenceEqual(rightPath))
             return Task.FromResult(ServiceResult.BadRequest("SourcePath and TargetPath must be different."));
 
@@ -80,7 +80,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Task.FromResult(ServiceResult.Ok());
     }
 
-    public Task<ServiceResult> Disconnect(NodePath leftPath, NodePath rightPath) {
+    public Task<ServiceResult> Disconnect(NodeGlobalId leftPath, NodeGlobalId rightPath) {
         return Task.FromResult(ServiceResult.InternalServerError(new NotImplementedException().ToString()));
     }
 
@@ -138,10 +138,10 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return node;
     }
 
-    private NodeFileSystem? FindNode(NodePath path) {
+    private NodeFileSystem? FindNode(NodeGlobalId path) {
         NodeFileSystem? node = null;
         foreach (var part in path) {
-            if (GetInternal(node, part) is not NodeFileSystem child)
+            if (GetInternal(node, part.Value) is not NodeFileSystem child)
                 return null;
             node = child;
         }
@@ -149,7 +149,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     private void ConnectNodes(Node left, Node right) {
-        if (string.Equals(left.LocalId, right.LocalId, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(left.LocalId.Value, right.LocalId.Value, StringComparison.OrdinalIgnoreCase))
             return;
 
         if (IsHierarchyConnection(left.GlobalId, right.GlobalId))
@@ -157,14 +157,14 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
         var sourcePath = GetNodePath(left);
         var targetPath = GetNodePath(right);
-        CreateLinkIfMissing(sourcePath, targetPath, right.LocalId);
-        CreateLinkIfMissing(targetPath, sourcePath, left.LocalId);
+        CreateLinkIfMissing(sourcePath, targetPath, right.LocalId.Value);
+        CreateLinkIfMissing(targetPath, sourcePath, left.LocalId.Value);
     }
 
     private IReadOnlyCollection<Node> GetConnectedNodes(Node node) {
         var nodePath = GetNodePath(node);
         return EnumerateNeighborIds(nodePath)
-            .Where(neighborId => !string.Equals(neighborId, node.LocalId, StringComparison.OrdinalIgnoreCase))
+            .Where(neighborId => !string.Equals(neighborId, node.LocalId.Value, StringComparison.OrdinalIgnoreCase))
             .Select(neighborId => (Node)new NodeFileSystem(neighborId, root.FullName))
             .ToArray();
     }
@@ -176,7 +176,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     private string GetNodePath(Node node) {
         return node is NodeFileSystem fileSystemNode
             ? fileSystemNode.FolderPath
-            : GetNodePath(node.LocalId);
+            : GetNodePath(node.LocalId.Value);
     }
 
     private string GetLinkPath(string sourceNodeName, string targetNodeName) {
@@ -191,13 +191,13 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return NormalizeNodeName(nodeName).Split('/').Last();
     }
 
-    private static bool IsHierarchyConnection(NodePath left, NodePath right) {
+    private static bool IsHierarchyConnection(NodeGlobalId left, NodeGlobalId right) {
         return IsAncestor(left, right) || IsAncestor(right, left);
     }
 
-    private static bool IsAncestor(IReadOnlyCollection<string> ancestor, IReadOnlyCollection<string> descendant) {
+    private static bool IsAncestor(IReadOnlyCollection<NodeLocalId> ancestor, IReadOnlyCollection<NodeLocalId> descendant) {
         return descendant.Count > ancestor.Count &&
-            ancestor.SequenceEqual(descendant.Take(ancestor.Count), StringComparer.OrdinalIgnoreCase);
+            ancestor.SequenceEqual(descendant.Take(ancestor.Count), NodeLocalId.OrdinalIgnoreCaseComparer);
     }
 
     private IEnumerable<string> EnumerateNeighborIds(string nodePath) {

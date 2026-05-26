@@ -17,11 +17,11 @@ internal record NodeFileSystem : Node {
     IReadOnlyCollection<Node>? nodes;
     IReadOnlyDictionary<string, string>? attributes;
 
-    public string FolderPath => Combine(parentPath, LocalId); //TODO инкапсулировать
+    public string FolderPath => Combine(parentPath, LocalId.Value); //TODO encapsulate
     public string MetadataPath => Combine(FolderPath, MetadataFileName);
 
-    public override string LocalId { get; }
-    public override NodePath GlobalId => new NodePath(
+    public override NodeLocalId LocalId { get; }
+    public override NodeGlobalId GlobalId => new NodeGlobalId(
         GetRelativePath(storageRootPath, FolderPath)
             .Split(DirectorySeparatorChar, AltDirectorySeparatorChar)
             .Where(static part => part is not "." and not "")
@@ -56,17 +56,17 @@ internal record NodeFileSystem : Node {
     }
 
     public NodeFileSystem(DirectoryInfo info) {
-        LocalId = info.Name;
+        LocalId = new NodeLocalId(info.Name);
         parentPath = info.Parent?.FullName ?? "";
         storageRootPath = parentPath;
     }
     public NodeFileSystem(string name, string storageRootPath) {
-        LocalId = name;
+        LocalId = new NodeLocalId(name);
         this.storageRootPath = storageRootPath;
         parentPath = storageRootPath;
     }
     public NodeFileSystem(string name, NodeFileSystem parent) {
-        LocalId = name;
+        LocalId = new NodeLocalId(name);
         storageRootPath = parent.storageRootPath;
         parentPath = parent.FolderPath;
     }
@@ -108,11 +108,11 @@ internal record NodeFileSystem : Node {
         }
     }
 
-    async Task WriteMetadataAsync(Dictionary<string, string> data) {//TODO занести в базовый
+    async Task WriteMetadataAsync(Dictionary<string, string> data) {//TODO move to base
         await using var stream = new FileStream(MetadataPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
         await JsonSerializer.SerializeAsync(stream, data, GraphData.SymLinkStorage.SymLinkGraphStorage.SerializerOptions);
     }
-    public void WriteMetadata(IDictionary<string, string> data) {//TODO занести в базовый
+    public void WriteMetadata(IDictionary<string, string> data) {//TODO move to base
         attributes = null;
         using var stream = new FileStream(MetadataPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
         JsonSerializer.Serialize(stream, data, GraphData.SymLinkStorage.SymLinkGraphStorage.SerializerOptions);

@@ -1,5 +1,1 @@
- <Project>
-   <ItemGroup>
-     <Using Include="System.String" Alias="NodeId" />
-   </ItemGroup>
- </Project>
+<Project />

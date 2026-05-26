@@ -19,16 +19,16 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
 
     [HttpGet("nodes")]
     public async Task<ActionResult<NodeResponse>> GetNodeAsync([FromQuery] string[] path) {
-        var result = await _storage.Get(new NodePath(path));
+        var result = await _storage.Get(new NodeGlobalId(path));
         return ToActionResult<Node, NodeResponse>(result);
     }
 
     [HttpPost("nodes")]
     public async Task<ActionResult<NodeResponse>> CreateNodeAsync([FromBody] CreateNodeRequest request) {
-        var result = await _storage.Create(request.Name, (NodePath?)request.ParentPath, request.Attributes);
+        var result = await _storage.Create(request.Name, (NodeGlobalId?)request.ParentPath, request.Attributes);
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             var path = result.Value.GlobalId;
-            var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { path }) ?? $"/api/graph/nodes?{string.Join('&', path.Select(static segment => $"path={Uri.EscapeDataString(segment)}"))}";
+            var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { path }) ?? $"/api/graph/nodes?{string.Join('&', path.Select(static segment => $"path={Uri.EscapeDataString(segment.Value)}"))}";
             return Created(location, result.Value);
         }
         return ToActionResult<Node, NodeResponse>(result);
@@ -36,13 +36,13 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
 
     [HttpPut("nodes")]
     public async Task<IActionResult> UpdateNodeAsync([FromQuery] string[] path, [FromBody] UpdateNodeRequest request) {
-        var result = await _storage.Update(new NodePath(path), request.Attributes);
+        var result = await _storage.Update(new NodeGlobalId(path), request.Attributes);
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult(result.Status, result.Error);
     }
 
     [HttpDelete("nodes")]
     public async Task<IActionResult> DeleteNodeAsync([FromQuery] string[] path) {
-        var result = await _storage.Delete(new NodePath(path));
+        var result = await _storage.Delete(new NodeGlobalId(path));
         return ToActionResult(result);
     }
 
@@ -55,7 +55,7 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
     [HttpPost("subgraph")]
     public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request) {
         var result = await _storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = request.Nodes.Select(x => (NodePath)x).ToArray(),
+            Nodes = request.Nodes.Select(static x => new NodeGlobalId(x)).ToArray(),
             MaxDepth = request.MaxDepth,
         });
         return ToActionResult<Subgraph, SubgraphResponse>(result);

@@ -30,7 +30,7 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { isolated.LocalId },
+            new[] { isolated.LocalId.Value },
             Names(matches));
     }
 
@@ -71,7 +71,7 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { first.LocalId, second.LocalId },
+            new[] { first.LocalId.Value, second.LocalId.Value },
             Names(matches));
     }
 
@@ -106,7 +106,7 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEqual(
-            new[] { hub.LocalId, mid.LocalId },
+            new[] { hub.LocalId.Value, mid.LocalId.Value },
             Names(matches));
     }
 
@@ -133,13 +133,13 @@ public sealed class GraphSearchFunctionalTests
             Return = ["x"],
             Where = All(
                 Attribute("x", "role", "candidate"),
-                Connected("x", Literal(a.LocalId)),
-                Connected("x", Literal(b.LocalId)),
-                Connected("x", Literal(c.LocalId)))
+                Connected("x", Literal(a.LocalId.Value)),
+                Connected("x", Literal(b.LocalId.Value)),
+                Connected("x", Literal(c.LocalId.Value)))
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { target.LocalId },
+            new[] { target.LocalId.Value },
             Names(matches));
     }
 
@@ -164,12 +164,12 @@ public sealed class GraphSearchFunctionalTests
             Return = ["x"],
             Where = All(
                 Attribute("x", "role", "candidate"),
-                Path("x", Literal(a.LocalId), maxDepth: 3),
-                Path("x", Literal(b.LocalId), maxDepth: 3))
+                Path("x", Literal(a.LocalId.Value), maxDepth: 3),
+                Path("x", Literal(b.LocalId.Value), maxDepth: 3))
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { target.LocalId },
+            new[] { target.LocalId.Value },
             Names(matches));
     }
 
@@ -194,14 +194,14 @@ public sealed class GraphSearchFunctionalTests
                 new AnyNodeSearchExpression
                 {
                     Expressions = [
-                        Connected("x", Literal(a.LocalId)),
-                        Connected("x", Literal(b.LocalId))
+                        Connected("x", Literal(a.LocalId.Value)),
+                        Connected("x", Literal(b.LocalId.Value))
                     ]
                 })
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { first.LocalId, second.LocalId },
+            new[] { first.LocalId.Value, second.LocalId.Value },
             Names(matches));
     }
 
@@ -220,14 +220,14 @@ public sealed class GraphSearchFunctionalTests
             Return = ["x"],
             Where = new NodeDescendantSearchExpression
             {
-                Ancestor = Literal(root.LocalId),
+                Ancestor = Literal(root.LocalId.Value),
                 Descendant = Var("x"),
                 MaxDepth = 2
             }
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { pistols.LocalId, revolvers.LocalId },
+            new[] { pistols.LocalId.Value, revolvers.LocalId.Value },
             Names(matches));
     }
 
@@ -263,7 +263,7 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { match.LocalId },
+            new[] { match.LocalId.Value },
             Names(matches));
     }
 
@@ -287,7 +287,7 @@ public sealed class GraphSearchFunctionalTests
         }
 
         CollectionAssert.AreEquivalent(
-            new[] { first.LocalId, second.LocalId },
+            new[] { first.LocalId.Value, second.LocalId.Value },
             Names(matches));
     }
 
@@ -300,7 +300,7 @@ public sealed class GraphSearchFunctionalTests
 
     private static string[] Names(IEnumerable<NodeSearchMatch> matches)
     {
-        return matches.Select(static match => match.Node.LocalId).ToArray();
+        return matches.Select(static match => match.Node.LocalId.Value).ToArray();
     }
 
     private static AllNodeSearchExpression All(params NodeSearchExpression[] expressions)

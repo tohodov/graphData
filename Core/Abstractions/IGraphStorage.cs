@@ -5,10 +5,10 @@ namespace GraphData.Core.Abstractions;
 
 public interface IGraphStorage
 {
-    Task<ServiceResult<Node>> Create(string name, NodePath? parent = null, IDictionary<string, string>? attributes = null);
-    Task<ServiceResult<Node>> Get(NodePath path);
+    Task<ServiceResult<Node>> Create(string name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null);
+    Task<ServiceResult<Node>> Get(NodeGlobalId path);
 
-    async Task<ServiceResult> Update(NodePath path, IDictionary<string, string> attributes) {
+    async Task<ServiceResult> Update(NodeGlobalId path, IDictionary<string, string> attributes) {
         var result = await Get(path);
         if (result.Status != ServiceResultStatus.Ok || result.Value is null)
             return ServiceResult.From(result);
@@ -22,9 +22,9 @@ public interface IGraphStorage
         return ServiceResult.Ok();
     }
 
-    Task<ServiceResult> Delete(NodePath path);
-    Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath);
-    Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath);
+    Task<ServiceResult> Delete(NodeGlobalId path);
+    Task<ServiceResult> Connect(NodeGlobalId sourcePath, NodeGlobalId targetPath);
+    Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath);
     Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node);
 
     async Task<ServiceResult<Subgraph>> GetSubgraphAsync(SubgraphQuery query) { //TODO переосмыслить
@@ -32,14 +32,14 @@ public interface IGraphStorage
             return ServiceResult<Subgraph>.Ok(new Subgraph { Nodes = [] });
 
         var comparer = StringComparer.OrdinalIgnoreCase;
-        var visited = new HashSet<NodePath>();//TODO хэш тут надо проверить
-        var discovered = new HashSet<NodePath>(query.Nodes);//TODO хэш тут надо проверить
-        var queue = new Queue<(NodePath NodeId, int Depth)>();
+        var visited = new HashSet<NodeGlobalId>();//TODO хэш тут надо проверить
+        var discovered = new HashSet<NodeGlobalId>(query.Nodes);//TODO хэш тут надо проверить
+        var queue = new Queue<(NodeGlobalId NodeId, int Depth)>();
 
         foreach (var root in query.Nodes)
             queue.Enqueue((root, 0));
 
-        var nodes = new Dictionary<NodePath, Node>();//TODO хэш тут надо проверить
+        var nodes = new Dictionary<NodeGlobalId, Node>();//TODO хэш тут надо проверить
 
         while (queue.Count > 0) {
             //cancellationTokens.Token.ThrowIfCancellationRequested();
