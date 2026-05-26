@@ -291,6 +291,34 @@ public sealed class GraphSearchFunctionalTests
             matches.Select(x => x.Node.LocalId).ToArray());
     }
 
+    [TestMethod]
+    public async Task SearchStream_ShouldYieldFirstMatchBeforeInspectingLaterCandidates()
+    {
+        var first = new StreamingProbeNode(
+            "a-match",
+            () => new Dictionary<string, string> { ["kind"] = "target" });
+        var laterCandidateWasRead = false;
+        var laterCandidate = new StreamingProbeNode(
+            "z-later",
+            () =>
+            {
+                laterCandidateWasRead = true;
+                throw new AssertFailedException("Search inspected a later candidate before yielding the first match.");
+            });
+        var service = new GraphSearchService(new StreamingProbeStorage(first, laterCandidate));
+
+        await using var matches = service.SearchNodesStreamAsync(new NodeSearchQuery
+        {
+            Return = ["x"],
+            Where = Attribute("x", "kind", "target"),
+            Limit = 1
+        }).GetAsyncEnumerator();
+
+        Assert.IsTrue(await matches.MoveNextAsync());
+        Assert.AreEqual(first.LocalId, matches.Current.Node.LocalId);
+        Assert.IsFalse(laterCandidateWasRead);
+    }
+
     private static async Task<IReadOnlyCollection<NodeSearchMatch>> Search(
         IGraphStorage storage,
         NodeSearchQuery query)
@@ -385,6 +413,60 @@ public sealed class GraphSearchFunctionalTests
 
             await storage.Connect(current.GlobalId, next.GlobalId);
             current = next;
+        }
+    }
+
+    private sealed class StreamingProbeStorage(params Node[] nodes) : IGraphStorage, IGraphNodeCatalog
+    {
+        public Task<IReadOnlyCollection<Node>> GetAllNodesAsync()
+        {
+            return Task.FromResult<IReadOnlyCollection<Node>>(nodes);
+        }
+
+        public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node)
+        {
+            return Task.FromResult(ServiceResult<IReadOnlyCollection<Node>>.Ok(Array.Empty<Node>()));
+        }
+
+        public Task<ServiceResult<Node>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
+            throw new NotSupportedException();
+
+        public Task<ServiceResult<Node>> Get(NodeGlobalId path) =>
+            throw new NotSupportedException();
+
+        public Task<ServiceResult> Delete(NodeGlobalId path) =>
+            throw new NotSupportedException();
+
+        public Task<ServiceResult> Connect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+            throw new NotSupportedException();
+
+        public Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed record StreamingProbeNode : Node
+    {
+        private readonly Func<IReadOnlyDictionary<string, string>> _readAttributes;
+
+        public StreamingProbeNode(string name, Func<IReadOnlyDictionary<string, string>> readAttributes)
+        {
+            LocalId = new(name);
+            GlobalId = new(name);
+            _readAttributes = readAttributes;
+        }
+
+        public override NodeLocalId LocalId { get; }
+
+        public override NodeGlobalId GlobalId { get; }
+
+        public override IReadOnlyCollection<Edge> Edges { get; } = Array.Empty<Edge>();
+
+        public override IReadOnlyCollection<Node> Nodes { get; } = Array.Empty<Node>();
+
+        public override IReadOnlyDictionary<string, string> Attributes
+        {
+            get => _readAttributes();
+            set => throw new NotSupportedException();
         }
     }
 }
