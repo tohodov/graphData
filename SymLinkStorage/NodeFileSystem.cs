@@ -13,11 +13,11 @@ internal record NodeFileSystem : Node {
 
     readonly string parentPath;
     readonly string storageRootPath;
-    IReadOnlyDictionary<string, Edge>? edges;
+    IReadOnlyCollection<Edge>? edges;
     IReadOnlyCollection<Node>? nodes;
     IReadOnlyDictionary<string, string>? attributes;
 
-    public string FolderPath => Combine(parentPath, LocalId.Value); //TODO encapsulate
+    public string FolderPath => Combine(parentPath, LocalId); //TODO encapsulate
     public string MetadataPath => Combine(FolderPath, MetadataFileName);
 
     public override NodeLocalId LocalId { get; }
@@ -26,8 +26,8 @@ internal record NodeFileSystem : Node {
             .Split(DirectorySeparatorChar, AltDirectorySeparatorChar)
             .Where(static part => part is not "." and not "")
             .Select(GraphData.SymLinkStorage.SymLinkGraphStorage.NormalizeNodeName));
-    public override IReadOnlyDictionary<string, Edge> Edges => edges ??= GetEdges().ToDictionary(static x => x.Link.Name, static x => (Edge)x, StringComparer.OrdinalIgnoreCase);
-    public override IReadOnlyCollection<Node> Nodes => nodes ??= Edges.Values.SelectMany(x => new[] { x.Node1, x.Node2 }).Except([this]).Distinct().ToArray();
+    public override IReadOnlyCollection<Edge> Edges => edges ??= GetEdges().ToArray();
+    public override IReadOnlyCollection<Node> Nodes => nodes ??= Edges.SelectMany(x => new[] { x.Node1, x.Node2 }).Except([this]).Distinct().ToArray();
     public override IReadOnlyDictionary<string, string> Attributes {
         get {
             if (attributes is not null)
@@ -60,13 +60,13 @@ internal record NodeFileSystem : Node {
         parentPath = info.Parent?.FullName ?? "";
         storageRootPath = parentPath;
     }
-    public NodeFileSystem(string name, string storageRootPath) {
-        LocalId = new NodeLocalId(name);
+    public NodeFileSystem(NodeLocalId name, string storageRootPath) {
+        LocalId = name;
         this.storageRootPath = storageRootPath;
         parentPath = storageRootPath;
     }
-    public NodeFileSystem(string name, NodeFileSystem parent) {
-        LocalId = new NodeLocalId(name);
+    public NodeFileSystem(NodeLocalId name, NodeFileSystem parent) {
+        LocalId = name;
         storageRootPath = parent.storageRootPath;
         parentPath = parent.FolderPath;
     }
@@ -117,13 +117,6 @@ internal record NodeFileSystem : Node {
         using var stream = new FileStream(MetadataPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
         JsonSerializer.Serialize(stream, data, GraphData.SymLinkStorage.SymLinkGraphStorage.SerializerOptions);
     }
-    internal static NodeFileSystem Create(string name, NodeFileSystem parent, IDictionary<string, string>? attributes = null) {
-        var node = new NodeFileSystem(name, parent);
-        Directory.CreateDirectory(node.FolderPath);
-        if (attributes != null)
-            node.WriteMetadata(attributes);
-        return node;
-    }
 }
 
 internal record EdgeFileSystem : Edge {
@@ -131,7 +124,7 @@ internal record EdgeFileSystem : Edge {
 
     public SymLink Link { get; }
     public NodeFileSystem Parent { get; }
-    public NodeFileSystem Child => child ??= new NodeFileSystem(Link.Name, Parent);
+    public NodeFileSystem Child => child ??= new NodeFileSystem(new(Link.Name), Parent);
 
     public override Node Node1 => Parent;
     public override Node Node2 => Child;

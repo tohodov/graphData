@@ -28,7 +28,6 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
     public BucketedFileGraphStorage(IOptions<BucketedFileGraphStorageOptions> options, ILogger<BucketedFileGraphStorage> logger)
     {
-        ArgumentNullException.ThrowIfNull(options);
         _options = options.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
@@ -43,17 +42,16 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         Directory.CreateDirectory(_connectionsRoot);
     }
 
-    public async Task<ServiceResult<Node>> Create(string name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null)
+    public async Task<ServiceResult<Node>> Create(NodeLocalId name, NodeGlobalId? parentId = null, IDictionary<string, string>? attributes = null)
     {
         if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
             return ServiceResult<Node>.BadRequest(validationError);
-
-        var parentNode = parent is { Count: > 0 }
-            ? await FindNodeAsync(parent.Value).ConfigureAwait(false)
-            : null;
-        if (parent is { Count: > 0 } && parentNode is null)
-            return ServiceResult<Node>.NotFound($"Parent node '{parent}' was not found.");
-
+        Node? parentNode = null;
+        if (parentId != null) {
+            parentNode = await FindNodeAsync(parentId.Value);
+            if(parentNode == null)
+                return ServiceResult<Node>.NotFound($"Parent node '{parentId}' was not found.");
+        }
         var created = await CreateNodeAsync(name, parentNode, attributes).ConfigureAwait(false);
         return ServiceResult<Node>.Ok(created);
     }
@@ -123,18 +121,16 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
     public async Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node)
     {
-        ArgumentNullException.ThrowIfNull(node);
-
-        if (await ReadMetadataWithLockAsync(node.LocalId.Value).ConfigureAwait(false) is null)
+        if (await ReadMetadataWithLockAsync(node.LocalId).ConfigureAwait(false) is null)
             return ServiceResult<IReadOnlyCollection<Node>>.NotFound();
 
         var nodes = await GetConnectedNodesCoreAsync(node).ConfigureAwait(false);
         return ServiceResult<IReadOnlyCollection<Node>>.Ok(nodes);
     }
 
-    private async Task<Node> CreateNodeAsync(string name, Node? parent = null, IDictionary<string, string>? attributes = null)
+    private async Task<Node> CreateNodeAsync(NodeLocalId name, Node? parent = null, IDictionary<string, string>? attributes = null)
     {
-        var nodeName = GetNodeName(parent, name);
+        var nodeName = GetNodePath(parent, name);
         var bucketKey = GetBucketKey(nodeName);
         var bucketLock = GetMetadataLock(bucketKey);
         var document = new NodeDocument(nodeName, CopyAttributes(attributes));
@@ -156,10 +152,10 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         return CreateNode(document);
     }
 
-    private async Task<Node?> FindNodeAsync(Node? parent, string subNodeName)
+    private async Task<Node?> FindNodeAsync(Node? parent, NodeLocalId subNodeName)
     {
-        var nodeName = GetNodeName(parent, subNodeName);
-        var document = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
+        var nodeName = GetNodePath(parent, subNodeName);
+        var document = await ReadMetadataWithLockAsync(new(nodeName)).ConfigureAwait(false);
         return document is null ? null : CreateNode(document);
     }
 
@@ -168,7 +164,7 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         Node? node = null;
         foreach (var part in query)
         {
-            node = await FindNodeAsync(node, part.Value).ConfigureAwait(false);
+            node = await FindNodeAsync(node, part).ConfigureAwait(false);
             if (node is null)
                 return null;
         }
@@ -177,8 +173,8 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
     private async Task ConnectNodesAsync(Node sourceNode, Node targetNode)
     {
-        var sourceNodeName = sourceNode.LocalId.Value;
-        var targetNodeName = targetNode.LocalId.Value;
+        var sourceNodeName = sourceNode.LocalId;
+        var targetNodeName = targetNode.LocalId;
 
         await EnsureNodeExistsAsync(sourceNodeName).ConfigureAwait(false);
         await EnsureNodeExistsAsync(targetNodeName).ConfigureAwait(false);
@@ -235,7 +231,7 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
     private async Task<IReadOnlyCollection<Node>> GetConnectedNodesCoreAsync(Node node)
     {
-        var connections = await ReadConnectionsWithLockAsync(node.LocalId.Value).ConfigureAwait(false);
+        var connections = await ReadConnectionsWithLockAsync(node.LocalId).ConfigureAwait(false);
         var nodes = new List<Node>();
         foreach (var connection in connections)
         {
@@ -317,7 +313,7 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         }
     }
 
-    private async Task EnsureNodeExistsAsync(string nodeName)
+    private async Task EnsureNodeExistsAsync(NodeLocalId nodeName)
     {
         var metadata = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
         if (metadata is null)
@@ -485,10 +481,10 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             : new Dictionary<string, string>(attributes, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static string GetNodeName(Node? parent, string subNodeName)
+    private static string GetNodePath(Node? parent, NodeLocalId subNodeName)
     {
         return parent is null
-            ? subNodeName
+            ? subNodeName.ToString()
             : $"{parent.LocalId}/{subNodeName}";
     }
 
@@ -508,16 +504,13 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
     private sealed record StoredNode(string NodeName) : Node
     {
-        private IReadOnlyDictionary<string, Edge>? _edges;
+        private IReadOnlyCollection<Edge>? _edges;
         private IReadOnlyCollection<Node> _nodes = Array.Empty<Node>();
 
         public override NodeLocalId LocalId => new(NodeName);
-        public override NodeGlobalId GlobalId => NodeGlobalId.Parse(NodeName);
+        public override NodeGlobalId GlobalId => throw new NotImplementedException();
 
-        public override IReadOnlyDictionary<string, Edge> Edges => _edges ??= _nodes.ToDictionary(
-            static x => x.LocalId.Value,
-            x => (Edge)new StoredEdge(this, x),
-            StringComparer.OrdinalIgnoreCase);
+        public override IReadOnlyCollection<Edge> Edges => _edges ??= _nodes.Select(x => (Edge)new StoredEdge(this, x)).ToArray();
 
         public override IReadOnlyCollection<Node> Nodes => _nodes;
 

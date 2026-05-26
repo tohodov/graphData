@@ -38,7 +38,7 @@ public sealed class StoragePerformanceTests {
         var nodesByName = new Dictionary<NodeGlobalId, Node>();
 
         await run.MeasureEachAsync("create", graph.Nodes, async node => {
-            nodesByName[node.Path] = (await scope.Storage.Create(node.Path.Last().Value, attributes: node.Attributes).ConfigureAwait(false)).Value!;
+            nodesByName[node.Path] = (await scope.Storage.Create(node.Path.Last(), attributes: node.Attributes).ConfigureAwait(false)).Value!;
         }).ConfigureAwait(false);
 
         await run.MeasureEachAsync("connect", graph.Edges, async edge => {
@@ -224,7 +224,7 @@ public sealed class StoragePerformanceTests {
     private static async Task<Dictionary<NodeGlobalId, Node>> PopulateGraphAsync(IGraphStorage storage, GeneratedGraph graph) {
         var nodesByName = new Dictionary<NodeGlobalId, Node>();
         foreach (var node in graph.Nodes) {
-            nodesByName[node.Path] = (await storage.Create(node.Path.Single().Value, attributes: node.Attributes).ConfigureAwait(false)).Value!;
+            nodesByName[node.Path] = (await storage.Create(node.Path.Single(), attributes: node.Attributes).ConfigureAwait(false)).Value!;
         }
 
         foreach (var edge in graph.Edges) {

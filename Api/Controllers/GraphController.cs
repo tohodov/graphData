@@ -25,10 +25,10 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
 
     [HttpPost("nodes")]
     public async Task<ActionResult<NodeResponse>> CreateNodeAsync([FromBody] CreateNodeRequest request) {
-        var result = await _storage.Create(request.Name, (NodeGlobalId?)request.ParentPath, request.Attributes);
+        var result = await _storage.Create(new(request.Name), (NodeGlobalId?)request.ParentPath, request.Attributes);
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             var path = result.Value.GlobalId;
-            var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { path }) ?? $"/api/graph/nodes?{string.Join('&', path.Select(static segment => $"path={Uri.EscapeDataString(segment.Value)}"))}";
+            var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { path }) ?? $"/api/graph/nodes?{string.Join('&', path.Select(static segment => $"path={Uri.EscapeDataString(segment)}"))}";
             return Created(location, result.Value);
         }
         return ToActionResult<Node, NodeResponse>(result);

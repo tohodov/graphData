@@ -5,7 +5,7 @@ namespace GraphData.Core.Abstractions;
 
 public interface IGraphStorage
 {
-    Task<ServiceResult<Node>> Create(string name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null);
+    Task<ServiceResult<Node>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null);
     Task<ServiceResult<Node>> Get(NodeGlobalId path);
 
     async Task<ServiceResult> Update(NodeGlobalId path, IDictionary<string, string> attributes) {

@@ -779,8 +779,7 @@ public sealed class GraphSearchService(IGraphStorage storage) {
         throw new ArgumentException($"Unsupported text operator '{op}'.");
     }
 
-    private static bool MatchesText(NodeLocalId source, string op, string value) =>
-        MatchesText(source.Value, op, value);
+    private static bool MatchesText(NodeLocalId source, string op, string value) => MatchesText(source.ToString(), op, value);
 
     private static bool MatchesNumber(int source, string op, int value) {
         if (IsOperator(op, SearchOperators.Equal)) {
@@ -822,8 +821,7 @@ public sealed class GraphSearchService(IGraphStorage storage) {
         return 0.4;
     }
 
-    private static double GetTextComparisonScore(NodeLocalId source, string op, string value) =>
-        GetTextComparisonScore(source.Value, op, value);
+    private static double GetTextComparisonScore(NodeLocalId source, string op, string value) => GetTextComparisonScore(source.ToString(), op, value);
 
     private static double GetTextScore(Node node, string text) {
         var normalizedText = text.Trim();
@@ -831,11 +829,11 @@ public sealed class GraphSearchService(IGraphStorage storage) {
             return 0;
         }
 
-        if (string.Equals(node.LocalId.Value, normalizedText, StringComparison.OrdinalIgnoreCase)) {
+        if (string.Equals(node.LocalId.ToString(), normalizedText, StringComparison.OrdinalIgnoreCase)) {
             return 1;
         }
 
-        if (Contains(node.LocalId.Value, normalizedText)) {
+        if (Contains(node.LocalId.ToString(), normalizedText)) {
             return 0.85;
         }
 
@@ -851,7 +849,7 @@ public sealed class GraphSearchService(IGraphStorage storage) {
             return 0;
         }
 
-        var searchable = new StringBuilder(node.LocalId.Value);
+        var searchable = new StringBuilder(node.LocalId.ToString());
         foreach (var attribute in node.Attributes) {
             searchable.Append(' ').Append(attribute.Key).Append(' ').Append(attribute.Value);
         }
@@ -894,7 +892,7 @@ public sealed class GraphSearchService(IGraphStorage storage) {
     }
 
     private static string NormalizeNodeName(NodeLocalId nodeName) {
-        return NormalizeNodeName(nodeName.Value);
+        return NormalizeNodeName(nodeName.ToString());
     }
 
     private static int NormalizeLimit(int limit) {
@@ -939,7 +937,7 @@ public sealed class GraphSearchService(IGraphStorage storage) {
             }
 
             var nodes = (await catalog.GetAllNodesAsync().ConfigureAwait(false))
-                .OrderBy(static node => node.LocalId, NodeLocalId.OrdinalIgnoreCaseComparer)
+                .OrderBy(static node => node.LocalId)
                 .ToArray();
             var knownNodes = nodes
                 .Select(static node => NormalizeNodeName(node.LocalId))
@@ -954,7 +952,7 @@ public sealed class GraphSearchService(IGraphStorage storage) {
 
                 connections[NormalizeNodeName(node.LocalId)] = connectedResult.Value
                     .Where(connection => knownNodes.Contains(NormalizeNodeName(connection.LocalId)))
-                    .OrderBy(static connection => connection.LocalId, NodeLocalId.OrdinalIgnoreCaseComparer)
+                    .OrderBy(static connection => connection.LocalId)
                     .ToArray();
             }
 
@@ -1012,7 +1010,7 @@ public sealed class GraphSearchService(IGraphStorage storage) {
 
             var reachable = result.Values
                 .OrderBy(static value => value.Distance)
-                .ThenBy(static value => value.Node.LocalId, NodeLocalId.OrdinalIgnoreCaseComparer)
+                .ThenBy(static value => value.Node.LocalId)
                 .ToArray();
             _reachableCache[cacheKey] = reachable;
             return reachable;

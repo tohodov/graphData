@@ -16,9 +16,9 @@ public sealed class GraphSearchFunctionalTests
     public async Task Search_ShouldFindVerticesWithoutEdges()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var isolated = (await scope.Storage.Create("isolated")).Value!;
-        var connected = (await scope.Storage.Create("connected")).Value!;
-        var neighbor = (await scope.Storage.Create("neighbor")).Value!;
+        var isolated = (await scope.Storage.Create(new("isolated"))).Value!;
+        var connected = (await scope.Storage.Create(new("connected"))).Value!;
+        var neighbor = (await scope.Storage.Create(new("neighbor"))).Value!;
         await scope.Storage.Connect(connected.GlobalId, neighbor.GlobalId);
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
@@ -30,15 +30,15 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { isolated.LocalId.Value },
-            Names(matches));
+            new[] { isolated.LocalId },
+            matches.Select(x => x.Node.LocalId).ToArray());
     }
 
     [TestMethod]
     public async Task Search_ShouldNotReturnIgnoredSelfConnectionsAsEdges()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var node = (await scope.Storage.Create("self")).Value!;
+        var node = (await scope.Storage.Create(new("self"))).Value!;
         await scope.Storage.Connect(node.GlobalId, node.GlobalId);
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
@@ -54,8 +54,8 @@ public sealed class GraphSearchFunctionalTests
     public async Task Search_ShouldTreatZeroLengthPathAsSelfRelationWhenRequested()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var first = (await scope.Storage.Create("first")).Value!;
-        var second = (await scope.Storage.Create("second")).Value!;
+        var first = (await scope.Storage.Create(new("first"))).Value!;
+        var second = (await scope.Storage.Create(new("second"))).Value!;
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
         {
@@ -71,22 +71,22 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { first.LocalId.Value, second.LocalId.Value },
-            Names(matches));
+            new[] { first.LocalId, second.LocalId },
+            matches.Select(x => x.Node.LocalId).ToArray());
     }
 
     [TestMethod]
     public async Task Search_ShouldReturnVerticesWithHighestDegreeFirst()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var hub = (await scope.Storage.Create("hub")).Value!;
-        var mid = (await scope.Storage.Create("mid")).Value!;
-        var h1 = (await scope.Storage.Create("h1")).Value!;
-        var h2 = (await scope.Storage.Create("h2")).Value!;
-        var h3 = (await scope.Storage.Create("h3")).Value!;
-        var h4 = (await scope.Storage.Create("h4")).Value!;
-        var m1 = (await scope.Storage.Create("m1")).Value!;
-        var m2 = (await scope.Storage.Create("m2")).Value!;
+        var hub = (await scope.Storage.Create(new("hub"))).Value!;
+        var mid = (await scope.Storage.Create(new("mid"))).Value!;
+        var h1 = (await scope.Storage.Create(new("h1"))).Value!;
+        var h2 = (await scope.Storage.Create(new("h2"))).Value!;
+        var h3 = (await scope.Storage.Create(new("h3"))).Value!;
+        var h4 = (await scope.Storage.Create(new("h4"))).Value!;
+        var m1 = (await scope.Storage.Create(new("m1"))).Value!;
+        var m2 = (await scope.Storage.Create(new("m2"))).Value!;
 
         foreach (var node in new[] { h1, h2, h3, h4 })
         {
@@ -106,8 +106,8 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEqual(
-            new[] { hub.LocalId.Value, mid.LocalId.Value },
-            Names(matches));
+            new[] { hub.LocalId, mid.LocalId },
+            matches.Select(x => x.Node.LocalId).ToArray());
     }
 
     [TestMethod]
@@ -133,14 +133,14 @@ public sealed class GraphSearchFunctionalTests
             Return = ["x"],
             Where = All(
                 Attribute("x", "role", "candidate"),
-                Connected("x", Literal(a.LocalId.Value)),
-                Connected("x", Literal(b.LocalId.Value)),
-                Connected("x", Literal(c.LocalId.Value)))
+                Connected("x", Literal(a.LocalId)),
+                Connected("x", Literal(b.LocalId)),
+                Connected("x", Literal(c.LocalId)))
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { target.LocalId.Value },
-            Names(matches));
+            new string[] { target.LocalId },
+            matches.Select(x => x.Node.LocalId).ToArray());
     }
 
     [TestMethod]
@@ -164,13 +164,13 @@ public sealed class GraphSearchFunctionalTests
             Return = ["x"],
             Where = All(
                 Attribute("x", "role", "candidate"),
-                Path("x", Literal(a.LocalId.Value), maxDepth: 3),
-                Path("x", Literal(b.LocalId.Value), maxDepth: 3))
+                Path("x", Literal(a.LocalId), maxDepth: 3),
+                Path("x", Literal(b.LocalId), maxDepth: 3))
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { target.LocalId.Value },
-            Names(matches));
+            new[] { target.LocalId },
+            matches.Select(x => x.Node.LocalId).ToArray());
     }
 
     [TestMethod]
@@ -194,15 +194,15 @@ public sealed class GraphSearchFunctionalTests
                 new AnyNodeSearchExpression
                 {
                     Expressions = [
-                        Connected("x", Literal(a.LocalId.Value)),
-                        Connected("x", Literal(b.LocalId.Value))
+                        Connected("x", Literal(a.LocalId)),
+                        Connected("x", Literal(b.LocalId))
                     ]
                 })
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { first.LocalId.Value, second.LocalId.Value },
-            Names(matches));
+            new[] { first.LocalId, second.LocalId },
+            matches.Select(x => x.Node.LocalId).ToArray());
     }
 
     [TestMethod]
@@ -220,15 +220,15 @@ public sealed class GraphSearchFunctionalTests
             Return = ["x"],
             Where = new NodeDescendantSearchExpression
             {
-                Ancestor = Literal(root.LocalId.Value),
+                Ancestor = Literal(root.LocalId),
                 Descendant = Var("x"),
                 MaxDepth = 2
             }
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { pistols.LocalId.Value, revolvers.LocalId.Value },
-            Names(matches));
+            new[] { pistols.LocalId, revolvers.LocalId },
+            matches.Select(x => x.Node.LocalId).ToArray());
     }
 
     [TestMethod]
@@ -263,8 +263,8 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { match.LocalId.Value },
-            Names(matches));
+            new[] { match.LocalId },
+            matches.Select(x => x.Node.LocalId).ToArray());
     }
 
     [TestMethod]
@@ -287,8 +287,8 @@ public sealed class GraphSearchFunctionalTests
         }
 
         CollectionAssert.AreEquivalent(
-            new[] { first.LocalId.Value, second.LocalId.Value },
-            Names(matches));
+            new[] { first.LocalId, second.LocalId },
+            matches.Select(x => x.Node.LocalId).ToArray());
     }
 
     private static async Task<IReadOnlyCollection<NodeSearchMatch>> Search(
@@ -296,11 +296,6 @@ public sealed class GraphSearchFunctionalTests
         NodeSearchQuery query)
     {
         return await new GraphSearchService(storage).SearchNodesStreamAsync(query).ToArrayAsync();
-    }
-
-    private static string[] Names(IEnumerable<NodeSearchMatch> matches)
-    {
-        return matches.Select(static match => match.Node.LocalId.Value).ToArray();
     }
 
     private static AllNodeSearchExpression All(params NodeSearchExpression[] expressions)
@@ -384,7 +379,7 @@ public sealed class GraphSearchFunctionalTests
             var next = segment switch
             {
                 Node node => node,
-                string name => (await storage.Create(name)).Value!,
+                string name => (await storage.Create(new(name))).Value!,
                 _ => throw new ArgumentException("Path segment must be a node or a node name.", nameof(path))
             };
 

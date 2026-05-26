@@ -40,7 +40,7 @@ public abstract partial class GraphStorageContractTests {
     protected abstract Task<IGraphStorage> CreateStorageAsync();
 
     protected async Task<Node> CreateNode(string? name = null) {
-        var result = await Storage.Create(name ?? Guid.NewGuid().ToString(), null, new Dictionary<string, string>() {
+        var result = await Storage.Create(new(name ?? Guid.NewGuid().ToString()), null, new Dictionary<string, string>() {
             { "type", "test" },
             { "created", DateTime.UtcNow.ToString("O") }
         });
@@ -55,8 +55,8 @@ partial class GraphStorageContractTests {
         var retrieved = (await Storage.Get(created.GlobalId)).Value!;
 
         Assert.IsNotNull(retrieved);
-        Assert.AreEqual(created.LocalId.Value, retrieved.LocalId.Value);
-        Assert.AreEqual(created.LocalId.Value, retrieved.LocalId.Value);
+        Assert.AreEqual(created.LocalId, retrieved.LocalId);
+        Assert.AreEqual(created.LocalId, retrieved.LocalId);
         CollectionAssert.AreEquivalent(created.Attributes.ToList(), retrieved.Attributes.ToList());
     }
 }
@@ -64,9 +64,9 @@ partial class GraphStorageContractTests {
 partial class GraphStorageContractTests {
     [TestMethod]
     public async Task Search_ShouldFindTextMatchBelowHierarchyAncestor() {
-        var pistols = (await Storage.Create("pistols")).Value!;
-        await Storage.Create("double-action revolvers", pistols.GlobalId);
-        await Storage.Create("rifles");
+        var pistols = (await Storage.Create(new("pistols"))).Value!;
+        await Storage.Create(new("double-action revolvers"), pistols.GlobalId);
+        await Storage.Create(new("rifles"));
 
         var service = new GraphSearchService(Storage);
         var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
@@ -78,7 +78,7 @@ partial class GraphStorageContractTests {
                         Value = "double-action"
                     },
                     new NodeDescendantSearchExpression {
-                        Ancestor = Literal(pistols.LocalId.Value),
+                        Ancestor = Literal(pistols.LocalId.ToString()),
                         Descendant = Var("n"),
                         MaxDepth = 3
                     }
@@ -88,17 +88,17 @@ partial class GraphStorageContractTests {
 
         Assert.AreEqual(1, matches.Length);
         var match = matches.Single();
-        Assert.AreEqual("pistols/double-action revolvers", match.Node.LocalId.Value);
+        Assert.AreEqual("pistols/double-action revolvers", match.Node.GlobalId.ToString());
         Assert.IsTrue(match.MatchedBy.Any(x => x.StartsWith("descendant-of:pistols", StringComparison.OrdinalIgnoreCase)));
         Assert.IsTrue(match.MatchedBy.Any(x => x.StartsWith("text:double-action", StringComparison.OrdinalIgnoreCase)));
     }
 
     [TestMethod]
     public async Task Search_ShouldFindNodesConnectedToAllAnchors() {
-        var america = (await Storage.Create("america")).Value!;
-        var assaultRifles = (await Storage.Create("assault rifles")).Value!;
-        var m16 = (await Storage.Create("m16")).Value!;
-        var unrelated = (await Storage.Create("unrelated")).Value!;
+        var america = (await Storage.Create(new("america"))).Value!;
+        var assaultRifles = (await Storage.Create(new("assault rifles"))).Value!;
+        var m16 = (await Storage.Create(new("m16"))).Value!;
+        var unrelated = (await Storage.Create(new("unrelated"))).Value!;
 
         await Storage.Connect(america.GlobalId, m16.GlobalId);
         await Storage.Connect(assaultRifles.GlobalId, m16.GlobalId);
@@ -111,12 +111,12 @@ partial class GraphStorageContractTests {
                 Expressions = [
                     new NodePathSearchExpression {
                         Left = Var("n"),
-                        Right = Literal(america.LocalId.Value),
+                        Right = Literal(america.LocalId.ToString()),
                         MaxDepth = 1
                     },
                     new NodePathSearchExpression {
                         Left = Var("n"),
-                        Right = Literal(assaultRifles.LocalId.Value),
+                        Right = Literal(assaultRifles.LocalId.ToString()),
                         MaxDepth = 1
                     }
                 ]
@@ -124,16 +124,16 @@ partial class GraphStorageContractTests {
         }).ToArrayAsync();
 
         Assert.AreEqual(1, matches.Length);
-        Assert.AreEqual(m16.LocalId.Value, matches.Single().Node.LocalId.Value);
+        Assert.AreEqual(m16.LocalId, matches.Single().Node.LocalId);
     }
 
     [TestMethod]
     public async Task Search_ShouldReturnSolutionsForVariableConnectedToAttributeMatch() {
-        var source = (await Storage.Create("source")).Value!;
-        var marker = (await Storage.Create("marker", attributes: new Dictionary<string, string> {
+        var source = (await Storage.Create(new("source"))).Value!;
+        var marker = (await Storage.Create(new("marker"), attributes: new Dictionary<string, string> {
             ["id"] = "Y"
         })).Value!;
-        var unrelated = (await Storage.Create("unrelated", attributes: new Dictionary<string, string> {
+        var unrelated = (await Storage.Create(new("unrelated"), attributes: new Dictionary<string, string> {
             ["id"] = "Y"
         })).Value!;
 
@@ -159,16 +159,16 @@ partial class GraphStorageContractTests {
 
         Assert.AreEqual(1, matches.Length);
         var match = matches.Single();
-        Assert.AreEqual(source.LocalId.Value, match.Bindings["n"].LocalId.Value);
-        Assert.AreEqual(marker.LocalId.Value, match.Bindings["x"].LocalId.Value);
-        Assert.AreNotEqual(unrelated.LocalId.Value, match.Bindings["x"].LocalId.Value);
+        Assert.AreEqual(source.LocalId, match.Bindings["n"].LocalId);
+        Assert.AreEqual(marker.LocalId, match.Bindings["x"].LocalId);
+        Assert.AreNotEqual(unrelated.LocalId, match.Bindings["x"].LocalId);
     }
 
     [TestMethod]
     public async Task Search_ShouldFindIsolatedNodesWithNegatedExistentialRelation() {
-        var isolated = (await Storage.Create("isolated")).Value!;
-        var connected = (await Storage.Create("connected")).Value!;
-        var neighbor = (await Storage.Create("neighbor")).Value!;
+        var isolated = (await Storage.Create(new("isolated"))).Value!;
+        var connected = (await Storage.Create(new("connected"))).Value!;
+        var neighbor = (await Storage.Create(new("neighbor"))).Value!;
 
         await Storage.Connect(connected.GlobalId, neighbor.GlobalId);
 
@@ -187,8 +187,8 @@ partial class GraphStorageContractTests {
         }).ToArrayAsync();
 
         CollectionAssert.AreEquivalent(
-            new[] { isolated.LocalId.Value },
-            matches.Select(static match => match.Node.LocalId.Value).ToArray());
+            new[] { isolated.LocalId },
+            matches.Select(static match => match.Node.LocalId).ToArray());
     }
 
     private static NodeVariableSearchSelector Var(string name) => new() { Name = name };
@@ -231,8 +231,8 @@ partial class GraphStorageContractTests {
         await Storage.Delete(second.GlobalId);
 
         Assert.IsNull(await Storage.Get(second.GlobalId));
-        Assert.IsFalse((await Storage.GetConnectedNodesAsync(first)).Value!.Any(x => x.LocalId.Value == second.LocalId.Value));
-        Assert.IsFalse((await Storage.GetConnectedNodesAsync(third)).Value!.Any(x => x.LocalId.Value == second.LocalId.Value));
+        Assert.IsFalse((await Storage.GetConnectedNodesAsync(first)).Value!.Any(x => x.LocalId == second.LocalId));
+        Assert.IsFalse((await Storage.GetConnectedNodesAsync(third)).Value!.Any(x => x.LocalId == second.LocalId));
     }
 }
 [TestCategory(nameof(IGraphStorage.Connect))]
@@ -247,8 +247,8 @@ partial class GraphStorageContractTests {
         var firstConnections = (await Storage.GetConnectedNodesAsync(first)).Value!;
         var secondConnections = (await Storage.GetConnectedNodesAsync(second)).Value!;
 
-        Assert.IsTrue(firstConnections.Any(x => x.LocalId.Value == second.LocalId.Value));
-        Assert.IsTrue(secondConnections.Any(x => x.LocalId.Value == first.LocalId.Value));
+        Assert.IsTrue(firstConnections.Any(x => x.LocalId == second.LocalId));
+        Assert.IsTrue(secondConnections.Any(x => x.LocalId == first.LocalId));
     }
     [TestMethod]
     public async Task ShouldIgnoreSelfConnection() {
@@ -257,7 +257,7 @@ partial class GraphStorageContractTests {
         await Storage.Connect(node.GlobalId, node.GlobalId);
 
         var connections = (await Storage.GetConnectedNodesAsync(node)).Value!.ToList();
-        CollectionAssert.DoesNotContain(connections, node.LocalId.Value);
+        CollectionAssert.DoesNotContain(connections, node);
     }
 }
 [TestCategory(nameof(IGraphStorage.GetSubgraphAsync))]
@@ -286,8 +286,8 @@ partial class GraphStorageContractTests {
         Assert.IsTrue(subgraph.Nodes.Contains(third));
         Assert.IsFalse(subgraph.Nodes.Contains(fourth));
 
-        var children = subgraph.Nodes.First(x => x.LocalId.Value == first.LocalId.Value).Edges.Values.SelectMany(x => new[] { x.Node1, x.Node2 }).Distinct().Except([first]).ToArray();
-        Assert.IsTrue(children.Any(x => x.LocalId.Value == second.LocalId.Value));
-        Assert.IsFalse(children.Any(x => x.LocalId.Value == third.LocalId.Value));
+        var children = subgraph.Nodes.First(x => x.LocalId == first.LocalId).Edges.SelectMany(x => new[] { x.Node1, x.Node2 }).Distinct().Except([first]).ToArray();
+        Assert.IsTrue(children.Any(x => x.LocalId == second.LocalId));
+        Assert.IsFalse(children.Any(x => x.LocalId == third.LocalId));
     }
 }
