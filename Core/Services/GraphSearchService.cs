@@ -21,13 +21,7 @@ public sealed class GraphSearchService(IGraphStorage storage) {
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var yielded = 0;
 
-        var solutions = OrderSolutions(
-            DistinctByReturnVariables(EnumerateSolutions(query, graph, returnVariables), returnVariables),
-            orders: null,
-            returnVariables,
-            graph);
-
-        foreach (var solution in solutions) {
+        foreach (var solution in EnumerateSolutions(query, graph, returnVariables)) {
             cancellationToken.ThrowIfCancellationRequested();
             if (returnVariables.Any(variable => !solution.Bindings.ContainsKey(variable))) {
                 continue;
@@ -562,9 +556,7 @@ public sealed class GraphSearchService(IGraphStorage storage) {
             }
         }
 
-        ordered ??= solutions
-            .OrderByDescending(static solution => solution.Score)
-            .ThenByDescending(solution => graph.GetDegree(solution.Bindings[returnVariables[0]]));
+        ordered ??= solutions.OrderByDescending(static solution => solution.Score);
         return ordered.ThenBy(
             solution => string.Join('\u001f', returnVariables.Select(variable => solution.Bindings[variable].LocalId)),
             StringComparer.OrdinalIgnoreCase);

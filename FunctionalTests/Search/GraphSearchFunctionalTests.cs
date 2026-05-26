@@ -76,7 +76,7 @@ public sealed class GraphSearchFunctionalTests
     }
 
     [TestMethod]
-    public async Task Search_ShouldReturnVerticesWithHighestDegreeFirst()
+    public async Task Search_ShouldReturnMatchingVerticesWithoutImplicitRanking()
     {
         await using var scope = TestGraphStorageScope.Create();
         var hub = (await scope.Storage.Create(new("hub"))).Value!;
@@ -102,11 +102,11 @@ public sealed class GraphSearchFunctionalTests
         {
             Return = ["x"],
             Where = Node("x"),
-            Limit = 2
+            Limit = 8
         });
 
-        CollectionAssert.AreEqual(
-            new[] { hub.LocalId, mid.LocalId },
+        CollectionAssert.AreEquivalent(
+            new[] { hub.LocalId, mid.LocalId, h1.LocalId, h2.LocalId, h3.LocalId, h4.LocalId, m1.LocalId, m2.LocalId },
             matches.Select(x => x.Node.LocalId).ToArray());
     }
 
