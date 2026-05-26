@@ -7,7 +7,22 @@ public static class GraphResponseMapper
 {
     public static SubgraphResponse ToSubgraphResponse(Subgraph subgraph)
     {
-        throw new NotImplementedException();
+        var nodes = subgraph.Nodes.ToArray();
+        var nodeNames = nodes
+            .Select(static node => node.LocalId.ToString())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var edges = nodes
+            .SelectMany(static node => node.Edges)
+            .Where(edge => nodeNames.Contains(edge.Node1.LocalId) && nodeNames.Contains(edge.Node2.LocalId))
+            .GroupBy(static edge => EdgeKey(edge.Node1.LocalId, edge.Node2.LocalId), StringComparer.OrdinalIgnoreCase)
+            .Select(static group => ToEdgeResponse(group.First()))
+            .ToArray();
+
+        return new SubgraphResponse
+        {
+            Nodes = nodes.Select(static node => ToNodeResponse(node, [])).ToArray(),
+            Edges = edges
+        };
     }
 
     public static NodeResponse ToNodeResponse(
@@ -16,9 +31,9 @@ public static class GraphResponseMapper
     {
         return new NodeResponse
         {
-            Name = node.LocalId,
+            Name = node.GlobalId.ToString(),
             Attributes = new Dictionary<string, string>(node.Attributes),
-            Edges = edges?.ToArray() ?? Array.Empty<EdgeResponse>()
+            Edges = edges?.ToArray() ?? node.Edges.Select(ToEdgeResponse).ToArray()
         };
     }
 
@@ -29,7 +44,7 @@ public static class GraphResponseMapper
             Node = ToNodeResponse(match.Node),
             Bindings = match.Bindings.ToDictionary(
                 static binding => binding.Key,
-                static binding => ToNodeResponse(binding.Value),
+                static binding => ToNodeResponse(binding.Value, []),
                 StringComparer.OrdinalIgnoreCase),
             Score = match.Score,
             MatchedBy = match.MatchedBy
@@ -39,6 +54,11 @@ public static class GraphResponseMapper
     public static EdgeResponse ToEdgeResponse(Node source, Node target)
     {
         return ToEdgeResponse(source.LocalId, target.LocalId);
+    }
+
+    private static EdgeResponse ToEdgeResponse(Edge edge)
+    {
+        return ToEdgeResponse(edge.Node1, edge.Node2);
     }
 
     private static EdgeResponse ToEdgeResponse(string sourceName, string targetName)

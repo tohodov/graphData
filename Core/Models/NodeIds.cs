@@ -10,6 +10,7 @@ public readonly struct NodeLocalId : IEquatable<NodeLocalId>, IComparable<NodeLo
 
     public NodeLocalId(string value) => this.value = value;
 
+    public bool Equals(NodeLocalId other) => string.Equals(value, other.value, StringComparison.Ordinal);
     public override bool Equals(object? obj) => obj is NodeLocalId other && Equals(other);
     public override int GetHashCode() => StringComparer.Ordinal.GetHashCode(value);
     public override string ToString() => value;
@@ -20,8 +21,7 @@ public readonly struct NodeLocalId : IEquatable<NodeLocalId>, IComparable<NodeLo
     [Obsolete("удалить", false)]
     public static implicit operator NodeLocalId(string id) => new(id);
 
-    bool IEquatable<NodeLocalId>.Equals(NodeLocalId other) => string.Equals(value, other.value, StringComparison.Ordinal);
-    int IComparable<NodeLocalId>.CompareTo(NodeLocalId other) => string.Compare(value, other.value, StringComparison.Ordinal);
+    public int CompareTo(NodeLocalId other) => string.Compare(value, other.value, StringComparison.Ordinal);
 }
 
 public readonly struct NodeGlobalId : IEnumerable<NodeLocalId>, IEquatable<NodeGlobalId> {
@@ -93,6 +93,6 @@ public readonly struct NodeGlobalId : IEnumerable<NodeLocalId>, IEquatable<NodeG
             segments is IReadOnlyCollection<NodeLocalId> collection ? collection.Count : 0);
         foreach (var segment in segments)
             result.Add(segment);
-        return result.MoveToImmutable();
+        return result.ToImmutable();
     }
 }

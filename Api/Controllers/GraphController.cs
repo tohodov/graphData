@@ -20,7 +20,7 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
     [HttpGet("nodes")]
     public async Task<ActionResult<NodeResponse>> GetNodeAsync([FromQuery] string[] path) {
         var result = await _storage.Get(new NodeGlobalId(path));
-        return ToActionResult<Node, NodeResponse>(result);
+        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
     [HttpPost("nodes")]
@@ -29,9 +29,9 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             var path = result.Value.GlobalId;
             var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { path }) ?? $"/api/graph/nodes?{string.Join('&', path.Select(static segment => $"path={Uri.EscapeDataString(segment)}"))}";
-            return Created(location, result.Value);
+            return Created(location, GraphResponseMapper.ToNodeResponse(result.Value));
         }
-        return ToActionResult<Node, NodeResponse>(result);
+        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
     [HttpPut("nodes")]
@@ -49,7 +49,7 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
     [HttpPost("connections")]
     public async Task<IActionResult> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
         var result = await _storage.Connect(request.SourcePath, request.TargetPath);
-        return ToActionResult(result);
+        return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult(result);
     }
 
     [HttpPost("subgraph")]
@@ -58,7 +58,7 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
             Nodes = request.Nodes.Select(static x => new NodeGlobalId(x)).ToArray(),
             MaxDepth = request.MaxDepth,
         });
-        return ToActionResult<Subgraph, SubgraphResponse>(result);
+        return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
     [HttpPost("search/nodes")]
@@ -79,7 +79,7 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
             while (hasMatch) {
                 await JsonSerializer.SerializeAsync(
                     Response.Body,
-                    matches.Current,
+                    GraphResponseMapper.ToSearchMatchResponse(matches.Current),
                     StreamJsonOptions,
                     cancellationToken);
                 await Response.WriteAsync("\n", cancellationToken);
@@ -100,9 +100,9 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
         }
     }
 
-    private ActionResult<TO> ToActionResult<FROM, TO>(ServiceResult<FROM> result) {
+    private ActionResult<TO> ToActionResult<FROM, TO>(ServiceResult<FROM> result, Func<FROM, TO> map) {
         return result.Status switch {
-            ServiceResultStatus.Ok when result.Value is not null => Ok(result.Value),
+            ServiceResultStatus.Ok when result.Value is not null => Ok(map(result.Value)),
             ServiceResultStatus.BadRequest => BadRequest(result.Error),
             ServiceResultStatus.NotFound => NotFound(),
             ServiceResultStatus.InternalServerError => StatusCode(StatusCodes.Status500InternalServerError, result.Error),

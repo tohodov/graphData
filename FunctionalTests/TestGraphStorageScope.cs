@@ -2,8 +2,6 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using GraphData.Core.Abstractions;
-using GraphData.PerNodeFileStorage;
-using GraphData.PerNodeFileStorage.Options;
 using GraphData.SymLinkStorage;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

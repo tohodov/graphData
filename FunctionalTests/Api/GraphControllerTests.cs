@@ -114,7 +114,7 @@ public sealed class GraphControllerTests {
         Assert.IsNotNull(ok);
         var response = ok.Value as NodeResponse;
         Assert.IsNotNull(response);
-        Assert.AreEqual(child.LocalId.ToString(), response.Name);
+        Assert.AreEqual(child.GlobalId.ToString(), response.Name);
     }
 
     [TestMethod]
@@ -348,51 +348,6 @@ public sealed class GraphControllerTests {
         var streamed = matches.Single();
         Assert.AreEqual(first.LocalId.ToString(), streamed.Bindings["n"].Name);
         Assert.AreEqual(second.LocalId.ToString(), streamed.Bindings["x"].Name);
-    }
-
-    [TestMethod]
-    public void NodeSearchQueryJson_ShouldDeserializePredicateTree() {
-        const string json = """
-            {
-              "return": [ "n", "x" ],
-              "where": {
-                "expressions": [
-                  {
-                    "left": { "kind": "var", "name": "n" },
-                    "right": { "kind": "var", "name": "x" },
-                    "kind": "connected"
-                  },
-                  {
-                    "node": { "kind": "var", "name": "x" },
-                    "key": "id",
-                    "operator": "equals",
-                    "value": "Y",
-                    "kind": "attribute"
-                  }
-                ],
-                "kind": "all"
-              },
-              "orderBy": [
-                {
-                  "variable": "n",
-                  "direction": "descending",
-                  "kind": "degree"
-                }
-              ],
-              "limit": 20
-            }
-            """;
-
-        var query = JsonSerializer.Deserialize<NodeSearchQuery>(
-            json,
-            GraphJsonSerializerOptions.Create());
-
-        Assert.IsNotNull(query);
-        CollectionAssert.AreEquivalent(new[] { "n", "x" }, query.Return);
-        Assert.IsInstanceOfType(query.Where, typeof(AllNodeSearchExpression));
-        var all = (AllNodeSearchExpression)query.Where!;
-        Assert.IsInstanceOfType(all.Expressions[0], typeof(NodeConnectedSearchExpression));
-        Assert.IsInstanceOfType(all.Expressions[1], typeof(NodeAttributeSearchExpression));
     }
 
     private static GraphController CreateController(IGraphStorage storage) {

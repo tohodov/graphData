@@ -48,6 +48,9 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     public Task<ServiceResult<Node>> Get(NodeGlobalId path) {
+        if (!TryValidatePath(path, "Node path", out var validationError))
+            return Task.FromResult(ServiceResult<Node>.BadRequest(validationError));
+
         var node = FindNode(path);
         return Task.FromResult(node is null
             ? ServiceResult<Node>.NotFound()
@@ -55,6 +58,9 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     public Task<ServiceResult> Delete(NodeGlobalId path) {
+        if (!TryValidatePath(path, "Node path", out var validationError))
+            return Task.FromResult(ServiceResult.BadRequest(validationError));
+
         var node = FindNode(path);
         if (node is null)
             return Task.FromResult(ServiceResult.NotFound());
@@ -68,6 +74,11 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     public Task<ServiceResult> Connect(NodeGlobalId leftPath, NodeGlobalId rightPath) {
+        if (!TryValidatePath(leftPath, "Source node path", out var validationError))
+            return Task.FromResult(ServiceResult.BadRequest(validationError));
+        if (!TryValidatePath(rightPath, "Target node path", out validationError))
+            return Task.FromResult(ServiceResult.BadRequest(validationError));
+
         if (leftPath.SequenceEqual(rightPath))
             return Task.FromResult(ServiceResult.BadRequest("SourcePath and TargetPath must be different."));
 
@@ -145,6 +156,17 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return node;
     }
 
+    private static bool TryValidatePath(NodeGlobalId path, string subject, out string error) {
+        foreach (var segment in path) {
+            if (!NodeNameValidator.TryValidateSegment(segment, $"{subject} segment", out error)) {
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     private void ConnectNodes(NodeFileSystem left, NodeFileSystem right) {
         if (left.LocalId == right.LocalId)
             return;
@@ -186,7 +208,21 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return NormalizeNodeName(nodeName).Split('/').Last();
     }
 
-    private static bool IsHierarchyConnection(string left, string right) => throw new NotImplementedException();
+    private static bool IsHierarchyConnection(string left, string right) {
+        var leftPath = NormalizeDirectoryPath(left);
+        var rightPath = NormalizeDirectoryPath(right);
+        return IsDescendantPath(leftPath, rightPath) || IsDescendantPath(rightPath, leftPath);
+    }
+
+    private static bool IsDescendantPath(string candidate, string ancestor) =>
+        candidate.Length > ancestor.Length &&
+        candidate.StartsWith(ancestor, StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizeDirectoryPath(string path) {
+        var fullPath = Path.GetFullPath(path)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return fullPath + Path.DirectorySeparatorChar;
+    }
 
     private IEnumerable<string> EnumerateNeighborIds(string nodePath) {
         foreach (var entry in new DirectoryInfo(nodePath).EnumerateFileSystemInfos()) {

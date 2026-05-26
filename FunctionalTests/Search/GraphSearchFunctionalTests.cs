@@ -139,7 +139,7 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEquivalent(
-            new string[] { target.LocalId },
+            new[] { target.LocalId },
             matches.Select(x => x.Node.LocalId).ToArray());
     }
 
@@ -227,8 +227,8 @@ public sealed class GraphSearchFunctionalTests
         });
 
         CollectionAssert.AreEquivalent(
-            new[] { pistols.LocalId, revolvers.LocalId },
-            matches.Select(x => x.Node.LocalId).ToArray());
+            new[] { pistols.GlobalId.ToString(), revolvers.GlobalId.ToString() },
+            matches.Select(x => x.Node.GlobalId.ToString()).ToArray());
     }
 
     [TestMethod]

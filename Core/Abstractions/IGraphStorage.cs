@@ -58,7 +58,11 @@ public interface IGraphStorage
             if (depth >= query.MaxDepth)
                 continue;
 
-            foreach (var neighborId in node.Nodes.Select(x => x.GlobalId))
+            var connections = await GetConnectedNodesAsync(node);
+            if (connections.Status != ServiceResultStatus.Ok || connections.Value is null)
+                return ServiceResult<Subgraph>.From(connections);
+
+            foreach (var neighborId in connections.Value.Select(x => x.GlobalId))
                 if (!neighborId.SequenceEqual(path) && discovered.Add(neighborId))
                     queue.Enqueue((neighborId, depth + 1));
         }

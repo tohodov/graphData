@@ -200,7 +200,8 @@ partial class GraphStorageContractTests {
     [TestMethod]
     public async Task NodeMissing() {
         var result = await Storage.Get(new NodeGlobalId(Guid.NewGuid().ToString()));
-        Assert.IsNull(result);
+        Assert.AreEqual(ServiceResultStatus.NotFound, result.Status);
+        Assert.IsNull(result.Value);
     }
 }
 [TestCategory(nameof(IGraphStorage.Update))]
@@ -230,7 +231,9 @@ partial class GraphStorageContractTests {
 
         await Storage.Delete(second.GlobalId);
 
-        Assert.IsNull(await Storage.Get(second.GlobalId));
+        var deleted = await Storage.Get(second.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.NotFound, deleted.Status);
+        Assert.IsNull(deleted.Value);
         Assert.IsFalse((await Storage.GetConnectedNodesAsync(first)).Value!.Any(x => x.LocalId == second.LocalId));
         Assert.IsFalse((await Storage.GetConnectedNodesAsync(third)).Value!.Any(x => x.LocalId == second.LocalId));
     }

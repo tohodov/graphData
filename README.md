@@ -16,6 +16,22 @@ graphData - исследовательский прототип графовой
 4. Tests
 5. Docs
 
+## Tests
+
+В репозитории есть две отдельные тестовые сборки:
+
+- `FunctionalTests` - основная проверка поведения через функциональные сценарии.
+- `PerformanceTests` - измерительные сценарии производительности, отключенные по умолчанию без `GRAPH_DATA_PERF_TESTS=1`.
+
+Unit-тестовой сборки в проекте намеренно нет: корректность должна подтверждаться функциональными тестами, которые проверяют поведение через реальные сервисы и хранилища.
+
+```powershell
+dotnet test FunctionalTests\FunctionalTests.csproj
+
+$env:GRAPH_DATA_PERF_TESTS = '1'
+dotnet test PerformanceTests\PerformanceTests.csproj
+```
+
 ## MCP server
 
 В solution добавлен локальный MCP-сервер `Mcp` со stdio-транспортом. Его можно запускать из корня репозитория:

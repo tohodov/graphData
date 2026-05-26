@@ -73,14 +73,10 @@ internal static class PerformanceTestGate {
     }
 
     private static bool IsEnabled() {
-#if DEBUG
-        return true;
-#else
         var value = Environment.GetEnvironmentVariable(EnableVariableName) ?? Environment.GetEnvironmentVariable("GRAPHDATA_PERF_TESTS");
         return value is not null
             && (value.Equals("1", StringComparison.OrdinalIgnoreCase)
                 || value.Equals("true", StringComparison.OrdinalIgnoreCase)
                 || value.Equals("yes", StringComparison.OrdinalIgnoreCase));
-#endif
     }
 }

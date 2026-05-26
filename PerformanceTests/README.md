@@ -1,12 +1,12 @@
 # Performance tests
 
-Тесты из этой папки отключены для обычного `dotnet test`: без явного флага они завершаются как skipped/inconclusive.
+Тесты из этой сборки отключены для обычного `dotnet test`: без явного флага они завершаются как skipped/inconclusive.
 
 Минимальный запуск:
 
 ```powershell
 $env:GRAPH_DATA_PERF_TESTS = '1'
-dotnet test Tests\Tests.csproj --filter TestCategory=Performance
+dotnet test PerformanceTests\PerformanceTests.csproj
 ```
 
 Полезные параметры:
@@ -30,7 +30,7 @@ $env:GRAPH_DATA_PERF_STORAGE_ROOT = 'E:\TTT'
 $env:GRAPH_DATA_PERF_NODE_COUNT = '1000'
 $env:GRAPH_DATA_PERF_CONNECTIONS_PER_NODE = '10'
 $env:GRAPH_DATA_PERF_SEED = '1729'
-dotnet test Tests\Tests.csproj --filter TestCategory=Performance
+dotnet test PerformanceTests\PerformanceTests.csproj
 ```
 
 Рабочие данные каждого сценария размещаются в отдельном подкаталоге вида `<root>\GraphDataPerformanceTests\<run-id>\<scenario>\<storage>`, поэтому разные хранилища не пишут в одну папку, а следующие запуски с автоматически сгенерированным `run-id` не затирают предыдущие. Тесты намеренно не удаляют эти данные после завершения, чтобы их можно было исследовать вручную. Генератор создает не дерево: при `nodeCount >= 3` и `connectionsPerNode > 0` базовый граф содержит цикл, а затем дополняется детерминированными ребрами по seed. Сценарий `subgraph-random-reads` измеряет серии `GetSubgraphAsync` для детерминированно выбранных single-root и multi-root запросов, включая время операции и размер возвращенного подграфа.
