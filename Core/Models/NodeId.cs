@@ -5,7 +5,5 @@ public class NodePath : List<string>, IReadOnlyCollection<string> {
     public static implicit operator NodePath(string path) =>
         new(path.Split('/', StringSplitOptions.RemoveEmptyEntries));
     public static explicit operator NodePath?(string[]? path) => path == null ? null : new(path);
-    public static implicit operator NodePath(GraphData.Core.Models.Node node) =>
-        new(node.LocalId.Split('/', StringSplitOptions.RemoveEmptyEntries));
     public override string ToString() => string.Join("/", this);
 }

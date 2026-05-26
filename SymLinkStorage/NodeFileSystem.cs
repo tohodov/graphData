@@ -12,6 +12,7 @@ internal record NodeFileSystem : Node {
     const string MetadataFileName = "node.json";
 
     readonly string parentPath;
+    readonly string storageRootPath;
     IReadOnlyDictionary<string, Edge>? edges;
     IReadOnlyCollection<Node>? nodes;
     IReadOnlyDictionary<string, string>? attributes;
@@ -20,7 +21,11 @@ internal record NodeFileSystem : Node {
     public string MetadataPath => Combine(FolderPath, MetadataFileName);
 
     public override string LocalId { get; }
-    public override NodePath GlobalId => new NodePath(FolderPath.Split('\\', '/'));//TODO удалить RootPath
+    public override NodePath GlobalId => new NodePath(
+        GetRelativePath(storageRootPath, FolderPath)
+            .Split(DirectorySeparatorChar, AltDirectorySeparatorChar)
+            .Where(static part => part is not "." and not "")
+            .Select(GraphData.SymLinkStorage.SymLinkGraphStorage.NormalizeNodeName));
     public override IReadOnlyDictionary<string, Edge> Edges => edges ??= GetEdges().ToDictionary(static x => x.Link.Name, static x => (Edge)x, StringComparer.OrdinalIgnoreCase);
     public override IReadOnlyCollection<Node> Nodes => nodes ??= Edges.Values.SelectMany(x => new[] { x.Node1, x.Node2 }).Except([this]).Distinct().ToArray();
     public override IReadOnlyDictionary<string, string> Attributes {
@@ -53,13 +58,16 @@ internal record NodeFileSystem : Node {
     public NodeFileSystem(DirectoryInfo info) {
         LocalId = info.Name;
         parentPath = info.Parent?.FullName ?? "";
+        storageRootPath = parentPath;
     }
     public NodeFileSystem(string name, string storageRootPath) {
         LocalId = name;
+        this.storageRootPath = storageRootPath;
         parentPath = storageRootPath;
     }
     public NodeFileSystem(string name, NodeFileSystem parent) {
         LocalId = name;
+        storageRootPath = parent.storageRootPath;
         parentPath = parent.FolderPath;
     }
 
@@ -110,7 +118,7 @@ internal record NodeFileSystem : Node {
         JsonSerializer.Serialize(stream, data, GraphData.SymLinkStorage.SymLinkGraphStorage.SerializerOptions);
     }
     internal static NodeFileSystem Create(string name, NodeFileSystem parent, IDictionary<string, string>? attributes = null) {
-        var node = new NodeFileSystem(name, parent.FolderPath);
+        var node = new NodeFileSystem(name, parent);
         Directory.CreateDirectory(node.FolderPath);
         if (attributes != null)
             node.WriteMetadata(attributes);

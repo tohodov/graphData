@@ -31,7 +31,7 @@ public sealed class GraphControllerTests {
         await using var scope = TestGraphStorageScope.Create();
         var first = (await scope.Storage.Create("1", attributes: new Dictionary<string, string> { ["kind"] = "root" })).Value!;
         var second = (await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["kind"] = "leaf" })).Value!;
-        await scope.Storage.Connect(first, second);
+        await scope.Storage.Connect(first.GlobalId, second.GlobalId);
 
         var controller = CreateController(scope.Storage);
         var result = await controller.GetNodeAsync([first.LocalId]);
@@ -105,7 +105,7 @@ public sealed class GraphControllerTests {
     public async Task GetNodeAsync_ResolvesChildByPathSegments() {
         await using var scope = TestGraphStorageScope.Create();
         var parent = (await scope.Storage.Create("parent")).Value!;
-        var child = (await scope.Storage.Create("child", parent)).Value!;
+        var child = (await scope.Storage.Create("child", parent.GlobalId)).Value!;
         var controller = CreateController(scope.Storage);
 
         var result = await controller.GetNodeAsync(["parent", "child"]);
@@ -172,7 +172,7 @@ public sealed class GraphControllerTests {
     public async Task ConnectNodesAsync_ReturnsNoContentForExistingHierarchyConnectionWithSymLinkStorage() {
         await using var scope = SymLinkGraphStorageScope.Create();
         var root = (await scope.Storage.Create("small_arms_test_graph")).Value!;
-        await scope.Storage.Create("weapons", root);
+        await scope.Storage.Create("weapons", root.GlobalId);
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
@@ -194,8 +194,8 @@ public sealed class GraphControllerTests {
     public async Task ConnectNodesAsync_ConnectsNestedSiblingsWithSymLinkStorage() {
         await using var scope = SymLinkGraphStorageScope.Create();
         var root = (await scope.Storage.Create("small_arms_test_graph")).Value!;
-        var weapons = (await scope.Storage.Create("weapons", root)).Value!;
-        var categories = (await scope.Storage.Create("categories", root)).Value!;
+        var weapons = (await scope.Storage.Create("weapons", root.GlobalId)).Value!;
+        var categories = (await scope.Storage.Create("categories", root.GlobalId)).Value!;
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
@@ -268,8 +268,8 @@ public sealed class GraphControllerTests {
         var first = (await scope.Storage.Create("1")).Value!;
         var second = (await scope.Storage.Create("2")).Value!;
         var third = (await scope.Storage.Create("3")).Value!;
-        await scope.Storage.Connect(first, second);
-        await scope.Storage.Connect(second, third);
+        await scope.Storage.Connect(first.GlobalId, second.GlobalId);
+        await scope.Storage.Connect(second.GlobalId, third.GlobalId);
 
         var controller = CreateController(scope.Storage);
         var result = await controller.GetSubgraphAsync(new SubgraphRequest {
@@ -295,7 +295,7 @@ public sealed class GraphControllerTests {
         await using var scope = TestGraphStorageScope.Create();
         var first = (await scope.Storage.Create("1", attributes: new Dictionary<string, string> { ["id"] = "source" })).Value!;
         var second = (await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["id"] = "Y" })).Value!;
-        await scope.Storage.Connect(first, second);
+        await scope.Storage.Connect(first.GlobalId, second.GlobalId);
 
         var controller = CreateController(scope.Storage);
         var matches = await SearchNodesAsync(controller, new NodeSearchQuery {
@@ -325,7 +325,7 @@ public sealed class GraphControllerTests {
         await using var scope = TestGraphStorageScope.Create();
         var first = (await scope.Storage.Create("1")).Value!;
         var second = (await scope.Storage.Create("2", attributes: new Dictionary<string, string> { ["id"] = "Y" })).Value!;
-        await scope.Storage.Connect(first, second);
+        await scope.Storage.Connect(first.GlobalId, second.GlobalId);
 
         var controller = CreateController(scope.Storage);
         var matches = await SearchNodesAsync(controller, new NodeSearchQuery {

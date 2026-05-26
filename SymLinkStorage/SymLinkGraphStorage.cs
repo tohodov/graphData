@@ -85,7 +85,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node) {
-        var nodePath = GetNodePath(node.LocalId);
+        var nodePath = GetNodePath(node);
         if (!Directory.Exists(nodePath))
             return Task.FromResult(ServiceResult<IReadOnlyCollection<Node>>.NotFound());
 
@@ -110,7 +110,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
                 var relativePath = Path.GetRelativePath(root.FullName, directory.FullName);
                 if (!string.IsNullOrWhiteSpace(relativePath) && relativePath != ".")
-                    nodes.Add(new NodeFileSystem(NormalizeNodeName(relativePath), options.RootPath));
+                    nodes.Add(new NodeFileSystem(NormalizeNodeName(relativePath), root.FullName));
 
                 stack.Push(directory);
             }
@@ -125,11 +125,13 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             : Path.Combine(parent.FolderPath, nodeId);
         if (!Directory.Exists(path))
             return null;
-        return new NodeFileSystem(nodeId, parent == null ? options.RootPath : parent.FolderPath);
+        return parent is null
+            ? new NodeFileSystem(nodeId, root.FullName)
+            : new NodeFileSystem(nodeId, parent);
     }
 
     private NodeFileSystem CreateRootNode(string name, IDictionary<string, string>? attributes) {
-        var node = new NodeFileSystem(name, options.RootPath);
+        var node = new NodeFileSystem(name, root.FullName);
         Directory.CreateDirectory(node.FolderPath);
         if (attributes != null)
             node.WriteMetadata(attributes);
@@ -150,25 +152,31 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         if (string.Equals(left.LocalId, right.LocalId, StringComparison.OrdinalIgnoreCase))
             return;
 
-        if (IsHierarchyConnection(left.LocalId, right.LocalId))
+        if (IsHierarchyConnection(left.GlobalId, right.GlobalId))
             return;
 
-        var sourcePath = GetNodePath(left.LocalId);
-        var targetPath = GetNodePath(right.LocalId);
+        var sourcePath = GetNodePath(left);
+        var targetPath = GetNodePath(right);
         CreateLinkIfMissing(sourcePath, targetPath, right.LocalId);
         CreateLinkIfMissing(targetPath, sourcePath, left.LocalId);
     }
 
     private IReadOnlyCollection<Node> GetConnectedNodes(Node node) {
-        var nodePath = GetNodePath(node.LocalId);
+        var nodePath = GetNodePath(node);
         return EnumerateNeighborIds(nodePath)
             .Where(neighborId => !string.Equals(neighborId, node.LocalId, StringComparison.OrdinalIgnoreCase))
-            .Select(neighborId => (Node)new NodeFileSystem(neighborId, options.RootPath))
+            .Select(neighborId => (Node)new NodeFileSystem(neighborId, root.FullName))
             .ToArray();
     }
 
     private string GetNodePath(string name) {
-        return Path.Combine(options.RootPath, name);
+        return Path.Combine(root.FullName, name);
+    }
+
+    private string GetNodePath(Node node) {
+        return node is NodeFileSystem fileSystemNode
+            ? fileSystemNode.FolderPath
+            : GetNodePath(node.LocalId);
     }
 
     private string GetLinkPath(string sourceNodeName, string targetNodeName) {
@@ -183,12 +191,13 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return NormalizeNodeName(nodeName).Split('/').Last();
     }
 
-    private static bool IsHierarchyConnection(string leftName, string rightName) {
-        var left = NormalizeNodeName(leftName);
-        var right = NormalizeNodeName(rightName);
+    private static bool IsHierarchyConnection(NodePath left, NodePath right) {
+        return IsAncestor(left, right) || IsAncestor(right, left);
+    }
 
-        return right.StartsWith(left + '/', StringComparison.OrdinalIgnoreCase) ||
-            left.StartsWith(right + '/', StringComparison.OrdinalIgnoreCase);
+    private static bool IsAncestor(IReadOnlyCollection<string> ancestor, IReadOnlyCollection<string> descendant) {
+        return descendant.Count > ancestor.Count &&
+            ancestor.SequenceEqual(descendant.Take(ancestor.Count), StringComparer.OrdinalIgnoreCase);
     }
 
     private IEnumerable<string> EnumerateNeighborIds(string nodePath) {

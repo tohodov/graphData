@@ -101,7 +101,7 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
         var first = await CreateNode();
         var second = await CreateNode();
 
-        await Storage.Connect(first, second);
+        await Storage.Connect(first.GlobalId, second.GlobalId);
 
         var firstLink = Path.Combine(options.RootPath, first.LocalId, second.LocalId);
         var secondLink = Path.Combine(options.RootPath, second.LocalId, first.LocalId);

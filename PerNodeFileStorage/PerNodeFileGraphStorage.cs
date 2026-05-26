@@ -474,7 +474,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         private IReadOnlyCollection<Node> _nodes = Array.Empty<Node>();
 
         public override string LocalId => NodeName;
-        public override NodePath GlobalId => throw new NotImplementedException(); //TODO
+        public override NodePath GlobalId => new(NodeName.Split('/', StringSplitOptions.RemoveEmptyEntries));
 
         public override IReadOnlyDictionary<string, Edge> Edges => _edges ??= _nodes.ToDictionary(
             static x => x.LocalId,

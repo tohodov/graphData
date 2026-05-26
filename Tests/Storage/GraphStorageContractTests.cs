@@ -65,7 +65,7 @@ partial class GraphStorageContractTests {
     [TestMethod]
     public async Task Search_ShouldFindTextMatchBelowHierarchyAncestor() {
         var pistols = (await Storage.Create("pistols")).Value!;
-        await Storage.Create("double-action revolvers", pistols);
+        await Storage.Create("double-action revolvers", pistols.GlobalId);
         await Storage.Create("rifles");
 
         var service = new GraphSearchService(Storage);
@@ -100,9 +100,9 @@ partial class GraphStorageContractTests {
         var m16 = (await Storage.Create("m16")).Value!;
         var unrelated = (await Storage.Create("unrelated")).Value!;
 
-        await Storage.Connect(america, m16);
-        await Storage.Connect(assaultRifles, m16);
-        await Storage.Connect(america, unrelated);
+        await Storage.Connect(america.GlobalId, m16.GlobalId);
+        await Storage.Connect(assaultRifles.GlobalId, m16.GlobalId);
+        await Storage.Connect(america.GlobalId, unrelated.GlobalId);
 
         var service = new GraphSearchService(Storage);
         var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
@@ -137,7 +137,7 @@ partial class GraphStorageContractTests {
             ["id"] = "Y"
         })).Value!;
 
-        await Storage.Connect(source, marker);
+        await Storage.Connect(source.GlobalId, marker.GlobalId);
 
         var service = new GraphSearchService(Storage);
         var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
@@ -170,7 +170,7 @@ partial class GraphStorageContractTests {
         var connected = (await Storage.Create("connected")).Value!;
         var neighbor = (await Storage.Create("neighbor")).Value!;
 
-        await Storage.Connect(connected, neighbor);
+        await Storage.Connect(connected.GlobalId, neighbor.GlobalId);
 
         var service = new GraphSearchService(Storage);
         var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
@@ -225,8 +225,8 @@ partial class GraphStorageContractTests {
         var second = await CreateNode();
         var third = await CreateNode();
 
-        await Storage.Connect(first, second);
-        await Storage.Connect(second, third);
+        await Storage.Connect(first.GlobalId, second.GlobalId);
+        await Storage.Connect(second.GlobalId, third.GlobalId);
 
         await Storage.Delete(second.GlobalId);
 
@@ -242,7 +242,7 @@ partial class GraphStorageContractTests {
         var first = await CreateNode();
         var second = await CreateNode();
 
-        await Storage.Connect(first, second);
+        await Storage.Connect(first.GlobalId, second.GlobalId);
 
         var firstConnections = (await Storage.GetConnectedNodesAsync(first)).Value!;
         var secondConnections = (await Storage.GetConnectedNodesAsync(second)).Value!;
@@ -254,7 +254,7 @@ partial class GraphStorageContractTests {
     public async Task ShouldIgnoreSelfConnection() {
         var node = await CreateNode();
 
-        await Storage.Connect(node, node);
+        await Storage.Connect(node.GlobalId, node.GlobalId);
 
         var connections = (await Storage.GetConnectedNodesAsync(node)).Value!.ToList();
         CollectionAssert.DoesNotContain(connections, node.LocalId);
@@ -269,12 +269,12 @@ partial class GraphStorageContractTests {
         var third = await CreateNode("third");
         var fourth = await CreateNode("fourth");
 
-        await Storage.Connect(first, second);
-        await Storage.Connect(second, third);
-        await Storage.Connect(third, fourth);
+        await Storage.Connect(first.GlobalId, second.GlobalId);
+        await Storage.Connect(second.GlobalId, third.GlobalId);
+        await Storage.Connect(third.GlobalId, fourth.GlobalId);
 
         var query = new SubgraphQuery {
-            Nodes = [new NodePath([first.LocalId])],
+            Nodes = [first.GlobalId],
             MaxDepth = 2
         };
 

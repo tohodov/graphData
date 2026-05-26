@@ -43,8 +43,8 @@ public sealed class StoragePerformanceTests {
 
         await run.MeasureEachAsync("connect", graph.Edges, async edge => {
             await scope.Storage.Connect(
-                nodesByName[graph.Nodes[edge.SourceIndex].Path],
-                nodesByName[graph.Nodes[edge.TargetIndex].Path]).ConfigureAwait(false);
+                nodesByName[graph.Nodes[edge.SourceIndex].Path].GlobalId,
+                nodesByName[graph.Nodes[edge.TargetIndex].Path].GlobalId).ConfigureAwait(false);
         }).ConfigureAwait(false);
 
         var sampleCount = PerformanceTestGate.GetInt("GRAPH_DATA_PERF_SAMPLE_COUNT", Math.Min(100, graph.NodeCount));
@@ -229,8 +229,8 @@ public sealed class StoragePerformanceTests {
 
         foreach (var edge in graph.Edges) {
             await storage.Connect(
-                nodesByName[graph.Nodes[edge.SourceIndex].Path],
-                nodesByName[graph.Nodes[edge.TargetIndex].Path]).ConfigureAwait(false);
+                nodesByName[graph.Nodes[edge.SourceIndex].Path].GlobalId,
+                nodesByName[graph.Nodes[edge.TargetIndex].Path].GlobalId).ConfigureAwait(false);
         }
 
         return nodesByName;

@@ -19,7 +19,7 @@ public sealed class GraphSearchFunctionalTests
         var isolated = (await scope.Storage.Create("isolated")).Value!;
         var connected = (await scope.Storage.Create("connected")).Value!;
         var neighbor = (await scope.Storage.Create("neighbor")).Value!;
-        await scope.Storage.Connect(connected, neighbor);
+        await scope.Storage.Connect(connected.GlobalId, neighbor.GlobalId);
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
         {
@@ -39,7 +39,7 @@ public sealed class GraphSearchFunctionalTests
     {
         await using var scope = TestGraphStorageScope.Create();
         var node = (await scope.Storage.Create("self")).Value!;
-        await scope.Storage.Connect(node, node);
+        await scope.Storage.Connect(node.GlobalId, node.GlobalId);
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
         {
@@ -90,12 +90,12 @@ public sealed class GraphSearchFunctionalTests
 
         foreach (var node in new[] { h1, h2, h3, h4 })
         {
-            await scope.Storage.Connect(hub, node);
+            await scope.Storage.Connect(hub.GlobalId, node.GlobalId);
         }
 
         foreach (var node in new[] { m1, m2 })
         {
-            await scope.Storage.Connect(mid, node);
+            await scope.Storage.Connect(mid.GlobalId, node.GlobalId);
         }
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
@@ -122,11 +122,11 @@ public sealed class GraphSearchFunctionalTests
 
         foreach (var anchor in new[] { a, b, c })
         {
-            await scope.Storage.Connect(target, anchor);
+            await scope.Storage.Connect(target.GlobalId, anchor.GlobalId);
         }
 
-        await scope.Storage.Connect(partial, a);
-        await scope.Storage.Connect(partial, b);
+        await scope.Storage.Connect(partial.GlobalId, a.GlobalId);
+        await scope.Storage.Connect(partial.GlobalId, b.GlobalId);
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
         {
@@ -183,8 +183,8 @@ public sealed class GraphSearchFunctionalTests
         var second = (await scope.Storage.Create("second", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
         await scope.Storage.Create("unrelated", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
 
-        await scope.Storage.Connect(first, a);
-        await scope.Storage.Connect(second, b);
+        await scope.Storage.Connect(first.GlobalId, a.GlobalId);
+        await scope.Storage.Connect(second.GlobalId, b.GlobalId);
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
         {
@@ -210,9 +210,9 @@ public sealed class GraphSearchFunctionalTests
     {
         await using var scope = TestGraphStorageScope.Create();
         var root = (await scope.Storage.Create("weapons")).Value!;
-        var pistols = (await scope.Storage.Create("pistols", root)).Value!;
-        var revolvers = (await scope.Storage.Create("revolvers", pistols)).Value!;
-        await scope.Storage.Create("smith-wesson", revolvers);
+        var pistols = (await scope.Storage.Create("pistols", root.GlobalId)).Value!;
+        var revolvers = (await scope.Storage.Create("revolvers", pistols.GlobalId)).Value!;
+        await scope.Storage.Create("smith-wesson", revolvers.GlobalId);
         await scope.Storage.Create("vehicles");
 
         var matches = await Search(scope.Storage, new NodeSearchQuery
@@ -388,7 +388,7 @@ public sealed class GraphSearchFunctionalTests
                 _ => throw new ArgumentException("Path segment must be a node or a node name.", nameof(path))
             };
 
-            await storage.Connect(current, next);
+            await storage.Connect(current.GlobalId, next.GlobalId);
             current = next;
         }
     }
