@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Client;
+using ModelContextProtocol.Protocol;
 using SymLinkStorage;
 using System.Diagnostics;
 
@@ -36,6 +37,8 @@ builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
     .WithMcpTrackerMessageFilters()
+    .WithListResourcesHandler((_, _) => ValueTask.FromResult(new ListResourcesResult { Resources = [] }))
+    .WithListResourceTemplatesHandler((_, _) => ValueTask.FromResult(new ListResourceTemplatesResult { ResourceTemplates = [] }))
     .WithToolsFromAssembly(serializerOptions: GraphJsonSerializerOptions.Create());
 
 await builder.Build().RunAsync();
