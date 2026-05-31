@@ -25,7 +25,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             return ToJson(new {
                 found = true,
-                node = result.Value
+                node = GraphResponseMapper.ToNodeResponse(result.Value)
             });
         }
 
