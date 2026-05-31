@@ -96,3 +96,5 @@ public readonly struct NodeGlobalId : IEnumerable<NodeLocalId>, IEquatable<NodeG
         return result.ToImmutable();
     }
 }
+
+public readonly record struct NodeNeighborLocator(NodeGlobalId AnchorGlobalId, NodeLocalId NeighborLocalId);

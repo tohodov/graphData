@@ -16,18 +16,18 @@ public interface IGraphStorage
         return new NodeGlobalId(segments);
     }
 
-    async Task<ServiceResult<Node>> GetNeighbor(NodeGlobalId globalId, NodeLocalId localId) {
-        if (!NodeNameValidator.TryValidateSegment(localId, "Neighbor LocalId", out var validationError))
+    async Task<ServiceResult<Node>> GetNeighbor(NodeNeighborLocator locator) {
+        if (!NodeNameValidator.TryValidateSegment(locator.NeighborLocalId, "Neighbor LocalId", out var validationError))
             return ServiceResult<Node>.BadRequest(validationError);
 
-        var result = await Get(globalId);
+        var result = await Get(locator.AnchorGlobalId);
         if (result.Status != ServiceResultStatus.Ok || result.Value is null)
             return ServiceResult<Node>.From(result);
 
         var node = result.Value;
         var matches = node.Edges
             .Select(edge => edge.Node1.GlobalId == node.GlobalId ? edge.Node2 : edge.Node1)
-            .Where(neighbor => neighbor.GlobalId != node.GlobalId && neighbor.LocalId == localId)
+            .Where(neighbor => neighbor.GlobalId != node.GlobalId && neighbor.LocalId == locator.NeighborLocalId)
             .DistinctBy(static neighbor => neighbor.GlobalId)
             .Take(2)
             .ToArray();
@@ -35,7 +35,7 @@ public interface IGraphStorage
         return matches.Length switch {
             0 => ServiceResult<Node>.NotFound(),
             1 => ServiceResult<Node>.Ok(matches[0]),
-            _ => ServiceResult<Node>.Conflict($"More than one neighbor with LocalId '{localId}' was found for node '{globalId}'.")
+            _ => ServiceResult<Node>.Conflict($"More than one neighbor with LocalId '{locator.NeighborLocalId}' was found for node '{locator.AnchorGlobalId}'.")
         };
     }
 

@@ -25,7 +25,8 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
 
     [HttpGet("nodes/{globalId}/neighbor/{localId}")]
     public async Task<ActionResult<NodeResponse>> GetNeighborNodeAsync([FromRoute] string globalId, [FromRoute] string localId) {
-        var result = await _storage.GetNeighbor(_storage.DeserializeGlobalId(globalId), new NodeLocalId(localId));
+        var locator = new NodeNeighborLocator(_storage.DeserializeGlobalId(globalId), new NodeLocalId(localId));
+        var result = await _storage.GetNeighbor(locator);
         return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
