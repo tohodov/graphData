@@ -62,8 +62,70 @@ public sealed class GraphControllerTests {
         Assert.AreEqual("root", response.Attributes["kind"]);
 
         var edge = response.Edges.Single();
+        Assert.AreEqual(second.LocalId.ToString(), edge.NeighborLocalId);
         Assert.AreEqual(first.LocalId.ToString(), edge.SourceLocalId);
         Assert.AreEqual(second.LocalId.ToString(), edge.TargetLocalId);
+    }
+
+    [TestMethod]
+    public async Task GetNeighborNodeAsync_ReturnsNeighborByLocalId() {
+        await using var scope = TestGraphStorageScope.Create();
+        var root = (await scope.Storage.Create(new("root"))).Value!;
+        var actions = (await scope.Storage.Create(new("actions"), root.GlobalId, new Dictionary<string, string> { ["kind"] = "child" })).Value!;
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.GetNeighborNodeAsync(root.GlobalId.ToString(), actions.LocalId.ToString());
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+
+        var response = ok.Value as NodeResponse;
+        Assert.IsNotNull(response);
+        Assert.AreEqual(actions.GlobalId.ToString(), response.GlobalId);
+        Assert.AreEqual(actions.LocalId.ToString(), response.LocalId);
+        Assert.AreEqual("child", response.Attributes["kind"]);
+    }
+
+    [TestMethod]
+    public async Task GetNeighborNodeAsync_DecodesNestedGlobalIdRouteSegment() {
+        await using var scope = TestGraphStorageScope.Create();
+        var root = (await scope.Storage.Create(new("Small_Arms_Web_KG"))).Value!;
+        var actions = (await scope.Storage.Create(new("Actions"), root.GlobalId)).Value!;
+        var gasOperated = (await scope.Storage.Create(new("Gas_Operated"), actions.GlobalId)).Value!;
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.GetNeighborNodeAsync(
+            Uri.EscapeDataString(actions.GlobalId.ToString()),
+            gasOperated.LocalId.ToString());
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+
+        var response = ok.Value as NodeResponse;
+        Assert.IsNotNull(response);
+        Assert.AreEqual(gasOperated.GlobalId.ToString(), response.GlobalId);
+    }
+
+    [TestMethod]
+    public async Task GetNeighborNodeAsync_ReturnsNotFoundForMissingNeighbor() {
+        await using var scope = TestGraphStorageScope.Create();
+        var root = (await scope.Storage.Create(new("root"))).Value!;
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.GetNeighborNodeAsync(root.GlobalId.ToString(), "missing");
+
+        Assert.IsInstanceOfType(result.Result, typeof(NotFoundResult));
+    }
+
+    [TestMethod]
+    public async Task GetNeighborNodeAsync_ReturnsConflictForAmbiguousLocalId() {
+        var controller = CreateController(AmbiguousNeighborGraphStorage.Create());
+
+        var result = await controller.GetNeighborNodeAsync("root", "same");
+
+        var conflict = result.Result as ConflictObjectResult;
+        Assert.IsNotNull(conflict);
+        StringAssert.Contains(conflict.Value?.ToString(), "same");
     }
 
     [TestMethod]
@@ -528,5 +590,69 @@ public sealed class GraphControllerTests {
 
         public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node) =>
             inner.GetConnectedNodesAsync(node);
+    }
+
+    private sealed class AmbiguousNeighborGraphStorage : IGraphStorage {
+        private readonly StaticNode _root;
+
+        private AmbiguousNeighborGraphStorage(StaticNode root) {
+            _root = root;
+        }
+
+        public static IGraphStorage Create() {
+            var root = new StaticNode(new("root"), new("root"));
+            var first = new StaticNode(new("same"), new("left", "same"));
+            var second = new StaticNode(new("same"), new("right", "same"));
+            root.EdgeSnapshot = [
+                new StaticEdge(root, first),
+                new StaticEdge(root, second)
+            ];
+
+            return new AmbiguousNeighborGraphStorage(root);
+        }
+
+        public Task<ServiceResult<Node>> Get(NodeGlobalId path) =>
+            Task.FromResult(path == _root.GlobalId
+                ? ServiceResult<Node>.Ok(_root)
+                : ServiceResult<Node>.NotFound());
+
+        public Task<ServiceResult<Node>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
+            throw new NotSupportedException();
+
+        public Task<ServiceResult> Delete(NodeGlobalId path) =>
+            throw new NotSupportedException();
+
+        public Task<ServiceResult> Connect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+            throw new NotSupportedException();
+
+        public Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+            throw new NotSupportedException();
+
+        public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed record StaticNode(NodeLocalId LocalIdValue, NodeGlobalId GlobalIdValue) : Node {
+        public override NodeLocalId LocalId => LocalIdValue;
+
+        public override NodeGlobalId GlobalId => GlobalIdValue;
+
+        public IReadOnlyCollection<Edge> EdgeSnapshot { get; set; } = Array.Empty<Edge>();
+
+        public override IReadOnlyCollection<Edge> Edges => EdgeSnapshot;
+
+        public override IReadOnlyCollection<Node> Nodes => Edges
+            .SelectMany(static edge => new[] { edge.Node1, edge.Node2 })
+            .Where(node => node.GlobalId != GlobalId)
+            .ToArray();
+
+        public override IReadOnlyDictionary<string, string> Attributes { get; set; } =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private sealed record StaticEdge(Node First, Node Second) : Edge {
+        public override Node Node1 => First;
+
+        public override Node Node2 => Second;
     }
 }

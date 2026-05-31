@@ -164,6 +164,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
         return status switch {
             ServiceResultStatus.BadRequest => "Request is invalid.",
             ServiceResultStatus.NotFound => "Resource was not found.",
+            ServiceResultStatus.Conflict => "Request conflicts with the current graph state.",
             ServiceResultStatus.InternalServerError => "Internal server error.",
             _ => "Operation failed."
         };

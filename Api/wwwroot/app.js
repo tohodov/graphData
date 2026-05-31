@@ -200,7 +200,7 @@ async function loadRoot(name) {
   seedPosition(name, null, 0);
   await loadNode(name, null);
   const url = new URL(window.location.href);
-  url.searchParams.set("globalId", name);
+  url.searchParams.set("globalId", state.rootName ?? name);
   window.history.replaceState({}, "", url);
   fitView();
 }
@@ -210,19 +210,7 @@ async function loadNode(name, fromName, options = {}) {
   setBusy(true);
   try {
     const expansion = normalizeNodeResponse(await apiJson(`/api/graph/nodes?${toGlobalIdQuery(name)}`));
-    state.loaded.set(expansion.name, expansion);
-    if (select) {
-      state.selectedName = expansion.name;
-    }
-
-    seedPosition(expansion.name, fromName, 0);
-    if (fromName && !state.parentByNode.has(expansion.name)) {
-      state.parentByNode.set(expansion.name, fromName);
-    }
-
-    expansion.edges.forEach((edge, index) => {
-      seedPosition(getOtherEndpoint(edge, expansion.name), expansion.name, index);
-    });
+    storeNodeExpansion(expansion, fromName, { select });
 
     render();
     runSimulation(34);
@@ -232,6 +220,76 @@ async function loadNode(name, fromName, options = {}) {
   } finally {
     setBusy(false);
   }
+}
+
+async function loadNeighbor(anchorName, neighborLocalId) {
+  if (!anchorName || !neighborLocalId) {
+    setStatus("Не удалось определить соседа для раскрытия");
+    return;
+  }
+
+  setBusy(true);
+  try {
+    const expansion = normalizeNodeResponse(await apiJson(
+      `/api/graph/nodes/${encodeURIComponent(anchorName)}/neighbor/${encodeURIComponent(neighborLocalId)}`));
+    const alreadyLoaded = state.loaded.has(expansion.name);
+    storeNodeExpansion(expansion, anchorName, { select: true });
+
+    render();
+    runSimulation(alreadyLoaded ? 18 : 34);
+    setStatus(alreadyLoaded
+      ? `Узел "${expansion.displayName}" уже был загружен, связь добавлена`
+      : `Развернуто узлов: ${state.loaded.size}`);
+  } catch (error) {
+    setStatus(formatNeighborError(error, neighborLocalId));
+  } finally {
+    setBusy(false);
+  }
+}
+
+function storeNodeExpansion(expansion, fromName, options = {}) {
+  const select = options.select ?? true;
+  const existing = state.loaded.get(expansion.name);
+  const stored = existing ? mergeNodeResponses(existing, expansion) : expansion;
+  state.loaded.set(expansion.name, stored);
+
+  if (!fromName && state.rootName && !state.loaded.has(state.rootName)) {
+    state.rootName = expansion.name;
+  }
+
+  if (select) {
+    state.selectedName = expansion.name;
+  }
+
+  seedPosition(expansion.name, fromName, 0);
+  if (fromName && fromName !== expansion.name && !state.parentByNode.has(expansion.name)) {
+    state.parentByNode.set(expansion.name, fromName);
+  }
+
+  stored.edges.forEach((edge, index) => {
+    seedPosition(getOtherEndpoint(edge, expansion.name), expansion.name, index);
+  });
+
+  return stored;
+}
+
+function mergeNodeResponses(existing, expansion) {
+  return {
+    ...existing,
+    ...expansion,
+    attributes: expansion.attributes ?? existing.attributes ?? {},
+    edges: mergeEdges(existing.edges, expansion.edges)
+  };
+}
+
+function mergeEdges(left = [], right = []) {
+  const edges = new Map();
+  [...left, ...right].forEach(edge => {
+    if (edge.sourceGlobalId && edge.targetGlobalId) {
+      edges.set(edgeKey(edge.sourceGlobalId, edge.targetGlobalId), edge);
+    }
+  });
+  return [...edges.values()];
 }
 
 async function createNode(name) {
@@ -458,12 +516,14 @@ function normalizeEdgeResponse(edge) {
   const targetGlobalId = edge.targetGlobalId;
   const sourceLocalId = edge.sourceLocalId;
   const targetLocalId = edge.targetLocalId;
+  const neighborLocalId = edge.neighborLocalId;
   return {
     ...edge,
     sourceGlobalId,
     targetGlobalId,
     sourceLocalId,
-    targetLocalId
+    targetLocalId,
+    neighborLocalId
   };
 }
 
@@ -479,6 +539,16 @@ function edgeEndpointDisplayName(edge, globalId) {
     return edge.targetLocalId ?? displayName(globalId);
   }
   return displayName(globalId);
+}
+
+function edgeNeighborLocalId(edge, anchorName) {
+  if (edge.neighborLocalId) {
+    return edge.neighborLocalId;
+  }
+
+  return edge.sourceGlobalId === anchorName
+    ? edge.targetLocalId
+    : edge.sourceLocalId;
 }
 
 async function searchNodes() {
@@ -679,12 +749,12 @@ function handleEndpointClick(edge, anchorName) {
   const otherLoaded = state.loaded.has(otherName);
 
   if (anchorLoaded && !otherLoaded) {
-    loadNode(otherName, anchorName);
+    loadNeighbor(anchorName, edgeNeighborLocalId(edge, anchorName));
     return;
   }
 
   if (!anchorLoaded && otherLoaded) {
-    loadNode(anchorName, otherName);
+    loadNeighbor(otherName, edgeNeighborLocalId(edge, otherName));
     return;
   }
 
@@ -1156,7 +1226,9 @@ async function apiJson(url, options = {}) {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `HTTP ${response.status}`);
+    const error = new Error(text || `HTTP ${response.status}`);
+    error.status = response.status;
+    throw error;
   }
 
   if (options.expectJson === false || response.status === 204) {
@@ -1164,6 +1236,18 @@ async function apiJson(url, options = {}) {
   }
 
   return response.json();
+}
+
+function formatNeighborError(error, neighborLocalId) {
+  if (error.status === 404) {
+    return `Сосед "${neighborLocalId}" не найден`;
+  }
+
+  if (error.status === 409) {
+    return `Сосед "${neighborLocalId}" неоднозначен`;
+  }
+
+  return error.message;
 }
 
 function setActiveTab(name) {

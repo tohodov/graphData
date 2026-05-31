@@ -23,6 +23,12 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
         return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
+    [HttpGet("nodes/{globalId}/neighbor/{localId}")]
+    public async Task<ActionResult<NodeResponse>> GetNeighborNodeAsync([FromRoute] string globalId, [FromRoute] string localId) {
+        var result = await _storage.GetNeighbor(_storage.DeserializeGlobalId(globalId), new NodeLocalId(localId));
+        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
+    }
+
     [HttpPost("nodes")]
     public async Task<ActionResult<NodeResponse>> CreateNodeAsync([FromBody] CreateNodeRequest request) {
         var result = await _storage.Create(new(request.LocalId), (NodeGlobalId?)request.ParentGlobalId, request.Attributes);
@@ -105,6 +111,7 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
             ServiceResultStatus.Ok when result.Value is not null => Ok(map(result.Value)),
             ServiceResultStatus.BadRequest => BadRequest(result.Error),
             ServiceResultStatus.NotFound => NotFound(),
+            ServiceResultStatus.Conflict => Conflict(result.Error),
             ServiceResultStatus.InternalServerError => StatusCode(StatusCodes.Status500InternalServerError, result.Error),
             _ => StatusCode(StatusCodes.Status500InternalServerError)
         };
@@ -119,6 +126,7 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
             ServiceResultStatus.Ok => Ok(),
             ServiceResultStatus.BadRequest => BadRequest(error),
             ServiceResultStatus.NotFound => NotFound(),
+            ServiceResultStatus.Conflict => Conflict(error),
             ServiceResultStatus.InternalServerError => StatusCode(StatusCodes.Status500InternalServerError, error),
             _ => StatusCode(StatusCodes.Status500InternalServerError)
         };

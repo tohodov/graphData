@@ -34,7 +34,7 @@ public static class GraphResponseMapper
             LocalId = node.LocalId.ToString(),
             GlobalId = node.GlobalId.ToString(),
             Attributes = new Dictionary<string, string>(node.Attributes),
-            Edges = edges?.ToArray() ?? node.Edges.Select(ToEdgeResponse).ToArray()
+            Edges = edges?.ToArray() ?? node.Edges.Select(edge => ToNodeEdgeResponse(node, edge)).ToArray()
         };
     }
 
@@ -62,6 +62,18 @@ public static class GraphResponseMapper
     private static EdgeResponse ToEdgeResponse(Edge edge)
     {
         return ToEdgeResponse(edge.Node1, edge.Node2);
+    }
+
+    private static EdgeResponse ToNodeEdgeResponse(Node node, Edge edge)
+    {
+        var neighbor = edge.Node1.GlobalId == node.GlobalId
+            ? edge.Node2
+            : edge.Node1;
+
+        return ToEdgeResponse(edge) with
+        {
+            NeighborLocalId = neighbor.LocalId.ToString()
+        };
     }
 
     private static EdgeResponse ToOrderedEdgeResponse(Node source, Node target)

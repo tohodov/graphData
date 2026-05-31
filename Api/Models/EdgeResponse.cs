@@ -2,6 +2,8 @@ namespace GraphData.Api.Models;
 
 public sealed record EdgeResponse
 {
+    public string? NeighborLocalId { get; init; }
+
     public required string SourceLocalId { get; init; }
 
     public required string SourceGlobalId { get; init; }

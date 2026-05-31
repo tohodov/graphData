@@ -8,6 +8,37 @@ public interface IGraphStorage
     Task<ServiceResult<Node>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null);
     Task<ServiceResult<Node>> Get(NodeGlobalId path);
 
+    NodeGlobalId DeserializeGlobalId(string value) {
+        var decoded = Uri.UnescapeDataString(value);
+        var segments = decoded
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(static segment => segment);
+        return new NodeGlobalId(segments);
+    }
+
+    async Task<ServiceResult<Node>> GetNeighbor(NodeGlobalId globalId, NodeLocalId localId) {
+        if (!NodeNameValidator.TryValidateSegment(localId, "Neighbor LocalId", out var validationError))
+            return ServiceResult<Node>.BadRequest(validationError);
+
+        var result = await Get(globalId);
+        if (result.Status != ServiceResultStatus.Ok || result.Value is null)
+            return ServiceResult<Node>.From(result);
+
+        var node = result.Value;
+        var matches = node.Edges
+            .Select(edge => edge.Node1.GlobalId == node.GlobalId ? edge.Node2 : edge.Node1)
+            .Where(neighbor => neighbor.GlobalId != node.GlobalId && neighbor.LocalId == localId)
+            .DistinctBy(static neighbor => neighbor.GlobalId)
+            .Take(2)
+            .ToArray();
+
+        return matches.Length switch {
+            0 => ServiceResult<Node>.NotFound(),
+            1 => ServiceResult<Node>.Ok(matches[0]),
+            _ => ServiceResult<Node>.Conflict($"More than one neighbor with LocalId '{localId}' was found for node '{globalId}'.")
+        };
+    }
+
     async Task<ServiceResult> Update(NodeGlobalId path, IDictionary<string, string> attributes) {
         var result = await Get(path);
         if (result.Status != ServiceResultStatus.Ok || result.Value is null)
@@ -31,8 +62,8 @@ public interface IGraphStorage
         if (query.Nodes.Count == 0)
             return ServiceResult<Subgraph>.Ok(new Subgraph { Nodes = [] });
 
-        var comparer = StringComparer.OrdinalIgnoreCase;
-        var visited = new HashSet<NodeGlobalId>();//TODO хэш тут надо проверить
+        var visitedRequests = new HashSet<NodeGlobalId>();//TODO хэш тут надо проверить
+        var visitedNodes = new HashSet<NodeGlobalId>();//TODO хэш тут надо проверить
         var discovered = new HashSet<NodeGlobalId>(query.Nodes);//TODO хэш тут надо проверить
         var queue = new Queue<(NodeGlobalId NodeId, int Depth)>();
 
@@ -44,7 +75,7 @@ public interface IGraphStorage
         while (queue.Count > 0) {
             //cancellationTokens.Token.ThrowIfCancellationRequested();
             var (path, depth) = queue.Dequeue();
-            if (!visited.Add(path))
+            if (!visitedRequests.Add(path))
                 continue;
 
             var result = await Get(path);
@@ -54,7 +85,10 @@ public interface IGraphStorage
                 return ServiceResult<Subgraph>.From(result);
 
             var node = result.Value;
-            nodes[path] = node;
+            if (!visitedNodes.Add(node.GlobalId))
+                continue;
+
+            nodes[node.GlobalId] = node;
             if (depth >= query.MaxDepth)
                 continue;
 
@@ -63,7 +97,7 @@ public interface IGraphStorage
                 return ServiceResult<Subgraph>.From(connections);
 
             foreach (var neighborId in connections.Value.Select(x => x.GlobalId))
-                if (!neighborId.SequenceEqual(path) && discovered.Add(neighborId))
+                if (neighborId != node.GlobalId && discovered.Add(neighborId))
                     queue.Enqueue((neighborId, depth + 1));
         }
 

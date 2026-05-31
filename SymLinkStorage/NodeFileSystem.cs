@@ -13,11 +13,12 @@ internal record NodeFileSystem : Node {
 
     readonly string parentPath;
     readonly string storageRootPath;
+    readonly string folderPath;
     IReadOnlyCollection<Edge>? edges;
     IReadOnlyCollection<Node>? nodes;
     IReadOnlyDictionary<string, string>? attributes;
 
-    public string FolderPath => Combine(parentPath, LocalId); //TODO encapsulate
+    public string FolderPath => folderPath; //TODO encapsulate
     public string MetadataPath => Combine(FolderPath, MetadataFileName);
     internal string StorageRootPath => storageRootPath;
 
@@ -61,25 +62,29 @@ internal record NodeFileSystem : Node {
     }
 
     public NodeFileSystem(DirectoryInfo info) {
-        LocalId = new NodeLocalId(info.Name);
-        parentPath = info.Parent?.FullName ?? "";
+        folderPath = ResolveDirectoryPath(info.FullName);
+        LocalId = new NodeLocalId(new DirectoryInfo(folderPath).Name);
+        parentPath = GetDirectoryName(folderPath) ?? "";
         storageRootPath = parentPath;
     }
     public NodeFileSystem(NodeLocalId name, string storageRootPath) {
         LocalId = name;
-        this.storageRootPath = storageRootPath;
-        parentPath = storageRootPath;
+        this.storageRootPath = ResolveDirectoryPath(storageRootPath);
+        parentPath = this.storageRootPath;
+        folderPath = ResolveDirectoryPath(Combine(parentPath, name.ToString()));
     }
     public NodeFileSystem(DirectoryInfo info, string storageRootPath) {
         info = new DirectoryInfo(GetFullPath(info.FullName));
         LocalId = new NodeLocalId(info.Name);
-        this.storageRootPath = GetFullPath(storageRootPath);
-        parentPath = info.Parent?.FullName ?? this.storageRootPath;
+        this.storageRootPath = ResolveDirectoryPath(storageRootPath);
+        folderPath = ResolveDirectoryPath(info.FullName);
+        parentPath = GetDirectoryName(folderPath) ?? this.storageRootPath;
     }
     public NodeFileSystem(NodeLocalId name, NodeFileSystem parent) {
         LocalId = name;
         storageRootPath = parent.storageRootPath;
         parentPath = parent.FolderPath;
+        folderPath = ResolveDirectoryPath(Combine(parentPath, name.ToString()));
     }
 
     public bool IsExists() => Directory.Exists(FolderPath);
@@ -128,7 +133,7 @@ internal record NodeFileSystem : Node {
             StringComparison.OrdinalIgnoreCase);
 
     static string NormalizeDirectoryPath(string path) =>
-        GetFullPath(path)
+        ResolveDirectoryPath(path)
             .TrimEnd(DirectorySeparatorChar, AltDirectorySeparatorChar);
 
     IEnumerable<SymLink> GetSymLinks() {
@@ -160,9 +165,50 @@ internal record NodeFileSystem : Node {
         if (string.IsNullOrWhiteSpace(targetPath))
             return null;
 
-        return IsPathFullyQualified(targetPath)
+        var fullTargetPath = IsPathFullyQualified(targetPath)
             ? GetFullPath(targetPath)
             : GetFullPath(targetPath, GetDirectoryName(entry.FullName) ?? Directory.GetCurrentDirectory());
+
+        return ResolveDirectoryPath(fullTargetPath);
+    }
+
+    internal static string ResolveDirectoryPath(string path) {
+        var fullPath = GetFullPath(path);
+        var root = GetPathRoot(fullPath);
+        if (string.IsNullOrEmpty(root))
+            return fullPath;
+
+        var relative = GetRelativePath(root, fullPath);
+        if (relative is "." or "")
+            return GetFullPath(root);
+
+        var current = root;
+        foreach (var segment in relative.Split(DirectorySeparatorChar, AltDirectorySeparatorChar)) {
+            if (segment is "" or ".")
+                continue;
+
+            current = Combine(current, segment);
+            current = ResolveCurrentDirectoryLink(current);
+        }
+
+        return GetFullPath(current);
+    }
+
+    static string ResolveCurrentDirectoryLink(string path) {
+        try {
+            var info = new DirectoryInfo(path);
+            if (!info.Exists || (info.Attributes & FileAttributes.ReparsePoint) == 0)
+                return path;
+
+            var target = info.ResolveLinkTarget(returnFinalTarget: true);
+            return target is null
+                ? path
+                : GetFullPath(target.FullName);
+        } catch (IOException) {
+            return path;
+        } catch (UnauthorizedAccessException) {
+            return path;
+        }
     }
 
     async Task WriteMetadataAsync(Dictionary<string, string> data) {//TODO move to base
