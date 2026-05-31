@@ -44,7 +44,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
         [Description("Local id for the new node.")] string name,
         [Description("Optional parent node path segments. Leave empty to create a root node.")] string[]? parentPath = null,
         [Description("Optional string attributes for the node.")] Dictionary<string, string>? attributes = null) {
-        var result = await _storage.Create(name, parentPath is null ? null : new NodeGlobalId(parentPath), attributes);
+        var result = await _storage.Create(new NodeLocalId(name), parentPath is null ? null : new NodeGlobalId(parentPath), attributes);
 
         return ToMutationJson(result, "node");
     }
@@ -111,19 +111,27 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
     [McpServerTool]
     [Description("Searches graph nodes with a constraint JSON query. The query returns variable bindings that satisfy predicates such as node, text, attribute, connected, path, descendant, degree, any/all/not/exists.")]
     public async Task<string> SearchNodes(
-        [Description("Constraint query. Example: {\"return\":[\"n\"],\"where\":{\"kind\":\"all\",\"expressions\":[{\"kind\":\"connected\",\"left\":{\"kind\":\"var\",\"name\":\"n\"},\"right\":{\"kind\":\"var\",\"name\":\"x\"}},{\"kind\":\"attribute\",\"node\":{\"kind\":\"var\",\"name\":\"x\"},\"key\":\"id\",\"operator\":\"equals\",\"value\":\"Y\"}]},\"limit\":50}")] NodeSearchQuery query) {
-        if (query is null)
+        [Description("Constraint query. Example: {\"return\":[\"n\"],\"where\":{\"kind\":\"all\",\"expressions\":[{\"kind\":\"connected\",\"left\":{\"kind\":\"var\",\"name\":\"n\"},\"right\":{\"kind\":\"var\",\"name\":\"x\"}},{\"kind\":\"attribute\",\"node\":{\"kind\":\"var\",\"name\":\"x\"},\"key\":\"id\",\"operator\":\"equals\",\"value\":\"Y\"}]},\"limit\":50}")] JsonElement query) {
+        if (query.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
             return ToJson(new { success = false, error = "Query must be provided." });
 
         try {
+            var parsedQuery = query.Deserialize<NodeSearchQuery>(JsonOptions);
+            if (parsedQuery is null)
+                return ToJson(new { success = false, error = "Query must be provided." });
+
             var matches = new List<NodeSearchMatch>();
-            await foreach (var match in _searchService.SearchNodesStreamAsync(query))
+            await foreach (var match in _searchService.SearchNodesStreamAsync(parsedQuery))
                 matches.Add(match);
 
             return ToJson(new {
                 success = true,
                 matches = matches.Select(GraphResponseMapper.ToSearchMatchResponse).ToArray()
             });
+        } catch (JsonException ex) {
+            return ToJson(ToErrorResponse(ServiceResultStatus.BadRequest, $"Invalid query JSON: {ex.Message}"));
+        } catch (NotSupportedException ex) when (IsJsonQueryError(ex)) {
+            return ToJson(ToErrorResponse(ServiceResultStatus.BadRequest, $"Invalid query JSON: {ex.Message}"));
         } catch (ArgumentException ex) {
             return ToJson(ToErrorResponse(ServiceResultStatus.BadRequest, ex.Message));
         } catch (NotSupportedException ex) {
@@ -163,6 +171,12 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
 
     private static string ToJson(object value) {
         return JsonSerializer.Serialize(value, JsonOptions);
+    }
+
+    private static bool IsJsonQueryError(NotSupportedException ex) {
+        return ex.Message.Contains("JSON payload", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("Json", StringComparison.OrdinalIgnoreCase)
+            || ex.StackTrace?.Contains("System.Text.Json", StringComparison.Ordinal) == true;
     }
 
     private static JsonSerializerOptions CreateJsonOptions() {

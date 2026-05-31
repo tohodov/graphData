@@ -13,7 +13,9 @@ using System.Diagnostics;
 
 var builder = Host.CreateApplicationBuilder(args);
 
-if (args.Any(static arg => string.Equals(arg, "--debug", StringComparison.OrdinalIgnoreCase)))
+if (args.Any(static arg =>
+        string.Equals(arg, "--debug", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(arg, "--debug-wait", StringComparison.OrdinalIgnoreCase)))
     while (!Debugger.IsAttached) {
         Console.Error.WriteLine("graphData MCP is waiting for a debugger to attach...");
         await Task.Delay(250);

@@ -5,6 +5,7 @@
       "command": "dotnet",
       "args": [
         "run",
+        "--no-launch-profile",
         "--project",
         "Mcp/Mcp.csproj"
       ]

@@ -37,7 +37,7 @@ dotnet test PerformanceTests\PerformanceTests.csproj
 В solution добавлен локальный MCP-сервер `Mcp` со stdio-транспортом. Его можно запускать из корня репозитория:
 
 ```powershell
-dotnet run --project Mcp/Mcp.csproj
+dotnet run --no-launch-profile --project Mcp/Mcp.csproj
 ```
 
 Для VS Code/Copilot уже добавлен workspace-конфиг `.vscode/mcp.json`. Клиенту доступны tools:
