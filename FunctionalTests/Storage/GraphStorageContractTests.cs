@@ -253,6 +253,22 @@ partial class GraphStorageContractTests {
         Assert.IsTrue(firstConnections.Any(x => x.LocalId == second.LocalId));
         Assert.IsTrue(secondConnections.Any(x => x.LocalId == first.LocalId));
     }
+
+    [TestMethod]
+    public async Task ShouldReturnNestedConnectionsWithGlobalIds() {
+        var root = (await Storage.Create(new("root"))).Value!;
+        var leftParent = (await Storage.Create(new("left"), root.GlobalId)).Value!;
+        var rightParent = (await Storage.Create(new("right"), root.GlobalId)).Value!;
+        var left = (await Storage.Create(new("node-a"), leftParent.GlobalId)).Value!;
+        var right = (await Storage.Create(new("node-b"), rightParent.GlobalId)).Value!;
+
+        await Storage.Connect(left.GlobalId, right.GlobalId);
+
+        var connections = (await Storage.GetConnectedNodesAsync(left)).Value!;
+
+        Assert.IsTrue(connections.Any(node => node.GlobalId == right.GlobalId));
+    }
+
     [TestMethod]
     public async Task ShouldIgnoreSelfConnection() {
         var node = await CreateNode();
@@ -282,14 +298,21 @@ partial class GraphStorageContractTests {
         };
 
         var subgraph = (await Storage.GetSubgraphAsync(query)).Value!;
+        var subgraphNodeIds = subgraph.Nodes.Select(static node => node.GlobalId).ToArray();
 
         Assert.AreEqual(3, subgraph.Nodes.Count);
-        Assert.IsTrue(subgraph.Nodes.Contains(first));
-        Assert.IsTrue(subgraph.Nodes.Contains(second));
-        Assert.IsTrue(subgraph.Nodes.Contains(third));
-        Assert.IsFalse(subgraph.Nodes.Contains(fourth));
+        Assert.IsTrue(subgraphNodeIds.Contains(first.GlobalId));
+        Assert.IsTrue(subgraphNodeIds.Contains(second.GlobalId));
+        Assert.IsTrue(subgraphNodeIds.Contains(third.GlobalId));
+        Assert.IsFalse(subgraphNodeIds.Contains(fourth.GlobalId));
 
-        var children = subgraph.Nodes.First(x => x.LocalId == first.LocalId).Edges.SelectMany(x => new[] { x.Node1, x.Node2 }).Distinct().Except([first]).ToArray();
+        var children = subgraph.Nodes
+            .First(x => x.LocalId == first.LocalId)
+            .Edges
+            .SelectMany(x => new[] { x.Node1, x.Node2 })
+            .DistinctBy(static node => node.GlobalId)
+            .Where(node => node.GlobalId != first.GlobalId)
+            .ToArray();
         Assert.IsTrue(children.Any(x => x.LocalId == second.LocalId));
         Assert.IsFalse(children.Any(x => x.LocalId == third.LocalId));
     }

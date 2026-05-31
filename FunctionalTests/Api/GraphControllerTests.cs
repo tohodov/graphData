@@ -291,6 +291,38 @@ public sealed class GraphControllerTests {
     }
 
     [TestMethod]
+    public async Task GetSubgraphAsync_ReturnsNestedNeighborEdgesWithGlobalNames() {
+        await using var scope = TestGraphStorageScope.Create();
+        var root = (await scope.Storage.Create(new("root"))).Value!;
+        var weapons = (await scope.Storage.Create(new("weapons"), root.GlobalId)).Value!;
+        var categories = (await scope.Storage.Create(new("categories"), root.GlobalId)).Value!;
+        var ak47 = (await scope.Storage.Create(new("ak_47"), weapons.GlobalId)).Value!;
+        var assaultRifle = (await scope.Storage.Create(new("assault_rifle"), categories.GlobalId)).Value!;
+        await scope.Storage.Connect(ak47.GlobalId, assaultRifle.GlobalId);
+
+        var controller = CreateController(scope.Storage);
+        var result = await controller.GetSubgraphAsync(new SubgraphRequest {
+            Nodes = [["root", "weapons", "ak_47"]],
+            MaxDepth = 1
+        });
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+
+        var response = ok.Value as SubgraphResponse;
+        Assert.IsNotNull(response);
+        CollectionAssert.AreEquivalent(
+            new[] { ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString() },
+            response.Nodes.Select(static node => node.Name).ToArray());
+        Assert.IsTrue(response.Nodes.All(static node => node.Edges.Count == 0));
+
+        var edge = response.Edges.Single();
+        CollectionAssert.AreEquivalent(
+            new[] { ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString() },
+            new[] { edge.SourceName, edge.TargetName });
+    }
+
+    [TestMethod]
     public async Task SearchNodesAsync_ReturnsVariableBindings() {
         await using var scope = TestGraphStorageScope.Create();
         var first = (await scope.Storage.Create(new("1"), attributes: new Dictionary<string, string> { ["id"] = "source" })).Value!;

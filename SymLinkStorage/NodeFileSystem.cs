@@ -19,6 +19,7 @@ internal record NodeFileSystem : Node {
 
     public string FolderPath => Combine(parentPath, LocalId); //TODO encapsulate
     public string MetadataPath => Combine(FolderPath, MetadataFileName);
+    internal string StorageRootPath => storageRootPath;
 
     public override NodeLocalId LocalId { get; }
     public override NodeGlobalId GlobalId => new NodeGlobalId(
@@ -65,6 +66,12 @@ internal record NodeFileSystem : Node {
         this.storageRootPath = storageRootPath;
         parentPath = storageRootPath;
     }
+    public NodeFileSystem(DirectoryInfo info, string storageRootPath) {
+        info = new DirectoryInfo(GetFullPath(info.FullName));
+        LocalId = new NodeLocalId(info.Name);
+        this.storageRootPath = GetFullPath(storageRootPath);
+        parentPath = info.Parent?.FullName ?? this.storageRootPath;
+    }
     public NodeFileSystem(NodeLocalId name, NodeFileSystem parent) {
         LocalId = name;
         storageRootPath = parent.storageRootPath;
@@ -91,21 +98,29 @@ internal record NodeFileSystem : Node {
             var isReparse = (entry.Attributes & FileAttributes.ReparsePoint) != 0;
             if (!isReparse)
                 continue;
-            string? targetPath = null;
-            if (entry is DirectoryInfo di) {
-                targetPath = di.LinkTarget;
-            } else if (entry is FileInfo fi) {
-                targetPath = fi.LinkTarget;
-            } else {
-                var asDir = new DirectoryInfo(entry.FullName);
-                targetPath = asDir.LinkTarget;
-            }
+            var targetPath = GetResolvedLinkTarget(entry);
+            if (targetPath is null)
+                continue;
             yield return new SymLink {
                 Directory = FolderPath,
                 Name = entry.Name,
-                TargetPath = entry.FullName
+                TargetPath = targetPath
             };
         }
+    }
+
+    static string? GetResolvedLinkTarget(FileSystemInfo entry) {
+        var targetPath = entry switch {
+            DirectoryInfo directory => directory.LinkTarget,
+            FileInfo file => file.LinkTarget,
+            _ => new DirectoryInfo(entry.FullName).LinkTarget
+        };
+        if (string.IsNullOrWhiteSpace(targetPath))
+            return null;
+
+        return IsPathFullyQualified(targetPath)
+            ? GetFullPath(targetPath)
+            : GetFullPath(targetPath, GetDirectoryName(entry.FullName) ?? Directory.GetCurrentDirectory());
     }
 
     async Task WriteMetadataAsync(Dictionary<string, string> data) {//TODO move to base
@@ -124,7 +139,7 @@ internal record EdgeFileSystem : Edge {
 
     public SymLink Link { get; }
     public NodeFileSystem Parent { get; }
-    public NodeFileSystem Child => child ??= new NodeFileSystem(new(Link.Name), Parent);
+    public NodeFileSystem Child => child ??= new NodeFileSystem(new DirectoryInfo(Link.TargetPath), Parent.StorageRootPath);
 
     public override Node Node1 => Parent;
     public override Node Node2 => Child;

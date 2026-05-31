@@ -9,12 +9,12 @@ public static class GraphResponseMapper
     {
         var nodes = subgraph.Nodes.ToArray();
         var nodeNames = nodes
-            .Select(static node => node.LocalId.ToString())
+            .Select(static node => node.GlobalId.ToString())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var edges = nodes
             .SelectMany(static node => node.Edges)
-            .Where(edge => nodeNames.Contains(edge.Node1.LocalId) && nodeNames.Contains(edge.Node2.LocalId))
-            .GroupBy(static edge => EdgeKey(edge.Node1.LocalId, edge.Node2.LocalId), StringComparer.OrdinalIgnoreCase)
+            .Where(edge => nodeNames.Contains(edge.Node1.GlobalId.ToString()) && nodeNames.Contains(edge.Node2.GlobalId.ToString()))
+            .GroupBy(static edge => EdgeKey(edge.Node1.GlobalId.ToString(), edge.Node2.GlobalId.ToString()), StringComparer.OrdinalIgnoreCase)
             .Select(static group => ToEdgeResponse(group.First()))
             .ToArray();
 
@@ -53,7 +53,7 @@ public static class GraphResponseMapper
 
     public static EdgeResponse ToEdgeResponse(Node source, Node target)
     {
-        return ToEdgeResponse(source.LocalId, target.LocalId);
+        return ToEdgeResponse(source.GlobalId.ToString(), target.GlobalId.ToString());
     }
 
     private static EdgeResponse ToEdgeResponse(Edge edge)
