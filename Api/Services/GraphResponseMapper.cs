@@ -8,12 +8,12 @@ public static class GraphResponseMapper
     public static SubgraphResponse ToSubgraphResponse(Subgraph subgraph)
     {
         var nodes = subgraph.Nodes.ToArray();
-        var nodeNames = nodes
+        var nodeGlobalIds = nodes
             .Select(static node => node.GlobalId.ToString())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var edges = nodes
             .SelectMany(static node => node.Edges)
-            .Where(edge => nodeNames.Contains(edge.Node1.GlobalId.ToString()) && nodeNames.Contains(edge.Node2.GlobalId.ToString()))
+            .Where(edge => nodeGlobalIds.Contains(edge.Node1.GlobalId.ToString()) && nodeGlobalIds.Contains(edge.Node2.GlobalId.ToString()))
             .GroupBy(static edge => EdgeKey(edge.Node1.GlobalId.ToString(), edge.Node2.GlobalId.ToString()), StringComparer.OrdinalIgnoreCase)
             .Select(static group => ToEdgeResponse(group.First()))
             .ToArray();
@@ -31,7 +31,8 @@ public static class GraphResponseMapper
     {
         return new NodeResponse
         {
-            Name = node.GlobalId.ToString(),
+            LocalId = node.LocalId.ToString(),
+            GlobalId = node.GlobalId.ToString(),
             Attributes = new Dictionary<string, string>(node.Attributes),
             Edges = edges?.ToArray() ?? node.Edges.Select(ToEdgeResponse).ToArray()
         };
@@ -53,7 +54,9 @@ public static class GraphResponseMapper
 
     public static EdgeResponse ToEdgeResponse(Node source, Node target)
     {
-        return ToEdgeResponse(source.GlobalId.ToString(), target.GlobalId.ToString());
+        return string.Compare(source.GlobalId.ToString(), target.GlobalId.ToString(), StringComparison.OrdinalIgnoreCase) <= 0
+            ? ToOrderedEdgeResponse(source, target)
+            : ToOrderedEdgeResponse(target, source);
     }
 
     private static EdgeResponse ToEdgeResponse(Edge edge)
@@ -61,17 +64,21 @@ public static class GraphResponseMapper
         return ToEdgeResponse(edge.Node1, edge.Node2);
     }
 
-    private static EdgeResponse ToEdgeResponse(string sourceName, string targetName)
+    private static EdgeResponse ToOrderedEdgeResponse(Node source, Node target)
     {
-        return string.Compare(sourceName, targetName, StringComparison.OrdinalIgnoreCase) <= 0
-            ? new EdgeResponse { SourceName = sourceName, TargetName = targetName }
-            : new EdgeResponse { SourceName = targetName, TargetName = sourceName };
+        return new EdgeResponse
+        {
+            SourceLocalId = source.LocalId.ToString(),
+            SourceGlobalId = source.GlobalId.ToString(),
+            TargetLocalId = target.LocalId.ToString(),
+            TargetGlobalId = target.GlobalId.ToString()
+        };
     }
 
-    private static string EdgeKey(string sourceName, string targetName)
+    private static string EdgeKey(string sourceGlobalId, string targetGlobalId)
     {
-        return string.Compare(sourceName, targetName, StringComparison.OrdinalIgnoreCase) <= 0
-            ? $"{sourceName}\0{targetName}"
-            : $"{targetName}\0{sourceName}";
+        return string.Compare(sourceGlobalId, targetGlobalId, StringComparison.OrdinalIgnoreCase) <= 0
+            ? $"{sourceGlobalId}\0{targetGlobalId}"
+            : $"{targetGlobalId}\0{sourceGlobalId}";
     }
 }

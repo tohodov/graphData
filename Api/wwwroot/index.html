@@ -14,7 +14,7 @@
         <span>GraphData</span>
       </div>
       <form id="root-form" class="root-form">
-        <input id="root-input" type="text" autocomplete="off" spellcheck="false" placeholder="Имя узла">
+        <input id="root-input" type="text" autocomplete="off" spellcheck="false" placeholder="GlobalId узла">
         <button type="submit">Открыть</button>
       </form>
       <div class="toolbar-actions">
@@ -62,7 +62,7 @@
           <form id="create-node-form" class="panel-block compact-form">
             <span class="eyebrow">Создать узел</span>
             <div class="inline-form">
-              <input id="create-node-name" type="text" autocomplete="off" spellcheck="false" placeholder="Имя нового узла">
+              <input id="create-node-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId нового узла">
               <button type="submit">Создать</button>
             </div>
           </form>
@@ -70,7 +70,7 @@
           <form id="connect-form" class="panel-block compact-form">
             <span class="eyebrow">Соединить с выбранным</span>
             <div class="inline-form">
-              <input id="connect-target-name" type="text" autocomplete="off" spellcheck="false" placeholder="Имя узла">
+              <input id="connect-target-name" type="text" autocomplete="off" spellcheck="false" placeholder="GlobalId узла">
               <button type="submit">Связать</button>
             </div>
           </form>
@@ -106,7 +106,7 @@
         <section id="tab-subgraph" class="tab-panel">
           <form id="subgraph-form" class="stack-form">
             <label>
-              <span>Корни</span>
+              <span>GlobalId корней</span>
               <input id="subgraph-roots" type="text" autocomplete="off" spellcheck="false" placeholder="a, b, c">
             </label>
             <div class="two-cols">
@@ -127,6 +127,6 @@
     </section>
   </main>
 
-  <script src="/app.js"></script>
+  <script src="/app.js?v=20260531-localid"></script>
 </body>
 </html>

@@ -52,10 +52,10 @@ document.querySelectorAll("[data-query-template]").forEach(button => {
 });
 
 const params = new URLSearchParams(window.location.search);
-const initialNode = params.get("node");
-if (initialNode) {
-  rootInput.value = initialNode;
-  loadRoot(initialNode);
+const initialGlobalId = params.get("globalId");
+if (initialGlobalId) {
+  rootInput.value = initialGlobalId;
+  loadRoot(initialGlobalId);
 }
 
 setSearchQueryTemplate("all");
@@ -85,7 +85,7 @@ createNodeForm.addEventListener("submit", async event => {
   event.preventDefault();
   const name = createNodeName.value.trim();
   if (!name) {
-    setStatus("Введите имя нового узла");
+    setStatus("Введите LocalId нового узла");
     return;
   }
 
@@ -94,14 +94,14 @@ createNodeForm.addEventListener("submit", async event => {
 
 connectForm.addEventListener("submit", async event => {
   event.preventDefault();
-  const sourceName = state.selectedName;
-  const targetName = connectTargetName.value.trim();
-  if (!sourceName || !targetName) {
+  const sourceGlobalId = state.selectedName;
+  const targetGlobalId = connectTargetName.value.trim();
+  if (!sourceGlobalId || !targetGlobalId) {
     setStatus("Выберите узел и укажите цель связи");
     return;
   }
 
-  await connectNodes(sourceName, targetName);
+  await connectNodes(sourceGlobalId, targetGlobalId);
 });
 
 searchForm.addEventListener("submit", event => {
@@ -187,7 +187,7 @@ svg.addEventListener("wheel", event => {
 
 async function loadRoot(name) {
   if (!name) {
-    setStatus("Введите имя узла");
+    setStatus("Введите GlobalId узла");
     return;
   }
 
@@ -200,7 +200,7 @@ async function loadRoot(name) {
   seedPosition(name, null, 0);
   await loadNode(name, null);
   const url = new URL(window.location.href);
-  url.searchParams.set("node", name);
+  url.searchParams.set("globalId", name);
   window.history.replaceState({}, "", url);
   fitView();
 }
@@ -209,7 +209,7 @@ async function loadNode(name, fromName, options = {}) {
   const select = options.select ?? true;
   setBusy(true);
   try {
-    const expansion = await apiJson(`/api/graph/nodes?${toPathQuery(name)}`);
+    const expansion = normalizeNodeResponse(await apiJson(`/api/graph/nodes?${toGlobalIdQuery(name)}`));
     state.loaded.set(expansion.name, expansion);
     if (select) {
       state.selectedName = expansion.name;
@@ -237,10 +237,10 @@ async function loadNode(name, fromName, options = {}) {
 async function createNode(name) {
   setBusy(true);
   try {
-    const created = await apiJson("/api/graph/nodes", {
+    const created = normalizeNodeResponse(await apiJson("/api/graph/nodes", {
       method: "POST",
-      body: JSON.stringify({ name })
-    });
+      body: JSON.stringify({ localId: name })
+    }));
     createNodeName.value = "";
     state.rootName = state.rootName ?? created.name;
     state.selectedName = created.name;
@@ -248,7 +248,7 @@ async function createNode(name) {
     state.loaded.set(created.name, created);
     render();
     setActiveTab("node");
-    setStatus(`Создан узел "${created.name}"`);
+    setStatus(`Создан узел "${created.displayName}"`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -265,13 +265,13 @@ async function saveSelectedNode() {
 
   setBusy(true);
   try {
-    await apiJson(`/api/graph/nodes?${toPathQuery(nodeName)}`, {
+    await apiJson(`/api/graph/nodes?${toGlobalIdQuery(nodeName)}`, {
       method: "PUT",
       body: JSON.stringify({ attributes: readAttributeEditor() }),
       expectJson: false
     });
     await loadNode(nodeName, null, { select: true });
-    setStatus(`Сохранен узел "${nodeName}"`);
+    setStatus(`Сохранен узел "${displayName(nodeName)}"`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -288,13 +288,13 @@ async function deleteSelectedNode() {
 
   setBusy(true);
   try {
-    await apiJson(`/api/graph/nodes?${toPathQuery(nodeName)}`, {
+    await apiJson(`/api/graph/nodes?${toGlobalIdQuery(nodeName)}`, {
       method: "DELETE",
       expectJson: false
     });
     removeLocalNode(nodeName);
     render();
-    setStatus(`Удален узел "${nodeName}"`);
+    setStatus(`Удален узел "${displayName(nodeName)}"`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -302,20 +302,20 @@ async function deleteSelectedNode() {
   }
 }
 
-async function connectNodes(sourceName, targetName) {
+async function connectNodes(sourceGlobalId, targetGlobalId) {
   setBusy(true);
   try {
     await apiJson("/api/graph/connections", {
       method: "POST",
       body: JSON.stringify({
-        sourcePath: toPath(sourceName),
-        targetPath: toPath(targetName)
+        sourceGlobalId: parseGlobalId(sourceGlobalId),
+        targetGlobalId: parseGlobalId(targetGlobalId)
       }),
       expectJson: false
     });
     connectTargetName.value = "";
-    await loadNode(sourceName, null, { select: true });
-    setStatus(`Связаны "${sourceName}" и "${targetName}"`);
+    await loadNode(sourceGlobalId, null, { select: true });
+    setStatus(`Связаны "${displayName(sourceGlobalId)}" и "${displayName(targetGlobalId)}"`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -430,14 +430,55 @@ function literalSelector(name) {
   return { kind: "literal", name };
 }
 
-function toPath(name) {
-  return name.split("/").filter(Boolean);
+function parseGlobalId(value) {
+  return value.split("/").filter(Boolean);
 }
 
-function toPathQuery(name) {
-  return toPath(name)
-    .map(segment => `path=${encodeURIComponent(segment)}`)
+function toGlobalIdQuery(value) {
+  return parseGlobalId(value)
+    .map(segment => `globalId=${encodeURIComponent(segment)}`)
     .join("&");
+}
+
+function normalizeNodeResponse(node) {
+  const globalId = node.globalId ?? node.name;
+  const localId = node.localId ?? node.name;
+  return {
+    ...node,
+    name: globalId,
+    globalId,
+    localId,
+    displayName: localId,
+    edges: (node.edges ?? []).map(normalizeEdgeResponse)
+  };
+}
+
+function normalizeEdgeResponse(edge) {
+  const sourceGlobalId = edge.sourceGlobalId;
+  const targetGlobalId = edge.targetGlobalId;
+  const sourceLocalId = edge.sourceLocalId;
+  const targetLocalId = edge.targetLocalId;
+  return {
+    ...edge,
+    sourceGlobalId,
+    targetGlobalId,
+    sourceLocalId,
+    targetLocalId
+  };
+}
+
+function displayName(globalId) {
+  return state.loaded.get(globalId)?.displayName ?? globalId;
+}
+
+function edgeEndpointDisplayName(edge, globalId) {
+  if (edge.sourceGlobalId === globalId) {
+    return edge.sourceLocalId ?? displayName(globalId);
+  }
+  if (edge.targetGlobalId === globalId) {
+    return edge.targetLocalId ?? displayName(globalId);
+  }
+  return displayName(globalId);
 }
 
 async function searchNodes() {
@@ -544,7 +585,7 @@ async function loadSubgraph() {
     const response = await apiJson("/api/graph/subgraph", {
       method: "POST",
       body: JSON.stringify({
-        rootPaths: roots.map(toPath),
+        globalIds: roots.map(parseGlobalId),
         maxDepth: readNumber("#subgraph-depth", 1),
         includeDisconnectedRoots: document.querySelector("#subgraph-include-disconnected").checked
       })
@@ -564,15 +605,15 @@ function loadSubgraphIntoViewer(response, roots) {
   state.parentByNode.clear();
   state.positions.clear();
   state.velocities.clear();
-  state.rootName = roots[0] ?? response.nodes?.[0]?.name ?? null;
+  const nodes = (response.nodes ?? []).map(normalizeNodeResponse);
+  const edges = (response.edges ?? []).map(normalizeEdgeResponse);
+  state.rootName = roots[0] ?? nodes[0]?.name ?? null;
   state.selectedName = state.rootName;
 
-  const nodes = response.nodes ?? [];
-  const edges = response.edges ?? [];
   nodes.forEach((node, index) => {
     state.loaded.set(node.name, {
       ...node,
-      edges: edges.filter(edge => edge.sourceName === node.name || edge.targetName === node.name)
+      edges: edges.filter(edge => edge.sourceGlobalId === node.name || edge.targetGlobalId === node.name)
     });
     seedSubgraphPosition(node.name, index, nodes.length);
   });
@@ -622,7 +663,7 @@ function removeLocalNode(name, selectFallback = true, pruneEdges = true) {
   if (pruneEdges) {
     for (const expansion of state.loaded.values()) {
       expansion.edges = (expansion.edges ?? [])
-        .filter(edge => edge.sourceName !== name && edge.targetName !== name);
+        .filter(edge => edge.sourceGlobalId !== name && edge.targetGlobalId !== name);
     }
   }
 
@@ -633,7 +674,7 @@ function removeLocalNode(name, selectFallback = true, pruneEdges = true) {
 }
 
 function handleEndpointClick(edge, anchorName) {
-  const otherName = edge.sourceName === anchorName ? edge.targetName : edge.sourceName;
+  const otherName = edge.sourceGlobalId === anchorName ? edge.targetGlobalId : edge.sourceGlobalId;
   const anchorLoaded = state.loaded.has(anchorName);
   const otherLoaded = state.loaded.has(otherName);
 
@@ -670,16 +711,21 @@ function buildGraph() {
   for (const expansion of state.loaded.values()) {
     nodes.set(expansion.name, {
       name: expansion.name,
+      displayName: expansion.displayName,
+      localId: expansion.localId,
+      globalId: expansion.globalId,
       attributes: expansion.attributes ?? {}
     });
 
     (expansion.edges ?? []).forEach(edge => {
-      const key = edgeKey(edge.sourceName, edge.targetName);
+      const key = edgeKey(edge.sourceGlobalId, edge.targetGlobalId);
       if (!edges.has(key)) {
         edges.set(key, {
           key,
-          sourceName: edge.sourceName,
-          targetName: edge.targetName
+          sourceGlobalId: edge.sourceGlobalId,
+          targetGlobalId: edge.targetGlobalId,
+          sourceLocalId: edge.sourceLocalId,
+          targetLocalId: edge.targetLocalId
         });
       }
     });
@@ -705,10 +751,10 @@ function render() {
 }
 
 function renderEdge(edgeLayer, buttonLayer, edge) {
-  const sourceLoaded = state.loaded.has(edge.sourceName);
-  const targetLoaded = state.loaded.has(edge.targetName);
-  const source = state.positions.get(edge.sourceName);
-  const target = state.positions.get(edge.targetName);
+  const sourceLoaded = state.loaded.has(edge.sourceGlobalId);
+  const targetLoaded = state.loaded.has(edge.targetGlobalId);
+  const source = state.positions.get(edge.sourceGlobalId);
+  const target = state.positions.get(edge.targetGlobalId);
 
   if (!source || !target || (!sourceLoaded && !targetLoaded)) {
     return;
@@ -726,13 +772,13 @@ function renderEdge(edgeLayer, buttonLayer, edge) {
     });
 
     edgeLayer.append(line);
-    renderEndpointButton(buttonLayer, sourceButton, edge, edge.sourceName, false);
-    renderEndpointButton(buttonLayer, targetButton, edge, edge.targetName, false);
+    renderEndpointButton(buttonLayer, sourceButton, edge, edge.sourceGlobalId, false);
+    renderEndpointButton(buttonLayer, targetButton, edge, edge.targetGlobalId, false);
     return;
   }
 
-  const anchorName = sourceLoaded ? edge.sourceName : edge.targetName;
-  const hiddenName = sourceLoaded ? edge.targetName : edge.sourceName;
+  const anchorName = sourceLoaded ? edge.sourceGlobalId : edge.targetGlobalId;
+  const hiddenName = sourceLoaded ? edge.targetGlobalId : edge.sourceGlobalId;
   const anchor = sourceLoaded ? source : target;
   const hidden = sourceLoaded ? target : source;
   const buttonPoint = pointOnCircle(anchor, hidden, endpointOffset);
@@ -740,16 +786,17 @@ function renderEdge(edgeLayer, buttonLayer, edge) {
 }
 
 function renderEndpointButton(layer, point, edge, anchorName, collapsed, hiddenName = null) {
-  const otherName = hiddenName ?? (edge.sourceName === anchorName ? edge.targetName : edge.sourceName);
+  const otherName = hiddenName ?? (edge.sourceGlobalId === anchorName ? edge.targetGlobalId : edge.sourceGlobalId);
+  const otherDisplayName = edgeEndpointDisplayName(edge, otherName);
   const group = createSvg("g", {
     class: `edge-button ${collapsed ? "collapsed" : "expanded"}`,
     transform: `translate(${point.x} ${point.y})`,
     role: "button",
     tabindex: "0",
-    "aria-label": collapsed ? `Развернуть ${otherName}` : `Выбрать ${otherName}`
+    "aria-label": collapsed ? `Развернуть ${otherDisplayName}` : `Выбрать ${otherDisplayName}`
   });
   const title = createSvg("title", {});
-  title.textContent = collapsed ? `Развернуть ${otherName}` : `Выбрать ${otherName}`;
+  title.textContent = collapsed ? `Развернуть ${otherDisplayName}` : `Выбрать ${otherDisplayName}`;
 
   const hit = createSvg("circle", { class: "edge-button-hit", r: 17, cx: 0, cy: 0 });
   const core = createSvg("circle", {
@@ -785,11 +832,14 @@ function renderNode(layer, node) {
   const group = createSvg("g", {
     class: `node${state.selectedName === node.name ? " selected" : ""}`,
     transform: `translate(${position.x} ${position.y})`,
-    tabindex: "0"
+    tabindex: "0",
+    "aria-label": node.displayName ?? node.name
   });
+  const title = createSvg("title", {});
+  title.textContent = node.globalId ?? node.name;
   const circle = createSvg("circle", { class: "node-shell", r: nodeRadius, cx: 0, cy: 0 });
   const label = createSvg("text", { class: "node-label", x: 0, y: 0 });
-  label.textContent = trimName(node.name, 18);
+  label.textContent = trimName(node.displayName ?? node.name, 18);
 
   group.addEventListener("click", event => {
     event.stopPropagation();
@@ -807,13 +857,14 @@ function renderNode(layer, node) {
     };
   });
 
-  group.append(circle, label);
+  group.append(title, circle, label);
   layer.append(group);
 }
 
 function renderInspector(graph) {
   const selected = graph.nodes.find(node => node.name === state.selectedName);
-  selectedName.textContent = selected?.name ?? "-";
+  selectedName.textContent = selected?.displayName ?? "-";
+  selectedName.title = selected?.globalId ?? "";
   updateEditorState();
   renderAttributeEditor(selected?.attributes ?? {});
   neighborList.replaceChildren();
@@ -823,21 +874,22 @@ function renderInspector(graph) {
   }
 
   const neighbors = graph.edges
-    .filter(edge => edge.sourceName === selected.name || edge.targetName === selected.name)
-    .map(edge => edge.sourceName === selected.name ? edge.targetName : edge.sourceName)
-    .sort((a, b) => a.localeCompare(b, "ru"));
+    .filter(edge => edge.sourceGlobalId === selected.name || edge.targetGlobalId === selected.name)
+    .map(edge => edge.sourceGlobalId === selected.name ? edge.targetGlobalId : edge.sourceGlobalId)
+    .sort((a, b) => displayName(a).localeCompare(displayName(b), "ru"));
 
   neighbors.forEach(name => {
     const edge = graph.edges.find(candidate =>
-      (candidate.sourceName === selected.name && candidate.targetName === name) ||
-      (candidate.sourceName === name && candidate.targetName === selected.name));
+      (candidate.sourceGlobalId === selected.name && candidate.targetGlobalId === name) ||
+      (candidate.sourceGlobalId === name && candidate.targetGlobalId === selected.name));
     const row = document.createElement("button");
     row.type = "button";
     row.className = `neighbor-row${state.loaded.has(name) ? " loaded" : ""}`;
     const dot = document.createElement("span");
     dot.className = "neighbor-dot";
     const text = document.createElement("span");
-    text.textContent = name;
+    text.textContent = edge ? edgeEndpointDisplayName(edge, name) : displayName(name);
+    row.title = name;
     row.append(dot, text);
     row.addEventListener("click", () => {
       if (edge) {
@@ -902,18 +954,23 @@ function renderSearchResults(matches) {
 }
 
 function appendSearchResult(match) {
+  const node = normalizeNodeResponse(match.node);
   const button = document.createElement("button");
   button.type = "button";
   button.className = "result-row";
   button.innerHTML = `<strong></strong><span></span>`;
-  button.querySelector("strong").textContent = match.node.name;
+  button.querySelector("strong").textContent = node.displayName;
   const bindings = Object.entries(match.bindings ?? {})
-    .map(([variable, node]) => `${variable}=${node.name}`)
+    .map(([variable, binding]) => {
+      const normalized = normalizeNodeResponse(binding);
+      return `${variable}=${normalized.displayName}`;
+    })
     .join(" · ");
   button.querySelector("span").textContent = bindings || `score ${match.score} ${match.matchedBy?.join(" ") ?? ""}`;
+  button.title = node.globalId;
   button.addEventListener("click", () => {
-    rootInput.value = match.node.name;
-    loadRoot(match.node.name);
+    rootInput.value = node.globalId;
+    loadRoot(node.globalId);
     setActiveTab("node");
   });
   searchResults.append(button);
@@ -921,7 +978,7 @@ function appendSearchResult(match) {
 
 function renderSubgraphResults(response) {
   subgraphResults.replaceChildren();
-  const nodes = response.nodes ?? [];
+  const nodes = (response.nodes ?? []).map(normalizeNodeResponse);
   const edges = response.edges ?? [];
   const summary = document.createElement("div");
   summary.className = "result-summary";
@@ -931,7 +988,8 @@ function renderSubgraphResults(response) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "result-row";
-    button.textContent = node.name;
+    button.textContent = node.displayName;
+    button.title = node.globalId;
     button.addEventListener("click", () => {
       state.selectedName = node.name;
       setActiveTab("node");
@@ -1025,10 +1083,10 @@ function simulateStep() {
   }
 
   graph.edges
-    .filter(edge => state.loaded.has(edge.sourceName) && state.loaded.has(edge.targetName))
+    .filter(edge => state.loaded.has(edge.sourceGlobalId) && state.loaded.has(edge.targetGlobalId))
     .forEach(edge => {
-      const source = state.positions.get(edge.sourceName);
-      const target = state.positions.get(edge.targetName);
+      const source = state.positions.get(edge.sourceGlobalId);
+      const target = state.positions.get(edge.targetGlobalId);
       if (!source || !target) {
         return;
       }
@@ -1039,10 +1097,10 @@ function simulateStep() {
       const strength = (distance - 185) * 0.018;
       const fx = (dx / distance) * strength;
       const fy = (dy / distance) * strength;
-      forces.get(edge.sourceName).x += fx;
-      forces.get(edge.sourceName).y += fy;
-      forces.get(edge.targetName).x -= fx;
-      forces.get(edge.targetName).y -= fy;
+      forces.get(edge.sourceGlobalId).x += fx;
+      forces.get(edge.sourceGlobalId).y += fy;
+      forces.get(edge.targetGlobalId).x -= fx;
+      forces.get(edge.targetGlobalId).y -= fy;
     });
 
   nodes.forEach(node => {
@@ -1167,7 +1225,7 @@ function edgeKey(a, b) {
 }
 
 function getOtherEndpoint(edge, nodeName) {
-  return edge.sourceName === nodeName ? edge.targetName : edge.sourceName;
+  return edge.sourceGlobalId === nodeName ? edge.targetGlobalId : edge.sourceGlobalId;
 }
 
 function trimName(name, limit) {

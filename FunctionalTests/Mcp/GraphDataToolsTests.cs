@@ -27,13 +27,16 @@ public sealed class GraphDataToolsTests
         Assert.IsTrue(root.GetProperty("found").GetBoolean());
 
         var node = root.GetProperty("node");
-        Assert.AreEqual("1", node.GetProperty("name").GetString());
+        Assert.AreEqual("1", node.GetProperty("localId").GetString());
+        Assert.AreEqual("1", node.GetProperty("globalId").GetString());
         Assert.IsTrue(node.TryGetProperty("attributes", out _));
         Assert.IsFalse(node.TryGetProperty("nodes", out _));
 
         var edges = node.GetProperty("edges").EnumerateArray().ToArray();
         Assert.AreEqual(1, edges.Length);
-        Assert.AreEqual("1", edges[0].GetProperty("sourceName").GetString());
-        Assert.AreEqual("2", edges[0].GetProperty("targetName").GetString());
+        Assert.AreEqual("1", edges[0].GetProperty("sourceLocalId").GetString());
+        Assert.AreEqual("2", edges[0].GetProperty("targetLocalId").GetString());
+        Assert.AreEqual("1", edges[0].GetProperty("sourceGlobalId").GetString());
+        Assert.AreEqual("2", edges[0].GetProperty("targetGlobalId").GetString());
     }
 }

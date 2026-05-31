@@ -18,10 +18,10 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
     private readonly GraphSearchService _searchService = searchService;
 
     [McpServerTool]
-    [Description("Gets a graph node by path and returns the same node shape as the HTTP API: attributes plus edges.")]
+    [Description("Gets a graph node by GlobalId and returns the same node shape as the HTTP API: LocalId, GlobalId, attributes, and edges.")]
     public async Task<string> GetNode(
-        [Description("Root-relative node path segments to look up.")] string[] path) {
-        var result = await _storage.Get(new NodeGlobalId(path));
+        [Description("GlobalId segments to look up.")] string[] globalId) {
+        var result = await _storage.Get(new NodeGlobalId(globalId));
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             return ToJson(new {
                 found = true,
@@ -30,7 +30,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
         }
 
         if (result.Status is ServiceResultStatus.NotFound)
-            return ToJson(new { found = false, path });
+            return ToJson(new { found = false, globalId });
 
         return ToJson(new {
             found = false,
@@ -41,10 +41,10 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
     [McpServerTool]
     [Description("Creates a graph node, optionally under an existing parent node, with optional string attributes.")]
     public async Task<string> CreateNode(
-        [Description("Local id for the new node.")] string name,
-        [Description("Optional parent node path segments. Leave empty to create a root node.")] string[]? parentPath = null,
+        [Description("LocalId for the new node.")] string localId,
+        [Description("Optional parent GlobalId segments. Leave empty to create a root node.")] string[]? parentGlobalId = null,
         [Description("Optional string attributes for the node.")] Dictionary<string, string>? attributes = null) {
-        var result = await _storage.Create(new NodeLocalId(name), parentPath is null ? null : new NodeGlobalId(parentPath), attributes);
+        var result = await _storage.Create(new NodeLocalId(localId), parentGlobalId is null ? null : new NodeGlobalId(parentGlobalId), attributes);
 
         return ToMutationJson(result, "node");
     }
@@ -52,19 +52,19 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
     [McpServerTool]
     [Description("Replaces all attributes for an existing graph node.")]
     public async Task<string> UpdateNodeAttributes(
-        [Description("Root-relative path segments of the node to update.")] string[] path,
+        [Description("GlobalId segments of the node to update.")] string[] globalId,
         [Description("Complete replacement set of string attributes.")] Dictionary<string, string> attributes) {
-        var result = await _storage.Update(new NodeGlobalId(path), attributes);
+        var result = await _storage.Update(new NodeGlobalId(globalId), attributes);
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new { success = true })
             : ToJson(ToErrorResponse(result.Status, result.Error));
     }
 
     [McpServerTool]
-    [Description("Deletes an existing graph node by path.")]
+    [Description("Deletes an existing graph node by GlobalId.")]
     public async Task<string> DeleteNode(
-        [Description("Root-relative path segments of the node to delete.")] string[] path) {
-        var result = await _storage.Delete(new NodeGlobalId(path));
+        [Description("GlobalId segments of the node to delete.")] string[] globalId) {
+        var result = await _storage.Delete(new NodeGlobalId(globalId));
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new { success = true })
             : ToJson(ToErrorResponse(result.Status, result.Error));
@@ -73,15 +73,15 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
     [McpServerTool]
     [Description("Creates an undirected connection between two existing graph nodes.")]
     public async Task<string> ConnectNodes(
-        [Description("Root-relative path segments of the first node.")] string[] sourcePath,
-        [Description("Root-relative path segments of the second node.")] string[] targetPath) {
-        var result = await _storage.Connect(new NodeGlobalId(sourcePath), new NodeGlobalId(targetPath));
+        [Description("GlobalId segments of the first node.")] string[] sourceGlobalId,
+        [Description("GlobalId segments of the second node.")] string[] targetGlobalId) {
+        var result = await _storage.Connect(new NodeGlobalId(sourceGlobalId), new NodeGlobalId(targetGlobalId));
 
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new {
                 success = true,
-                sourcePath,
-                targetPath
+                sourceGlobalId,
+                targetGlobalId
             })
             : ToJson(ToErrorResponse(result.Status, result.Error));
     }
@@ -89,10 +89,10 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
     [McpServerTool]
     [Description("Returns the same subgraph shape as the HTTP API: nodes plus top-level edges.")]
     public async Task<string> GetSubgraph(
-        [Description("Root node path segments for graph traversal.")] string[][] rootPaths,
+        [Description("Root node GlobalId segments for graph traversal.")] string[][] rootGlobalIds,
         [Description("Maximum traversal depth. Use 0 to return only roots.")] int maxDepth = 1) {
         var result = await _storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = rootPaths.Select(static path => new NodeGlobalId(path)).ToArray(),
+            Nodes = rootGlobalIds.Select(static globalId => new NodeGlobalId(globalId)).ToArray(),
             MaxDepth = maxDepth
         });
 
@@ -109,7 +109,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
     }
 
     [McpServerTool]
-    [Description("Searches graph nodes with a constraint JSON query. The query returns variable bindings that satisfy predicates such as node, text, attribute, connected, path, descendant, degree, any/all/not/exists.")]
+    [Description("Searches graph nodes with a constraint JSON query. The query returns variable bindings that satisfy predicates such as node, text, attribute, connected, descendant, degree, any/all/not/exists.")]
     public async Task<string> SearchNodes(
         [Description("Constraint query. Example: {\"return\":[\"n\"],\"where\":{\"kind\":\"all\",\"expressions\":[{\"kind\":\"connected\",\"left\":{\"kind\":\"var\",\"name\":\"n\"},\"right\":{\"kind\":\"var\",\"name\":\"x\"}},{\"kind\":\"attribute\",\"node\":{\"kind\":\"var\",\"name\":\"x\"},\"key\":\"id\",\"operator\":\"equals\",\"value\":\"Y\"}]},\"limit\":50}")] JsonElement query) {
         if (query.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)

@@ -5,15 +5,15 @@ POST {{GraphData.Api_HostAddress}}/api/graph/nodes
 Content-Type: application/json
 
 {
-  "name": "Sample node",
+  "localId": "Sample node",
   "attributes": {
     "type": "example"
   }
 }
 
 ### Get node details
-# Repeat path for child paths, for example: ?path=Parent&path=Child
-GET {{GraphData.Api_HostAddress}}/api/graph/nodes?path=Sample%20node
+# Repeat globalId for multi-segment ids, for example: ?globalId=Parent&globalId=Child
+GET {{GraphData.Api_HostAddress}}/api/graph/nodes?globalId=Sample%20node
 Accept: application/json
 
 ### Connect two nodes
@@ -21,12 +21,12 @@ POST {{GraphData.Api_HostAddress}}/api/graph/connections
 Content-Type: application/json
 
 {
-  "sourcePath": [ "Sample node" ],
-  "targetPath": [ "Another node" ]
+  "sourceGlobalId": [ "Sample node" ],
+  "targetGlobalId": [ "Another node" ]
 }
 
 ### Update node attributes
-PUT {{GraphData.Api_HostAddress}}/api/graph/nodes?path=Sample%20node
+PUT {{GraphData.Api_HostAddress}}/api/graph/nodes?globalId=Sample%20node
 Content-Type: application/json
 
 {
@@ -36,7 +36,7 @@ Content-Type: application/json
 }
 
 ### Delete node
-DELETE {{GraphData.Api_HostAddress}}/api/graph/nodes?path=Sample%20node
+DELETE {{GraphData.Api_HostAddress}}/api/graph/nodes?globalId=Sample%20node
 
 ### Search nodes
 POST {{GraphData.Api_HostAddress}}/api/graph/search/nodes
@@ -58,7 +58,6 @@ POST {{GraphData.Api_HostAddress}}/api/graph/subgraph
 Content-Type: application/json
 
 {
-  "rootPaths": [[ "Sample node" ]],
-  "maxDepth": 1,
-  "includeDisconnectedRoots": true
+  "globalIds": [[ "Sample node" ]],
+  "maxDepth": 1
 }
