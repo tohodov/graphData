@@ -252,6 +252,9 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             return;
 
         var attributes = File.GetAttributes(path);
+        if ((attributes & FileAttributes.ReparsePoint) == 0)
+            return;
+
         if ((attributes & FileAttributes.Directory) != 0)
             Directory.Delete(path);
         else

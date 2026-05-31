@@ -270,6 +270,18 @@ partial class GraphStorageContractTests {
     }
 
     [TestMethod]
+    public async Task ShouldReturnHierarchyConnections() {
+        var parent = (await Storage.Create(new("parent"))).Value!;
+        var child = (await Storage.Create(new("child"), parent.GlobalId)).Value!;
+
+        var parentConnections = (await Storage.GetConnectedNodesAsync(parent)).Value!;
+        var childConnections = (await Storage.GetConnectedNodesAsync(child)).Value!;
+
+        Assert.IsTrue(parentConnections.Any(node => node.GlobalId == child.GlobalId));
+        Assert.IsTrue(childConnections.Any(node => node.GlobalId == parent.GlobalId));
+    }
+
+    [TestMethod]
     public async Task ShouldIgnoreSelfConnection() {
         var node = await CreateNode();
 
@@ -315,5 +327,21 @@ partial class GraphStorageContractTests {
             .ToArray();
         Assert.IsTrue(children.Any(x => x.LocalId == second.LocalId));
         Assert.IsFalse(children.Any(x => x.LocalId == third.LocalId));
+    }
+
+    [TestMethod]
+    public async Task ShouldTraverseHierarchy() {
+        var root = (await Storage.Create(new("root"))).Value!;
+        var weapons = (await Storage.Create(new("weapons"), root.GlobalId)).Value!;
+        var ak47 = (await Storage.Create(new("ak_47"), weapons.GlobalId)).Value!;
+
+        var subgraph = (await Storage.GetSubgraphAsync(new SubgraphQuery {
+            Nodes = [root.GlobalId],
+            MaxDepth = 2
+        })).Value!;
+
+        CollectionAssert.AreEquivalent(
+            new[] { root.GlobalId, weapons.GlobalId, ak47.GlobalId },
+            subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
     }
 }

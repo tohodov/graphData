@@ -28,7 +28,11 @@ internal record NodeFileSystem : Node {
             .Where(static part => part is not "." and not "")
             .Select(GraphData.SymLinkStorage.SymLinkGraphStorage.NormalizeNodeName));
     public override IReadOnlyCollection<Edge> Edges => edges ??= GetEdges().ToArray();
-    public override IReadOnlyCollection<Node> Nodes => nodes ??= Edges.SelectMany(x => new[] { x.Node1, x.Node2 }).Except([this]).Distinct().ToArray();
+    public override IReadOnlyCollection<Node> Nodes => nodes ??= Edges
+        .SelectMany(static edge => new[] { edge.Node1, edge.Node2 })
+        .Where(node => node.GlobalId != GlobalId)
+        .DistinctBy(static node => node.GlobalId)
+        .ToArray();
     public override IReadOnlyDictionary<string, string> Attributes {
         get {
             if (attributes is not null)
@@ -81,16 +85,54 @@ internal record NodeFileSystem : Node {
     public bool IsExists() => Directory.Exists(FolderPath);
     public DirectoryInfo GetInfo() => new DirectoryInfo(FolderPath);
 
-    public IEnumerable<EdgeFileSystem> GetEdges() {
+    public IEnumerable<Edge> GetEdges() {
         if (!IsExists())
             yield break;
+
+        if (TryGetParent(out var parent))
+            yield return new DirectoryEdgeFileSystem(parent, this);
+
+        foreach (var child in GetChildNodes())
+            yield return new DirectoryEdgeFileSystem(this, child);
+
         foreach (var link in GetSymLinks())
-            yield return new EdgeFileSystem(this, link);
+            yield return new LinkEdgeFileSystem(this, link);
     }
+
+    IEnumerable<NodeFileSystem> GetChildNodes() {
+        var directory = new DirectoryInfo(FolderPath);
+        foreach (var entry in directory.EnumerateDirectories()) {
+            if ((entry.Attributes & FileAttributes.ReparsePoint) != 0)
+                continue;
+            yield return new NodeFileSystem(entry, storageRootPath);
+        }
+    }
+
+    bool TryGetParent([NotNullWhen(true)] out NodeFileSystem? parent) {
+        parent = null;
+        if (IsStorageRoot(parentPath))
+            return false;
+
+        var parentDirectory = new DirectoryInfo(parentPath);
+        if (!parentDirectory.Exists)
+            return false;
+
+        parent = new NodeFileSystem(parentDirectory, storageRootPath);
+        return true;
+    }
+
+    bool IsStorageRoot(string path) =>
+        string.Equals(
+            NormalizeDirectoryPath(path),
+            NormalizeDirectoryPath(storageRootPath),
+            StringComparison.OrdinalIgnoreCase);
+
+    static string NormalizeDirectoryPath(string path) =>
+        GetFullPath(path)
+            .TrimEnd(DirectorySeparatorChar, AltDirectorySeparatorChar);
 
     IEnumerable<SymLink> GetSymLinks() {
         var directory = new DirectoryInfo(FolderPath);
-        var edges = new List<EdgeFileSystem>();
 
         foreach (var entry in directory.EnumerateFileSystemInfos()) {
             if (string.Equals(entry.Name, MetadataFileName, StringComparison.OrdinalIgnoreCase))
@@ -134,7 +176,26 @@ internal record NodeFileSystem : Node {
     }
 }
 
-internal record EdgeFileSystem : Edge {
+internal abstract record EdgeFileSystem : Edge {
+    protected EdgeFileSystem(NodeFileSystem node1, NodeFileSystem node2) {
+        Node1FileSystem = node1;
+        Node2FileSystem = node2;
+    }
+
+    public NodeFileSystem Node1FileSystem { get; }
+    public NodeFileSystem Node2FileSystem { get; }
+
+    public override Node Node1 => Node1FileSystem;
+    public override Node Node2 => Node2FileSystem;
+}
+
+internal sealed record DirectoryEdgeFileSystem : EdgeFileSystem {
+    public DirectoryEdgeFileSystem(NodeFileSystem parent, NodeFileSystem child)
+        : base(parent, child) {
+    }
+}
+
+internal sealed record LinkEdgeFileSystem : Edge {
     NodeFileSystem? child;
 
     public SymLink Link { get; }
@@ -144,7 +205,7 @@ internal record EdgeFileSystem : Edge {
     public override Node Node1 => Parent;
     public override Node Node2 => Child;
 
-    public EdgeFileSystem(NodeFileSystem node1, SymLink link) {
+    public LinkEdgeFileSystem(NodeFileSystem node1, SymLink link) {
         Parent = node1;
         Link = link;
     }

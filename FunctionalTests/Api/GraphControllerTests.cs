@@ -312,14 +312,39 @@ public sealed class GraphControllerTests {
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
         CollectionAssert.AreEquivalent(
-            new[] { ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString() },
+            new[] { ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString(), weapons.GlobalId.ToString() },
             response.Nodes.Select(static node => node.Name).ToArray());
         Assert.IsTrue(response.Nodes.All(static node => node.Edges.Count == 0));
 
-        var edge = response.Edges.Single();
+        Assert.AreEqual(2, response.Edges.Count);
+        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString())));
+        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, weapons.GlobalId.ToString(), ak47.GlobalId.ToString())));
+    }
+
+    [TestMethod]
+    public async Task GetSubgraphAsync_TraverseHierarchyEdges() {
+        await using var scope = TestGraphStorageScope.Create();
+        var root = (await scope.Storage.Create(new("root"))).Value!;
+        var weapons = (await scope.Storage.Create(new("weapons"), root.GlobalId)).Value!;
+        var ak47 = (await scope.Storage.Create(new("ak_47"), weapons.GlobalId)).Value!;
+
+        var controller = CreateController(scope.Storage);
+        var result = await controller.GetSubgraphAsync(new SubgraphRequest {
+            Nodes = [["root"]],
+            MaxDepth = 2
+        });
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+
+        var response = ok.Value as SubgraphResponse;
+        Assert.IsNotNull(response);
         CollectionAssert.AreEquivalent(
-            new[] { ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString() },
-            new[] { edge.SourceName, edge.TargetName });
+            new[] { root.GlobalId.ToString(), weapons.GlobalId.ToString(), ak47.GlobalId.ToString() },
+            response.Nodes.Select(static node => node.Name).ToArray());
+        Assert.AreEqual(2, response.Edges.Count);
+        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, root.GlobalId.ToString(), weapons.GlobalId.ToString())));
+        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, weapons.GlobalId.ToString(), ak47.GlobalId.ToString())));
     }
 
     [TestMethod]
@@ -411,6 +436,10 @@ public sealed class GraphControllerTests {
             .Cast<NodeSearchMatchResponse>()
             .ToArray();
     }
+
+    private static bool HasEndpoints(EdgeResponse edge, string left, string right) =>
+        (edge.SourceName == left && edge.TargetName == right) ||
+        (edge.SourceName == right && edge.TargetName == left);
 
     private sealed class SymLinkGraphStorageScope : IAsyncDisposable {
         private readonly string _rootPath;
