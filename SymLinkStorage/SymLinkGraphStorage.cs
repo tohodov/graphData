@@ -37,7 +37,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
         NodeFileSystem node;
         if (parentNode is null)
-            node = new NodeFileSystem(new NodeLocalId(name), root.FullName);
+            node = new NodeFileSystem(new NodeLocalId(name), root.FullName, this);
         else
             node = new NodeFileSystem(new NodeLocalId(name), parentNode);
         Directory.CreateDirectory(node.FolderPath);
@@ -97,7 +97,28 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     public Task<ServiceResult> Disconnect(NodeGlobalId leftPath, NodeGlobalId rightPath) {
-        return Task.FromResult(ServiceResult.InternalServerError(new NotImplementedException().ToString()));
+        if (!TryValidatePath(leftPath, "Source node path", out var validationError))
+            return Task.FromResult(ServiceResult.BadRequest(validationError));
+        if (!TryValidatePath(rightPath, "Target node path", out validationError))
+            return Task.FromResult(ServiceResult.BadRequest(validationError));
+
+        if (leftPath.SequenceEqual(rightPath))
+            return Task.FromResult(ServiceResult.BadRequest("SourcePath and TargetPath must be different."));
+
+        var left = FindNode(leftPath);
+        var right = FindNode(rightPath);
+        if (left is null || right is null)
+            return Task.FromResult(ServiceResult.NotFound());
+
+        if (IsHierarchyConnection(left.FolderPath, right.FolderPath))
+            return Task.FromResult(ServiceResult.BadRequest("Hierarchy connections cannot be disconnected."));
+
+        DeleteLinkIfExists(Path.Combine(GetNodePath(left), GetLinkName(right.LocalId)));
+        DeleteLinkIfExists(Path.Combine(GetNodePath(right), GetLinkName(left.LocalId)));
+
+        left.InvalidateGraphCache();
+        right.InvalidateGraphCache();
+        return Task.FromResult(ServiceResult.Ok());
     }
 
     public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node) {
@@ -126,7 +147,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
                 var relativePath = Path.GetRelativePath(root.FullName, directory.FullName);
                 if (!string.IsNullOrWhiteSpace(relativePath) && relativePath != ".")
-                    nodes.Add(new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), root.FullName));
+                    nodes.Add(new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), root.FullName, this));
 
                 stack.Push(directory);
             }
@@ -142,7 +163,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         if (!Directory.Exists(path))
             return null;
         return parent is null
-            ? new NodeFileSystem(nodeId, root.FullName)
+            ? new NodeFileSystem(nodeId, root.FullName, this)
             : new NodeFileSystem(nodeId, parent);
     }
 

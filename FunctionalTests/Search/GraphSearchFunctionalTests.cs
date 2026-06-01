@@ -459,13 +459,13 @@ public sealed class GraphSearchFunctionalTests
 
         public override NodeGlobalId GlobalId { get; }
 
-        public override IReadOnlyCollection<Edge> Edges { get; } = Array.Empty<Edge>();
+        public override ICollection<Edge> Edges { get; } = Array.Empty<Edge>();
 
-        public override IReadOnlyCollection<Node> Nodes { get; } = Array.Empty<Node>();
+        public override ICollection<Node> Nodes { get; } = Array.Empty<Node>();
 
-        public override IReadOnlyDictionary<string, string> Attributes
+        public override IDictionary<string, string> Attributes
         {
-            get => _readAttributes();
+            get => new Dictionary<string, string>(_readAttributes(), StringComparer.OrdinalIgnoreCase);
             set => throw new NotSupportedException();
         }
     }

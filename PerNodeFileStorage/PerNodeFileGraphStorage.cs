@@ -469,24 +469,24 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
     private sealed record StoredNode(string NodeName) : Node
     {
-        private IReadOnlyCollection<Edge>? _edges;
-        private IReadOnlyCollection<Node> _nodes = Array.Empty<Node>();
+        private ICollection<Edge>? _edges;
+        private ICollection<Node> _nodes = Array.Empty<Node>();
 
         public override NodeLocalId LocalId => new(NodeName);
         public override NodeGlobalId GlobalId => throw new NotImplementedException();
 
-        public override IReadOnlyCollection<Edge> Edges => _edges ??= _nodes.Select(x => (Edge)new StoredEdge(this, x)).ToArray();
+        public override ICollection<Edge> Edges => _edges ??= _nodes.Select(x => (Edge)new StoredEdge(this, x)).ToArray();
 
-        public override IReadOnlyCollection<Node> Nodes => _nodes;
+        public override ICollection<Node> Nodes => _nodes;
 
-        public override IReadOnlyDictionary<string, string> Attributes { get => AttributesSnapshot; set => throw new NotImplementedException(); } //TODO
+        public override IDictionary<string, string> Attributes { get => AttributesSnapshot; set => throw new NotImplementedException(); } //TODO
 
-        internal IReadOnlyDictionary<string, string> AttributesSnapshot { get; init; } =
+        internal IDictionary<string, string> AttributesSnapshot { get; init; } =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         internal void SetConnections(IReadOnlyCollection<Node> nodes)
         {
-            _nodes = nodes;
+            _nodes = nodes.ToArray();
             _edges = null;
         }
 

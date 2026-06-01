@@ -1,9 +1,8 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Threading;
-using System.Xml.Linq;
+using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
+using GraphData.Core.Services;
 using static System.IO.Path;
 
 namespace SymLinkStorage;
@@ -14,9 +13,11 @@ internal record NodeFileSystem : Node {
     readonly string parentPath;
     readonly string storageRootPath;
     readonly string folderPath;
-    IReadOnlyCollection<Edge>? edges;
-    IReadOnlyCollection<Node>? nodes;
-    IReadOnlyDictionary<string, string>? attributes;
+    internal readonly IGraphStorage storage;
+    IReadOnlyCollection<Edge>? edgeSnapshot;
+    IReadOnlyCollection<Node>? nodeSnapshot;
+    IDictionary<string, string>? attributes;
+    Dictionary<string, string>? attributesSnapshot;
 
     public string FolderPath => folderPath; //TODO encapsulate
     public string MetadataPath => Combine(FolderPath, MetadataFileName);
@@ -28,69 +29,127 @@ internal record NodeFileSystem : Node {
             .Split(DirectorySeparatorChar, AltDirectorySeparatorChar)
             .Where(static part => part is not "." and not "")
             .Select(GraphData.SymLinkStorage.SymLinkGraphStorage.NormalizeNodeName));
-    public override IReadOnlyCollection<Edge> Edges => edges ??= GetEdges().ToArray();
-    public override IReadOnlyCollection<Node> Nodes => nodes ??= Edges
-        .SelectMany(static edge => new[] { edge.Node1, edge.Node2 })
-        .Where(node => node.GlobalId != GlobalId)
-        .DistinctBy(static node => node.GlobalId)
-        .ToArray();
-    public override IReadOnlyDictionary<string, string> Attributes {
-        get {
-            if (attributes is not null)
-                return attributes;
-            try {
-                var metadata = new FileInfo(Combine(FolderPath, MetadataFileName));
-                if (!metadata.Exists) {
-                    attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    return attributes;
-                }
-                using var stream = metadata.OpenRead();
-                var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(stream);
-                attributes = dict is null
-                    ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                    : new Dictionary<string, string>(dict, StringComparer.OrdinalIgnoreCase);
-                return attributes;
-            } catch {
-                attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                return attributes;
-            }
-        }
+    public override ICollection<Edge> Edges { get; }
+    public override ICollection<Node> Nodes { get; }
+    public override IDictionary<string, string> Attributes {
+        get => attributes ??= new LiveAttributeDictionary(this);
         set {
-            WriteMetadata(value.ToDictionary());
-            attributes = value;
+            ReplaceAttributes(value);
         }
     }
 
-    public NodeFileSystem(DirectoryInfo info) {
+    public NodeFileSystem(DirectoryInfo info, IGraphStorage storage) {
+        this.storage = storage;
         folderPath = ResolveDirectoryPath(info.FullName);
         LocalId = new NodeLocalId(new DirectoryInfo(folderPath).Name);
         parentPath = GetDirectoryName(folderPath) ?? "";
         storageRootPath = parentPath;
+        Edges = new LiveEdgeCollection(this);
+        Nodes = new LiveNodeCollection(this);
     }
-    public NodeFileSystem(NodeLocalId name, string storageRootPath) {
+    public NodeFileSystem(NodeLocalId name, string storageRootPath, IGraphStorage storage) {
+        this.storage = storage;
         LocalId = name;
         this.storageRootPath = ResolveDirectoryPath(storageRootPath);
         parentPath = this.storageRootPath;
         folderPath = ResolveDirectoryPath(Combine(parentPath, name.ToString()));
+        Edges = new LiveEdgeCollection(this);
+        Nodes = new LiveNodeCollection(this);
     }
-    public NodeFileSystem(DirectoryInfo info, string storageRootPath) {
+    public NodeFileSystem(DirectoryInfo info, string storageRootPath, IGraphStorage storage) {
+        this.storage = storage;
         info = new DirectoryInfo(GetFullPath(info.FullName));
         LocalId = new NodeLocalId(info.Name);
         this.storageRootPath = ResolveDirectoryPath(storageRootPath);
         folderPath = ResolveDirectoryPath(info.FullName);
         parentPath = GetDirectoryName(folderPath) ?? this.storageRootPath;
+        Edges = new LiveEdgeCollection(this);
+        Nodes = new LiveNodeCollection(this);
     }
     public NodeFileSystem(NodeLocalId name, NodeFileSystem parent) {
+        storage = parent.storage;
         LocalId = name;
         storageRootPath = parent.storageRootPath;
         parentPath = parent.FolderPath;
         folderPath = ResolveDirectoryPath(Combine(parentPath, name.ToString()));
+        Edges = new LiveEdgeCollection(this);
+        Nodes = new LiveNodeCollection(this);
     }
 
     public bool IsExists() => Directory.Exists(FolderPath);
     public DirectoryInfo GetInfo() => new DirectoryInfo(FolderPath);
 
-    public IEnumerable<Edge> GetEdges() {
+    public IReadOnlyCollection<Edge> ReadEdges() {
+        return edgeSnapshot ??= GetEdges().ToArray();
+    }
+
+    public IReadOnlyCollection<Node> ReadNodes() {
+        return nodeSnapshot ??= ReadEdges()
+            .SelectMany(static edge => new[] { edge.Node1, edge.Node2 })
+            .Where(node => node.GlobalId != GlobalId)
+            .DistinctBy(static node => node.GlobalId)
+            .ToArray();
+    }
+
+    internal IDictionary<string, string> ReadAttributes() {
+        if (attributesSnapshot is not null)
+            return attributesSnapshot;
+
+        try {
+            var metadata = new FileInfo(Combine(FolderPath, MetadataFileName));
+            if (!metadata.Exists) {
+                attributesSnapshot = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                return attributesSnapshot;
+            }
+            using var stream = metadata.OpenRead();
+            var dict = JsonSerializer.Deserialize<Dictionary<string, string>>(stream);
+            attributesSnapshot = dict is null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(dict, StringComparer.OrdinalIgnoreCase);
+            return attributesSnapshot;
+        } catch {
+            attributesSnapshot = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            return attributesSnapshot;
+        }
+    }
+
+    internal void ReplaceAttributes(IDictionary<string, string> data) {
+        var copy = new Dictionary<string, string>(data, StringComparer.OrdinalIgnoreCase);
+        WriteMetadata(copy);
+        attributesSnapshot = copy;
+    }
+
+    internal void ConnectTo(Node target) {
+        ThrowIfFailed(storage.Connect(GlobalId, target.GlobalId).GetAwaiter().GetResult());
+        InvalidateGraphCache();
+        if (target is NodeFileSystem fileSystemNode)
+            fileSystemNode.InvalidateGraphCache();
+    }
+
+    internal bool DisconnectFrom(Node target) {
+        if (!ReadNodes().Any(node => node.GlobalId == target.GlobalId))
+            return false;
+
+        ThrowIfFailed(storage.Disconnect(GlobalId, target.GlobalId).GetAwaiter().GetResult());
+        InvalidateGraphCache();
+        if (target is NodeFileSystem fileSystemNode)
+            fileSystemNode.InvalidateGraphCache();
+        return true;
+    }
+
+    internal void InvalidateGraphCache() {
+        edgeSnapshot = null;
+        nodeSnapshot = null;
+    }
+
+    static void ThrowIfFailed(ServiceResult result) {
+        if (result.Status == ServiceResultStatus.Ok)
+            return;
+
+        throw new InvalidOperationException(result.Error ?? $"Graph operation failed with status '{result.Status}'.");
+    }
+
+    IEnumerable<Edge> GetEdges() {
         if (!IsExists())
             yield break;
 
@@ -109,7 +168,7 @@ internal record NodeFileSystem : Node {
         foreach (var entry in directory.EnumerateDirectories()) {
             if ((entry.Attributes & FileAttributes.ReparsePoint) != 0)
                 continue;
-            yield return new NodeFileSystem(entry, storageRootPath);
+            yield return new NodeFileSystem(entry, storageRootPath, storage);
         }
     }
 
@@ -122,7 +181,7 @@ internal record NodeFileSystem : Node {
         if (!parentDirectory.Exists)
             return false;
 
-        parent = new NodeFileSystem(parentDirectory, storageRootPath);
+        parent = new NodeFileSystem(parentDirectory, storageRootPath, storage);
         return true;
     }
 
@@ -216,9 +275,94 @@ internal record NodeFileSystem : Node {
         await JsonSerializer.SerializeAsync(stream, data, GraphData.SymLinkStorage.SymLinkGraphStorage.SerializerOptions);
     }
     public void WriteMetadata(IDictionary<string, string> data) {//TODO move to base
-        attributes = null;
+        attributesSnapshot = null;
         using var stream = new FileStream(MetadataPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
         JsonSerializer.Serialize(stream, data, GraphData.SymLinkStorage.SymLinkGraphStorage.SerializerOptions);
+    }
+
+    sealed class LiveNodeCollection(NodeFileSystem owner) : ICollection<Node> {
+        public int Count => owner.ReadNodes().Count;
+        public bool IsReadOnly => false;
+
+        public void Add(Node item) => owner.ConnectTo(item);
+        public bool Remove(Node item) => owner.DisconnectFrom(item);
+        public void Clear() {
+            foreach (var node in owner.ReadNodes().ToArray())
+                owner.DisconnectFrom(node);
+        }
+        public bool Contains(Node item) => owner.ReadNodes().Any(node => node.GlobalId == item.GlobalId);
+        public void CopyTo(Node[] array, int arrayIndex) => owner.ReadNodes().ToArray().CopyTo(array, arrayIndex);
+        public IEnumerator<Node> GetEnumerator() => owner.ReadNodes().GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    sealed class LiveEdgeCollection(NodeFileSystem owner) : ICollection<Edge> {
+        public int Count => owner.ReadEdges().Count;
+        public bool IsReadOnly => false;
+
+        public void Add(Edge item) => owner.ConnectTo(GetOtherEndpoint(item));
+        public bool Remove(Edge item) => owner.DisconnectFrom(GetOtherEndpoint(item));
+        public void Clear() {
+            foreach (var node in owner.ReadNodes().ToArray())
+                owner.DisconnectFrom(node);
+        }
+        public bool Contains(Edge item) {
+            var other = GetOtherEndpoint(item);
+            return owner.ReadNodes().Any(node => node.GlobalId == other.GlobalId);
+        }
+        public void CopyTo(Edge[] array, int arrayIndex) => owner.ReadEdges().ToArray().CopyTo(array, arrayIndex);
+        public IEnumerator<Edge> GetEnumerator() => owner.ReadEdges().GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        Node GetOtherEndpoint(Edge edge) {
+            if (edge.Node1.GlobalId == owner.GlobalId)
+                return edge.Node2;
+            if (edge.Node2.GlobalId == owner.GlobalId)
+                return edge.Node1;
+
+            throw new InvalidOperationException($"Edge does not belong to node '{owner.GlobalId}'.");
+        }
+    }
+
+    sealed class LiveAttributeDictionary(NodeFileSystem owner) : IDictionary<string, string> {
+        public ICollection<string> Keys => owner.ReadAttributes().Keys.ToArray();
+        public ICollection<string> Values => owner.ReadAttributes().Values.ToArray();
+        public int Count => owner.ReadAttributes().Count;
+        public bool IsReadOnly => false;
+
+        public string this[string key] {
+            get => owner.ReadAttributes()[key];
+            set => Mutate(attributes => attributes[key] = value);
+        }
+
+        public void Add(string key, string value) => Mutate(attributes => attributes.Add(key, value));
+        public bool Remove(string key) {
+            if (!owner.ReadAttributes().ContainsKey(key))
+                return false;
+
+            Mutate(attributes => attributes.Remove(key));
+            return true;
+        }
+        public void Clear() => owner.ReplaceAttributes(new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+        public bool ContainsKey(string key) => owner.ReadAttributes().ContainsKey(key);
+        public bool TryGetValue(string key, [MaybeNullWhen(false)] out string value) => owner.ReadAttributes().TryGetValue(key, out value);
+        public void Add(KeyValuePair<string, string> item) => Add(item.Key, item.Value);
+        public bool Contains(KeyValuePair<string, string> item) => ((ICollection<KeyValuePair<string, string>>)owner.ReadAttributes()).Contains(item);
+        public void CopyTo(KeyValuePair<string, string>[] array, int arrayIndex) => ((ICollection<KeyValuePair<string, string>>)owner.ReadAttributes()).CopyTo(array, arrayIndex);
+        public bool Remove(KeyValuePair<string, string> item) {
+            if (!Contains(item))
+                return false;
+
+            return Remove(item.Key);
+        }
+        public IEnumerator<KeyValuePair<string, string>> GetEnumerator() => owner.ReadAttributes().GetEnumerator();
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+
+        void Mutate(Action<Dictionary<string, string>> mutation) {
+            var copy = new Dictionary<string, string>(owner.ReadAttributes(), StringComparer.OrdinalIgnoreCase);
+            mutation(copy);
+            owner.ReplaceAttributes(copy);
+        }
     }
 }
 
@@ -246,7 +390,7 @@ internal sealed record LinkEdgeFileSystem : Edge {
 
     public SymLink Link { get; }
     public NodeFileSystem Parent { get; }
-    public NodeFileSystem Child => child ??= new NodeFileSystem(new DirectoryInfo(Link.TargetPath), Parent.StorageRootPath);
+    public NodeFileSystem Child => child ??= new NodeFileSystem(new DirectoryInfo(Link.TargetPath), Parent.StorageRootPath, Parent.storage);
 
     public override Node Node1 => Parent;
     public override Node Node2 => Child;

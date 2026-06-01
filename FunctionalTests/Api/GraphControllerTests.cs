@@ -637,16 +637,16 @@ public sealed class GraphControllerTests {
 
         public override NodeGlobalId GlobalId => GlobalIdValue;
 
-        public IReadOnlyCollection<Edge> EdgeSnapshot { get; set; } = Array.Empty<Edge>();
+        public ICollection<Edge> EdgeSnapshot { get; set; } = Array.Empty<Edge>();
 
-        public override IReadOnlyCollection<Edge> Edges => EdgeSnapshot;
+        public override ICollection<Edge> Edges => EdgeSnapshot;
 
-        public override IReadOnlyCollection<Node> Nodes => Edges
+        public override ICollection<Node> Nodes => Edges
             .SelectMany(static edge => new[] { edge.Node1, edge.Node2 })
             .Where(node => node.GlobalId != GlobalId)
             .ToArray();
 
-        public override IReadOnlyDictionary<string, string> Attributes { get; set; } =
+        public override IDictionary<string, string> Attributes { get; set; } =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
