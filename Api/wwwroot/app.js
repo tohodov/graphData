@@ -23,7 +23,7 @@ const searchStopButton = document.querySelector("#search-stop-button");
 const searchResults = document.querySelector("#search-results");
 const subgraphForm = document.querySelector("#subgraph-form");
 const subgraphResults = document.querySelector("#subgraph-results");
-const projectionMode = document.querySelector("#projection-mode");
+const projectionBasis = document.querySelector("#projection-basis");
 const basisNodeInput = document.querySelector("#basis-node");
 const nodeTypeRootInput = document.querySelector("#node-type-root");
 const edgeTypeRootInput = document.querySelector("#edge-type-root");
@@ -83,7 +83,7 @@ const state = {
   searchAbort: null,
   busy: false,
   schema: {
-    viewMode: "physical",
+    projectionBasis: "empty",
     basis: { ...defaultBasis },
     nodeTypes: new Map(),
     edgeTypes: new Map()
@@ -167,8 +167,11 @@ subgraphForm.addEventListener("submit", event => {
   loadSubgraph();
 });
 
-projectionMode.addEventListener("change", () => {
-  state.schema.viewMode = projectionMode.value;
+projectionBasis.addEventListener("change", async () => {
+  state.schema.projectionBasis = projectionBasis.value;
+  if (state.schema.projectionBasis === "typed") {
+    await refreshTypes();
+  }
   render();
   runSimulation(18);
 });
@@ -504,7 +507,7 @@ async function loadBasis() {
     storeNodeExpansion(basisNode, null, { select: false });
     await refreshTypes({ preserveBusy: true });
     render();
-    setStatus(`Basis loaded: ${basisName}`);
+    setStatus(`Базис загружен: ${basisName}`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -544,7 +547,7 @@ async function ensureDefaultBasis() {
 
     await refreshTypes({ preserveBusy: true });
     render();
-    setStatus("Default basis ensured");
+    setStatus("Базовый базис создан или обновлен");
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -590,7 +593,7 @@ async function refreshTypes(options = {}) {
 
     renderTypeControls();
     render();
-    setStatus(`Types: ${state.schema.nodeTypes.size} node, ${state.schema.edgeTypes.size} edge`);
+    setStatus(`Типы: ${state.schema.nodeTypes.size} узлов, ${state.schema.edgeTypes.size} связей`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -627,7 +630,7 @@ async function loadRelationInstances() {
     renderTypeControls();
     render();
     runSimulation(32);
-    setStatus(`Relation instances loaded: ${relationIds.length}`);
+    setStatus(`Инстансы связей загружены: ${relationIds.length}`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -638,7 +641,7 @@ async function loadRelationInstances() {
 async function saveNodeType() {
   const name = nodeTypeName.value.trim();
   if (!name) {
-    setStatus("Node type LocalId is required");
+    setStatus("Нужен LocalId типа узла");
     return;
   }
 
@@ -656,7 +659,7 @@ async function saveNodeType() {
     await refreshTypes({ preserveBusy: true });
     state.selectedName = created.globalId;
     render();
-    setStatus(`Node type saved: ${created.globalId}`);
+    setStatus(`Тип узла сохранен: ${created.globalId}`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -667,7 +670,7 @@ async function saveNodeType() {
 async function saveEdgeType() {
   const name = edgeTypeName.value.trim();
   if (!name) {
-    setStatus("Edge type LocalId is required");
+    setStatus("Нужен LocalId типа связи");
     return;
   }
 
@@ -686,7 +689,7 @@ async function saveEdgeType() {
     await refreshTypes({ preserveBusy: true });
     state.selectedName = created.globalId;
     render();
-    setStatus(`Edge type saved: ${created.globalId}`);
+    setStatus(`Тип связи сохранен: ${created.globalId}`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -698,7 +701,7 @@ async function createTypedNode() {
   const name = typedNodeName.value.trim();
   const typeGlobalId = typedNodeType.value;
   if (!name || !typeGlobalId) {
-    setStatus("Node LocalId and type are required");
+    setStatus("Нужны LocalId узла и тип");
     return;
   }
 
@@ -716,7 +719,7 @@ async function createTypedNode() {
     await loadNode(created.globalId, null, { select: true });
     render();
     renderTypeControls();
-    setStatus(`Typed node created: ${created.globalId}`);
+    setStatus(`Типизированный узел создан: ${created.globalId}`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -728,7 +731,7 @@ async function assignSelectedNodeType() {
   const nodeName = state.selectedName;
   const typeGlobalId = assignNodeType.value;
   if (!nodeName || !state.loaded.has(nodeName) || !typeGlobalId) {
-    setStatus("Select a loaded node and a node type");
+    setStatus("Выберите загруженный узел и тип узла");
     return;
   }
 
@@ -737,7 +740,7 @@ async function assignSelectedNodeType() {
     await connectGraphNodes(nodeName, typeGlobalId);
     await loadNode(nodeName, null, { select: true });
     render();
-    setStatus(`Assigned type ${displayName(typeGlobalId)} to ${displayName(nodeName)}`);
+    setStatus(`Тип ${displayName(typeGlobalId)} назначен узлу ${displayName(nodeName)}`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -750,7 +753,7 @@ async function createTypedEdge() {
   const target = typedEdgeTarget.value.trim();
   const typeGlobalId = typedEdgeType.value;
   if (!source || !target || !typeGlobalId) {
-    setStatus("Source, target, and edge type are required");
+    setStatus("Нужны источник, цель и тип связи");
     return;
   }
 
@@ -784,7 +787,7 @@ async function createTypedEdge() {
     renderTypeControls();
     render();
     runSimulation(36);
-    setStatus(`Typed edge created: ${relation.globalId}`);
+    setStatus(`Типизированная связь создана: ${relation.globalId}`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -807,7 +810,7 @@ async function deleteTypeOrRelation(globalId) {
     }
     await refreshTypes({ preserveBusy: true });
     render();
-    setStatus(`Deleted: ${globalId}`);
+    setStatus(`Удалено: ${globalId}`);
   } catch (error) {
     setStatus(error.message);
   } finally {
@@ -1295,11 +1298,11 @@ function handleEndpointClick(edge, anchorName) {
 
 function buildGraph() {
   const physical = buildPhysicalGraph();
-  if (state.schema.viewMode === "physical") {
+  if (state.schema.projectionBasis === "empty") {
     return physical;
   }
 
-  return buildProjectedGraph(physical, state.schema.viewMode);
+  return buildProjectedGraph(physical);
 }
 
 function buildPhysicalGraph() {
@@ -1332,7 +1335,7 @@ function buildPhysicalGraph() {
   return { nodes: [...nodes.values()], edges: [...edges.values()] };
 }
 
-function buildProjectedGraph(physical, mode) {
+function buildProjectedGraph(physical) {
   const relationInstances = discoverRelationInstances(physical);
   const hidden = new Set();
 
@@ -1345,11 +1348,9 @@ function buildProjectedGraph(physical, mode) {
     hidden.add(type.globalId);
   }
 
-  const visibleNodes = mode === "mixed"
-    ? physical.nodes
-    : physical.nodes
-        .filter(node => !hidden.has(node.name))
-        .filter(node => !isSchemaRootNode(node.name));
+  const visibleNodes = physical.nodes
+    .filter(node => !hidden.has(node.name))
+    .filter(node => !isSchemaRootNode(node.name));
   const visibleNodeIds = new Set(visibleNodes.map(node => node.name));
   const nodeTypeAssignments = getNodeTypeAssignments(physical);
   const typedNodes = visibleNodes.map(node => {
@@ -1374,10 +1375,6 @@ function buildProjectedGraph(physical, mode) {
   }
 
   const physicalEdges = physical.edges.filter(edge => {
-    if (mode === "mixed") {
-      return true;
-    }
-
     return visibleNodeIds.has(edge.sourceGlobalId)
       && visibleNodeIds.has(edge.targetGlobalId)
       && !hiddenPhysicalEdges.has(edge.key ?? edgeKey(edge.sourceGlobalId, edge.targetGlobalId));
@@ -1401,7 +1398,7 @@ function buildProjectedGraph(physical, mode) {
 
   return {
     nodes: typedNodes,
-    edges: mode === "mixed" ? [...physicalEdges, ...projectedEdges] : [...physicalEdges, ...projectedEdges]
+    edges: [...physicalEdges, ...projectedEdges]
   };
 }
 
@@ -1815,8 +1812,8 @@ function renderTypeControls() {
   renderTypeSelect(typedNodeType, state.schema.nodeTypes);
   renderTypeSelect(assignNodeType, state.schema.nodeTypes);
   renderTypeSelect(typedEdgeType, state.schema.edgeTypes);
-  renderTypeList(nodeTypeList, "Node types", state.schema.nodeTypes);
-  renderTypeList(edgeTypeList, "Edge types", state.schema.edgeTypes);
+  renderTypeList(nodeTypeList, "Типы узлов", state.schema.nodeTypes);
+  renderTypeList(edgeTypeList, "Типы связей", state.schema.edgeTypes);
   renderRelationList();
   renderProjectionSummary();
 }
@@ -1826,7 +1823,7 @@ function renderTypeSelect(select, types) {
   select.replaceChildren();
   const empty = document.createElement("option");
   empty.value = "";
-  empty.textContent = types.size === 0 ? "No types loaded" : "Select type";
+  empty.textContent = types.size === 0 ? "Типы не загружены" : "Выберите тип";
   select.append(empty);
   [...types.values()]
     .sort((a, b) => a.label.localeCompare(b.label, "ru"))
@@ -1869,7 +1866,7 @@ function renderTypeList(container, title, types) {
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "danger-button compact-button";
-      remove.textContent = "Delete";
+      remove.textContent = "Удалить";
       remove.addEventListener("click", () => deleteTypeOrRelation(type.globalId));
       row.append(swatch, open, remove);
       container.append(row);
@@ -1882,7 +1879,7 @@ function renderRelationList() {
   const relations = discoverRelationInstances(graph);
   const summary = document.createElement("div");
   summary.className = "result-summary";
-  summary.textContent = `Edge instances in loaded graph: ${relations.length}`;
+  summary.textContent = `Инстансы связей в загруженном графе: ${relations.length}`;
   typedEdgeList.append(summary);
   relations
     .sort((a, b) => a.relationGlobalId.localeCompare(b.relationGlobalId, "ru"))
@@ -1892,7 +1889,7 @@ function renderRelationList() {
       const open = document.createElement("button");
       open.type = "button";
       open.className = "result-row type-open-button";
-      open.textContent = `${relation.type?.label ?? "edge"}: ${displayName(relation.sourceGlobalId)} -> ${displayName(relation.targetGlobalId)}`;
+      open.textContent = `${relation.type?.label ?? "связь"}: ${displayName(relation.sourceGlobalId)} -> ${displayName(relation.targetGlobalId)}`;
       open.title = relation.relationGlobalId;
       open.addEventListener("click", () => {
         state.selectedName = relation.relationGlobalId;
@@ -1902,7 +1899,7 @@ function renderRelationList() {
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "danger-button compact-button";
-      remove.textContent = "Delete";
+      remove.textContent = "Удалить";
       remove.addEventListener("click", () => deleteTypeOrRelation(relation.relationGlobalId));
       row.append(open, remove);
       typedEdgeList.append(row);
@@ -1912,7 +1909,8 @@ function renderRelationList() {
 function renderProjectionSummary() {
   const physical = buildPhysicalGraph();
   const relations = discoverRelationInstances(physical);
-  projectionSummary.textContent = `Loaded: ${physical.nodes.length} nodes, ${physical.edges.length} physical edges, ${relations.length} typed edges`;
+  const basisLabel = state.schema.projectionBasis === "empty" ? "пустой базис" : "типовой базис";
+  projectionSummary.textContent = `Проекция: ${basisLabel}. Загружено: ${physical.nodes.length} узлов, ${physical.edges.length} исходных связей, ${relations.length} типизированных связей`;
 }
 
 function toGraphType(node) {
@@ -1965,7 +1963,7 @@ function syncBasisInputs() {
   nodeTypeRootInput.value = state.schema.basis.nodeTypeRoot;
   edgeTypeRootInput.value = state.schema.basis.edgeTypeRoot;
   relationRootInput.value = state.schema.basis.relationRoot;
-  projectionMode.value = state.schema.viewMode;
+  projectionBasis.value = state.schema.projectionBasis;
 }
 
 function createRelationLocalId(typeGlobalId) {

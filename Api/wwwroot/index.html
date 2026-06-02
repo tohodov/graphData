@@ -37,7 +37,7 @@
       <aside class="side-panel">
         <nav class="tabs" aria-label="Разделы редактора">
           <button class="tab-button active" type="button" data-tab="node">Узел</button>
-          <button class="tab-button" type="button" data-tab="types">Types</button>
+          <button class="tab-button" type="button" data-tab="types">Типы</button>
           <button class="tab-button" type="button" data-tab="search">Поиск</button>
           <button class="tab-button" type="button" data-tab="subgraph">Подграф</button>
         </nav>
@@ -84,83 +84,82 @@
 
         <section id="tab-types" class="tab-panel">
           <div class="panel-block">
-            <span class="eyebrow">Projection</span>
+            <span class="eyebrow">Проекция</span>
             <div class="stack-form">
               <label>
-                <span>View mode</span>
-                <select id="projection-mode">
-                  <option value="physical">Physical</option>
-                  <option value="typed">Typed</option>
-                  <option value="mixed">Mixed</option>
+                <span>Базис отображения</span>
+                <select id="projection-basis">
+                  <option value="empty">Пустой базис</option>
+                  <option value="typed">Типовой базис</option>
                 </select>
               </label>
               <label>
-                <span>Basis GlobalId</span>
+                <span>Узел базиса GlobalId</span>
                 <input id="basis-node" type="text" autocomplete="off" spellcheck="false" placeholder="graphdata/bases/default">
               </label>
               <div class="button-row">
-                <button id="load-basis-button" type="button">Load basis</button>
-                <button id="ensure-basis-button" type="button">Ensure default</button>
+                <button id="load-basis-button" type="button">Загрузить базис</button>
+                <button id="ensure-basis-button" type="button">Создать базовый</button>
               </div>
               <label>
-                <span>Node type root</span>
+                <span>Корень типов узлов</span>
                 <input id="node-type-root" type="text" autocomplete="off" spellcheck="false" value="graphdata/types/nodes">
               </label>
               <label>
-                <span>Edge type root</span>
+                <span>Корень типов связей</span>
                 <input id="edge-type-root" type="text" autocomplete="off" spellcheck="false" value="graphdata/types/edges">
               </label>
               <label>
-                <span>Relation root</span>
+                <span>Корень инстансов связей</span>
                 <input id="relation-root" type="text" autocomplete="off" spellcheck="false" value="graphdata/relations">
               </label>
-              <button id="refresh-types-button" type="button">Refresh types</button>
-              <button id="load-relations-button" type="button">Load relation instances</button>
+              <button id="refresh-types-button" type="button">Обновить типы</button>
+              <button id="load-relations-button" type="button">Загрузить инстансы связей</button>
               <div id="projection-summary" class="result-summary"></div>
             </div>
           </div>
 
           <form id="node-type-form" class="panel-block stack-form">
-            <span class="eyebrow">Node type</span>
+            <span class="eyebrow">Тип узла</span>
             <input id="node-type-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId">
-            <input id="node-type-label" type="text" autocomplete="off" spellcheck="false" placeholder="Label">
+            <input id="node-type-label" type="text" autocomplete="off" spellcheck="false" placeholder="Подпись">
             <input id="node-type-color" type="text" autocomplete="off" spellcheck="false" placeholder="#0f766e">
-            <button type="submit">Create / update node type</button>
+            <button type="submit">Создать / обновить тип узла</button>
           </form>
           <div id="node-type-list" class="result-list panel-block"></div>
 
           <form id="typed-node-form" class="panel-block stack-form">
-            <span class="eyebrow">Node instance</span>
-            <input id="typed-node-name" type="text" autocomplete="off" spellcheck="false" placeholder="New node LocalId">
+            <span class="eyebrow">Инстанс узла</span>
+            <input id="typed-node-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId нового узла">
             <select id="typed-node-type"></select>
-            <button type="submit">Create typed node</button>
+            <button type="submit">Создать типизированный узел</button>
           </form>
           <div class="panel-block stack-form">
-            <span class="eyebrow">Assign selected node type</span>
+            <span class="eyebrow">Тип выбранного узла</span>
             <select id="assign-node-type"></select>
-            <button id="assign-node-type-button" type="button">Assign to selected</button>
+            <button id="assign-node-type-button" type="button">Назначить выбранному</button>
           </div>
 
           <form id="edge-type-form" class="panel-block stack-form">
-            <span class="eyebrow">Edge type</span>
+            <span class="eyebrow">Тип связи</span>
             <input id="edge-type-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId">
-            <input id="edge-type-label" type="text" autocomplete="off" spellcheck="false" placeholder="Label">
+            <input id="edge-type-label" type="text" autocomplete="off" spellcheck="false" placeholder="Подпись">
             <input id="edge-type-color" type="text" autocomplete="off" spellcheck="false" placeholder="#b45309">
             <label class="check-line">
               <input id="edge-type-directed" type="checkbox" checked>
-              <span>Directed</span>
+              <span>Направленная</span>
             </label>
-            <button type="submit">Create / update edge type</button>
+            <button type="submit">Создать / обновить тип связи</button>
           </form>
           <div id="edge-type-list" class="result-list panel-block"></div>
 
           <form id="typed-connection-form" class="panel-block stack-form">
-            <span class="eyebrow">Edge instance</span>
-            <input id="typed-edge-source" type="text" autocomplete="off" spellcheck="false" placeholder="Source GlobalId">
-            <input id="typed-edge-target" type="text" autocomplete="off" spellcheck="false" placeholder="Target GlobalId">
+            <span class="eyebrow">Инстанс связи</span>
+            <input id="typed-edge-source" type="text" autocomplete="off" spellcheck="false" placeholder="Источник GlobalId">
+            <input id="typed-edge-target" type="text" autocomplete="off" spellcheck="false" placeholder="Цель GlobalId">
             <select id="typed-edge-type"></select>
-            <input id="typed-edge-name" type="text" autocomplete="off" spellcheck="false" placeholder="Relation LocalId optional">
-            <button type="submit">Create typed edge</button>
+            <input id="typed-edge-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId связи, необязательно">
+            <button type="submit">Создать типизированную связь</button>
           </form>
           <div id="typed-edge-list" class="result-list"></div>
         </section>
@@ -211,6 +210,6 @@
     </section>
   </main>
 
-  <script src="/app.js?v=20260602-types"></script>
+  <script src="/app.js?v=20260602-projection-basis"></script>
 </body>
 </html>
