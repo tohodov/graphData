@@ -467,10 +467,12 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
     private sealed record NodeDocument(string Name, Dictionary<string, string> Attributes);
 
-    private sealed record StoredNode(string NodeName) : Node
+    private sealed class StoredNode(string nodeName) : Node
     {
         private ICollection<Edge>? _edges;
         private ICollection<Node> _nodes = Array.Empty<Node>();
+
+        public string NodeName { get; } = nodeName;
 
         public override NodeLocalId LocalId => new(NodeName);
         public override NodeGlobalId GlobalId => throw new NotImplementedException();
@@ -501,7 +503,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         }
     }
 
-    private sealed record StoredEdge(Node First, Node Second) : Edge
+    private sealed class StoredEdge(Node First, Node Second) : Edge
     {
         public override Node Node1 => First;
 

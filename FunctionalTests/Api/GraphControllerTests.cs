@@ -632,10 +632,10 @@ public sealed class GraphControllerTests {
             throw new NotSupportedException();
     }
 
-    private sealed record StaticNode(NodeLocalId LocalIdValue, NodeGlobalId GlobalIdValue) : Node {
-        public override NodeLocalId LocalId => LocalIdValue;
+    private sealed class StaticNode(NodeLocalId localId, NodeGlobalId globalId) : Node {
+        public override NodeLocalId LocalId { get; } = localId;
 
-        public override NodeGlobalId GlobalId => GlobalIdValue;
+        public override NodeGlobalId GlobalId { get; } = globalId;
 
         public ICollection<Edge> EdgeSnapshot { get; set; } = Array.Empty<Edge>();
 
@@ -650,7 +650,7 @@ public sealed class GraphControllerTests {
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
-    private sealed record StaticEdge(Node First, Node Second) : Edge {
+    private sealed class StaticEdge(Node First, Node Second) : Edge {
         public override Node Node1 => First;
 
         public override Node Node2 => Second;

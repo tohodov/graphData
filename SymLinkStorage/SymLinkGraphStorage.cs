@@ -44,7 +44,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         if (attributes != null)
             node.WriteMetadata(attributes);
 
-        return Task.FromResult(ServiceResult<Node>.Ok(node));
+        return Task.FromResult(ServiceResult<Node>.Ok(node.AsNode));
     }
 
     public Task<ServiceResult<Node>> Get(NodeGlobalId path) {
@@ -54,7 +54,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         var node = FindNode(path);
         return Task.FromResult(node is null
             ? ServiceResult<Node>.NotFound()
-            : ServiceResult<Node>.Ok(node));
+            : ServiceResult<Node>.Ok(node.AsNode));
     }
 
     public Task<ServiceResult> Delete(NodeGlobalId path) {
@@ -65,7 +65,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         if (node is null)
             return Task.FromResult(ServiceResult.NotFound());
 
-        var connections = GetConnectedNodes(node);
+        var connections = GetConnectedNodes(node.AsNode);
         foreach (var connection in connections)
             DeleteLinkIfExists(Path.Combine(GetNodePath(connection), GetLinkName(node.LocalId)));
         DeleteDirectoryWithoutFollowingLinks(node.GetInfo());
@@ -147,7 +147,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
                 var relativePath = Path.GetRelativePath(root.FullName, directory.FullName);
                 if (!string.IsNullOrWhiteSpace(relativePath) && relativePath != ".")
-                    nodes.Add(new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), root.FullName, this));
+                    nodes.Add(new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), root.FullName, this).AsNode);
 
                 stack.Push(directory);
             }
@@ -212,9 +212,13 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Path.Combine(root.FullName, name);
     }
 
+    private string GetNodePath(NodeFileSystem node) {
+        return node.FolderPath;
+    }
+
     private string GetNodePath(Node node) {
-        return node is NodeFileSystem fileSystemNode
-            ? fileSystemNode.FolderPath
+        return node.TryGetState<NodeFileSystemState>(out var fileSystemState)
+            ? fileSystemState.Handle.FolderPath
             : GetNodePath(node.LocalId);
     }
 

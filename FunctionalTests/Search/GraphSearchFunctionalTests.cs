@@ -444,7 +444,7 @@ public sealed class GraphSearchFunctionalTests
             throw new NotSupportedException();
     }
 
-    private sealed record StreamingProbeNode : Node
+    private sealed class StreamingProbeNode : Node
     {
         private readonly Func<IReadOnlyDictionary<string, string>> _readAttributes;
 
