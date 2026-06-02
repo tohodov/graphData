@@ -30,6 +30,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -60,6 +61,7 @@ button:disabled {
 }
 
 input,
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
@@ -74,6 +76,11 @@ input {
   padding: 0 10px;
 }
 
+select {
+  min-height: 34px;
+  padding: 0 10px;
+}
+
 textarea {
   min-height: 300px;
   padding: 10px;
@@ -84,6 +91,7 @@ textarea {
 }
 
 input:focus,
+select:focus,
 textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.14);
@@ -240,7 +248,7 @@ textarea:focus {
 
 .tabs {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   padding: 10px;
   border-bottom: 1px solid var(--line);
@@ -405,6 +413,29 @@ textarea:focus {
   padding: 2px 0 4px;
 }
 
+.type-row {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.type-row .type-open-button {
+  min-width: 0;
+}
+
+.type-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(23, 33, 36, 0.18);
+}
+
+.compact-button {
+  min-height: 32px;
+  padding-inline: 9px;
+}
+
 .neighbor-dot {
   width: 10px;
   height: 10px;
@@ -426,6 +457,16 @@ textarea:focus {
   stroke: #20292d;
   stroke-width: 2.25;
   stroke-linecap: round;
+  pointer-events: none;
+}
+
+.edge-label {
+  font-size: 11px;
+  font-weight: 800;
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #ffffff;
+  stroke-width: 4px;
   pointer-events: none;
 }
 
