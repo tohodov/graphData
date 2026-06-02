@@ -37,7 +37,7 @@
       <aside class="side-panel">
         <nav class="tabs" aria-label="Разделы редактора">
           <button class="tab-button active" type="button" data-tab="node">Узел</button>
-          <button class="tab-button" type="button" data-tab="types">Типы</button>
+          <button class="tab-button" type="button" data-tab="types">Базис</button>
           <button class="tab-button" type="button" data-tab="search">Поиск</button>
           <button class="tab-button" type="button" data-tab="subgraph">Подграф</button>
         </nav>
@@ -60,20 +60,26 @@
             <div id="attribute-editor" class="attribute-editor"></div>
           </div>
 
-          <form id="create-node-form" class="panel-block compact-form">
+          <div class="panel-block stack-form">
+            <span class="eyebrow">Тип выбранного узла</span>
+            <select id="assign-node-type"></select>
+            <button id="assign-node-type-button" type="button">Назначить выбранному</button>
+          </div>
+
+          <form id="create-node-form" class="panel-block stack-form">
             <span class="eyebrow">Создать узел</span>
-            <div class="inline-form">
-              <input id="create-node-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId нового узла">
-              <button type="submit">Создать</button>
-            </div>
+            <input id="create-node-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId нового узла">
+            <input id="create-node-parent" type="text" autocomplete="off" spellcheck="false" placeholder="Parent GlobalId, необязательно">
+            <select id="create-node-type"></select>
+            <button type="submit">Создать</button>
           </form>
 
-          <form id="connect-form" class="panel-block compact-form">
+          <form id="connect-form" class="panel-block stack-form">
             <span class="eyebrow">Соединить с выбранным</span>
-            <div class="inline-form">
-              <input id="connect-target-name" type="text" autocomplete="off" spellcheck="false" placeholder="GlobalId узла">
-              <button type="submit">Связать</button>
-            </div>
+            <input id="connect-target-name" type="text" autocomplete="off" spellcheck="false" placeholder="GlobalId узла">
+            <select id="connect-edge-type"></select>
+            <input id="connect-edge-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId связи, если выбран тип">
+            <button type="submit">Связать</button>
           </form>
 
           <div class="panel-block">
@@ -113,54 +119,22 @@
                 <span>Корень инстансов связей</span>
                 <input id="relation-root" type="text" autocomplete="off" spellcheck="false" value="graphdata/relations">
               </label>
-              <button id="refresh-types-button" type="button">Обновить типы</button>
+              <button id="refresh-types-button" type="button">Загрузить подграф базиса</button>
               <button id="load-relations-button" type="button">Загрузить инстансы связей</button>
               <div id="projection-summary" class="result-summary"></div>
             </div>
           </div>
 
-          <form id="node-type-form" class="panel-block stack-form">
-            <span class="eyebrow">Тип узла</span>
-            <input id="node-type-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId">
-            <input id="node-type-label" type="text" autocomplete="off" spellcheck="false" placeholder="Подпись">
-            <input id="node-type-color" type="text" autocomplete="off" spellcheck="false" placeholder="#0f766e">
-            <button type="submit">Создать / обновить тип узла</button>
-          </form>
-          <div id="node-type-list" class="result-list panel-block"></div>
-
-          <form id="typed-node-form" class="panel-block stack-form">
-            <span class="eyebrow">Инстанс узла</span>
-            <input id="typed-node-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId нового узла">
-            <select id="typed-node-type"></select>
-            <button type="submit">Создать типизированный узел</button>
-          </form>
-          <div class="panel-block stack-form">
-            <span class="eyebrow">Тип выбранного узла</span>
-            <select id="assign-node-type"></select>
-            <button id="assign-node-type-button" type="button">Назначить выбранному</button>
+          <div class="panel-block">
+            <span class="eyebrow">Правила узлов</span>
+            <div id="node-type-list" class="result-list"></div>
           </div>
 
-          <form id="edge-type-form" class="panel-block stack-form">
-            <span class="eyebrow">Тип связи</span>
-            <input id="edge-type-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId">
-            <input id="edge-type-label" type="text" autocomplete="off" spellcheck="false" placeholder="Подпись">
-            <input id="edge-type-color" type="text" autocomplete="off" spellcheck="false" placeholder="#b45309">
-            <label class="check-line">
-              <input id="edge-type-directed" type="checkbox" checked>
-              <span>Направленная</span>
-            </label>
-            <button type="submit">Создать / обновить тип связи</button>
-          </form>
-          <div id="edge-type-list" class="result-list panel-block"></div>
+          <div class="panel-block">
+            <span class="eyebrow">Правила связей</span>
+            <div id="edge-type-list" class="result-list"></div>
+          </div>
 
-          <form id="typed-connection-form" class="panel-block stack-form">
-            <span class="eyebrow">Инстанс связи</span>
-            <input id="typed-edge-source" type="text" autocomplete="off" spellcheck="false" placeholder="Источник GlobalId">
-            <input id="typed-edge-target" type="text" autocomplete="off" spellcheck="false" placeholder="Цель GlobalId">
-            <select id="typed-edge-type"></select>
-            <input id="typed-edge-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId связи, необязательно">
-            <button type="submit">Создать типизированную связь</button>
-          </form>
           <div id="typed-edge-list" class="result-list"></div>
         </section>
 
@@ -210,6 +184,6 @@
     </section>
   </main>
 
-  <script src="/app.js?v=20260602-projection-basis"></script>
+  <script src="/app.js?v=20260602-basis-rules"></script>
 </body>
 </html>

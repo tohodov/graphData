@@ -13,8 +13,12 @@ const saveNodeButton = document.querySelector("#save-node-button");
 const deleteNodeButton = document.querySelector("#delete-node-button");
 const createNodeForm = document.querySelector("#create-node-form");
 const createNodeName = document.querySelector("#create-node-name");
+const createNodeParent = document.querySelector("#create-node-parent");
+const createNodeType = document.querySelector("#create-node-type");
 const connectForm = document.querySelector("#connect-form");
 const connectTargetName = document.querySelector("#connect-target-name");
+const connectEdgeType = document.querySelector("#connect-edge-type");
+const connectEdgeName = document.querySelector("#connect-edge-name");
 const neighborList = document.querySelector("#neighbor-list");
 const searchForm = document.querySelector("#search-form");
 const searchQueryJson = document.querySelector("#search-query-json");
@@ -33,27 +37,10 @@ const ensureBasisButton = document.querySelector("#ensure-basis-button");
 const refreshTypesButton = document.querySelector("#refresh-types-button");
 const loadRelationsButton = document.querySelector("#load-relations-button");
 const projectionSummary = document.querySelector("#projection-summary");
-const nodeTypeForm = document.querySelector("#node-type-form");
-const nodeTypeName = document.querySelector("#node-type-name");
-const nodeTypeLabel = document.querySelector("#node-type-label");
-const nodeTypeColor = document.querySelector("#node-type-color");
 const nodeTypeList = document.querySelector("#node-type-list");
-const typedNodeForm = document.querySelector("#typed-node-form");
-const typedNodeName = document.querySelector("#typed-node-name");
-const typedNodeType = document.querySelector("#typed-node-type");
 const assignNodeType = document.querySelector("#assign-node-type");
 const assignNodeTypeButton = document.querySelector("#assign-node-type-button");
-const edgeTypeForm = document.querySelector("#edge-type-form");
-const edgeTypeName = document.querySelector("#edge-type-name");
-const edgeTypeLabel = document.querySelector("#edge-type-label");
-const edgeTypeColor = document.querySelector("#edge-type-color");
-const edgeTypeDirected = document.querySelector("#edge-type-directed");
 const edgeTypeList = document.querySelector("#edge-type-list");
-const typedConnectionForm = document.querySelector("#typed-connection-form");
-const typedEdgeSource = document.querySelector("#typed-edge-source");
-const typedEdgeTarget = document.querySelector("#typed-edge-target");
-const typedEdgeType = document.querySelector("#typed-edge-type");
-const typedEdgeName = document.querySelector("#typed-edge-name");
 const typedEdgeList = document.querySelector("#typed-edge-list");
 
 const svgNs = "http://www.w3.org/2000/svg";
@@ -68,6 +55,11 @@ const graphKindAttribute = "graph.kind";
 const graphElementAttribute = "graph.element";
 const graphRoleAttribute = "graph.role";
 const graphTypeNameAttribute = "graph.typeName";
+const projectionVisibleAttribute = "projection.visible";
+const projectionColorAttribute = "projection.color";
+const projectionInfoAttribute = "projection.infoAttribute";
+const projectionDirectedAttribute = "projection.directed";
+const projectionLabelVisibleAttribute = "projection.labelVisible";
 
 const state = {
   rootName: null,
@@ -138,7 +130,10 @@ createNodeForm.addEventListener("submit", async event => {
     return;
   }
 
-  await createNode(name);
+  await createNode(name, {
+    parentGlobalId: createNodeParent.value.trim(),
+    typeGlobalId: createNodeType.value
+  });
 });
 
 connectForm.addEventListener("submit", async event => {
@@ -150,7 +145,10 @@ connectForm.addEventListener("submit", async event => {
     return;
   }
 
-  await connectNodes(sourceGlobalId, targetGlobalId);
+  await connectNodes(sourceGlobalId, targetGlobalId, {
+    typeGlobalId: connectEdgeType.value,
+    relationLocalId: connectEdgeName.value.trim()
+  });
 });
 
 searchForm.addEventListener("submit", event => {
@@ -181,31 +179,7 @@ ensureBasisButton.addEventListener("click", ensureDefaultBasis);
 refreshTypesButton.addEventListener("click", refreshTypes);
 loadRelationsButton.addEventListener("click", loadRelationInstances);
 
-nodeTypeForm.addEventListener("submit", event => {
-  event.preventDefault();
-  saveNodeType();
-});
-
-typedNodeForm.addEventListener("submit", event => {
-  event.preventDefault();
-  createTypedNode();
-});
-
 assignNodeTypeButton.addEventListener("click", assignSelectedNodeType);
-
-edgeTypeForm.addEventListener("submit", event => {
-  event.preventDefault();
-  saveEdgeType();
-});
-
-typedConnectionForm.addEventListener("submit", event => {
-  event.preventDefault();
-  createTypedEdge();
-});
-
-typedEdgeSource.addEventListener("input", () => {
-  typedEdgeSource.dataset.autofill = "false";
-});
 
 svg.addEventListener("pointerdown", event => {
   if (event.button !== 0 || event.target.closest(".node") || event.target.closest(".edge-button")) {
@@ -383,15 +357,33 @@ function mergeEdges(left = [], right = []) {
   return [...edges.values()];
 }
 
-async function createNode(name) {
+async function createNode(name, options = {}) {
+  const parentGlobalId = options.parentGlobalId || null;
+  const typeGlobalId = options.typeGlobalId || "";
   setBusy(true);
   try {
-    const created = await createGraphNode(name);
+    const attributes = typeGlobalId
+      ? {
+          [graphKindAttribute]: "instance",
+          [graphElementAttribute]: "node",
+          [graphTypeNameAttribute]: typeGlobalId
+        }
+      : null;
+    const created = await createGraphNode(name, parentGlobalId, attributes);
+    if (typeGlobalId) {
+      await connectGraphNodes(created.globalId, typeGlobalId);
+    }
     createNodeName.value = "";
+    createNodeParent.value = "";
     state.rootName = state.rootName ?? created.name;
     state.selectedName = created.name;
     seedPosition(created.name, state.rootName === created.name ? null : state.rootName, state.loaded.size);
-    state.loaded.set(created.name, created);
+    if (typeGlobalId) {
+      const expanded = normalizeNodeResponse(await apiJson(`/api/graph/nodes?${toGlobalIdQuery(created.globalId)}`));
+      storeNodeExpansion(expanded, null, { select: true });
+    } else {
+      state.loaded.set(created.name, created);
+    }
     render();
     renderTypeControls();
     setActiveTab("node");
@@ -461,12 +453,28 @@ async function deleteSelectedNode() {
   }
 }
 
-async function connectNodes(sourceGlobalId, targetGlobalId) {
+async function connectNodes(sourceGlobalId, targetGlobalId, options = {}) {
+  const typeGlobalId = options.typeGlobalId || "";
   setBusy(true);
   try {
-    await connectGraphNodes(sourceGlobalId, targetGlobalId);
+    if (typeGlobalId) {
+      const relation = await createTypedEdgeRelation(
+        sourceGlobalId,
+        targetGlobalId,
+        typeGlobalId,
+        options.relationLocalId || "");
+      const subgraph = await loadSubgraphForRoots([relation.globalId, sourceGlobalId, targetGlobalId, typeGlobalId], 2);
+      mergeSubgraphIntoViewer(subgraph, { select: false });
+      state.selectedName = sourceGlobalId;
+    } else {
+      await connectGraphNodes(sourceGlobalId, targetGlobalId);
+      await loadNode(sourceGlobalId, null, { select: true });
+    }
     connectTargetName.value = "";
-    await loadNode(sourceGlobalId, null, { select: true });
+    connectEdgeName.value = "";
+    render();
+    renderTypeControls();
+    runSimulation(32);
     setStatus(`Связаны "${displayName(sourceGlobalId)}" и "${displayName(targetGlobalId)}"`);
   } catch (error) {
     setStatus(error.message);
@@ -562,32 +570,20 @@ async function refreshTypes(options = {}) {
 
   try {
     readBasisInputs();
-    const matches = await searchNodeMatches({
-      return: ["n"],
-      where: {
-        kind: "attribute",
-        node: variableSelector("n"),
-        key: graphKindAttribute,
-        operator: "equals",
-        value: "type"
-      },
-      limit: 500
-    });
     const basis = getBasis();
+    const response = await loadSubgraphForRoots([basis.nodeTypeRoot, basis.edgeTypeRoot], 4);
+    mergeSubgraphIntoViewer(response, { select: false });
+    const nodes = (response.nodes ?? []).map(normalizeNodeResponse);
     state.schema.nodeTypes = new Map();
     state.schema.edgeTypes = new Map();
 
-    matches
-      .map(match => normalizeNodeResponse(match.node))
+    nodes
+      .filter(node => node.globalId !== basis.nodeTypeRoot && node.globalId !== basis.edgeTypeRoot)
       .forEach(node => {
-        const type = toGraphType(node);
-        if (type.element === "node" && isChildOf(type.globalId, basis.nodeTypeRoot)) {
-          state.schema.nodeTypes.set(type.globalId, type);
-          storeNodeExpansion(node, null, { select: false });
-        }
-        if (type.element === "edge" && isChildOf(type.globalId, basis.edgeTypeRoot)) {
-          state.schema.edgeTypes.set(type.globalId, type);
-          storeNodeExpansion(node, null, { select: false });
+        if (isChildOf(node.globalId, basis.nodeTypeRoot)) {
+          state.schema.nodeTypes.set(node.globalId, toGraphType(node, "node"));
+        } else if (isChildOf(node.globalId, basis.edgeTypeRoot)) {
+          state.schema.edgeTypes.set(node.globalId, toGraphType(node, "edge"));
         }
       });
 
@@ -638,95 +634,6 @@ async function loadRelationInstances() {
   }
 }
 
-async function saveNodeType() {
-  const name = nodeTypeName.value.trim();
-  if (!name) {
-    setStatus("Нужен LocalId типа узла");
-    return;
-  }
-
-  setBusy(true);
-  try {
-    readBasisInputs();
-    await ensurePath(getBasis().nodeTypeRoot);
-    const created = await upsertGraphType(
-      getBasis().nodeTypeRoot,
-      name,
-      nodeTypeLabel.value.trim() || name,
-      nodeTypeColor.value.trim() || "#0f766e",
-      "node");
-    clearTypeForm(nodeTypeForm);
-    await refreshTypes({ preserveBusy: true });
-    state.selectedName = created.globalId;
-    render();
-    setStatus(`Тип узла сохранен: ${created.globalId}`);
-  } catch (error) {
-    setStatus(error.message);
-  } finally {
-    setBusy(false);
-  }
-}
-
-async function saveEdgeType() {
-  const name = edgeTypeName.value.trim();
-  if (!name) {
-    setStatus("Нужен LocalId типа связи");
-    return;
-  }
-
-  setBusy(true);
-  try {
-    readBasisInputs();
-    await ensurePath(getBasis().edgeTypeRoot);
-    const created = await upsertGraphType(
-      getBasis().edgeTypeRoot,
-      name,
-      edgeTypeLabel.value.trim() || name,
-      edgeTypeColor.value.trim() || "#b45309",
-      "edge",
-      edgeTypeDirected.checked);
-    clearTypeForm(edgeTypeForm);
-    await refreshTypes({ preserveBusy: true });
-    state.selectedName = created.globalId;
-    render();
-    setStatus(`Тип связи сохранен: ${created.globalId}`);
-  } catch (error) {
-    setStatus(error.message);
-  } finally {
-    setBusy(false);
-  }
-}
-
-async function createTypedNode() {
-  const name = typedNodeName.value.trim();
-  const typeGlobalId = typedNodeType.value;
-  if (!name || !typeGlobalId) {
-    setStatus("Нужны LocalId узла и тип");
-    return;
-  }
-
-  setBusy(true);
-  try {
-    const created = await createGraphNode(name, null, {
-      [graphKindAttribute]: "instance",
-      [graphElementAttribute]: "node",
-      [graphTypeNameAttribute]: typeGlobalId
-    });
-    await connectGraphNodes(created.globalId, typeGlobalId);
-    typedNodeName.value = "";
-    state.loaded.set(created.name, created);
-    seedPosition(created.name, state.rootName, state.loaded.size);
-    await loadNode(created.globalId, null, { select: true });
-    render();
-    renderTypeControls();
-    setStatus(`Типизированный узел создан: ${created.globalId}`);
-  } catch (error) {
-    setStatus(error.message);
-  } finally {
-    setBusy(false);
-  }
-}
-
 async function assignSelectedNodeType() {
   const nodeName = state.selectedName;
   const typeGlobalId = assignNodeType.value;
@@ -748,74 +655,27 @@ async function assignSelectedNodeType() {
   }
 }
 
-async function createTypedEdge() {
-  const source = typedEdgeSource.value.trim() || state.selectedName;
-  const target = typedEdgeTarget.value.trim();
-  const typeGlobalId = typedEdgeType.value;
-  if (!source || !target || !typeGlobalId) {
-    setStatus("Нужны источник, цель и тип связи");
-    return;
-  }
+async function createTypedEdgeRelation(source, target, typeGlobalId, relationLocalId = "") {
+  readBasisInputs();
+  await ensurePath(getBasis().relationRoot);
+  const relation = await createGraphNode(relationLocalId || createRelationLocalId(typeGlobalId), getBasis().relationRoot, {
+    [graphKindAttribute]: "edge-instance",
+    [graphElementAttribute]: "edge",
+    [graphTypeNameAttribute]: typeGlobalId
+  });
+  const sourcePort = await createGraphNode("source", relation.globalId, {
+    [graphKindAttribute]: "edge-port",
+    [graphRoleAttribute]: "source"
+  });
+  const targetPort = await createGraphNode("target", relation.globalId, {
+    [graphKindAttribute]: "edge-port",
+    [graphRoleAttribute]: "target"
+  });
 
-  setBusy(true);
-  try {
-    readBasisInputs();
-    await ensurePath(getBasis().relationRoot);
-    const relationLocalId = typedEdgeName.value.trim() || createRelationLocalId(typeGlobalId);
-    const relation = await createGraphNode(relationLocalId, getBasis().relationRoot, {
-      [graphKindAttribute]: "edge-instance",
-      [graphElementAttribute]: "edge",
-      [graphTypeNameAttribute]: typeGlobalId
-    });
-    const sourcePort = await createGraphNode("source", relation.globalId, {
-      [graphKindAttribute]: "edge-port",
-      [graphRoleAttribute]: "source"
-    });
-    const targetPort = await createGraphNode("target", relation.globalId, {
-      [graphKindAttribute]: "edge-port",
-      [graphRoleAttribute]: "target"
-    });
-
-    await connectGraphNodes(relation.globalId, typeGlobalId);
-    await connectGraphNodes(sourcePort.globalId, source);
-    await connectGraphNodes(targetPort.globalId, target);
-
-    const subgraph = await loadSubgraphForRoots([relation.globalId, source, target, typeGlobalId], 2);
-    mergeSubgraphIntoViewer(subgraph, { select: true });
-    state.selectedName = relation.globalId;
-    typedEdgeName.value = "";
-    renderTypeControls();
-    render();
-    runSimulation(36);
-    setStatus(`Типизированная связь создана: ${relation.globalId}`);
-  } catch (error) {
-    setStatus(error.message);
-  } finally {
-    setBusy(false);
-  }
-}
-
-async function deleteTypeOrRelation(globalId) {
-  setBusy(true);
-  try {
-    await apiJson(`/api/graph/nodes?${toGlobalIdQuery(globalId)}`, {
-      method: "DELETE",
-      expectJson: false
-    });
-    removeLocalNode(globalId, false);
-    for (const name of [...state.loaded.keys()]) {
-      if (isChildOf(name, globalId)) {
-        removeLocalNode(name, false);
-      }
-    }
-    await refreshTypes({ preserveBusy: true });
-    render();
-    setStatus(`Удалено: ${globalId}`);
-  } catch (error) {
-    setStatus(error.message);
-  } finally {
-    setBusy(false);
-  }
+  await connectGraphNodes(relation.globalId, typeGlobalId);
+  await connectGraphNodes(sourcePort.globalId, source);
+  await connectGraphNodes(targetPort.globalId, target);
+  return relation;
 }
 
 async function upsertGraphType(rootGlobalId, localId, label, color, element, directed = false) {
@@ -1348,11 +1208,12 @@ function buildProjectedGraph(physical) {
     hidden.add(type.globalId);
   }
 
+  const nodeTypeAssignments = getNodeTypeAssignments(physical);
   const visibleNodes = physical.nodes
     .filter(node => !hidden.has(node.name))
-    .filter(node => !isSchemaRootNode(node.name));
+    .filter(node => !isSchemaRootNode(node.name))
+    .filter(node => nodeTypeAssignments.get(node.name)?.visible !== false);
   const visibleNodeIds = new Set(visibleNodes.map(node => node.name));
-  const nodeTypeAssignments = getNodeTypeAssignments(physical);
   const typedNodes = visibleNodes.map(node => {
     const nodeType = nodeTypeAssignments.get(node.name);
     return {
@@ -1360,9 +1221,7 @@ function buildProjectedGraph(physical) {
       typeGlobalId: nodeType?.globalId,
       typeLabel: nodeType?.label,
       color: nodeType?.color,
-      displayName: nodeType?.label
-        ? `${node.displayName} : ${nodeType.label}`
-        : node.displayName
+      displayName: formatProjectedNodeName(node, nodeType)
     };
   });
 
@@ -1382,6 +1241,7 @@ function buildProjectedGraph(physical) {
 
   const projectedEdges = relationInstances
     .filter(relation => visibleNodeIds.has(relation.sourceGlobalId) && visibleNodeIds.has(relation.targetGlobalId))
+    .filter(relation => relation.type?.visible !== false)
     .map(relation => ({
       key: `projected:${relation.relationGlobalId}`,
       sourceGlobalId: relation.sourceGlobalId,
@@ -1390,7 +1250,7 @@ function buildProjectedGraph(physical) {
       targetLocalId: getLocalId(relation.targetGlobalId),
       relationGlobalId: relation.relationGlobalId,
       typeGlobalId: relation.type?.globalId,
-      label: relation.type?.label ?? relation.displayName,
+      label: relation.type?.labelVisible === false ? "" : relation.type?.label ?? relation.displayName,
       color: relation.type?.color,
       directed: relation.type?.directed ?? false,
       projected: true
@@ -1400,6 +1260,17 @@ function buildProjectedGraph(physical) {
     nodes: typedNodes,
     edges: [...physicalEdges, ...projectedEdges]
   };
+}
+
+function formatProjectedNodeName(node, nodeType) {
+  const parts = [node.displayName];
+  if (nodeType?.label) {
+    parts.push(nodeType.label);
+  }
+  if (nodeType?.infoAttribute && node.attributes?.[nodeType.infoAttribute]) {
+    parts.push(node.attributes[nodeType.infoAttribute]);
+  }
+  return parts.join(" : ");
 }
 
 function discoverRelationInstances(physical) {
@@ -1670,10 +1541,6 @@ function renderInspector(graph) {
   const selected = graph.nodes.find(node => node.name === state.selectedName);
   selectedName.textContent = selected?.displayName ?? "-";
   selectedName.title = selected?.globalId ?? "";
-  if (selected?.globalId && (!typedEdgeSource.value || typedEdgeSource.dataset.autofill === "true")) {
-    typedEdgeSource.value = selected.globalId;
-    typedEdgeSource.dataset.autofill = "true";
-  }
   updateEditorState();
   renderAttributeEditor(selected?.attributes ?? {});
   neighborList.replaceChildren();
@@ -1809,21 +1676,21 @@ function renderSubgraphResults(response) {
 }
 
 function renderTypeControls() {
-  renderTypeSelect(typedNodeType, state.schema.nodeTypes);
-  renderTypeSelect(assignNodeType, state.schema.nodeTypes);
-  renderTypeSelect(typedEdgeType, state.schema.edgeTypes);
-  renderTypeList(nodeTypeList, "Типы узлов", state.schema.nodeTypes);
-  renderTypeList(edgeTypeList, "Типы связей", state.schema.edgeTypes);
+  renderTypeSelect(createNodeType, state.schema.nodeTypes, "Без типа");
+  renderTypeSelect(assignNodeType, state.schema.nodeTypes, "Не менять тип");
+  renderTypeSelect(connectEdgeType, state.schema.edgeTypes, "Физическая связь");
+  renderTypeList(nodeTypeList, "Типы узлов", state.schema.nodeTypes, "node");
+  renderTypeList(edgeTypeList, "Типы связей", state.schema.edgeTypes, "edge");
   renderRelationList();
   renderProjectionSummary();
 }
 
-function renderTypeSelect(select, types) {
+function renderTypeSelect(select, types, emptyLabel = "Выберите тип") {
   const current = select.value;
   select.replaceChildren();
   const empty = document.createElement("option");
   empty.value = "";
-  empty.textContent = types.size === 0 ? "Типы не загружены" : "Выберите тип";
+  empty.textContent = types.size === 0 ? "Типы не загружены" : emptyLabel;
   select.append(empty);
   [...types.values()]
     .sort((a, b) => a.label.localeCompare(b.label, "ru"))
@@ -1838,7 +1705,7 @@ function renderTypeSelect(select, types) {
   }
 }
 
-function renderTypeList(container, title, types) {
+function renderTypeList(container, title, types, element) {
   container.replaceChildren();
   const summary = document.createElement("div");
   summary.className = "result-summary";
@@ -1848,7 +1715,11 @@ function renderTypeList(container, title, types) {
     .sort((a, b) => a.label.localeCompare(b.label, "ru"))
     .forEach(type => {
       const row = document.createElement("div");
-      row.className = "type-row";
+      row.className = "basis-rule";
+      row.title = type.globalId;
+
+      const header = document.createElement("div");
+      header.className = "type-row";
       const swatch = document.createElement("span");
       swatch.className = "type-swatch";
       swatch.style.background = type.color || "#9daab2";
@@ -1863,14 +1734,109 @@ function renderTypeList(container, title, types) {
         render();
         setActiveTab("node");
       });
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "danger-button compact-button";
-      remove.textContent = "Удалить";
-      remove.addEventListener("click", () => deleteTypeOrRelation(type.globalId));
-      row.append(swatch, open, remove);
+      const save = document.createElement("button");
+      save.type = "button";
+      save.className = "compact-button";
+      save.textContent = "Сохранить";
+      header.append(swatch, open, save);
+
+      const rules = document.createElement("div");
+      rules.className = "basis-rule-grid";
+      const visible = createCheckboxRule("Показывать", type.visible);
+      const color = createTextRule("Цвет", type.color || "", "#0f766e");
+      rules.append(visible.label, color.label);
+
+      const extraControls = {};
+      if (element === "node") {
+        extraControls.info = createTextRule("Инфо атрибут", type.infoAttribute || "", "например: status");
+        rules.append(extraControls.info.label);
+      } else {
+        extraControls.directed = createCheckboxRule("Стрелка", type.directed);
+        extraControls.labelVisible = createCheckboxRule("Подпись", type.labelVisible);
+        rules.append(extraControls.directed.label, extraControls.labelVisible.label);
+      }
+
+      save.addEventListener("click", () => saveTypeProjectionRules(type.globalId, element, {
+        visible: visible.input.checked,
+        color: color.input.value.trim(),
+        infoAttribute: extraControls.info?.input.value.trim() ?? "",
+        directed: extraControls.directed?.input.checked ?? false,
+        labelVisible: extraControls.labelVisible?.input.checked ?? true
+      }));
+
+      row.append(header, rules);
       container.append(row);
     });
+}
+
+function createCheckboxRule(text, checked) {
+  const label = document.createElement("label");
+  label.className = "check-line basis-rule-check";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  const span = document.createElement("span");
+  span.textContent = text;
+  label.append(input, span);
+  return { label, input };
+}
+
+function createTextRule(text, value, placeholder) {
+  const label = document.createElement("label");
+  const span = document.createElement("span");
+  span.textContent = text;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = value;
+  input.placeholder = placeholder;
+  label.append(span, input);
+  return { label, input };
+}
+
+async function saveTypeProjectionRules(globalId, element, rules) {
+  setBusy(true);
+  try {
+    const loaded = await getLoadedNode(globalId);
+    const attributes = { ...(loaded.attributes ?? {}) };
+    attributes[graphKindAttribute] = attributes[graphKindAttribute] || "type";
+    attributes[graphElementAttribute] = element;
+    attributes[projectionVisibleAttribute] = rules.visible ? "true" : "false";
+    if (rules.color) {
+      attributes[projectionColorAttribute] = rules.color;
+      attributes.color = rules.color;
+    } else {
+      delete attributes[projectionColorAttribute];
+      delete attributes.color;
+    }
+
+    if (element === "node") {
+      if (rules.infoAttribute) {
+        attributes[projectionInfoAttribute] = rules.infoAttribute;
+      } else {
+        delete attributes[projectionInfoAttribute];
+      }
+    } else {
+      attributes[projectionDirectedAttribute] = rules.directed ? "true" : "false";
+      attributes.directed = rules.directed ? "true" : "false";
+      attributes[projectionLabelVisibleAttribute] = rules.labelVisible ? "true" : "false";
+    }
+
+    await updateGraphNodeAttributes(globalId, attributes);
+    loaded.attributes = attributes;
+    state.loaded.set(globalId, loaded);
+    if (element === "node") {
+      state.schema.nodeTypes.set(globalId, toGraphType(loaded, "node"));
+    } else {
+      state.schema.edgeTypes.set(globalId, toGraphType(loaded, "edge"));
+    }
+    render();
+    renderTypeControls();
+    setStatus(`Правила сохранены: ${displayName(globalId)}`);
+  } catch (error) {
+    setStatus(error.message);
+  } finally {
+    setBusy(false);
+  }
 }
 
 function renderRelationList() {
@@ -1885,7 +1851,7 @@ function renderRelationList() {
     .sort((a, b) => a.relationGlobalId.localeCompare(b.relationGlobalId, "ru"))
     .forEach(relation => {
       const row = document.createElement("div");
-      row.className = "type-row";
+      row.className = "basis-relation-row";
       const open = document.createElement("button");
       open.type = "button";
       open.className = "result-row type-open-button";
@@ -1896,12 +1862,7 @@ function renderRelationList() {
         render();
         setActiveTab("node");
       });
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "danger-button compact-button";
-      remove.textContent = "Удалить";
-      remove.addEventListener("click", () => deleteTypeOrRelation(relation.relationGlobalId));
-      row.append(open, remove);
+      row.append(open);
       typedEdgeList.append(row);
     });
 }
@@ -1913,14 +1874,18 @@ function renderProjectionSummary() {
   projectionSummary.textContent = `Проекция: ${basisLabel}. Загружено: ${physical.nodes.length} узлов, ${physical.edges.length} исходных связей, ${relations.length} типизированных связей`;
 }
 
-function toGraphType(node) {
+function toGraphType(node, fallbackElement = "node") {
   return {
     globalId: node.globalId,
     localId: node.localId,
     label: node.attributes?.label || node.localId,
-    color: normalizeColor(node.attributes?.color),
-    element: node.attributes?.[graphElementAttribute] || "node",
-    directed: String(node.attributes?.directed ?? "").toLowerCase() === "true"
+    color: normalizeColor(node.attributes?.[projectionColorAttribute] || node.attributes?.color),
+    element: node.attributes?.[graphElementAttribute] || fallbackElement,
+    visible: String(node.attributes?.[projectionVisibleAttribute] ?? "true").toLowerCase() !== "false",
+    infoAttribute: node.attributes?.[projectionInfoAttribute] || "",
+    labelVisible: String(node.attributes?.[projectionLabelVisibleAttribute] ?? "true").toLowerCase() !== "false",
+    directed: String(node.attributes?.[projectionDirectedAttribute] ?? node.attributes?.directed ?? "").toLowerCase() === "true",
+    attributes: node.attributes ?? {}
   };
 }
 
@@ -1932,12 +1897,6 @@ function normalizeColor(value) {
   return value.trim();
 }
 
-function clearTypeForm(form) {
-  form.querySelectorAll("input[type='text']").forEach(input => {
-    input.value = "";
-  });
-}
-
 async function ensureNodeLoaded(globalId) {
   if (state.loaded.has(globalId)) {
     return;
@@ -1945,6 +1904,19 @@ async function ensureNodeLoaded(globalId) {
 
   const node = normalizeNodeResponse(await apiJson(`/api/graph/nodes?${toGlobalIdQuery(globalId)}`));
   storeNodeExpansion(node, null, { select: false });
+}
+
+async function getLoadedNode(globalId) {
+  await ensureNodeLoaded(globalId);
+  return state.loaded.get(globalId);
+}
+
+async function updateGraphNodeAttributes(globalId, attributes) {
+  await apiJson(`/api/graph/nodes?${toGlobalIdQuery(globalId)}`, {
+    method: "PUT",
+    body: JSON.stringify({ attributes }),
+    expectJson: false
+  });
 }
 
 function getBasis() {
