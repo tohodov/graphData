@@ -41,21 +41,21 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
     }
 
     [HttpPut("nodes")]
-    public async Task<IActionResult> UpdateNodeAsync([FromQuery] string[] globalId, [FromBody] UpdateNodeRequest request) {
+    public async Task<ActionResult<OperationResponse>> UpdateNodeAsync([FromQuery] string[] globalId, [FromBody] UpdateNodeRequest request) {
         var result = await _storage.Update(new NodeGlobalId(globalId), request.Attributes);
-        return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult(result.Status, result.Error);
+        return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result.Status, result.Error);
     }
 
     [HttpDelete("nodes")]
-    public async Task<IActionResult> DeleteNodeAsync([FromQuery] string[] globalId) {
+    public async Task<ActionResult<OperationResponse>> DeleteNodeAsync([FromQuery] string[] globalId) {
         var result = await _storage.Delete(new NodeGlobalId(globalId));
-        return ToActionResult(result);
+        return ToActionResult<OperationResponse>(result);
     }
 
     [HttpPost("connections")]
-    public async Task<IActionResult> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
+    public async Task<ActionResult<OperationResponse>> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
         var result = await _storage.Connect(request.SourceGlobalId, request.TargetGlobalId);
-        return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult(result);
+        return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
     }
 
     [HttpPost("subgraph")]
@@ -68,7 +68,7 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
     }
 
     [HttpPost("search/nodes")]
-    public async Task<IActionResult> SearchNodesAsync(
+    public async Task<ActionResult<IAsyncEnumerable<NodeSearchMatchResponse>>> SearchNodesAsync(
         [FromBody] NodeSearchQuery request,
         CancellationToken cancellationToken) {
         if (request is null)
@@ -117,11 +117,11 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
         };
     }
 
-    private IActionResult ToActionResult(ServiceResult result) {
-        return ToActionResult(result.Status, result.Error);
+    private ActionResult<T> ToActionResult<T>(ServiceResult result) {
+        return ToActionResult<T>(result.Status, result.Error);
     }
 
-    private IActionResult ToActionResult(ServiceResultStatus status, string? error) {
+    private ActionResult<T> ToActionResult<T>(ServiceResultStatus status, string? error) {
         return status switch {
             ServiceResultStatus.Ok => Ok(),
             ServiceResultStatus.BadRequest => BadRequest(error),

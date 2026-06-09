@@ -243,7 +243,7 @@ public sealed class GraphControllerTests {
             TargetGlobalId = new(["target:name"])
         });
 
-        var badRequest = result as BadRequestObjectResult;
+        var badRequest = result.Result as BadRequestObjectResult;
         Assert.IsNotNull(badRequest);
         var message = badRequest.Value as string;
         Assert.IsNotNull(message);
@@ -262,7 +262,7 @@ public sealed class GraphControllerTests {
             TargetGlobalId = new(["small_arms_test_graph", "weapons"])
         });
 
-        Assert.IsInstanceOfType(result, typeof(NoContentResult));
+        Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
 
         var rootPath = Path.Combine(scope.RootPath, "small_arms_test_graph");
         var childPath = Path.Combine(rootPath, "weapons");
@@ -285,7 +285,7 @@ public sealed class GraphControllerTests {
             TargetGlobalId = new(["small_arms_test_graph", "categories"])
         });
 
-        Assert.IsInstanceOfType(result, typeof(NoContentResult));
+        Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
 
         weapons = (await scope.Storage.Get(new("small_arms_test_graph", "weapons"))).Value!;
         categories = (await scope.Storage.Get(new("small_arms_test_graph", "categories"))).Value!;
@@ -317,7 +317,7 @@ public sealed class GraphControllerTests {
             TargetGlobalId = new([target.LocalId])
         });
 
-        var objectResult = result as ObjectResult;
+        var objectResult = result.Result as ObjectResult;
         Assert.IsNotNull(objectResult);
         Assert.AreEqual(StatusCodes.Status500InternalServerError, objectResult.StatusCode);
         var message = objectResult.Value as string;
@@ -337,7 +337,7 @@ public sealed class GraphControllerTests {
             }
         }, CancellationToken.None);
 
-        var badRequest = result as BadRequestObjectResult;
+        var badRequest = result.Result as BadRequestObjectResult;
         Assert.IsNotNull(badRequest);
         var message = badRequest.Value as string;
         Assert.IsNotNull(message);
@@ -503,7 +503,7 @@ public sealed class GraphControllerTests {
         NodeSearchQuery query) {
         var result = await controller.SearchNodesAsync(query, CancellationToken.None);
 
-        Assert.IsInstanceOfType(result, typeof(EmptyResult));
+        Assert.IsInstanceOfType(result.Result, typeof(EmptyResult));
         StringAssert.Contains(controller.Response.ContentType, "application/x-ndjson");
 
         controller.Response.Body.Position = 0;
