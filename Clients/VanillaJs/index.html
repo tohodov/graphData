@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GraphData</title>
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
   <main class="app-shell">
@@ -46,6 +46,7 @@
           <div class="panel-block selected-node">
             <span class="eyebrow">Выбран</span>
             <h1 id="selected-name">-</h1>
+            <div id="selected-rank" class="selected-rank">rank: -</div>
             <div class="button-row">
               <button id="save-node-button" type="button">Сохранить</button>
               <button id="delete-node-button" class="danger-button" type="button">Удалить</button>
@@ -184,6 +185,6 @@
     </section>
   </main>
 
-  <script src="/app.js?v=20260602-basis-rules"></script>
+  <script src="./app.js?v=20260609-basis-rank"></script>
 </body>
 </html>

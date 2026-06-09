@@ -285,6 +285,12 @@ textarea:focus {
   overflow-wrap: anywhere;
 }
 
+.selected-rank {
+  margin: -5px 0 12px;
+  color: var(--text-soft);
+  font-size: 13px;
+}
+
 .eyebrow,
 .stack-form label span {
   display: block;

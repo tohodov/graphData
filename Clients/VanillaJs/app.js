@@ -7,6 +7,7 @@ const resetButton = document.querySelector("#reset-button");
 const statusOutput = document.querySelector("#status");
 const emptyState = document.querySelector("#empty-state");
 const selectedName = document.querySelector("#selected-name");
+const selectedRank = document.querySelector("#selected-rank");
 const attributeEditor = document.querySelector("#attribute-editor");
 const addAttributeButton = document.querySelector("#add-attribute-button");
 const saveNodeButton = document.querySelector("#save-node-button");
@@ -60,6 +61,7 @@ const projectionColorAttribute = "projection.color";
 const projectionInfoAttribute = "projection.infoAttribute";
 const projectionDirectedAttribute = "projection.directed";
 const projectionLabelVisibleAttribute = "projection.labelVisible";
+const projectionRankAttribute = "projection.rank";
 
 const state = {
   rootName: null,
@@ -532,10 +534,10 @@ async function ensureDefaultBasis() {
     await ensurePath(basis.edgeTypeRoot, { [graphKindAttribute]: "type-root", [graphElementAttribute]: "edge" });
     await ensurePath(basis.relationRoot, { [graphKindAttribute]: "relation-root", [graphElementAttribute]: "edge" });
 
-    await upsertGraphType(basis.nodeTypeRoot, "Type", "Type", "#334155", "node");
-    await upsertGraphType(basis.nodeTypeRoot, "Instance", "Instance", "#0f766e", "node");
-    await upsertGraphType(basis.edgeTypeRoot, "Type", "Type", "#7c2d12", "edge", true);
-    await upsertGraphType(basis.edgeTypeRoot, "Instance", "Instance", "#b45309", "edge", true);
+    await upsertGraphType(basis.nodeTypeRoot, "Type", "Type", "#334155", "node", false, 90);
+    await upsertGraphType(basis.nodeTypeRoot, "Instance", "Instance", "#0f766e", "node", false, 70);
+    await upsertGraphType(basis.edgeTypeRoot, "Type", "Type", "#7c2d12", "edge", true, 60);
+    await upsertGraphType(basis.edgeTypeRoot, "Instance", "Instance", "#b45309", "edge", true, 50);
 
     const basisName = basisNodeInput.value.trim();
     if (basisName) {
@@ -678,12 +680,13 @@ async function createTypedEdgeRelation(source, target, typeGlobalId, relationLoc
   return relation;
 }
 
-async function upsertGraphType(rootGlobalId, localId, label, color, element, directed = false) {
+async function upsertGraphType(rootGlobalId, localId, label, color, element, directed = false, rank = element === "node" ? 50 : 30) {
   const attrs = {
     [graphKindAttribute]: "type",
     [graphElementAttribute]: element,
     label,
-    color
+    color,
+    [projectionRankAttribute]: String(rank)
   };
   if (element === "edge") {
     attrs.directed = directed ? "true" : "false";
@@ -1220,6 +1223,7 @@ function buildProjectedGraph(physical) {
       ...node,
       typeGlobalId: nodeType?.globalId,
       typeLabel: nodeType?.label,
+      typeRank: nodeType?.rank,
       color: nodeType?.color,
       displayName: formatProjectedNodeName(node, nodeType)
     };
@@ -1253,12 +1257,87 @@ function buildProjectedGraph(physical) {
       label: relation.type?.labelVisible === false ? "" : relation.type?.label ?? relation.displayName,
       color: relation.type?.color,
       directed: relation.type?.directed ?? false,
+      typeRank: relation.type?.rank,
       projected: true
     }));
 
-  return {
+  return applyBasisRanks({
     nodes: typedNodes,
     edges: [...physicalEdges, ...projectedEdges]
+  });
+}
+
+function applyBasisRanks(graph) {
+  const nodeStats = new Map(graph.nodes.map(node => [node.name, {
+    weightedDegree: 0,
+    focusBoost: 0,
+    reasons: []
+  }]));
+
+  const rankedEdges = graph.edges.map(edge => {
+    const edgeType = edge.typeGlobalId ? state.schema.edgeTypes.get(edge.typeGlobalId) : null;
+    const basisWeight = readRank(edge.typeRank ?? edgeType?.rank, edge.projected ? 35 : 8);
+    const rank = roundRank(basisWeight);
+    const sourceStats = nodeStats.get(edge.sourceGlobalId);
+    const targetStats = nodeStats.get(edge.targetGlobalId);
+
+    if (sourceStats) {
+      sourceStats.weightedDegree += basisWeight;
+    }
+    if (targetStats) {
+      targetStats.weightedDegree += basisWeight;
+    }
+    if (state.selectedName === edge.sourceGlobalId && targetStats) {
+      targetStats.focusBoost += Math.min(25, basisWeight * 0.35);
+    }
+    if (state.selectedName === edge.targetGlobalId && sourceStats) {
+      sourceStats.focusBoost += Math.min(25, basisWeight * 0.35);
+    }
+
+    return {
+      ...edge,
+      viewRank: rank,
+      viewRankReason: edgeType?.label
+        ? `edge type ${edgeType.label}: ${formatRank(rank)}`
+        : `physical edge: ${formatRank(rank)}`
+    };
+  });
+
+  const rankedNodes = graph.nodes.map(node => {
+    const stats = nodeStats.get(node.name);
+    const typePriority = readRank(node.typeRank, node.typeGlobalId ? 50 : 20);
+    const degreeScore = Math.log1p(stats?.weightedDegree ?? 0) * 8;
+    const rootBoost = node.name === state.rootName ? 18 : 0;
+    const selectedBoost = node.name === state.selectedName ? 30 : 0;
+    const rank = roundRank(typePriority + degreeScore + rootBoost + selectedBoost + (stats?.focusBoost ?? 0));
+    const reasons = [
+      node.typeLabel ? `type ${node.typeLabel}: ${formatRank(typePriority)}` : `untyped: ${formatRank(typePriority)}`,
+      `links: ${formatRank(degreeScore)}`
+    ];
+    if (rootBoost) {
+      reasons.push(`root: ${formatRank(rootBoost)}`);
+    }
+    if (selectedBoost) {
+      reasons.push(`selected: ${formatRank(selectedBoost)}`);
+    }
+    if (stats?.focusBoost) {
+      reasons.push(`focus: ${formatRank(stats.focusBoost)}`);
+    }
+
+    return {
+      ...node,
+      viewRank: rank,
+      viewRadius: rankToRadius(rank),
+      viewRankReason: reasons.join("; ")
+    };
+  });
+
+  rankedNodes.sort((left, right) => right.viewRank - left.viewRank || left.displayName.localeCompare(right.displayName, "ru"));
+  rankedEdges.sort((left, right) => (right.viewRank ?? 0) - (left.viewRank ?? 0));
+
+  return {
+    nodes: rankedNodes,
+    edges: rankedEdges
   };
 }
 
@@ -1395,13 +1474,14 @@ function render() {
   const buttonLayer = createSvg("g", { class: "edge-buttons" });
   viewport.append(edgeLayer, nodeLayer, buttonLayer);
 
-  graph.edges.forEach(edge => renderEdge(edgeLayer, buttonLayer, edge));
+  const nodesByName = new Map(graph.nodes.map(node => [node.name, node]));
+  graph.edges.forEach(edge => renderEdge(edgeLayer, buttonLayer, edge, nodesByName));
   graph.nodes.forEach(node => renderNode(nodeLayer, node));
   renderInspector(graph);
   applyView();
 }
 
-function renderEdge(edgeLayer, buttonLayer, edge) {
+function renderEdge(edgeLayer, buttonLayer, edge, nodesByName) {
   const sourceLoaded = state.loaded.has(edge.sourceGlobalId);
   const targetLoaded = state.loaded.has(edge.targetGlobalId);
   const source = state.positions.get(edge.sourceGlobalId);
@@ -1412,8 +1492,8 @@ function renderEdge(edgeLayer, buttonLayer, edge) {
   }
 
   if (sourceLoaded && targetLoaded) {
-    const sourceButton = pointOnCircle(source, target, endpointOffset);
-    const targetButton = pointOnCircle(target, source, endpointOffset);
+    const sourceButton = pointOnCircle(source, target, getNodeEndpointOffset(nodesByName.get(edge.sourceGlobalId)));
+    const targetButton = pointOnCircle(target, source, getNodeEndpointOffset(nodesByName.get(edge.targetGlobalId)));
     const line = createSvg("line", {
       class: "edge-line",
       x1: sourceButton.x,
@@ -1434,8 +1514,12 @@ function renderEdge(edgeLayer, buttonLayer, edge) {
   const hiddenName = sourceLoaded ? edge.targetGlobalId : edge.sourceGlobalId;
   const anchor = sourceLoaded ? source : target;
   const hidden = sourceLoaded ? target : source;
-  const buttonPoint = pointOnCircle(anchor, hidden, endpointOffset);
+  const buttonPoint = pointOnCircle(anchor, hidden, getNodeEndpointOffset(nodesByName.get(anchorName)));
   renderEndpointButton(buttonLayer, buttonPoint, edge, anchorName, true, hiddenName);
+}
+
+function getNodeEndpointOffset(node) {
+  return (node?.viewRadius ?? nodeRadius) + 9;
 }
 
 function renderEdgeLabel(layer, source, target, edge) {
@@ -1464,7 +1548,14 @@ function renderEndpointButton(layer, point, edge, anchorName, collapsed, hiddenN
     "aria-label": collapsed ? `Развернуть ${otherDisplayName}` : `Выбрать ${otherDisplayName}`
   });
   const title = createSvg("title", {});
-  title.textContent = collapsed ? `Развернуть ${otherDisplayName}` : `Выбрать ${otherDisplayName}`;
+  const titleLines = [collapsed ? `Развернуть ${otherDisplayName}` : `Выбрать ${otherDisplayName}`];
+  if (Number.isFinite(edge.viewRank)) {
+    titleLines.push(`Edge rank: ${formatRank(edge.viewRank)}`);
+  }
+  if (edge.viewRankReason) {
+    titleLines.push(edge.viewRankReason);
+  }
+  title.textContent = titleLines.join("\n");
 
   const hit = createSvg("circle", { class: "edge-button-hit", r: 17, cx: 0, cy: 0 });
   const core = createSvg("circle", {
@@ -1504,12 +1595,20 @@ function renderNode(layer, node) {
     "aria-label": node.displayName ?? node.name
   });
   const title = createSvg("title", {});
-  title.textContent = node.typeLabel
-    ? `${node.globalId ?? node.name}\nType: ${node.typeLabel}`
-    : node.globalId ?? node.name;
+  const titleLines = [node.globalId ?? node.name];
+  if (node.typeLabel) {
+    titleLines.push(`Type: ${node.typeLabel}`);
+  }
+  if (Number.isFinite(node.viewRank)) {
+    titleLines.push(`Rank: ${formatRank(node.viewRank)}`);
+  }
+  if (node.viewRankReason) {
+    titleLines.push(node.viewRankReason);
+  }
+  title.textContent = titleLines.join("\n");
   const circle = createSvg("circle", {
     class: "node-shell",
-    r: nodeRadius,
+    r: node.viewRadius ?? nodeRadius,
     cx: 0,
     cy: 0,
     style: node.color ? `stroke:${node.color}` : ""
@@ -1541,6 +1640,8 @@ function renderInspector(graph) {
   const selected = graph.nodes.find(node => node.name === state.selectedName);
   selectedName.textContent = selected?.displayName ?? "-";
   selectedName.title = selected?.globalId ?? "";
+  selectedRank.textContent = selected?.viewRank === undefined ? "rank: -" : `rank: ${formatRank(selected.viewRank)}`;
+  selectedRank.title = selected?.viewRankReason ?? "";
   updateEditorState();
   renderAttributeEditor(selected?.attributes ?? {});
   neighborList.replaceChildren();
@@ -1744,7 +1845,8 @@ function renderTypeList(container, title, types, element) {
       rules.className = "basis-rule-grid";
       const visible = createCheckboxRule("Показывать", type.visible);
       const color = createTextRule("Цвет", type.color || "", "#0f766e");
-      rules.append(visible.label, color.label);
+      const rank = createTextRule("Ранг", formatRankInput(type.rank), element === "node" ? "50" : "30");
+      rules.append(visible.label, color.label, rank.label);
 
       const extraControls = {};
       if (element === "node") {
@@ -1759,6 +1861,7 @@ function renderTypeList(container, title, types, element) {
       save.addEventListener("click", () => saveTypeProjectionRules(type.globalId, element, {
         visible: visible.input.checked,
         color: color.input.value.trim(),
+        rank: rank.input.value.trim(),
         infoAttribute: extraControls.info?.input.value.trim() ?? "",
         directed: extraControls.directed?.input.checked ?? false,
         labelVisible: extraControls.labelVisible?.input.checked ?? true
@@ -1807,6 +1910,12 @@ async function saveTypeProjectionRules(globalId, element, rules) {
     } else {
       delete attributes[projectionColorAttribute];
       delete attributes.color;
+    }
+
+    if (rules.rank) {
+      attributes[projectionRankAttribute] = String(readRank(rules.rank, element === "edge" ? 30 : 50));
+    } else {
+      delete attributes[projectionRankAttribute];
     }
 
     if (element === "node") {
@@ -1870,11 +1979,17 @@ function renderRelationList() {
 function renderProjectionSummary() {
   const physical = buildPhysicalGraph();
   const relations = discoverRelationInstances(physical);
+  const graph = buildGraph();
+  const rankedNodes = graph.nodes.filter(node => Number.isFinite(node.viewRank));
+  const topRank = rankedNodes.length === 0
+    ? ""
+    : ` Топ rank: ${formatRank(Math.max(...rankedNodes.map(node => node.viewRank)))}.`;
   const basisLabel = state.schema.projectionBasis === "empty" ? "пустой базис" : "типовой базис";
-  projectionSummary.textContent = `Проекция: ${basisLabel}. Загружено: ${physical.nodes.length} узлов, ${physical.edges.length} исходных связей, ${relations.length} типизированных связей`;
+  projectionSummary.textContent = `Проекция: ${basisLabel}. Загружено: ${physical.nodes.length} узлов, ${physical.edges.length} исходных связей, ${relations.length} типизированных связей.${topRank}`;
 }
 
 function toGraphType(node, fallbackElement = "node") {
+  const fallbackRank = fallbackElement === "edge" ? 30 : 50;
   return {
     globalId: node.globalId,
     localId: node.localId,
@@ -1885,8 +2000,30 @@ function toGraphType(node, fallbackElement = "node") {
     infoAttribute: node.attributes?.[projectionInfoAttribute] || "",
     labelVisible: String(node.attributes?.[projectionLabelVisibleAttribute] ?? "true").toLowerCase() !== "false",
     directed: String(node.attributes?.[projectionDirectedAttribute] ?? node.attributes?.directed ?? "").toLowerCase() === "true",
+    rank: readRank(node.attributes?.[projectionRankAttribute] ?? node.attributes?.rank, fallbackRank),
     attributes: node.attributes ?? {}
   };
+}
+
+function readRank(value, fallback = 0) {
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
+}
+
+function roundRank(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function formatRank(value) {
+  return roundRank(value).toFixed(1);
+}
+
+function formatRankInput(value) {
+  return Number.isFinite(value) ? String(roundRank(value)) : "";
+}
+
+function rankToRadius(rank) {
+  return Math.round(Math.max(28, Math.min(48, nodeRadius + (rank - 55) * 0.14)));
 }
 
 function normalizeColor(value) {
