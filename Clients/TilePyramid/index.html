@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GraphData WebGPU Raw</title>
+  <title>GraphData Tile Pyramid</title>
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
       <div class="brand">
         <span class="brand-mark"></span>
         <span>GraphData</span>
-        <strong>WebGPU Raw</strong>
+        <strong>Tile Pyramid</strong>
       </div>
 
       <form id="load-form" class="load-form">
@@ -26,36 +26,32 @@
 
       <nav class="client-nav" aria-label="Clients">
         <a href="/clients/VanillaJs/">Vanilla</a>
-        <a href="/clients/WebGpuRaw/" aria-current="page">WebGPU</a>
-        <a href="/clients/TilePyramid/">Tiles</a>
+        <a href="/clients/WebGpuRaw/">WebGPU</a>
+        <a href="/clients/TilePyramid/" aria-current="page">Tiles</a>
       </nav>
 
       <output id="status" class="status" aria-live="polite"></output>
     </header>
 
     <section class="workspace">
-      <section class="graph-stage" aria-label="Graph viewport">
-        <canvas id="graph-canvas"></canvas>
-        <div id="gpu-warning" class="gpu-warning" hidden>
-          <strong>WebGPU unavailable</strong>
-          <span>Use a Chromium/Edge build with WebGPU enabled.</span>
-        </div>
+      <section class="map-stage" aria-label="Tile pyramid graph viewport">
+        <canvas id="map-canvas"></canvas>
         <div class="viewport-actions">
           <button id="fit-button" type="button">Fit</button>
           <button id="reset-button" type="button">Reset</button>
         </div>
         <dl class="stats-strip">
           <div>
-            <dt>Nodes</dt>
-            <dd id="stat-nodes">0</dd>
+            <dt>Level</dt>
+            <dd id="stat-level">0</dd>
           </div>
           <div>
-            <dt>Edges</dt>
-            <dd id="stat-edges">0</dd>
+            <dt>Tiles</dt>
+            <dd id="stat-tiles">0</dd>
           </div>
           <div>
-            <dt>Memory</dt>
-            <dd id="stat-memory">0 B</dd>
+            <dt>Drawn</dt>
+            <dd id="stat-drawn">0 / 0</dd>
           </div>
           <div>
             <dt>Frame</dt>
@@ -77,6 +73,10 @@
               <dd id="selected-global">-</dd>
             </div>
             <div>
+              <dt>Rank</dt>
+              <dd id="selected-rank">-</dd>
+            </div>
+            <div>
               <dt>Degree</dt>
               <dd id="selected-degree">-</dd>
             </div>
@@ -85,34 +85,49 @@
 
         <section class="panel-section">
           <div class="section-title">
-            <span>Attributes</span>
+            <span>Pyramid</span>
           </div>
-          <div id="attribute-list" class="attribute-list"></div>
+          <dl class="pipeline-list">
+            <div>
+              <dt>Graph</dt>
+              <dd id="pipeline-graph">empty</dd>
+            </div>
+            <div>
+              <dt>Build</dt>
+              <dd id="pipeline-build">idle</dd>
+            </div>
+            <div>
+              <dt>Mode</dt>
+              <dd id="pipeline-mode">semantic zoom</dd>
+            </div>
+          </dl>
         </section>
 
         <section class="panel-section">
           <div class="section-title">
-            <span>Pipeline</span>
+            <span>Level Budget</span>
           </div>
-          <dl class="pipeline-list">
-            <div>
-              <dt>Data</dt>
-              <dd id="pipeline-data">empty</dd>
-            </div>
-            <div>
-              <dt>Layout</dt>
-              <dd id="pipeline-layout">idle</dd>
-            </div>
-            <div>
-              <dt>Renderer</dt>
-              <dd id="pipeline-renderer">initializing</dd>
-            </div>
-          </dl>
+          <label class="range-row">
+            <span>Tile capacity</span>
+            <input id="capacity-input" type="range" min="60" max="420" step="20" value="180">
+            <output id="capacity-output">180</output>
+          </label>
+          <label class="check-row">
+            <input id="tile-debug-input" type="checkbox">
+            <span>Show tile grid</span>
+          </label>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-title">
+            <span>Attributes</span>
+          </div>
+          <div id="attribute-list" class="attribute-list"></div>
         </section>
       </aside>
     </section>
   </main>
 
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=20260609-tile-pyramid-v2"></script>
 </body>
 </html>

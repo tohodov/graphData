@@ -8,6 +8,7 @@ The selected root client is configured by `WebClient:RootPath`. All clients can 
 
 - `VanillaJs` - current extracted baseline UI.
 - `WebGpuRaw` - framework-free WebGPU prototype with typed-array graph memory.
+- `TilePyramid` - map-like semantic zoom prototype with client-side tile levels.
 
 ## Switching root client
 
@@ -15,7 +16,7 @@ The selected root client is configured by `WebClient:RootPath`. All clients can 
 {
   "WebClient": {
     "ClientsRootPath": "../Clients",
-    "RootPath": "../Clients/WebGpuRaw"
+    "RootPath": "../Clients/TilePyramid"
   }
 }
 ```

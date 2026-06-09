@@ -76,12 +76,15 @@ static string? ResolveWebClientRoot(string contentRootPath, string? configuredRo
     }
 
     if (webClientsRoot is not null) {
+        candidates.Add(Path.Combine(webClientsRoot, "TilePyramid"));
         candidates.Add(Path.Combine(webClientsRoot, "WebGpuRaw"));
         candidates.Add(Path.Combine(webClientsRoot, "VanillaJs"));
     }
 
+    candidates.Add(Path.GetFullPath(Path.Combine(contentRootPath, "..", "Clients", "TilePyramid")));
     candidates.Add(Path.GetFullPath(Path.Combine(contentRootPath, "..", "Clients", "WebGpuRaw")));
     candidates.Add(Path.GetFullPath(Path.Combine(contentRootPath, "..", "Clients", "VanillaJs")));
+    candidates.Add(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Clients", "TilePyramid")));
     candidates.Add(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Clients", "WebGpuRaw")));
     candidates.Add(Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Clients", "VanillaJs")));
 
