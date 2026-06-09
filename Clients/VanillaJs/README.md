@@ -12,6 +12,10 @@
 - `POST /api/graph/subgraph`
 - `POST /api/graph/search/nodes`
 
-API раздает эту папку как static files. Путь выбирается настройкой `WebClient:RootPath`; по умолчанию используется `../Clients/VanillaJs`.
+API может раздавать эту папку как root static UI через настройку `WebClient:RootPath`.
 
-Эта папка оставлена как baseline-клиент. Следующие клиенты для сравнения можно добавлять рядом в `Clients/*` и переключать через `WebClient:RootPath`, не меняя API.
+Также клиент доступен через общий static mount:
+
+- `/clients/VanillaJs/`
+
+Эта папка оставлена как baseline-клиент. Следующие клиенты для сравнения можно добавлять рядом в `Clients/*` и переключать через `WebClient:RootPath`, не меняя graph API.

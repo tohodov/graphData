@@ -17,8 +17,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\Clients\VanillaJs\**\*">
-      <Link>Clients\VanillaJs\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    <Content Include="..\Clients\**\*">
+      <Link>Clients\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
