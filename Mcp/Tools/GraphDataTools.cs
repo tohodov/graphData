@@ -116,9 +116,10 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
             return ToJson(new { success = false, error = "Query must be provided." });
 
         try {
-            var parsedQuery = query.Deserialize<NodeSearchQuery>(JsonOptions);
-            if (parsedQuery is null)
+            var parsedRequest = query.Deserialize<NodeSearchQueryRequest>(JsonOptions);
+            if (parsedRequest is null)
                 return ToJson(new { success = false, error = "Query must be provided." });
+            var parsedQuery = GraphRequestMapper.ToNodeSearchQuery(parsedRequest);
 
             var matches = new List<NodeSearchMatch>();
             await foreach (var match in _searchService.SearchNodesStreamAsync(parsedQuery))

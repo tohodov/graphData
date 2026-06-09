@@ -38,8 +38,8 @@ public sealed class GraphControllerTests {
             GraphJsonSerializerOptions.Create());
 
         Assert.IsNotNull(request);
-        Assert.AreEqual("Small_Arms_Web_KG/Weapons/AK_47", request.SourceGlobalId.ToString());
-        Assert.AreEqual("Small_Arms_Web_KG/Categories/Assault_Rifle", request.TargetGlobalId.ToString());
+        Assert.AreEqual("Small_Arms_Web_KG/Weapons/AK_47", string.Join("/", request.SourceGlobalId));
+        Assert.AreEqual("Small_Arms_Web_KG/Categories/Assault_Rifle", string.Join("/", request.TargetGlobalId));
     }
 
     [TestMethod]
@@ -239,8 +239,8 @@ public sealed class GraphControllerTests {
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
-            SourceGlobalId = new([source.LocalId]),
-            TargetGlobalId = new(["target:name"])
+            SourceGlobalId = [source.LocalId.ToString()],
+            TargetGlobalId = ["target:name"]
         });
 
         var badRequest = result.Result as BadRequestObjectResult;
@@ -258,8 +258,8 @@ public sealed class GraphControllerTests {
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
-            SourceGlobalId = new(["small_arms_test_graph"]),
-            TargetGlobalId = new(["small_arms_test_graph", "weapons"])
+            SourceGlobalId = ["small_arms_test_graph"],
+            TargetGlobalId = ["small_arms_test_graph", "weapons"]
         });
 
         Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
@@ -281,8 +281,8 @@ public sealed class GraphControllerTests {
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
-            SourceGlobalId = new(["small_arms_test_graph", "weapons"]),
-            TargetGlobalId = new(["small_arms_test_graph", "categories"])
+            SourceGlobalId = ["small_arms_test_graph", "weapons"],
+            TargetGlobalId = ["small_arms_test_graph", "categories"]
         });
 
         Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
@@ -313,8 +313,8 @@ public sealed class GraphControllerTests {
         var controller = CreateController(new ConnectThrowingGraphStorage(scope.Storage));
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
-            SourceGlobalId = new([source.LocalId]),
-            TargetGlobalId = new([target.LocalId])
+            SourceGlobalId = [source.LocalId.ToString()],
+            TargetGlobalId = [target.LocalId.ToString()]
         });
 
         var objectResult = result.Result as ObjectResult;
@@ -331,9 +331,9 @@ public sealed class GraphControllerTests {
         await using var scope = TestGraphStorageScope.Create();
         var controller = CreateController(scope.Storage);
 
-        var result = await controller.SearchNodesAsync(new NodeSearchQuery {
-            Where = new NodeExistsSearchExpression {
-                Node = new NodeLiteralSearchSelector { Name = "bad:name" }
+        var result = await controller.SearchNodesAsync(new NodeSearchQueryRequest {
+            Where = new NodeExistsSearchExpressionRequest {
+                Node = new NodeLiteralSearchSelectorRequest { Name = "bad:name" }
             }
         }, CancellationToken.None);
 
@@ -437,16 +437,16 @@ public sealed class GraphControllerTests {
         await scope.Storage.Connect(first.GlobalId, second.GlobalId);
 
         var controller = CreateController(scope.Storage);
-        var matches = await SearchNodesAsync(controller, new NodeSearchQuery {
+        var matches = await SearchNodesAsync(controller, new NodeSearchQueryRequest {
             Return = ["n", "x"],
-            Where = new AllNodeSearchExpression {
+            Where = new AllNodeSearchExpressionRequest {
                 Expressions = [
-                    new NodeConnectedSearchExpression {
-                        Left = new NodeVariableSearchSelector { Name = "n" },
-                        Right = new NodeVariableSearchSelector { Name = "x" }
+                    new NodeConnectedSearchExpressionRequest {
+                        Left = new NodeVariableSearchSelectorRequest { Name = "n" },
+                        Right = new NodeVariableSearchSelectorRequest { Name = "x" }
                     },
-                    new NodeAttributeSearchExpression {
-                        Node = new NodeVariableSearchSelector { Name = "x" },
+                    new NodeAttributeSearchExpressionRequest {
+                        Node = new NodeVariableSearchSelectorRequest { Name = "x" },
                         Key = "id",
                         Value = "Y"
                     }
@@ -467,16 +467,16 @@ public sealed class GraphControllerTests {
         await scope.Storage.Connect(first.GlobalId, second.GlobalId);
 
         var controller = CreateController(scope.Storage);
-        var matches = await SearchNodesAsync(controller, new NodeSearchQuery {
+        var matches = await SearchNodesAsync(controller, new NodeSearchQueryRequest {
             Return = ["n", "x"],
-            Where = new AllNodeSearchExpression {
+            Where = new AllNodeSearchExpressionRequest {
                 Expressions = [
-                    new NodeConnectedSearchExpression {
-                        Left = new NodeVariableSearchSelector { Name = "n" },
-                        Right = new NodeVariableSearchSelector { Name = "x" }
+                    new NodeConnectedSearchExpressionRequest {
+                        Left = new NodeVariableSearchSelectorRequest { Name = "n" },
+                        Right = new NodeVariableSearchSelectorRequest { Name = "x" }
                     },
-                    new NodeAttributeSearchExpression {
-                        Node = new NodeVariableSearchSelector { Name = "x" },
+                    new NodeAttributeSearchExpressionRequest {
+                        Node = new NodeVariableSearchSelectorRequest { Name = "x" },
                         Key = "id",
                         Value = "Y"
                     }
@@ -500,7 +500,7 @@ public sealed class GraphControllerTests {
 
     private static async Task<IReadOnlyCollection<NodeSearchMatchResponse>> SearchNodesAsync(
         GraphController controller,
-        NodeSearchQuery query) {
+        NodeSearchQueryRequest query) {
         var result = await controller.SearchNodesAsync(query, CancellationToken.None);
 
         Assert.IsInstanceOfType(result.Result, typeof(EmptyResult));

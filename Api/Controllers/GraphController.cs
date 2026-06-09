@@ -54,7 +54,7 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
 
     [HttpPost("connections")]
     public async Task<ActionResult<OperationResponse>> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
-        var result = await _storage.Connect(request.SourceGlobalId, request.TargetGlobalId);
+        var result = await _storage.Connect(new NodeGlobalId(request.SourceGlobalId), new NodeGlobalId(request.TargetGlobalId));
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
     }
 
@@ -69,13 +69,14 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
 
     [HttpPost("search/nodes")]
     public async Task<ActionResult<IAsyncEnumerable<NodeSearchMatchResponse>>> SearchNodesAsync(
-        [FromBody] NodeSearchQuery request,
+        [FromBody] NodeSearchQueryRequest request,
         CancellationToken cancellationToken) {
         if (request is null)
             return BadRequest();
         try {
+            var query = GraphRequestMapper.ToNodeSearchQuery(request);
             await using var matches = _searchService
-                .SearchNodesStreamAsync(request, cancellationToken)
+                .SearchNodesStreamAsync(query, cancellationToken)
                 .GetAsyncEnumerator(cancellationToken);
             var hasMatch = await matches.MoveNextAsync();
 
