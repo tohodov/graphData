@@ -30,7 +30,10 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapControllers();
-app.MapGet("/", () => Results.Redirect(DefaultClientPath));
-app.MapGet("/clients", () => Results.Redirect(DefaultClientPath));
-app.MapGet("/clients/", () => Results.Redirect(DefaultClientPath));
+app.MapGet("/", () => Results.Redirect(DefaultClientPath))
+    .ExcludeFromDescription();
+app.MapGet("/clients", () => Results.Redirect(DefaultClientPath))
+    .ExcludeFromDescription();
+app.MapGet("/clients/", () => Results.Redirect(DefaultClientPath))
+    .ExcludeFromDescription();
 app.Run();
