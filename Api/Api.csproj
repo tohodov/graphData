@@ -16,12 +16,4 @@
     <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Content Include="..\Clients\**\*">
-      <Link>Clients\%(RecursiveDir)%(Filename)%(Extension)</Link>
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-    </Content>
-  </ItemGroup>
-
 </Project>
