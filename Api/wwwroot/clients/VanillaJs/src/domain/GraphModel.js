@@ -6,7 +6,8 @@ import { GraphProjection } from "./GraphProjection.js";
 export class GraphModel {
   constructor() {
     this.rootName = null;
-    this.selectedName = null;
+    this._selectedName = null;
+    this.selectedNames = new Set();
     this.loaded = new Map();
     this.parentByNode = new Map();
     this.positions = new Map();
@@ -29,6 +30,18 @@ export class GraphModel {
     return this.schema.basis;
   }
 
+  get selectedName() {
+    return this._selectedName;
+  }
+
+  set selectedName(value) {
+    this.selectedNames.clear();
+    if (value) {
+      this.selectedNames.add(value);
+    }
+    this._selectedName = value;
+  }
+
   resetGraph() {
     this.rootName = null;
     this.selectedName = null;
@@ -36,6 +49,45 @@ export class GraphModel {
     this.parentByNode.clear();
     this.positions.clear();
     this.velocities.clear();
+  }
+
+  addSelectedName(name) {
+    if (!name) {
+      return;
+    }
+
+    this.selectedNames.add(name);
+    this._selectedName = name;
+  }
+
+  toggleSelectedName(name) {
+    if (!name) {
+      return false;
+    }
+
+    if (this.selectedNames.has(name)) {
+      this.selectedNames.delete(name);
+      if (this._selectedName === name) {
+        this._selectedName = this.selectedNames.values().next().value ?? null;
+      }
+
+      return false;
+    }
+
+    this.selectedNames.add(name);
+    this._selectedName = name;
+    return true;
+  }
+
+  removeSelectedName(name) {
+    this.selectedNames.delete(name);
+    if (this._selectedName === name) {
+      this._selectedName = this.selectedNames.values().next().value ?? null;
+    }
+  }
+
+  isSelectedName(name) {
+    return this.selectedNames.has(name);
   }
 
   hasNode(globalId) {

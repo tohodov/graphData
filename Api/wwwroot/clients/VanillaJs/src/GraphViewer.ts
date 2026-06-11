@@ -1038,7 +1038,9 @@ export class GraphViewer {
   }
 
   removeLocalNode(name, selectFallback = true, pruneEdges = true) {
+  const wasSelected = this.graph.selectedName === name;
   this.graph.loaded.delete(name);
+  this.graph.removeSelectedName?.(name);
   if (pruneEdges) {
     this.graph.positions.delete(name);
     this.graph.velocities.delete(name);
@@ -1057,7 +1059,7 @@ export class GraphViewer {
     }
   }
 
-  if (selectFallback && this.graph.selectedName === name) {
+  if (selectFallback && wasSelected) {
     this.graph.selectedName = this.graph.loaded.keys().next().value ?? null;
     this.graph.rootName = this.graph.selectedName;
   }

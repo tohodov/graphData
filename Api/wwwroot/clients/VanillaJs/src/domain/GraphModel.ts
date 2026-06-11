@@ -5,7 +5,8 @@ import { GraphProjection } from "./GraphProjection.js";
 
 export class GraphModel {
   rootName: string | null;
-  selectedName: string | null;
+  _selectedName: string | null;
+  selectedNames: Set<string>;
   loaded: Map<string, GraphNode>;
   parentByNode: Map<string, string>;
   positions: Map<string, { x: number; y: number }>;
@@ -19,7 +20,8 @@ export class GraphModel {
   schema: any;
   constructor() {
     this.rootName = null;
-    this.selectedName = null;
+    this._selectedName = null;
+    this.selectedNames = new Set();
     this.loaded = new Map();
     this.parentByNode = new Map();
     this.positions = new Map();
@@ -42,6 +44,18 @@ export class GraphModel {
     return this.schema.basis;
   }
 
+  get selectedName(): string | null {
+    return this._selectedName;
+  }
+
+  set selectedName(value: string | null) {
+    this.selectedNames.clear();
+    if (value) {
+      this.selectedNames.add(value);
+    }
+    this._selectedName = value;
+  }
+
   resetGraph() {
     this.rootName = null;
     this.selectedName = null;
@@ -49,6 +63,45 @@ export class GraphModel {
     this.parentByNode.clear();
     this.positions.clear();
     this.velocities.clear();
+  }
+
+  addSelectedName(name: string): void {
+    if (!name) {
+      return;
+    }
+
+    this.selectedNames.add(name);
+    this._selectedName = name;
+  }
+
+  toggleSelectedName(name: string): boolean {
+    if (!name) {
+      return false;
+    }
+
+    if (this.selectedNames.has(name)) {
+      this.selectedNames.delete(name);
+      if (this._selectedName === name) {
+        this._selectedName = this.selectedNames.values().next().value ?? null;
+      }
+
+      return false;
+    }
+
+    this.selectedNames.add(name);
+    this._selectedName = name;
+    return true;
+  }
+
+  removeSelectedName(name: string): void {
+    this.selectedNames.delete(name);
+    if (this._selectedName === name) {
+      this._selectedName = this.selectedNames.values().next().value ?? null;
+    }
+  }
+
+  isSelectedName(name: string): boolean {
+    return this.selectedNames.has(name);
   }
 
   hasNode(globalId: string): boolean {

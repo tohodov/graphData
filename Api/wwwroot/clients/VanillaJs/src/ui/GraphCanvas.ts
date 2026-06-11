@@ -1,5 +1,7 @@
 import { nodeRadius, svgNs } from "../domain/graphAttributes.js";
 
+const tapMoveThreshold = 8;
+
 export class GraphCanvas {
   [key: string]: any;
 
@@ -97,8 +99,16 @@ export class GraphCanvas {
 
     this.svg.addEventListener("pointerup", event => {
       if (this.graph.dragging) {
+        const dragging = this.graph.dragging;
+        const moved = Math.hypot(event.clientX - dragging.startX, event.clientY - dragging.startY);
         this.svg.releasePointerCapture(event.pointerId);
         this.graph.dragging = null;
+        if (dragging.pointerType !== "mouse") {
+          this.graph.suppressedNodeClick = { name: dragging.name, until: Date.now() + 700 };
+          if (moved <= tapMoveThreshold) {
+            this.toggleNodeSelection(dragging.name);
+          }
+        }
         return;
       }
 
@@ -254,7 +264,7 @@ export class GraphCanvas {
   }
 
   const group = this.createSvg("g", {
-    class: `node${this.graph.selectedName === node.name ? " selected" : ""}`,
+    class: `node${this.isNodeSelected(node.name) ? " selected" : ""}`,
     transform: `translate(${position.x} ${position.y})`,
     tabindex: "0",
     "aria-label": node.displayName ?? node.name
@@ -283,8 +293,25 @@ export class GraphCanvas {
 
   group.addEventListener("click", event => {
     event.stopPropagation();
-    this.graph.selectedName = node.name;
-    this.render();
+    if (this.consumeSuppressedNodeClick(node.name)) {
+      event.preventDefault();
+      return;
+    }
+
+    const pointerType = this.window.PointerEvent && event instanceof this.window.PointerEvent
+      ? event.pointerType
+      : "mouse";
+    if (pointerType !== "mouse") {
+      this.toggleNodeSelection(node.name);
+      return;
+    }
+
+    if (event.ctrlKey) {
+      this.addNodeToSelection(node.name);
+      return;
+    }
+
+    this.selectOnlyNode(node.name);
   });
 
   group.addEventListener("pointerdown", event => {
@@ -293,12 +320,57 @@ export class GraphCanvas {
     this.graph.dragging = {
       name: node.name,
       x: event.clientX,
-      y: event.clientY
+      y: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
+      pointerType: event.pointerType ?? "mouse"
     };
   });
 
   group.append(title, circle, label);
   layer.append(group);
+
+  }
+
+  isNodeSelected(name) {
+  return this.graph.isSelectedName ? this.graph.isSelectedName(name) : this.graph.selectedName === name;
+
+  }
+
+  selectOnlyNode(name) {
+  this.graph.selectedName = name;
+  this.render();
+
+  }
+
+  addNodeToSelection(name) {
+  if (this.graph.addSelectedName) {
+    this.graph.addSelectedName(name);
+  } else {
+    this.graph.selectedName = name;
+  }
+  this.render();
+
+  }
+
+  toggleNodeSelection(name) {
+  if (this.graph.toggleSelectedName) {
+    this.graph.toggleSelectedName(name);
+  } else {
+    this.graph.selectedName = this.graph.selectedName === name ? null : name;
+  }
+  this.render();
+
+  }
+
+  consumeSuppressedNodeClick(name) {
+  const suppressed = this.graph.suppressedNodeClick;
+  if (!suppressed || suppressed.name !== name || suppressed.until < Date.now()) {
+    return false;
+  }
+
+  this.graph.suppressedNodeClick = null;
+  return true;
 
   }
 
