@@ -1,6 +1,9 @@
 import { nodeRadius, svgNs } from "../domain/graphAttributes.js";
 
 const tapMoveThreshold = 8;
+const nodeLabelBaseFontSize = 13;
+const nodeLabelMinFontSize = 6;
+const nodeLabelHorizontalPadding = 9;
 
 export class GraphCanvas {
   constructor({
@@ -286,8 +289,9 @@ export class GraphCanvas {
     cy: 0,
     style: node.color ? `stroke:${node.color}` : ""
   });
+  const radius = node.viewRadius ?? nodeRadius;
   const label = this.createSvg("text", { class: "node-label", x: 0, y: 0 });
-  label.textContent = this.trimName(node.displayName ?? node.name, 18);
+  label.textContent = node.displayName ?? node.name;
 
   group.addEventListener("click", event => {
     event.stopPropagation();
@@ -327,6 +331,41 @@ export class GraphCanvas {
 
   group.append(title, circle, label);
   layer.append(group);
+  this.fitNodeLabel(label, radius);
+
+  }
+
+  fitNodeLabel(label, radius) {
+  const maxWidth = Math.max(10, radius * 2 - nodeLabelHorizontalPadding * 2);
+  label.style.fontSize = `${nodeLabelBaseFontSize}px`;
+  label.removeAttribute("textLength");
+  label.removeAttribute("lengthAdjust");
+
+  const width = this.measureSvgText(label);
+  if (!width || width <= maxWidth) {
+    return;
+  }
+
+  const fontSize = Math.max(nodeLabelMinFontSize, nodeLabelBaseFontSize * maxWidth / width);
+  label.style.fontSize = `${fontSize.toFixed(2)}px`;
+
+  if (this.measureSvgText(label) > maxWidth) {
+    label.setAttribute("textLength", maxWidth.toFixed(2));
+    label.setAttribute("lengthAdjust", "spacingAndGlyphs");
+  }
+
+  }
+
+  measureSvgText(label) {
+  if (typeof label.getComputedTextLength === "function") {
+    return label.getComputedTextLength();
+  }
+
+  if (typeof label.getBBox === "function") {
+    return label.getBBox().width;
+  }
+
+  return 0;
 
   }
 
@@ -527,9 +566,5 @@ export class GraphCanvas {
   Object.entries(attrs).forEach(([key, value]) => element.setAttribute(key, value));
   return element;
 
-  }
-
-  trimName(name, limit) {
-    return name.length > limit ? name.slice(0, limit - 1) + "…" : name;
   }
 }
