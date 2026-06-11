@@ -430,6 +430,53 @@ public sealed class GraphControllerTests {
     }
 
     [TestMethod]
+    public async Task GetSubgraphAsync_EmptyGlobalIdsReturnTopLevelRoots() {
+        await using var scope = TestGraphStorageScope.Create();
+        var firstRoot = (await scope.Storage.Create(new("first"))).Value!;
+        var secondRoot = (await scope.Storage.Create(new("second"))).Value!;
+        await scope.Storage.Create(new("child"), firstRoot.GlobalId);
+
+        var controller = CreateController(scope.Storage);
+        var result = await controller.GetSubgraphAsync(new SubgraphRequest {
+            GlobalIds = [],
+            MaxDepth = 0
+        });
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+
+        var response = ok.Value as SubgraphResponse;
+        Assert.IsNotNull(response);
+        CollectionAssert.AreEquivalent(
+            new[] { firstRoot.GlobalId.ToString(), secondRoot.GlobalId.ToString() },
+            response.Nodes.Select(static node => node.GlobalId).ToArray());
+        Assert.AreEqual(0, response.Edges.Count);
+    }
+
+    [TestMethod]
+    public async Task GetSubgraphAsync_EmptyGlobalIdSelectorReturnsTopLevelRoots() {
+        await using var scope = TestGraphStorageScope.Create();
+        var firstRoot = (await scope.Storage.Create(new("first"))).Value!;
+        var secondRoot = (await scope.Storage.Create(new("second"))).Value!;
+        await scope.Storage.Create(new("child"), firstRoot.GlobalId);
+
+        var controller = CreateController(scope.Storage);
+        var result = await controller.GetSubgraphAsync(new SubgraphRequest {
+            GlobalIds = [[]],
+            MaxDepth = 0
+        });
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+
+        var response = ok.Value as SubgraphResponse;
+        Assert.IsNotNull(response);
+        CollectionAssert.AreEquivalent(
+            new[] { firstRoot.GlobalId.ToString(), secondRoot.GlobalId.ToString() },
+            response.Nodes.Select(static node => node.GlobalId).ToArray());
+    }
+
+    [TestMethod]
     public async Task SearchNodesAsync_ReturnsVariableBindings() {
         await using var scope = TestGraphStorageScope.Create();
         var first = (await scope.Storage.Create(new("1"), attributes: new Dictionary<string, string> { ["id"] = "source" })).Value!;

@@ -343,4 +343,37 @@ partial class GraphStorageContractTests {
             new[] { root.GlobalId, weapons.GlobalId, ak47.GlobalId },
             subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
     }
+
+    [TestMethod]
+    public async Task EmptyQueryShouldStartFromTopLevelRoots() {
+        var firstRoot = (await Storage.Create(new("first"))).Value!;
+        var secondRoot = (await Storage.Create(new("second"))).Value!;
+        var child = (await Storage.Create(new("child"), firstRoot.GlobalId)).Value!;
+
+        var subgraph = (await Storage.GetSubgraphAsync(new SubgraphQuery {
+            Nodes = [],
+            MaxDepth = 0
+        })).Value!;
+
+        CollectionAssert.AreEquivalent(
+            new[] { firstRoot.GlobalId, secondRoot.GlobalId },
+            subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
+        CollectionAssert.DoesNotContain(subgraph.Nodes.Select(static node => node.GlobalId).ToArray(), child.GlobalId);
+    }
+
+    [TestMethod]
+    public async Task EmptyNodeIdentifierShouldStartFromTopLevelRoots() {
+        var firstRoot = (await Storage.Create(new("first"))).Value!;
+        var secondRoot = (await Storage.Create(new("second"))).Value!;
+        await Storage.Create(new("child"), firstRoot.GlobalId);
+
+        var subgraph = (await Storage.GetSubgraphAsync(new SubgraphQuery {
+            Nodes = [new NodeGlobalId(Array.Empty<string>())],
+            MaxDepth = 0
+        })).Value!;
+
+        CollectionAssert.AreEquivalent(
+            new[] { firstRoot.GlobalId, secondRoot.GlobalId },
+            subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
+    }
 }

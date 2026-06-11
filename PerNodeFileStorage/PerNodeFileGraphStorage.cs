@@ -269,6 +269,14 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         return nodes;
     }
 
+    public async Task<IReadOnlyCollection<Node>> GetRootNodesAsync()
+    {
+#pragma warning disable CS0618
+        var nodes = await GetAllNodesAsync().ConfigureAwait(false);
+#pragma warning restore CS0618
+        return nodes.Where(static node => IsRootNodeName(node.LocalId.ToString())).ToArray();
+    }
+
     private async Task<NodeDocument?> ReadMetadataWithLockAsync(string nodeName)
     {
         var metadataLock = GetMetadataLock(nodeName);
@@ -434,6 +442,9 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             ? subNodeName
             : $"{parent.LocalId}/{subNodeName}";
     }
+
+    private static bool IsRootNodeName(string nodeName) =>
+        nodeName.IndexOfAny(['/', '\\']) < 0;
 
     private static IEnumerable<string> Order(string first, string second)
     {

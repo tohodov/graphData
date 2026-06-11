@@ -277,6 +277,14 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         return nodes;
     }
 
+    public async Task<IReadOnlyCollection<Node>> GetRootNodesAsync()
+    {
+#pragma warning disable CS0618
+        var nodes = await GetAllNodesAsync().ConfigureAwait(false);
+#pragma warning restore CS0618
+        return nodes.Where(static node => IsRootNodeName(node.LocalId.ToString())).ToArray();
+    }
+
     private async Task<NodeDocument?> ReadMetadataWithLockAsync(string nodeName)
     {
         var bucketKey = GetBucketKey(nodeName);
@@ -487,6 +495,9 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             ? subNodeName.ToString()
             : $"{parent.LocalId}/{subNodeName}";
     }
+
+    private static bool IsRootNodeName(string nodeName) =>
+        nodeName.IndexOfAny(['/', '\\']) < 0;
 
     private static IReadOnlyList<string> Order(string firstKey, string secondKey)
     {

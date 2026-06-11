@@ -105,6 +105,8 @@ export class GraphViewer {
     if (initialGlobalId) {
       this.rootInput.value = initialGlobalId;
       void this.loadRoot(initialGlobalId);
+    } else {
+      void this.loadGraphRoots();
     }
   }
 
@@ -230,6 +232,22 @@ export class GraphViewer {
   url.searchParams.set("globalId", this.graph.rootName ?? name);
   this.window.history.replaceState({}, "", url);
   this.fitView();
+
+  }
+
+  async loadGraphRoots() {
+  this.setBusy(true);
+  try {
+    const response = await this.loadSubgraphForRoots([], 0);
+    this.loadSubgraphIntoViewer(response, []);
+    this.renderSubgraphResults(response);
+    this.renderTypeControls();
+    this.setStatus(`Корни графа: ${(response.nodes ?? []).length}`);
+  } catch (error) {
+    this.setStatus(error.message);
+  } finally {
+    this.setBusy(false);
+  }
 
   }
 
@@ -907,11 +925,6 @@ export class GraphViewer {
 
   async loadSubgraph() {
   const roots = this.parseCsv(this.document.querySelector("#subgraph-roots").value);
-  if (roots.length === 0) {
-    this.setStatus("Укажите корневые узлы");
-    return;
-  }
-
   this.setBusy(true);
   try {
     const response = await this.apiJson("/api/graph/subgraph", {

@@ -129,6 +129,23 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Task.FromResult(ServiceResult<IReadOnlyCollection<Node>>.Ok(GetConnectedNodes(node)));
     }
 
+    public Task<IReadOnlyCollection<Node>> GetRootNodesAsync() {
+        if (!root.Exists)
+            return Task.FromResult<IReadOnlyCollection<Node>>(Array.Empty<Node>());
+
+        var nodes = new List<Node>();
+        foreach (var directory in root.EnumerateDirectories()) {
+            cancellationTokens.Token.ThrowIfCancellationRequested();
+
+            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
+                continue;
+
+            nodes.Add(new NodeFileSystem(directory, root.FullName, this).AsNode);
+        }
+
+        return Task.FromResult<IReadOnlyCollection<Node>>(nodes);
+    }
+
     public Task<IReadOnlyCollection<Node>> GetAllNodesAsync() {
         if (!root.Exists)
             return Task.FromResult<IReadOnlyCollection<Node>>(Array.Empty<Node>());

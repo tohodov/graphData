@@ -59,15 +59,20 @@ public interface IGraphStorage
     Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node);
 
     async Task<ServiceResult<Subgraph>> GetSubgraphAsync(SubgraphQuery query) { //TODO переосмыслить
-        if (query.Nodes.Count == 0)
+        var rootsResult = await ResolveSubgraphRootsAsync(query.Nodes);
+        if (rootsResult.Status != ServiceResultStatus.Ok || rootsResult.Value is null)
+            return ServiceResult<Subgraph>.From(rootsResult);
+
+        var roots = rootsResult.Value;
+        if (roots.Count == 0)
             return ServiceResult<Subgraph>.Ok(new Subgraph { Nodes = [] });
 
         var visitedRequests = new HashSet<NodeGlobalId>();//TODO хэш тут надо проверить
         var visitedNodes = new HashSet<NodeGlobalId>();//TODO хэш тут надо проверить
-        var discovered = new HashSet<NodeGlobalId>(query.Nodes);//TODO хэш тут надо проверить
+        var discovered = new HashSet<NodeGlobalId>(roots);//TODO хэш тут надо проверить
         var queue = new Queue<(NodeGlobalId NodeId, int Depth)>();
 
-        foreach (var root in query.Nodes)
+        foreach (var root in roots)
             queue.Enqueue((root, 0));
 
         var nodes = new Dictionary<NodeGlobalId, Node>();//TODO хэш тут надо проверить
@@ -106,5 +111,25 @@ public interface IGraphStorage
             : new Subgraph {
                 Nodes = nodes.Values
             });
+    }
+
+    private async Task<ServiceResult<IReadOnlyCollection<NodeGlobalId>>> ResolveSubgraphRootsAsync(
+        IReadOnlyCollection<NodeGlobalId> requestedNodes) {
+        if (requestedNodes.Count > 0 && requestedNodes.All(static node => node.Any()))
+            return ServiceResult<IReadOnlyCollection<NodeGlobalId>>.Ok(requestedNodes);
+
+        var explicitRoots = requestedNodes
+            .Where(static node => node.Any())
+            .ToList();
+
+        if (this is not IGraphNodeCatalog catalog)
+            return ServiceResult<IReadOnlyCollection<NodeGlobalId>>.Ok(explicitRoots);
+
+        var catalogRoots = (await catalog.GetRootNodesAsync())
+            .Select(static node => node.GlobalId)
+            .Where(static globalId => globalId.Any());
+
+        explicitRoots.AddRange(catalogRoots);
+        return ServiceResult<IReadOnlyCollection<NodeGlobalId>>.Ok(explicitRoots.Distinct().ToArray());
     }
 }
