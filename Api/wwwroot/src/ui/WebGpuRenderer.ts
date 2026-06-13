@@ -137,11 +137,6 @@ export class WebGpuRenderer {
     }
 
     this.device = await adapter.requestDevice();
-    this.context = this.canvas.getContext("webgpu");
-    if (!this.context) {
-      throw new Error("WebGPU canvas context was not created");
-    }
-
     this.format = gpu.getPreferredCanvasFormat();
     const usage = this.gpuBufferUsage();
     this.uniformBuffer = this.device.createBuffer({
@@ -166,6 +161,11 @@ export class WebGpuRenderer {
 
     this.edgePipeline = this.createEdgePipeline(pipelineLayout);
     this.nodePipeline = this.createNodePipeline(pipelineLayout);
+    this.context = this.canvas.getContext("webgpu");
+    if (!this.context) {
+      throw new Error("WebGPU canvas context was not created");
+    }
+
     this.resize();
   }
 

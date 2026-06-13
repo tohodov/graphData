@@ -1,4 +1,5 @@
 import { nodeRadius } from "../domain/graphAttributes.js";
+import { Canvas2DRenderer } from "./Canvas2DRenderer.js";
 import { WebGpuRenderer } from "./WebGpuRenderer.js";
 
 const tapMoveThreshold = 8;
@@ -49,8 +50,10 @@ export class WebGpuGraphCanvas {
       renderInspector,
       formatRank
     };
-    this.renderer = new WebGpuRenderer({ canvas, window });
+    this.renderer = null;
     this.rendererReady = false;
+    this.rendererMode = "initializing";
+    this.webGpuError = null;
     this.renderPending = false;
     this.memory = null;
     this.currentGraph = null;
@@ -58,12 +61,39 @@ export class WebGpuGraphCanvas {
     this.pointer = null;
     this.simulationHandle = null;
 
-    this.renderer.init()
+    this.useWebGpuRenderer();
+  }
+
+  useWebGpuRenderer() {
+    const renderer = new WebGpuRenderer({ canvas: this.canvas, window: this.window });
+    this.renderer = renderer;
+    this.rendererMode = "webgpu";
+    renderer.init()
       .then(() => {
         this.rendererReady = true;
         this.setGpuWarning(null);
         this.updateRendererGraph();
         this.requestDraw();
+      })
+      .catch(error => {
+        this.webGpuError = error;
+        this.useCanvas2DRenderer(error);
+      });
+  }
+
+  useCanvas2DRenderer(webGpuError) {
+    const renderer = new Canvas2DRenderer({ canvas: this.canvas, window: this.window });
+    this.renderer = renderer;
+    this.rendererMode = "canvas2d";
+    renderer.init()
+      .then(() => {
+        this.rendererReady = true;
+        this.setGpuWarning(null);
+        this.updateRendererGraph();
+        this.requestDraw();
+        if (webGpuError) {
+          this.window.console?.info?.("GraphData uses Canvas2D rendering because WebGPU is unavailable.", webGpuError);
+        }
       })
       .catch(error => {
         this.rendererReady = false;
@@ -430,7 +460,7 @@ export class WebGpuGraphCanvas {
 
       const sx = position.x * this.view.scale + this.view.x;
       const sy = position.y * this.view.scale + this.view.y;
-      const radius = clamp((node.viewRadius ?? nodeRadius) * this.view.scale + 8, 8, 32);
+      const radius = clamp((node.viewRadius ?? nodeRadius) + 10, 12, 56);
       const distance = (sx - x) ** 2 + (sy - y) ** 2;
       if (distance <= radius ** 2 && distance < bestDistance) {
         bestDistance = distance;
@@ -460,9 +490,17 @@ export class WebGpuGraphCanvas {
       return;
     }
 
+    this.gpuWarning.replaceChildren();
     this.gpuWarning.hidden = !error;
     if (error) {
+      const title = this.document.createElement("strong");
+      title.textContent = "Renderer unavailable";
+      const message = this.document.createElement("span");
+      message.textContent = error.message ?? String(error);
+      this.gpuWarning.append(title, message);
       this.gpuWarning.title = error.message ?? String(error);
+    } else {
+      this.gpuWarning.title = "";
     }
   }
 }

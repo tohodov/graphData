@@ -15,6 +15,7 @@ existing HTTP endpoints:
 
 Open it at `/`.
 
-WebGPU is the active rendering layer. The domain model, projection basis, rank
-logic, and API access stay in the TypeScript application code; GPU buffers are
-derived rendering caches.
+WebGPU is tried first as the rendering layer. If the browser does not expose
+WebGPU, the same canvas falls back to Canvas2D rendering. The domain model,
+projection basis, rank logic, and API access stay in the TypeScript application
+code; render buffers are derived caches.
