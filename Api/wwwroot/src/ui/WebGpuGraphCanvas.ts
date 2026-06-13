@@ -1,25 +1,17 @@
 import { nodeRadius } from "../domain/graphAttributes.js";
-import { Canvas2DRenderer } from "./Canvas2DRenderer.js";
 import { WebGpuRenderer } from "./WebGpuRenderer.js";
 
 const tapMoveThreshold = 8;
 const defaultEdgeColor = [0.48, 0.53, 0.56, 0.22];
-const palette = [
-  [0.05, 0.46, 0.43, 0.92],
-  [0.71, 0.33, 0.04, 0.9],
-  [0.17, 0.39, 0.77, 0.9],
-  [0.66, 0.21, 0.18, 0.9],
-  [0.42, 0.31, 0.68, 0.9],
-  [0.45, 0.50, 0.17, 0.9],
-  [0.12, 0.50, 0.54, 0.9],
-  [0.69, 0.24, 0.46, 0.9]
-];
+const defaultNodeStrokeColor = [0.09, 0.13, 0.14, 1];
+const maxLabels = 280;
 
 export class WebGpuGraphCanvas {
   constructor({
     document,
     window,
     canvas,
+    labelLayer,
     emptyState,
     gpuWarning,
     buildGraph,
@@ -36,6 +28,7 @@ export class WebGpuGraphCanvas {
     this.document = document;
     this.window = window;
     this.canvas = canvas;
+    this.labelLayer = labelLayer;
     this.emptyState = emptyState;
     this.gpuWarning = gpuWarning;
     this.buildGraph = buildGraph;
@@ -50,9 +43,9 @@ export class WebGpuGraphCanvas {
       renderInspector,
       formatRank
     };
-    this.renderer = null;
+    this.renderer = new WebGpuRenderer({ canvas: this.canvas, window: this.window });
     this.rendererReady = false;
-    this.rendererMode = "initializing";
+    this.rendererMode = "webgpu";
     this.webGpuError = null;
     this.renderPending = false;
     this.memory = null;
@@ -61,43 +54,19 @@ export class WebGpuGraphCanvas {
     this.pointer = null;
     this.simulationHandle = null;
 
-    this.useWebGpuRenderer();
-  }
-
-  useWebGpuRenderer() {
-    const renderer = new WebGpuRenderer({ canvas: this.canvas, window: this.window });
-    this.renderer = renderer;
-    this.rendererMode = "webgpu";
-    renderer.init()
+    this.renderer.init()
       .then(() => {
         this.rendererReady = true;
         this.setGpuWarning(null);
         this.updateRendererGraph();
+        this.renderLabels();
         this.requestDraw();
       })
       .catch(error => {
         this.webGpuError = error;
-        this.useCanvas2DRenderer(error);
-      });
-  }
-
-  useCanvas2DRenderer(webGpuError) {
-    const renderer = new Canvas2DRenderer({ canvas: this.canvas, window: this.window });
-    this.renderer = renderer;
-    this.rendererMode = "canvas2d";
-    renderer.init()
-      .then(() => {
-        this.rendererReady = true;
-        this.setGpuWarning(null);
-        this.updateRendererGraph();
-        this.requestDraw();
-        if (webGpuError) {
-          this.window.console?.info?.("GraphData uses Canvas2D rendering because WebGPU is unavailable.", webGpuError);
-        }
-      })
-      .catch(error => {
         this.rendererReady = false;
         this.setGpuWarning(error);
+        this.renderLabels();
       });
   }
 
@@ -224,6 +193,7 @@ export class WebGpuGraphCanvas {
     this.emptyState.classList.toggle("hidden", graph.nodes.length > 0);
     this.memory = this.buildRenderMemory(graph);
     this.callbacks.renderInspector(graph);
+    this.renderLabels();
     this.updateRendererGraph();
     this.requestDraw();
   }
@@ -327,6 +297,7 @@ export class WebGpuGraphCanvas {
   }
 
   applyView() {
+    this.renderLabels();
     this.requestDraw();
   }
 
@@ -375,7 +346,7 @@ export class WebGpuGraphCanvas {
   writeVertexData(memory) {
     memory.nodes.forEach((node, index) => {
       const position = this.positions.get(node.name) ?? { x: 0, y: 0 };
-      const color = parseColor(node.color, palette[hashString(node.name) % palette.length]);
+      const color = parseColor(node.color, defaultNodeStrokeColor);
       const radius = Number.isFinite(node.viewRadius) ? node.viewRadius : nodeRadius;
       const base = index * 8;
       memory.nodeVertexData[base + 0] = position.x;
@@ -414,6 +385,7 @@ export class WebGpuGraphCanvas {
     }
 
     this.writeVertexData(this.memory);
+    this.renderLabels();
     this.updateRendererGraph();
     this.requestDraw();
   }
@@ -438,6 +410,56 @@ export class WebGpuGraphCanvas {
         this.renderer.draw(this.view);
       }
     });
+  }
+
+  renderLabels() {
+    if (!this.labelLayer) {
+      return;
+    }
+
+    this.labelLayer.replaceChildren();
+    if (!this.rendererReady || !this.memory || this.memory.nodeCount === 0) {
+      return;
+    }
+
+    const rect = this.canvas.getBoundingClientRect();
+    const fragment = this.document.createDocumentFragment();
+    const labelledNodes = this.memory.nodes
+      .filter(node => {
+        const position = this.positions.get(node.name);
+        if (!position) {
+          return false;
+        }
+
+        const x = position.x * this.view.scale + this.view.x;
+        const y = position.y * this.view.scale + this.view.y;
+        const radius = node.viewRadius ?? nodeRadius;
+        const margin = Math.max(80, radius * this.view.scale + 40);
+        return x >= -margin && x <= rect.width + margin && y >= -margin && y <= rect.height + margin;
+      })
+      .sort((left, right) =>
+        Number(this.callbacks.isNodeSelected(right.name)) - Number(this.callbacks.isNodeSelected(left.name)))
+      .slice(0, maxLabels);
+
+    labelledNodes.forEach(node => {
+      const position = this.positions.get(node.name);
+      if (!position) {
+        return;
+      }
+
+      const radius = node.viewRadius ?? nodeRadius;
+      const x = position.x * this.view.scale + this.view.x;
+      const y = position.y * this.view.scale + this.view.y;
+      const label = this.document.createElement("div");
+      label.className = `graph-node-label${this.callbacks.isNodeSelected(node.name) ? " selected" : ""}`;
+      label.textContent = node.displayName ?? node.localId ?? node.name;
+      label.title = node.globalId ?? node.name;
+      label.style.width = `${Math.max(28, radius * 2 - 16)}px`;
+      label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+      fragment.append(label);
+    });
+
+    this.labelLayer.append(fragment);
   }
 
   pickNearest(clientX, clientY) {
@@ -538,15 +560,6 @@ function parseColor(value, fallback) {
   }
 
   return fallback;
-}
-
-function hashString(value) {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
 }
 
 function edgeKey(source, target, discriminator) {

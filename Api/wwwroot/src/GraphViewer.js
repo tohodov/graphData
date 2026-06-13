@@ -27,6 +27,7 @@ export class GraphViewer {
     this.graph = new GraphModel();
 
     this.graphSurface = this.requireElement("#graph");
+    this.labelLayer = this.requireElement("#graph-label-layer");
     this.gpuWarning = this.document.querySelector("#gpu-warning");
     this.fitButton = this.requireElement("#fit-button");
     this.resetButton = this.requireElement("#reset-button");
@@ -76,6 +77,7 @@ export class GraphViewer {
       document: this.document,
       window: this.window,
       canvas: this.graphSurface,
+      labelLayer: this.labelLayer,
       emptyState: this.emptyState,
       gpuWarning: this.gpuWarning,
       buildGraph: () => this.graph.visibleGraph(),

@@ -188,6 +188,38 @@ textarea:focus {
   cursor: grabbing;
 }
 
+.graph-label-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.graph-node-label {
+  position: absolute;
+  min-width: 0;
+  color: #172124;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: 0;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95),
+    1px 0 0 rgba(255, 255, 255, 0.95),
+    0 -1px 0 rgba(255, 255, 255, 0.95),
+    -1px 0 0 rgba(255, 255, 255, 0.95);
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.graph-node-label.selected {
+  color: var(--accent-strong);
+}
+
 .gpu-warning {
   position: absolute;
   left: 50%;
@@ -203,6 +235,10 @@ textarea:focus {
   color: #172124;
   padding: 14px;
   box-shadow: 0 12px 28px rgba(21, 31, 36, 0.14);
+}
+
+.gpu-warning[hidden] {
+  display: none;
 }
 
 .gpu-warning span {

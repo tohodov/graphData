@@ -58,12 +58,16 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     discard;
   }
 
-  let fade = smoothstep(1.0, 0.78, distance);
+  let alpha = smoothstep(1.0, 0.78, distance);
   if (in.selected > 0.5 && distance > 0.70) {
-    return vec4<f32>(1.0, 0.78, 0.24, fade);
+    return vec4<f32>(1.0, 0.78, 0.24, alpha);
   }
 
-  return vec4<f32>(in.color.rgb, in.color.a * fade);
+  if (distance > 0.82) {
+    return vec4<f32>(in.color.rgb, in.color.a * alpha);
+  }
+
+  return vec4<f32>(1.0, 1.0, 1.0, 0.98);
 }
 `;
 
@@ -126,9 +130,14 @@ export class WebGpuRenderer {
   }
 
   async init() {
+    if (!this.window.isSecureContext) {
+      const origin = this.window.location?.origin ?? "unknown origin";
+      throw new Error(`WebGPU requires HTTPS or localhost. Current origin is not secure: ${origin}`);
+    }
+
     const gpu = this.window.navigator.gpu;
     if (!gpu) {
-      throw new Error("WebGPU is not available");
+      throw new Error("WebGPU is unavailable: this browser context did not expose navigator.gpu.");
     }
 
     const adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
@@ -270,7 +279,7 @@ export class WebGpuRenderer {
     this.context.configure({
       device: this.device,
       format: this.format,
-      alphaMode: "opaque"
+      alphaMode: "premultiplied"
     });
     return true;
   }
@@ -345,7 +354,7 @@ export class WebGpuRenderer {
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
         view: this.context.getCurrentTexture().createView(),
-        clearValue: { r: 0.965, g: 0.969, b: 0.976, a: 1 },
+        clearValue: { r: 0, g: 0, b: 0, a: 0 },
         loadOp: "clear",
         storeOp: "store"
       }]
