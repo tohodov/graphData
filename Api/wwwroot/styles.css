@@ -188,6 +188,29 @@ textarea:focus {
   cursor: grabbing;
 }
 
+.gpu-warning {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 4;
+  display: grid;
+  gap: 6px;
+  width: min(360px, calc(100% - 32px));
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(180, 35, 24, 0.32);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #172124;
+  padding: 14px;
+  box-shadow: 0 12px 28px rgba(21, 31, 36, 0.14);
+}
+
+.gpu-warning span {
+  color: var(--text-soft);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
 .empty-state {
   position: absolute;
   inset: 0;
@@ -460,76 +483,6 @@ textarea:focus {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.edge-line {
-  stroke: #20292d;
-  stroke-width: 2.25;
-  stroke-linecap: round;
-  pointer-events: none;
-}
-
-.edge-label {
-  font-size: 11px;
-  font-weight: 800;
-  text-anchor: middle;
-  paint-order: stroke;
-  stroke: #ffffff;
-  stroke-width: 4px;
-  pointer-events: none;
-}
-
-.edge-button {
-  cursor: pointer;
-}
-
-.edge-button-hit {
-  fill: transparent;
-  stroke: transparent;
-  pointer-events: all;
-}
-
-.edge-button-core {
-  fill: #ffffff;
-  stroke: #172124;
-  stroke-width: 2.2;
-}
-
-.edge-button.collapsed .edge-button-core {
-  fill: #fff8ea;
-  stroke: var(--accent-warm);
-  stroke-width: 2.4;
-}
-
-.edge-button:hover .edge-button-core {
-  fill: #e8f5f3;
-  stroke: var(--accent);
-  stroke-width: 2.6;
-}
-
-.node {
-  cursor: pointer;
-}
-
-.node-shell {
-  fill: #ffffff;
-  stroke: #172124;
-  stroke-width: 2.2;
-  filter: drop-shadow(0 8px 12px rgba(21, 31, 36, 0.08));
-}
-
-.node.selected .node-shell {
-  stroke: var(--accent);
-  stroke-width: 3;
-}
-
-.node-label {
-  fill: #172124;
-  font-size: 13px;
-  font-weight: 700;
-  text-anchor: middle;
-  dominant-baseline: middle;
-  pointer-events: none;
 }
 
 @media (max-width: 980px) {

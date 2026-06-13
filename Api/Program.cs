@@ -3,8 +3,6 @@ using GraphData.Api.Services;
 using GraphData.Core.Extensions;
 using SymLinkStorage;
 
-const string DefaultClientPath = "/clients/VanillaJs/";
-
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services
@@ -30,8 +28,6 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapControllers();
-app.MapGet("/", () => Results.Redirect(DefaultClientPath))
-    .ExcludeFromDescription();
-app.MapGet("/clients", () => Results.Redirect(DefaultClientPath))
+app.MapGet("/clients/{*path}", () => Results.Redirect("/"))
     .ExcludeFromDescription();
 app.Run();

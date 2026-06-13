@@ -12,36 +12,22 @@ import {
   graphRoleAttribute
 } from "./domain/graphAttributes.js";
 import { GraphApi } from "./infrastructure/GraphApi.js";
-import { GraphCanvas } from "./ui/GraphCanvas.js";
+import { WebGpuGraphCanvas } from "./ui/WebGpuGraphCanvas.js";
 import { GraphEdge } from "./domain/GraphEdge.js";
 import { GraphId } from "./domain/GraphId.js";
 import { GraphModel } from "./domain/GraphModel.js";
 import { GraphNode } from "./domain/GraphNode.js";
 import { GraphType } from "./domain/GraphType.js";
 
-type GraphViewerDependencies = {
-  document: Document;
-  window: Window;
-  api?: GraphApi;
-};
-
 export class GraphViewer {
-  [key: string]: any;
-
-  document: Document;
-  window: Window;
-  api: GraphApi;
-  graph: GraphModel;
-  canvas: GraphCanvas;
-
-  constructor({ document, window, api = new GraphApi(window.fetch.bind(window)) }: GraphViewerDependencies) {
+  constructor({ document, window, api = new GraphApi(window.fetch.bind(window)) } = {}) {
     this.document = document;
     this.window = window;
     this.api = api;
     this.graph = new GraphModel();
 
-    this.svg = this.requireElement("#graph");
-    this.viewport = this.requireElement("#viewport");
+    this.graphSurface = this.requireElement("#graph");
+    this.gpuWarning = this.document.querySelector("#gpu-warning");
     this.fitButton = this.requireElement("#fit-button");
     this.resetButton = this.requireElement("#reset-button");
     this.mobileMenuToggle = this.requireElement("#mobile-menu-toggle");
@@ -86,16 +72,29 @@ export class GraphViewer {
     this.assignNodeTypeButton = this.requireElement("#assign-node-type-button");
     this.edgeTypeList = this.requireElement("#edge-type-list");
     this.typedEdgeList = this.requireElement("#typed-edge-list");
-    this.canvas = new GraphCanvas({
+    this.canvas = new WebGpuGraphCanvas({
       document: this.document,
       window: this.window,
-      graph: this.graph,
-      svg: this.svg,
-      viewport: this.viewport,
+      canvas: this.graphSurface,
       emptyState: this.emptyState,
-      displayName: globalId => this.displayName(globalId),
-      edgeEndpointDisplayName: (edge, globalId) => this.edgeEndpointDisplayName(edge, globalId),
-      handleEndpointClick: (edge, anchorName) => this.handleEndpointClick(edge, anchorName),
+      gpuWarning: this.gpuWarning,
+      buildGraph: () => this.graph.visibleGraph(),
+      positions: this.graph.positions,
+      velocities: this.graph.velocities,
+      view: this.graph.view,
+      isNodeSelected: name => this.graph.isSelectedName(name),
+      selectOnlyNode: name => {
+        this.graph.selectedName = name;
+        this.render();
+      },
+      addNodeToSelection: name => {
+        this.graph.addSelectedName(name);
+        this.render();
+      },
+      toggleNodeSelection: name => {
+        this.graph.toggleSelectedName(name);
+        this.render();
+      },
       renderInspector: graph => this.renderInspector(graph),
       formatRank: value => GraphType.formatRank(value)
     });

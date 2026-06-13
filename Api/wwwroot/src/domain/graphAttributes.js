@@ -1,4 +1,3 @@
-export const svgNs = "http://www.w3.org/2000/svg";
 export const nodeRadius = 34;
 export const endpointOffset = nodeRadius + 9;
 export const defaultBasis = {

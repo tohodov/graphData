@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GraphData</title>
-  <link rel="stylesheet" href="./styles.css?v=20260613-mobile-menu">
+  <link rel="stylesheet" href="./styles.css?v=20260613-webgpu-main">
   <script type="importmap">
     {
       "imports": {
@@ -21,9 +21,11 @@
           <button id="fit-button" type="button" title="Подогнать граф">Подогнать</button>
           <button id="reset-button" type="button" title="Сбросить граф">Сброс</button>
         </div>
-        <svg id="graph" role="img" aria-label="Редактор графа GraphData">
-          <g id="viewport"></g>
-        </svg>
+        <canvas id="graph" role="img" aria-label="Редактор графа GraphData"></canvas>
+        <div id="gpu-warning" class="gpu-warning" hidden>
+          <strong>WebGPU unavailable</strong>
+          <span>Use Chromium or Edge with WebGPU enabled.</span>
+        </div>
         <div id="empty-state" class="empty-state">
           <div class="empty-title">Узел не выбран</div>
         </div>
@@ -191,6 +193,6 @@
     </section>
   </main>
 
-  <script type="module" src="./app.js?v=20260613-mobile-menu"></script>
+  <script type="module" src="./app.js?v=20260613-webgpu-main"></script>
 </body>
 </html>
