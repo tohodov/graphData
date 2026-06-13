@@ -30,6 +30,8 @@ export class GraphViewer {
     this.viewport = this.requireElement("#viewport");
     this.fitButton = this.requireElement("#fit-button");
     this.resetButton = this.requireElement("#reset-button");
+    this.mobileMenuToggle = this.requireElement("#mobile-menu-toggle");
+    this.mobileMenuClose = this.requireElement("#mobile-menu-close");
     this.statusOutput = this.requireElement("#status");
     this.emptyState = this.requireElement("#empty-state");
     this.emptyTitle = this.requireElement("#empty-state .empty-title");
@@ -88,6 +90,7 @@ export class GraphViewer {
   start() {
     this.bindTabs();
     this.bindToolbar();
+    this.bindMobileMenu();
     this.bindNodeForms();
     this.bindSearch();
     this.bindSubgraph();
@@ -130,6 +133,33 @@ export class GraphViewer {
       this.render();
       this.setStatus("");
     });
+  }
+
+  bindMobileMenu() {
+    this.mobileMenuToggle.addEventListener("click", () => this.setMobileMenuOpen(true));
+    this.mobileMenuClose.addEventListener("click", () => this.setMobileMenuOpen(false));
+    this.document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && this.document.body.classList.contains("menu-open")) {
+        this.setMobileMenuOpen(false);
+      }
+    });
+
+    const desktopQuery = this.window.matchMedia("(min-width: 981px)");
+    desktopQuery.addEventListener("change", event => {
+      if (event.matches) {
+        this.setMobileMenuOpen(false);
+      }
+    });
+  }
+
+  setMobileMenuOpen(isOpen) {
+    this.document.body.classList.toggle("menu-open", isOpen);
+    this.mobileMenuToggle.setAttribute("aria-expanded", String(isOpen));
+    if (isOpen) {
+      this.mobileMenuClose.focus();
+    } else if (this.document.activeElement === this.mobileMenuClose) {
+      this.mobileMenuToggle.focus();
+    }
   }
 
   bindNodeForms() {

@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GraphData</title>
-  <link rel="stylesheet" href="./styles.css?v=20260613-root-start">
+  <link rel="stylesheet" href="./styles.css?v=20260613-mobile-menu">
   <script type="importmap">
     {
       "imports": {
-        "./src/GraphViewer.js": "./src/GraphViewer.js?v=20260613-root-start"
+        "./src/GraphViewer.js": "./src/GraphViewer.js?v=20260613-mobile-menu"
       }
     }
   </script>
@@ -30,7 +30,17 @@
         <output id="status" class="visually-hidden" aria-live="polite"></output>
       </div>
 
-      <aside class="side-panel">
+      <button id="mobile-menu-toggle" class="mobile-menu-toggle" type="button" aria-controls="action-menu" aria-expanded="false" title="Показать меню" aria-label="Показать меню">
+        ☰
+      </button>
+
+      <aside id="action-menu" class="side-panel">
+        <div class="mobile-menu-header">
+          <div class="mobile-menu-title">Действия</div>
+          <button id="mobile-menu-close" class="mobile-menu-close" type="button" title="Закрыть меню" aria-label="Закрыть меню">
+            ×
+          </button>
+        </div>
         <nav class="tabs" aria-label="Разделы редактора">
           <button class="tab-button active" type="button" data-tab="node">Узел</button>
           <button class="tab-button" type="button" data-tab="types">Базис</button>
@@ -181,6 +191,6 @@
     </section>
   </main>
 
-  <script type="module" src="./app.js?v=20260613-root-start"></script>
+  <script type="module" src="./app.js?v=20260613-mobile-menu"></script>
 </body>
 </html>
