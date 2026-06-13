@@ -197,10 +197,13 @@ textarea:focus {
 }
 
 .empty-title {
+  max-width: min(680px, calc(100% - 32px));
   font-size: 42px;
   font-weight: 750;
   color: rgba(23, 33, 36, 0.18);
   letter-spacing: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 
 .side-panel {

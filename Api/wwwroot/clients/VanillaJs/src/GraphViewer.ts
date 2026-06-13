@@ -46,6 +46,7 @@ export class GraphViewer {
     this.resetButton = this.requireElement("#reset-button");
     this.statusOutput = this.requireElement("#status");
     this.emptyState = this.requireElement("#empty-state");
+    this.emptyTitle = this.requireElement("#empty-state .empty-title");
     this.selectedName = this.requireElement("#selected-name");
     this.selectedRank = this.requireElement("#selected-rank");
     this.attributeEditor = this.requireElement("#attribute-editor");
@@ -243,13 +244,19 @@ export class GraphViewer {
 
   async loadGraphRoots() {
   this.setBusy(true);
+  this.setEmptyState("Загрузка корней...");
   try {
     const response = await this.loadSubgraphForRoots([], 0);
-    this.loadSubgraphIntoViewer(response, []);
+    const nodes = response.nodes ?? [];
+    this.loadSubgraphIntoViewer(response, [], { selectRoot: false });
     this.renderSubgraphResults(response);
     this.renderTypeControls();
+    this.setEmptyState(nodes.length === 0 ? "Корневые узлы не найдены" : "Узел не выбран");
     this.setStatus("");
   } catch (error) {
+    this.graph.resetGraph();
+    this.setEmptyState(error.message || "Не удалось загрузить корневые узлы");
+    this.render();
     this.setStatus(error.message);
   } finally {
     this.setBusy(false);
@@ -953,7 +960,7 @@ export class GraphViewer {
 
   }
 
-  loadSubgraphIntoViewer(response, roots) {
+  loadSubgraphIntoViewer(response, roots, options = {}) {
   this.graph.loaded.clear();
   this.graph.parentByNode.clear();
   this.graph.positions.clear();
@@ -961,7 +968,7 @@ export class GraphViewer {
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
   this.graph.rootName = roots[0] ?? nodes[0]?.name ?? null;
-  this.graph.selectedName = this.graph.rootName;
+  this.graph.selectedName = options.selectRoot === false ? null : this.graph.rootName;
 
   nodes.forEach((node, index) => {
     this.graph.loaded.set(node.name, GraphNode.from({
@@ -1594,6 +1601,11 @@ export class GraphViewer {
   setStatus(message) {
   this.statusOutput.value = message;
   this.statusOutput.textContent = message;
+
+  }
+
+  setEmptyState(message) {
+  this.emptyTitle.textContent = message;
 
   }
 
