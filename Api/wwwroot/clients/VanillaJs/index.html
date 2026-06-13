@@ -8,30 +8,19 @@
 </head>
 <body>
   <main class="app-shell">
-    <header class="toolbar">
-      <div class="brand">
-        <span class="brand-mark"></span>
-        <span>GraphData</span>
-      </div>
-      <form id="root-form" class="root-form">
-        <input id="root-input" type="text" autocomplete="off" spellcheck="false" placeholder="GlobalId узла">
-        <button type="submit">Открыть</button>
-      </form>
-      <div class="toolbar-actions">
-        <button id="fit-button" type="button">Подогнать</button>
-        <button id="reset-button" type="button">Сброс</button>
-      </div>
-      <output id="status" class="status" aria-live="polite"></output>
-    </header>
-
     <section class="workspace">
       <div class="graph-surface">
+        <div class="graph-actions" aria-label="Управление видом графа">
+          <button id="fit-button" type="button" title="Подогнать граф">Подогнать</button>
+          <button id="reset-button" type="button" title="Сбросить граф">Сброс</button>
+        </div>
         <svg id="graph" role="img" aria-label="Редактор графа GraphData">
           <g id="viewport"></g>
         </svg>
         <div id="empty-state" class="empty-state">
           <div class="empty-title">Узел не выбран</div>
         </div>
+        <output id="status" class="visually-hidden" aria-live="polite"></output>
       </div>
 
       <aside class="side-panel">

@@ -28,8 +28,6 @@ export class GraphViewer {
 
     this.svg = this.requireElement("#graph");
     this.viewport = this.requireElement("#viewport");
-    this.rootForm = this.requireElement("#root-form");
-    this.rootInput = this.requireElement("#root-input");
     this.fitButton = this.requireElement("#fit-button");
     this.resetButton = this.requireElement("#reset-button");
     this.statusOutput = this.requireElement("#status");
@@ -103,7 +101,6 @@ export class GraphViewer {
     const params = new URLSearchParams(this.window.location.search);
     const initialGlobalId = params.get("globalId");
     if (initialGlobalId) {
-      this.rootInput.value = initialGlobalId;
       void this.loadRoot(initialGlobalId);
     } else {
       void this.loadGraphRoots();
@@ -126,11 +123,6 @@ export class GraphViewer {
   }
 
   bindToolbar() {
-    this.rootForm.addEventListener("submit", event => {
-      event.preventDefault();
-      void this.loadRoot(this.rootInput.value.trim());
-    });
-
     this.fitButton.addEventListener("click", () => this.fitView());
     this.resetButton.addEventListener("click", () => {
       this.graph.resetGraph();
@@ -242,7 +234,7 @@ export class GraphViewer {
     this.loadSubgraphIntoViewer(response, []);
     this.renderSubgraphResults(response);
     this.renderTypeControls();
-    this.setStatus(`Корни графа: ${(response.nodes ?? []).length}`);
+    this.setStatus("");
   } catch (error) {
     this.setStatus(error.message);
   } finally {
@@ -718,7 +710,7 @@ export class GraphViewer {
   }
 
   setSearchQueryTemplate(name) {
-  const currentName = this.graph.selectedName || this.rootInput.value.trim() || "node-name";
+  const currentName = this.graph.selectedName || this.graph.rootName || "node-name";
   const templates = {
     all: {
       return: ["n"],
@@ -1236,7 +1228,6 @@ export class GraphViewer {
   button.querySelector("span").textContent = bindings || `score ${match.score} ${match.matchedBy?.join(" ") ?? ""}`;
   button.title = node.globalId;
   button.addEventListener("click", () => {
-    this.rootInput.value = node.globalId;
     this.loadRoot(node.globalId);
     this.setActiveTab("node");
   });
