@@ -1,4 +1,4 @@
-@GraphData.Api_HostAddress = http://localhost:5058
+@GraphData.Api_HostAddress = https://localhost:7257
 
 ### Create a node
 POST {{GraphData.Api_HostAddress}}/api/graph/nodes
