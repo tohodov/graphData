@@ -3,12 +3,11 @@
 Static web clients served by the same `Api` project.
 
 The `Api` project serves this directory from `Api/wwwroot/clients`.
-The application root redirects to `/clients/TilePyramid/`.
+The application root redirects to `/clients/VanillaJs/`.
 
 ## Clients
 
-- `VanillaJs` - current extracted baseline UI.
+- `VanillaJs` - primary TypeScript UI with the domain model, graph projection, and ranking logic.
 - `WebGpuRaw` - framework-free WebGPU prototype with typed-array graph memory.
-- `TilePyramid` - map-like semantic zoom prototype with client-side tile levels.
 
 To change the default client, update `DefaultClientPath` in `Api/Program.cs`.

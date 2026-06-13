@@ -3,7 +3,7 @@ using GraphData.Api.Services;
 using GraphData.Core.Extensions;
 using SymLinkStorage;
 
-const string DefaultClientPath = "/clients/TilePyramid/";
+const string DefaultClientPath = "/clients/VanillaJs/";
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -33,7 +33,5 @@ app.MapControllers();
 app.MapGet("/", () => Results.Redirect(DefaultClientPath))
     .ExcludeFromDescription();
 app.MapGet("/clients", () => Results.Redirect(DefaultClientPath))
-    .ExcludeFromDescription();
-app.MapGet("/clients/", () => Results.Redirect(DefaultClientPath))
     .ExcludeFromDescription();
 app.Run();
