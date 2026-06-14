@@ -220,7 +220,8 @@ textarea:focus {
   color: var(--accent-strong);
 }
 
-.graph-node-collapse {
+.graph-node-collapse,
+.graph-edge-control {
   position: absolute;
   z-index: 2;
   display: grid;
@@ -242,9 +243,27 @@ textarea:focus {
   touch-action: manipulation;
 }
 
-.graph-node-collapse:hover {
+.graph-edge-control {
+  z-index: 3;
+  font-size: 16px;
+}
+
+.graph-edge-control.collapsed {
+  border-color: rgba(216, 153, 32, 0.78);
+  background: #fff8ea;
+  color: #172124;
+}
+
+.graph-edge-control.expanded {
+  background: #172124;
+  color: #ffffff;
+}
+
+.graph-node-collapse:hover,
+.graph-edge-control:hover {
   border-color: rgba(255, 255, 255, 0.98);
   background: var(--accent-strong);
+  color: #ffffff;
 }
 
 .gpu-warning {

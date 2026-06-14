@@ -113,6 +113,8 @@ export class GraphViewer {
       },
       canCollapseNode: name => this.canCollapseNode(name),
       collapseNode: name => this.collapseNode(name),
+      edgeEndpointControl: (edge, anchorName) => this.edgeEndpointControl(edge, anchorName),
+      activateEdgeEndpoint: (edge, anchorName) => this.handleEndpointClick(edge, anchorName),
       renderInspector: graph => this.renderInspector(graph),
       formatRank: value => GraphType.formatRank(value)
     });
@@ -1112,6 +1114,35 @@ export class GraphViewer {
   }
 
   return false;
+
+  }
+
+  edgeEndpointControl(edge, anchorName) {
+  const normalized = GraphEdge.from(edge);
+  const otherName = normalized.otherEndpoint(anchorName);
+  const anchorLoaded = this.graph.loaded.has(anchorName);
+  const otherLoaded = this.graph.loaded.has(otherName);
+  const otherLabel = this.edgeEndpointDisplayName(normalized, otherName);
+
+  if (anchorLoaded && !otherLoaded) {
+    return {
+      kind: "expand",
+      text: "+",
+      title: `Развернуть ${otherLabel}`,
+      otherName
+    };
+  }
+
+  if (anchorLoaded && otherLoaded) {
+    return {
+      kind: "collapse",
+      text: "-",
+      title: `Свернуть или выбрать ${otherLabel}`,
+      otherName
+    };
+  }
+
+  return null;
 
   }
 

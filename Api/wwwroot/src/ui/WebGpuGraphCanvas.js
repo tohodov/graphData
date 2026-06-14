@@ -5,6 +5,7 @@ const tapMoveThreshold = 8;
 const defaultEdgeColor = [0.20, 0.27, 0.30, 0.62];
 const defaultNodeStrokeColor = [0.09, 0.13, 0.14, 1];
 const maxLabels = 280;
+const endpointControlPadding = 9;
 
 export class WebGpuGraphCanvas {
   constructor({
@@ -24,6 +25,8 @@ export class WebGpuGraphCanvas {
     toggleNodeSelection,
     canCollapseNode,
     collapseNode,
+    edgeEndpointControl,
+    activateEdgeEndpoint,
     renderInspector,
     formatRank
   }) {
@@ -44,6 +47,8 @@ export class WebGpuGraphCanvas {
       toggleNodeSelection,
       canCollapseNode,
       collapseNode,
+      edgeEndpointControl,
+      activateEdgeEndpoint,
       renderInspector,
       formatRank
     };
@@ -428,6 +433,7 @@ export class WebGpuGraphCanvas {
 
     const rect = this.canvas.getBoundingClientRect();
     const fragment = this.document.createDocumentFragment();
+    this.renderEdgeEndpointControls(fragment, rect);
     const labelledNodes = this.memory.nodes
       .filter(node => {
         const position = this.positions.get(node.name);
@@ -486,6 +492,75 @@ export class WebGpuGraphCanvas {
     });
 
     this.labelLayer.append(fragment);
+  }
+
+  renderEdgeEndpointControls(fragment, rect) {
+    const graph = this.currentGraph ?? this.memory?.graph;
+    if (!graph?.edges?.length) {
+      return;
+    }
+
+    const nodesByName = new Map((graph.nodes ?? []).map(node => [node.name, node]));
+    const rendered = new Set();
+    graph.edges.forEach(edge => {
+      this.renderEdgeEndpointControl(fragment, rect, edge, edge.sourceGlobalId, edge.targetGlobalId, nodesByName, rendered);
+      this.renderEdgeEndpointControl(fragment, rect, edge, edge.targetGlobalId, edge.sourceGlobalId, nodesByName, rendered);
+    });
+  }
+
+  renderEdgeEndpointControl(fragment, rect, edge, anchorName, otherName, nodesByName, rendered) {
+    if (!anchorName || !otherName) {
+      return;
+    }
+
+    const control = this.callbacks.edgeEndpointControl?.(edge, anchorName);
+    if (!control) {
+      return;
+    }
+
+    const anchor = this.positions.get(anchorName);
+    const other = this.positions.get(otherName);
+    if (!anchor || !other) {
+      return;
+    }
+
+    const anchorNode = nodesByName.get(anchorName);
+    const radius = Number.isFinite(anchorNode?.viewRadius) ? anchorNode.viewRadius : nodeRadius;
+    const point = pointOnCircle(anchor, other, radius + endpointControlPadding);
+    const x = point.x * this.view.scale + this.view.x;
+    const y = point.y * this.view.scale + this.view.y;
+    const margin = 36;
+    if (x < -margin || x > rect.width + margin || y < -margin || y > rect.height + margin) {
+      return;
+    }
+
+    const key = `${edge.key ?? ""}\0${anchorName}\0${otherName}\0${control.kind ?? ""}`;
+    if (rendered.has(key)) {
+      return;
+    }
+    rendered.add(key);
+
+    const title = control.title ?? (control.kind === "expand" ? "Развернуть связь" : "Свернуть связь");
+    const button = this.document.createElement("button");
+    button.type = "button";
+    button.className = `graph-edge-control ${control.kind === "expand" ? "collapsed" : "expanded"}`;
+    button.textContent = control.text ?? (control.kind === "expand" ? "+" : "-");
+    button.title = title;
+    button.setAttribute("aria-label", title);
+    button.dataset.edgeEndpoint = control.kind ?? "";
+    button.dataset.anchorName = anchorName;
+    button.dataset.otherName = control.otherName ?? otherName;
+    button.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+    button.addEventListener("pointerdown", event => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    button.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.callbacks.activateEdgeEndpoint?.(edge, anchorName);
+    });
+    fragment.append(button);
   }
 
   pickNearest(clientX, clientY) {
@@ -592,6 +667,22 @@ function edgeKey(source, target, discriminator) {
   return String(source).localeCompare(String(target), "ru") < 0
     ? `${source}\0${target}\0${discriminator}`
     : `${target}\0${source}\0${discriminator}`;
+}
+
+function pointOnCircle(anchor, target, radius) {
+  let dx = target.x - anchor.x;
+  let dy = target.y - anchor.y;
+  let distance = Math.hypot(dx, dy);
+  if (distance < 0.01) {
+    dx = 1;
+    dy = 0;
+    distance = 1;
+  }
+
+  return {
+    x: anchor.x + (dx / distance) * radius,
+    y: anchor.y + (dy / distance) * radius
+  };
 }
 
 function clamp(value, min, max) {
