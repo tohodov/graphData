@@ -2,7 +2,7 @@ import { nodeRadius } from "../domain/graphAttributes.js";
 import { WebGpuRenderer } from "./WebGpuRenderer.js";
 
 const tapMoveThreshold = 8;
-const defaultEdgeColor = [0.18, 0.25, 0.28, 0.58];
+const defaultEdgeColor = [0.20, 0.27, 0.30, 0.62];
 const defaultNodeStrokeColor = [0.09, 0.13, 0.14, 1];
 const maxLabels = 280;
 
@@ -339,7 +339,7 @@ export class WebGpuGraphCanvas {
       nodeCount: nodes.length,
       edgeCount: edges.length,
       nodeVertexData: new Float32Array(nodes.length * 8),
-      edgeVertexData: new Float32Array(edges.length * 9),
+      edgeVertexData: new Float32Array(edges.length * 12),
       byteLength: 0
     };
     memory.byteLength = memory.nodeVertexData.byteLength + memory.edgeVertexData.byteLength;
@@ -367,16 +367,19 @@ export class WebGpuGraphCanvas {
       const source = this.positions.get(edge.sourceGlobalId) ?? { x: 0, y: 0 };
       const target = this.positions.get(edge.targetGlobalId) ?? { x: 0, y: 0 };
       const color = parseColor(edge.color, defaultEdgeColor);
-      const base = index * 9;
+      const base = index * 12;
       memory.edgeVertexData[base + 0] = source.x;
       memory.edgeVertexData[base + 1] = source.y;
-      memory.edgeVertexData[base + 2] = target.x;
-      memory.edgeVertexData[base + 3] = target.y;
-      memory.edgeVertexData[base + 4] = color[0];
-      memory.edgeVertexData[base + 5] = color[1];
-      memory.edgeVertexData[base + 6] = color[2];
-      memory.edgeVertexData[base + 7] = color[3];
-      memory.edgeVertexData[base + 8] = edgeWidth(edge);
+      memory.edgeVertexData[base + 2] = color[0];
+      memory.edgeVertexData[base + 3] = color[1];
+      memory.edgeVertexData[base + 4] = color[2];
+      memory.edgeVertexData[base + 5] = color[3];
+      memory.edgeVertexData[base + 6] = target.x;
+      memory.edgeVertexData[base + 7] = target.y;
+      memory.edgeVertexData[base + 8] = color[0];
+      memory.edgeVertexData[base + 9] = color[1];
+      memory.edgeVertexData[base + 10] = color[2];
+      memory.edgeVertexData[base + 11] = color[3];
     });
   }
 
@@ -589,12 +592,6 @@ function edgeKey(source, target, discriminator) {
   return String(source).localeCompare(String(target), "ru") < 0
     ? `${source}\0${target}\0${discriminator}`
     : `${target}\0${source}\0${discriminator}`;
-}
-
-function edgeWidth(edge) {
-  const rank = Number.isFinite(edge.viewRank) ? Math.max(0, edge.viewRank) : 0;
-  const projectedBoost = edge.projected ? 0.8 : 0;
-  return clamp(3.2 + projectedBoost + Math.sqrt(rank) * 0.16, 3.2, 6.4);
 }
 
 function clamp(value, min, max) {
