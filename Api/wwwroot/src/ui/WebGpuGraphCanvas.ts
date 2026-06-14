@@ -2,7 +2,7 @@ import { nodeRadius } from "../domain/graphAttributes.js";
 import { WebGpuRenderer } from "./WebGpuRenderer.js";
 
 const tapMoveThreshold = 8;
-const defaultEdgeColor = [0.48, 0.53, 0.56, 0.22];
+const defaultEdgeColor = [0.18, 0.25, 0.28, 0.58];
 const defaultNodeStrokeColor = [0.09, 0.13, 0.14, 1];
 const maxLabels = 280;
 
@@ -22,6 +22,8 @@ export class WebGpuGraphCanvas {
     selectOnlyNode,
     addNodeToSelection,
     toggleNodeSelection,
+    canCollapseNode,
+    collapseNode,
     renderInspector,
     formatRank
   }) {
@@ -40,6 +42,8 @@ export class WebGpuGraphCanvas {
       selectOnlyNode,
       addNodeToSelection,
       toggleNodeSelection,
+      canCollapseNode,
+      collapseNode,
       renderInspector,
       formatRank
     };
@@ -335,7 +339,7 @@ export class WebGpuGraphCanvas {
       nodeCount: nodes.length,
       edgeCount: edges.length,
       nodeVertexData: new Float32Array(nodes.length * 8),
-      edgeVertexData: new Float32Array(edges.length * 12),
+      edgeVertexData: new Float32Array(edges.length * 9),
       byteLength: 0
     };
     memory.byteLength = memory.nodeVertexData.byteLength + memory.edgeVertexData.byteLength;
@@ -363,19 +367,16 @@ export class WebGpuGraphCanvas {
       const source = this.positions.get(edge.sourceGlobalId) ?? { x: 0, y: 0 };
       const target = this.positions.get(edge.targetGlobalId) ?? { x: 0, y: 0 };
       const color = parseColor(edge.color, defaultEdgeColor);
-      const base = index * 12;
+      const base = index * 9;
       memory.edgeVertexData[base + 0] = source.x;
       memory.edgeVertexData[base + 1] = source.y;
-      memory.edgeVertexData[base + 2] = color[0];
-      memory.edgeVertexData[base + 3] = color[1];
-      memory.edgeVertexData[base + 4] = color[2];
-      memory.edgeVertexData[base + 5] = color[3];
-      memory.edgeVertexData[base + 6] = target.x;
-      memory.edgeVertexData[base + 7] = target.y;
-      memory.edgeVertexData[base + 8] = color[0];
-      memory.edgeVertexData[base + 9] = color[1];
-      memory.edgeVertexData[base + 10] = color[2];
-      memory.edgeVertexData[base + 11] = color[3];
+      memory.edgeVertexData[base + 2] = target.x;
+      memory.edgeVertexData[base + 3] = target.y;
+      memory.edgeVertexData[base + 4] = color[0];
+      memory.edgeVertexData[base + 5] = color[1];
+      memory.edgeVertexData[base + 6] = color[2];
+      memory.edgeVertexData[base + 7] = color[3];
+      memory.edgeVertexData[base + 8] = edgeWidth(edge);
     });
   }
 
@@ -450,13 +451,35 @@ export class WebGpuGraphCanvas {
       const radius = node.viewRadius ?? nodeRadius;
       const x = position.x * this.view.scale + this.view.x;
       const y = position.y * this.view.scale + this.view.y;
+      const selected = this.callbacks.isNodeSelected(node.name);
       const label = this.document.createElement("div");
-      label.className = `graph-node-label${this.callbacks.isNodeSelected(node.name) ? " selected" : ""}`;
+      label.className = `graph-node-label${selected ? " selected" : ""}`;
       label.textContent = node.displayName ?? node.localId ?? node.name;
       label.title = node.globalId ?? node.name;
       label.style.width = `${Math.max(28, radius * 2 - 16)}px`;
       label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
       fragment.append(label);
+
+      if (this.callbacks.canCollapseNode?.(node.name)) {
+        const collapseButton = this.document.createElement("button");
+        const controlRadius = radius + (selected ? 4 : 0);
+        collapseButton.type = "button";
+        collapseButton.className = "graph-node-collapse";
+        collapseButton.textContent = "-";
+        collapseButton.title = "Свернуть узел";
+        collapseButton.setAttribute("aria-label", "Свернуть узел");
+        collapseButton.style.transform = `translate(${x + controlRadius * 0.72}px, ${y - controlRadius * 0.72}px) translate(-50%, -50%)`;
+        collapseButton.addEventListener("pointerdown", event => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        collapseButton.addEventListener("click", event => {
+          event.preventDefault();
+          event.stopPropagation();
+          this.callbacks.collapseNode?.(node.name);
+        });
+        fragment.append(collapseButton);
+      }
     });
 
     this.labelLayer.append(fragment);
@@ -566,6 +589,12 @@ function edgeKey(source, target, discriminator) {
   return String(source).localeCompare(String(target), "ru") < 0
     ? `${source}\0${target}\0${discriminator}`
     : `${target}\0${source}\0${discriminator}`;
+}
+
+function edgeWidth(edge) {
+  const rank = Number.isFinite(edge.viewRank) ? Math.max(0, edge.viewRank) : 0;
+  const projectedBoost = edge.projected ? 0.8 : 0;
+  return clamp(3.2 + projectedBoost + Math.sqrt(rank) * 0.16, 3.2, 6.4);
 }
 
 function clamp(value, min, max) {

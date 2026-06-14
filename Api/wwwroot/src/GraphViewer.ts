@@ -111,6 +111,8 @@ export class GraphViewer {
         this.graph.toggleSelectedName(name);
         this.render();
       },
+      canCollapseNode: name => this.canCollapseNode(name),
+      collapseNode: name => this.collapseNode(name),
       renderInspector: graph => this.renderInspector(graph),
       formatRank: value => GraphType.formatRank(value)
     });
@@ -1091,6 +1093,25 @@ export class GraphViewer {
   this.render();
   this.runSimulation(18);
   this.setStatus(`Развернуто узлов: ${this.graph.loaded.size}`);
+
+  }
+
+  canCollapseNode(name) {
+  if (!name || name === this.graph.rootName || !this.graph.loaded.has(name)) {
+    return false;
+  }
+
+  if (this.graph.parentByNode.has(name)) {
+    return true;
+  }
+
+  for (const parent of this.graph.parentByNode.values()) {
+    if (parent === name) {
+      return true;
+    }
+  }
+
+  return false;
 
   }
 

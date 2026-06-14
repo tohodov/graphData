@@ -220,6 +220,33 @@ textarea:focus {
   color: var(--accent-strong);
 }
 
+.graph-node-collapse {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.96);
+  border-radius: 50%;
+  background: #172124;
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(21, 31, 36, 0.28);
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.graph-node-collapse:hover {
+  border-color: rgba(255, 255, 255, 0.98);
+  background: var(--accent-strong);
+}
+
 .gpu-warning {
   position: absolute;
   left: 50%;

@@ -85,14 +85,38 @@ struct Uniforms {
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
   @location(0) color: vec4<f32>,
+  @location(1) side: f32,
 };
 
 @vertex
 fn vs(
-  @location(0) world: vec2<f32>,
-  @location(1) color: vec4<f32>
+  @builtin(vertex_index) vertexIndex: u32,
+  @location(0) source: vec2<f32>,
+  @location(1) target: vec2<f32>,
+  @location(2) color: vec4<f32>,
+  @location(3) width: f32
 ) -> VertexOut {
-  let css = world * uniforms.scale + uniforms.offset;
+  var along = array<f32, 6>(
+    0.0, 1.0, 0.0,
+    0.0, 1.0, 1.0
+  );
+  var sideOffsets = array<f32, 6>(
+    -1.0, -1.0, 1.0,
+    1.0, -1.0, 1.0
+  );
+
+  let sourceCss = source * uniforms.scale + uniforms.offset;
+  let targetCss = target * uniforms.scale + uniforms.offset;
+  let segment = targetCss - sourceCss;
+  let segmentLength = max(length(segment), 1.0);
+  let tangent = segment / segmentLength;
+  let normal = vec2<f32>(-tangent.y, tangent.x);
+  let t = along[vertexIndex];
+  let side = sideOffsets[vertexIndex];
+  let halfWidth = max(1.4, width * 0.5);
+  let cap = min(10.0, segmentLength * 0.12);
+  let capDirection = select(-1.0, 1.0, t > 0.5);
+  let css = sourceCss + segment * t + tangent * capDirection * cap + normal * side * (halfWidth + 1.0);
   let screen = css * uniforms.pixelRatio;
   let clip = vec2<f32>(
     screen.x / uniforms.viewport.x * 2.0 - 1.0,
@@ -102,12 +126,14 @@ fn vs(
   var out: VertexOut;
   out.position = vec4<f32>(clip, 0.0, 1.0);
   out.color = color;
+  out.side = side;
   return out;
 }
 
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4<f32> {
-  return in.color;
+  let alpha = 1.0 - smoothstep(0.72, 1.0, abs(in.side));
+  return vec4<f32>(in.color.rgb, in.color.a * alpha);
 }
 `;
 
@@ -186,10 +212,13 @@ export class WebGpuRenderer {
         module: this.device.createShaderModule({ code: edgeShader }),
         entryPoint: "vs",
         buffers: [{
-          arrayStride: 24,
+          arrayStride: 36,
+          stepMode: "instance",
           attributes: [
             { shaderLocation: 0, offset: 0, format: "float32x2" },
-            { shaderLocation: 1, offset: 8, format: "float32x4" }
+            { shaderLocation: 1, offset: 8, format: "float32x2" },
+            { shaderLocation: 2, offset: 16, format: "float32x4" },
+            { shaderLocation: 3, offset: 32, format: "float32" }
           ]
         }]
       },
@@ -213,7 +242,7 @@ export class WebGpuRenderer {
         }]
       },
       primitive: {
-        topology: "line-list"
+        topology: "triangle-list"
       }
     });
   }
@@ -290,7 +319,7 @@ export class WebGpuRenderer {
     this.nodeBuffer = null;
     this.edgeBuffer = null;
     this.nodeCount = memory?.nodeCount ?? 0;
-    this.edgeVertexCount = memory?.edgeVertexData.length / 6 ?? 0;
+    this.edgeVertexCount = memory?.edgeVertexData.length / 9 ?? 0;
 
     if (!memory || memory.nodeCount === 0 || !this.device) {
       return;
@@ -304,7 +333,7 @@ export class WebGpuRenderer {
   }
 
   updateGraph(memory) {
-    const nextEdgeVertexCount = memory?.edgeVertexData.length / 6 ?? 0;
+    const nextEdgeVertexCount = memory?.edgeVertexData.length / 9 ?? 0;
     if (!memory
       || this.nodeCount !== memory.nodeCount
       || this.edgeVertexCount !== nextEdgeVertexCount
@@ -364,7 +393,7 @@ export class WebGpuRenderer {
     if (this.edgeBuffer && this.edgeVertexCount > 0) {
       pass.setPipeline(this.edgePipeline);
       pass.setVertexBuffer(0, this.edgeBuffer);
-      pass.draw(this.edgeVertexCount);
+      pass.draw(6, this.edgeVertexCount);
     }
     if (this.nodeBuffer && this.nodeCount > 0) {
       pass.setPipeline(this.nodePipeline);
