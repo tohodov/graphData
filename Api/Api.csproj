@@ -39,11 +39,33 @@
   </Target>
 
   <Target Name="BuildTypeScript" BeforeTargets="CoreCompile" Condition="'$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <TypeScriptCompilerOutput Remove="@(TypeScriptCompilerOutput)" />
+      <EsbuildOutput Remove="@(EsbuildOutput)" />
+    </ItemGroup>
     <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
-          Command="&quot;$(NodeExe)&quot; &quot;node_modules\typescript\lib\tsc.js&quot; -p tsconfig.json" />
+          Command="&quot;$(NodeExe)&quot; &quot;node_modules\typescript\lib\tsc.js&quot; -p tsconfig.json"
+          ConsoleToMsBuild="true"
+          IgnoreExitCode="true"
+          StandardOutputImportance="High"
+          StandardErrorImportance="High">
+      <Output TaskParameter="ConsoleOutput" ItemName="TypeScriptCompilerOutput" />
+      <Output TaskParameter="ExitCode" PropertyName="TypeScriptExitCode" />
+    </Exec>
+    <Error Condition="'$(TypeScriptExitCode)' != '0'"
+           Text="TypeScript compiler failed with exit code $(TypeScriptExitCode):%0A@(TypeScriptCompilerOutput, '%0A')" />
     <MakeDir Directories="$(MSBuildProjectDirectory)\wwwroot\js" />
     <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
-          Command="&quot;$(NodeExe)&quot; &quot;node_modules\esbuild\bin\esbuild&quot; obj/ts/main.js --bundle --sourcemap --outfile=wwwroot/js/app.js" />
+          Command="&quot;$(NodeExe)&quot; &quot;node_modules\esbuild\bin\esbuild&quot; obj/ts/main.js --bundle --sourcemap --outfile=wwwroot/js/app.js"
+          ConsoleToMsBuild="true"
+          IgnoreExitCode="true"
+          StandardOutputImportance="High"
+          StandardErrorImportance="High">
+      <Output TaskParameter="ConsoleOutput" ItemName="EsbuildOutput" />
+      <Output TaskParameter="ExitCode" PropertyName="EsbuildExitCode" />
+    </Exec>
+    <Error Condition="'$(EsbuildExitCode)' != '0'"
+           Text="esbuild failed with exit code $(EsbuildExitCode):%0A@(EsbuildOutput, '%0A')" />
   </Target>
 
 </Project>
