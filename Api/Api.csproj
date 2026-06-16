@@ -27,12 +27,10 @@
 
   <Target Name="BuildTypeScript" BeforeTargets="CoreCompile" Condition="'$(DesignTimeBuild)' != 'true'">
     <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
-          Command="tsc -p tsconfig.json"
-          EnvironmentVariables="PATH=$(TypeScriptToolPath);$(PATH)" />
+          Command="&quot;$(TypeScriptToolPath)\tsc.cmd&quot; -p tsconfig.json" />
     <MakeDir Directories="$(MSBuildProjectDirectory)\wwwroot\js" />
     <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
-          Command="esbuild obj/ts/main.js --bundle --sourcemap --outfile=wwwroot/js/app.js"
-          EnvironmentVariables="PATH=$(TypeScriptToolPath);$(PATH)" />
+          Command="&quot;$(TypeScriptToolPath)\esbuild.cmd&quot; obj/ts/main.js --bundle --sourcemap --outfile=wwwroot/js/app.js" />
   </Target>
 
 </Project>
