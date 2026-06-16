@@ -70,7 +70,7 @@ export class GraphProjection {
           directed: relation.type?.directed ?? false,
           typeRank: relation.type?.rank,
           projected: true,
-          collapsed: this.model.isEdgeCollapsed(key)
+          collapsed: Boolean(relation.collapsed)
         };
       });
 
@@ -156,6 +156,7 @@ export class GraphProjection {
         return {
           relationGlobalId: relation.name,
           displayName: relation.displayName,
+          collapsed: Boolean(relation.collapsed),
           sourceGlobalId,
           targetGlobalId,
           type,

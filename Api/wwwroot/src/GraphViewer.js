@@ -1110,20 +1110,20 @@ export class GraphViewer {
   const otherLoaded = this.graph.loaded.has(otherName);
   const otherLabel = this.edgeEndpointDisplayName(normalized, otherName);
 
-  if (anchorLoaded && this.graph.isEdgeCollapsed(normalized)) {
-    return {
-      kind: "expand",
-      text: "+",
-      title: `Развернуть связь с ${otherLabel}`,
-      otherName
-    };
-  }
-
   if (anchorLoaded && !otherLoaded) {
     return {
       kind: "expand",
       text: "+",
       title: `Развернуть ${otherLabel}`,
+      otherName
+    };
+  }
+
+  if (anchorLoaded && this.graph.isEdgeCollapsed(normalized)) {
+    return {
+      kind: "expand",
+      text: "+",
+      title: `Развернуть связь с ${otherLabel}`,
       otherName
     };
   }
@@ -1175,14 +1175,6 @@ export class GraphViewer {
   const anchorLoaded = this.graph.loaded.has(anchorName);
   const otherLoaded = this.graph.loaded.has(otherName);
 
-  if (anchorLoaded && this.graph.isEdgeCollapsed(edge)) {
-    this.graph.expandEdge(edge);
-    this.render();
-    this.runSimulation(18);
-    this.setStatus(`Развернута связь "${this.displayName(anchorName)}" - "${this.displayName(otherName)}"`);
-    return;
-  }
-
   if (anchorLoaded && !otherLoaded) {
     this.loadNeighbor(anchorName, this.edgeNeighborLocalId(edge, anchorName));
     return;
@@ -1190,6 +1182,14 @@ export class GraphViewer {
 
   if (!anchorLoaded && otherLoaded) {
     this.loadNeighbor(otherName, this.edgeNeighborLocalId(edge, otherName));
+    return;
+  }
+
+  if (anchorLoaded && this.graph.isEdgeCollapsed(edge)) {
+    this.graph.expandEdge(edge);
+    this.render();
+    this.runSimulation(18);
+    this.setStatus(`Развернута связь "${this.displayName(anchorName)}" - "${this.displayName(otherName)}"`);
     return;
   }
 

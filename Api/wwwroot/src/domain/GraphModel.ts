@@ -9,7 +9,6 @@ export class GraphModel {
   selectedNames: Set<string>;
   loaded: Map<string, GraphNode>;
   parentByNode: Map<string, string>;
-  collapsedEdges: Set<string>;
   positions: Map<string, { x: number; y: number }>;
   velocities: Map<string, { x: number; y: number }>;
   view: { x: number; y: number; scale: number };
@@ -25,7 +24,6 @@ export class GraphModel {
     this.selectedNames = new Set();
     this.loaded = new Map();
     this.parentByNode = new Map();
-    this.collapsedEdges = new Set();
     this.positions = new Map();
     this.velocities = new Map();
     this.view = { x: 0, y: 0, scale: 1 };
@@ -63,7 +61,6 @@ export class GraphModel {
     this.selectedName = null;
     this.loaded.clear();
     this.parentByNode.clear();
-    this.collapsedEdges.clear();
     this.positions.clear();
     this.velocities.clear();
   }
@@ -133,9 +130,7 @@ export class GraphModel {
       nodes.set(node.name, node.toViewNode());
       node.edges.forEach(edge => {
         if (!edges.has(edge.key)) {
-          edges.set(edge.key, edge.toViewEdge({
-            collapsed: this.isEdgeCollapsed(edge)
-          }));
+          edges.set(edge.key, edge.toViewEdge());
         }
       });
     }
@@ -152,27 +147,95 @@ export class GraphModel {
     return new GraphProjection(this).project(physical);
   }
 
-  collapseEdge(edge: GraphEdge | string): void {
+  collapseEdge(edge: GraphEdge | string | any): void {
     const key = this.edgeKey(edge);
-    if (key) {
-      this.collapsedEdges.add(key);
+    if (!key) {
+      return;
+    }
+
+    const matches = this.findEdgeObjects(key);
+    if (matches.length === 0 && typeof edge !== "string") {
+      edge.collapsed = true;
+      this.setProjectedRelationCollapsed(edge, true);
+      return;
+    }
+
+    matches.forEach(match => {
+      match.collapsed = true;
+    });
+    this.setProjectedRelationCollapsed(edge, true);
+  }
+
+  expandEdge(edge: GraphEdge | string | any): void {
+    const key = this.edgeKey(edge);
+    if (!key) {
+      return;
+    }
+
+    const matches = this.findEdgeObjects(key);
+    if (matches.length === 0 && typeof edge !== "string") {
+      edge.collapsed = false;
+      this.setProjectedRelationCollapsed(edge, false);
+      return;
+    }
+
+    matches.forEach(match => {
+      match.collapsed = false;
+    });
+    this.setProjectedRelationCollapsed(edge, false);
+  }
+
+  isEdgeCollapsed(edge: GraphEdge | string | any): boolean {
+    if (typeof edge !== "string" && edge?.collapsed === true) {
+      return true;
+    }
+
+    const relationGlobalId = this.projectedRelationGlobalId(edge);
+    if (relationGlobalId) {
+      return Boolean((this.loaded.get(relationGlobalId) as any)?.collapsed);
+    }
+
+    const key = this.edgeKey(edge);
+    return Boolean(key && this.findEdgeObjects(key).some(match => match.collapsed));
+  }
+
+  edgeKey(edge: GraphEdge | string | any): string {
+    return typeof edge === "string" ? edge : edge?.key ?? GraphEdge.from(edge).key;
+  }
+
+  findEdgeObjects(key: string): GraphEdge[] {
+    const matches: GraphEdge[] = [];
+    for (const node of this.loaded.values()) {
+      for (const edge of node.edges ?? []) {
+        if (edge.key === key) {
+          matches.push(edge);
+        }
+      }
+    }
+
+    return matches;
+  }
+
+  setProjectedRelationCollapsed(edge: any, collapsed: boolean): void {
+    const relationGlobalId = this.projectedRelationGlobalId(edge);
+    if (!relationGlobalId) {
+      return;
+    }
+
+    const relation = this.loaded.get(relationGlobalId) as any;
+    if (relation) {
+      relation.collapsed = collapsed;
     }
   }
 
-  expandEdge(edge: GraphEdge | string): void {
-    const key = this.edgeKey(edge);
-    if (key) {
-      this.collapsedEdges.delete(key);
+  projectedRelationGlobalId(edge: GraphEdge | string | any): string | null {
+    if (typeof edge === "string") {
+      return edge.startsWith("projected:") ? edge.slice("projected:".length) : null;
     }
-  }
 
-  isEdgeCollapsed(edge: GraphEdge | string): boolean {
-    const key = this.edgeKey(edge);
-    return Boolean(key && this.collapsedEdges.has(key));
-  }
-
-  edgeKey(edge: GraphEdge | string): string {
-    return typeof edge === "string" ? edge : GraphEdge.from(edge).key;
+    return edge?.relationGlobalId && String(edge.key ?? "").startsWith("projected:")
+      ? edge.relationGlobalId
+      : null;
   }
 
   rankGraph(graph: any): any {

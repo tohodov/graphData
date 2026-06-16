@@ -9,13 +9,15 @@ export class GraphNode {
   displayName: string;
   attributes: Record<string, string>;
   edges: GraphEdge[];
-  constructor({ globalId, name, localId, displayName, attributes = {}, edges = [] }: { globalId?: string; name?: string; localId?: string; displayName?: string; attributes?: Record<string, string>; edges?: unknown[] }) {
+  collapsed: boolean;
+  constructor({ globalId, name, localId, displayName, attributes = {}, edges = [], collapsed = false }: { globalId?: string; name?: string; localId?: string; displayName?: string; attributes?: Record<string, string>; edges?: unknown[]; collapsed?: boolean }) {
     this.globalId = globalId ?? name;
     this.name = this.globalId;
     this.localId = localId ?? GraphId.localId(this.globalId);
     this.displayName = displayName ?? this.localId;
     this.attributes = { ...(attributes ?? {}) };
     this.edges = edges.map(edge => GraphEdge.from(edge));
+    this.collapsed = Boolean(collapsed);
   }
 
   static fromApi(node: unknown): GraphNode {
@@ -34,6 +36,7 @@ export class GraphNode {
     this.displayName = next.displayName;
     this.attributes = { ...next.attributes };
     this.edges = GraphEdge.mergeMany(this.edges, next.edges);
+    this.collapsed = this.collapsed || next.collapsed;
     return this;
   }
 
@@ -93,6 +96,7 @@ export class GraphNode {
       localId: this.localId,
       displayName: this.displayName,
       attributes: { ...this.attributes },
+      collapsed: this.collapsed,
       ...extra
     };
   }

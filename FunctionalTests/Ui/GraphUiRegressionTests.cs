@@ -36,21 +36,108 @@ public sealed class GraphUiRegressionTests {
               edges: []
             });
 
-            const before = model.visibleGraph().edges[0].collapsed === false;
+            const before = model.visibleGraph().edges[0].collapsed === false
+              && model.collapsedEdges === undefined;
             model.collapseEdge(edge);
             const collapsedGraph = model.visibleGraph();
             const collapsed = collapsedGraph.nodes.length === 2
               && collapsedGraph.edges.length === 1
               && collapsedGraph.edges[0].collapsed === true
+              && edge.collapsed === true
               && model.isEdgeCollapsed(edge);
             model.expandEdge(edge);
             const expanded = model.visibleGraph().edges[0].collapsed === false
+              && edge.collapsed === false
               && !model.isEdgeCollapsed(edge);
             model.collapseEdge(edge);
-            model.resetGraph();
-            const reset = model.collapsedEdges.size === 0;
+            const replacement = GraphEdge.mergeMany([edge], [new GraphEdge({
+              sourceGlobalId: "a",
+              targetGlobalId: "b",
+              sourceLocalId: "a",
+              targetLocalId: "b"
+            })])[0];
+            const mergePreservesObjectState = replacement.collapsed === true;
 
-            globalThis.__result = before && collapsed && expanded && reset;
+            globalThis.__result = before && collapsed && expanded && mergePreservesObjectState;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void GraphModel_ProjectedEdgeStateIsStoredOnRelationObject() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            model.schema.projectionBasis = "relations";
+
+            const relationId = model.basis.relationRoot + "/r1";
+            const sourcePortId = relationId + "/source";
+            const targetPortId = relationId + "/target";
+
+            model.putNode(new GraphNode({
+              globalId: "a",
+              displayName: "A",
+              edges: [{ sourceGlobalId: "a", targetGlobalId: sourcePortId }]
+            }));
+            model.putNode(new GraphNode({
+              globalId: sourcePortId,
+              displayName: "source",
+              attributes: { [graphRoleAttribute]: "source" },
+              edges: [{ sourceGlobalId: sourcePortId, targetGlobalId: relationId }]
+            }));
+            model.putNode(new GraphNode({
+              globalId: relationId,
+              displayName: "R",
+              attributes: { [graphElementAttribute]: "edge" },
+              edges: [{ sourceGlobalId: relationId, targetGlobalId: targetPortId }]
+            }));
+            model.putNode(new GraphNode({
+              globalId: targetPortId,
+              displayName: "target",
+              attributes: { [graphRoleAttribute]: "target" },
+              edges: [{ sourceGlobalId: targetPortId, targetGlobalId: "b" }]
+            }));
+            model.putNode(new GraphNode({
+              globalId: "b",
+              displayName: "B",
+              edges: []
+            }));
+
+            const initialEdge = model.visibleGraph().edges.find(edge => edge.projected);
+            const initialState = initialEdge?.collapsed === false;
+            model.collapseEdge(initialEdge);
+            const relation = model.loaded.get(relationId);
+            const collapsedEdge = model.visibleGraph().edges.find(edge => edge.key === initialEdge.key);
+            const relationCollapsed = relation.collapsed === true;
+            const collapsedState = collapsedEdge?.collapsed === true
+              && model.isEdgeCollapsed(collapsedEdge);
+
+            model.expandEdge(collapsedEdge);
+            const expandedEdge = model.visibleGraph().edges.find(edge => edge.key === initialEdge.key);
+            const relationExpanded = relation.collapsed === false;
+            model.collapseEdge(initialEdge.key);
+            const collapsedByKey = relation.collapsed === true
+              && model.isEdgeCollapsed(initialEdge.key);
+            model.expandEdge(initialEdge.key);
+            const expandedByKey = relation.collapsed === false
+              && !model.isEdgeCollapsed(initialEdge.key);
+
+            globalThis.__result = model.collapsedEdges === undefined
+              && initialState
+              && relationCollapsed
+              && collapsedState
+              && relationExpanded
+              && expandedEdge?.collapsed === false
+              && !model.isEdgeCollapsed(expandedEdge)
+              && collapsedByKey
+              && expandedByKey;
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
@@ -128,20 +215,20 @@ public sealed class GraphUiRegressionTests {
               targetLocalId: "b-local"
             });
 
-            function makeViewer(loadedNames, isCollapsed = false) {
+            function makeViewer(loadedNames) {
               const calls = [];
               const viewer = Object.create(GraphViewer.prototype);
               viewer.graph = {
                 loaded: new Map(loadedNames.map(name => [name, {}])),
                 parentByNode: new Map(),
                 rootName: "a",
-                isEdgeCollapsed() { return isCollapsed; },
+                isEdgeCollapsed(edge) { return edge.collapsed === true; },
                 collapseEdge(edge) {
-                  isCollapsed = true;
+                  edge.collapsed = true;
                   calls.push("collapse:" + edge.key);
                 },
                 expandEdge(edge) {
-                  isCollapsed = false;
+                  edge.collapsed = false;
                   calls.push("expand:" + edge.key);
                 }
               };
@@ -158,20 +245,24 @@ public sealed class GraphUiRegressionTests {
             const loadedControl = loaded.viewer.edgeEndpointControl(edge, "a");
             loaded.viewer.handleEndpointClick(edge, "a");
             const loadedClickCollapsesEdge = loaded.calls.includes("collapse:" + edge.key)
+              && edge.collapsed === true
               && !loaded.calls.some(call => call.startsWith("load:"));
 
-            const collapsed = makeViewer(["a", "b"], true);
+            const collapsed = makeViewer(["a", "b"]);
             const collapsedControl = collapsed.viewer.edgeEndpointControl(edge, "a");
             collapsed.viewer.handleEndpointClick(edge, "a");
             const collapsedClickExpandsOnly = collapsed.calls.includes("expand:" + edge.key)
+              && edge.collapsed === false
               && collapsed.calls.includes("render")
               && !collapsed.calls.some(call => call.startsWith("load:"));
 
+            edge.collapsed = true;
             const frontier = makeViewer(["a"]);
             const frontierControl = frontier.viewer.edgeEndpointControl(edge, "a");
             frontier.viewer.handleEndpointClick(edge, "a");
             const frontierClickLoadsNeighbor = frontier.calls.includes("load:a:b-local")
               && !frontier.calls.some(call => call.startsWith("collapse:"));
+            edge.collapsed = false;
 
             const treeFromParent = makeViewer(["a", "b"]);
             treeFromParent.viewer.graph.parentByNode.set("b", "a");
@@ -279,20 +370,20 @@ public sealed class GraphUiRegressionTests {
               rankToRadius() { return nodeRadius; },
               fromNode(node) { return { globalId: node.globalId, label: node.displayName, visible: true }; }
             };
-            class GraphProjection {
+            globalThis.GraphProjection = class GraphProjection {
               constructor(model) { this.model = model; }
               project(physical) { return physical; }
               rank(graph) { return graph; }
               relations() { return []; }
               portEndpoint() { return null; }
               nodeTypeAssignments() { return new Map(); }
-            }
-            class GraphNode {
+            };
+            globalThis.GraphNode = class GraphNode {
               static from(node) { return node; }
               static fromApi(node) { return node; }
-            }
-            class GraphApi {}
-            class WebGpuRenderer {}
+            };
+            globalThis.GraphApi = class GraphApi {};
+            globalThis.WebGpuRenderer = class WebGpuRenderer {};
             """);
 
         foreach (var module in modules) {

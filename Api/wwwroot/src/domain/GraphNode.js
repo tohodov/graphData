@@ -3,13 +3,14 @@ import { GraphEdge } from "./GraphEdge.js";
 import { GraphId } from "./GraphId.js";
 
 export class GraphNode {
-  constructor({ globalId, name, localId, displayName, attributes = {}, edges = [] }) {
+  constructor({ globalId, name, localId, displayName, attributes = {}, edges = [], collapsed = false }) {
     this.globalId = globalId ?? name;
     this.name = this.globalId;
     this.localId = localId ?? GraphId.localId(this.globalId);
     this.displayName = displayName ?? this.localId;
     this.attributes = { ...(attributes ?? {}) };
     this.edges = edges.map(edge => GraphEdge.from(edge));
+    this.collapsed = Boolean(collapsed);
   }
 
   static fromApi(node) {
@@ -28,6 +29,7 @@ export class GraphNode {
     this.displayName = next.displayName;
     this.attributes = { ...next.attributes };
     this.edges = GraphEdge.mergeMany(this.edges, next.edges);
+    this.collapsed = this.collapsed || next.collapsed;
     return this;
   }
 
@@ -87,6 +89,7 @@ export class GraphNode {
       localId: this.localId,
       displayName: this.displayName,
       attributes: { ...this.attributes },
+      collapsed: this.collapsed,
       ...extra
     };
   }

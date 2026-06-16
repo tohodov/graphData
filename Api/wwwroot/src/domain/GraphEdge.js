@@ -13,7 +13,8 @@ export class GraphEdge {
     projected = false,
     typeRank = null,
     viewRank = null,
-    viewRankReason = ""
+    viewRankReason = "",
+    collapsed = false
   }) {
     this.sourceGlobalId = sourceGlobalId;
     this.targetGlobalId = targetGlobalId;
@@ -29,6 +30,7 @@ export class GraphEdge {
     this.typeRank = typeRank;
     this.viewRank = viewRank;
     this.viewRankReason = viewRankReason;
+    this.collapsed = Boolean(collapsed);
     this.key = GraphEdge.keyFor(sourceGlobalId, targetGlobalId, relationGlobalId ?? typeGlobalId ?? "");
   }
 
@@ -52,6 +54,10 @@ export class GraphEdge {
     [...left, ...right].forEach(edge => {
       const normalized = GraphEdge.from(edge);
       if (normalized.sourceGlobalId && normalized.targetGlobalId) {
+        const existing = edges.get(normalized.key);
+        if (existing?.collapsed && !normalized.collapsed) {
+          normalized.collapsed = true;
+        }
         edges.set(normalized.key, normalized);
       }
     });
@@ -100,6 +106,7 @@ export class GraphEdge {
       typeRank: this.typeRank,
       viewRank: this.viewRank,
       viewRankReason: this.viewRankReason,
+      collapsed: this.collapsed,
       ...extra
     };
   }
