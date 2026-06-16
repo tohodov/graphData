@@ -10,7 +10,7 @@ export class GraphNode {
   attributes: Record<string, string>;
   edges: GraphEdge[];
   collapsed: boolean;
-  constructor({ globalId, name, localId, displayName, attributes = {}, edges = [], collapsed = false }: { globalId?: string; name?: string; localId?: string; displayName?: string; attributes?: Record<string, string>; edges?: unknown[]; collapsed?: boolean }) {
+  constructor({ globalId, name, localId, displayName, attributes = {}, edges = [], collapsed = false }: { globalId?: string; name?: string; localId?: string; displayName?: string; attributes?: Record<string, string>; edges?: any[]; collapsed?: boolean }) {
     this.globalId = globalId ?? name;
     this.name = this.globalId;
     this.localId = localId ?? GraphId.localId(this.globalId);
@@ -20,7 +20,7 @@ export class GraphNode {
     this.collapsed = Boolean(collapsed);
   }
 
-  static fromApi(node: unknown): GraphNode {
+  static fromApi(node: any): GraphNode {
     return new GraphNode(node ?? {});
   }
 
@@ -28,7 +28,7 @@ export class GraphNode {
     return node instanceof GraphNode ? node : new GraphNode(node ?? {});
   }
 
-  merge(expansion: GraphNode | unknown): GraphNode {
+  merge(expansion: GraphNode | any): GraphNode {
     const next = GraphNode.from(expansion);
     this.globalId = next.globalId;
     this.name = next.name;

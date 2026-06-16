@@ -1,6 +1,6 @@
 export type GraphEdgeSnapshot = {
-  sourceGlobalId: string;
-  targetGlobalId: string;
+  sourceGlobalId?: string;
+  targetGlobalId?: string;
   sourceLocalId?: string | null;
   targetLocalId?: string | null;
   neighborLocalId?: string | null;
@@ -34,8 +34,8 @@ export class GraphEdge {
   collapsed: boolean;
   key: string;
   constructor({
-    sourceGlobalId,
-    targetGlobalId,
+    sourceGlobalId = "",
+    targetGlobalId = "",
     sourceLocalId = null,
     targetLocalId = null,
     neighborLocalId = null,
@@ -68,11 +68,11 @@ export class GraphEdge {
     this.key = GraphEdge.keyFor(sourceGlobalId, targetGlobalId, relationGlobalId ?? typeGlobalId ?? "");
   }
 
-  static fromApi(edge: GraphEdgeSnapshot): GraphEdge {
+  static fromApi(edge: GraphEdgeSnapshot | null | undefined): GraphEdge {
     return new GraphEdge(edge ?? {});
   }
 
-  static from(edge: GraphEdge | GraphEdgeSnapshot): GraphEdge {
+  static from(edge: GraphEdge | GraphEdgeSnapshot | null | undefined): GraphEdge {
     return edge instanceof GraphEdge ? edge : new GraphEdge(edge ?? {});
   }
 

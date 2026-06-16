@@ -292,7 +292,7 @@ export class WebGpuRenderer {
     this.nodeBuffer = null;
     this.edgeBuffer = null;
     this.nodeCount = memory?.nodeCount ?? 0;
-    this.edgeVertexCount = memory?.edgeVertexData.length / 6 ?? 0;
+    this.edgeVertexCount = memory ? memory.edgeVertexData.length / 6 : 0;
 
     if (!memory || memory.nodeCount === 0 || !this.device) {
       return;
@@ -306,7 +306,7 @@ export class WebGpuRenderer {
   }
 
   updateGraph(memory) {
-    const nextEdgeVertexCount = memory?.edgeVertexData.length / 6 ?? 0;
+    const nextEdgeVertexCount = memory ? memory.edgeVertexData.length / 6 : 0;
     if (!memory
       || this.nodeCount !== memory.nodeCount
       || this.edgeVertexCount !== nextEdgeVertexCount

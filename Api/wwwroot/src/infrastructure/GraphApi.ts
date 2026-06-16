@@ -4,7 +4,7 @@ export class GraphApi {
     this.fetchApi = fetchApi;
   }
 
-  async json(url: string, options: { method?: string; body?: BodyInit | null; expectJson?: boolean } = {}): Promise<unknown> {
+  async json(url: string, options: { method?: string; body?: BodyInit | null; expectJson?: boolean } = {}): Promise<any> {
     const response = await this.fetchApi(url, {
       method: options.method ?? "GET",
       headers: { "Content-Type": "application/json" },

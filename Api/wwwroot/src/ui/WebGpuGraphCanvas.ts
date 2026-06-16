@@ -233,7 +233,7 @@ export class WebGpuGraphCanvas {
 
   simulateStep() {
     const graph = this.currentGraph ?? this.buildGraph();
-    const forces = new Map(graph.nodes.map(node => [node.name, { x: 0, y: 0 }]));
+    const forces = new Map<any, any>(graph.nodes.map(node => [node.name, { x: 0, y: 0 }]));
 
     graph.edges.forEach(edge => {
       if (edge.collapsed) {

@@ -154,7 +154,7 @@ export class GraphViewer {
   }
 
   bindTabs() {
-    this.document.querySelectorAll(".tab-button").forEach(button => {
+    this.document.querySelectorAll<HTMLElement>(".tab-button").forEach(button => {
       button.addEventListener("click", () => this.setActiveTab(button.dataset.tab));
     });
   }
@@ -231,7 +231,7 @@ export class GraphViewer {
   }
 
   bindSearch() {
-    this.document.querySelectorAll("[data-query-template]").forEach(button => {
+    this.document.querySelectorAll<HTMLElement>("[data-query-template]").forEach(button => {
       button.addEventListener("click", () => this.setSearchQueryTemplate(button.dataset.queryTemplate));
     });
 
@@ -313,7 +313,7 @@ export class GraphViewer {
 
   }
 
-  async loadNode(name, fromName, options = {}) {
+  async loadNode(name, fromName, options: any = {}) {
   const select = options.select ?? true;
   this.setBusy(true);
   try {
@@ -359,7 +359,7 @@ export class GraphViewer {
 
   }
 
-  storeNodeExpansion(expansion, fromName, options = {}) {
+  storeNodeExpansion(expansion, fromName, options: any = {}) {
   const select = options.select ?? true;
   const existing = this.graph.loaded.get(expansion.name);
   const stored = existing ? this.mergeNodeResponses(existing, expansion) : expansion;
@@ -396,7 +396,7 @@ export class GraphViewer {
 
   }
 
-  async createNode(name, options = {}) {
+  async createNode(name, options: any = {}) {
   const parentGlobalId = options.parentGlobalId || null;
   const typeGlobalId = options.typeGlobalId || "";
   this.setBusy(true);
@@ -496,7 +496,7 @@ export class GraphViewer {
 
   }
 
-  async connectNodes(sourceGlobalId, targetGlobalId, options = {}) {
+  async connectNodes(sourceGlobalId, targetGlobalId, options: any = {}) {
   const typeGlobalId = options.typeGlobalId || "";
   this.setBusy(true);
   try {
@@ -610,7 +610,7 @@ export class GraphViewer {
 
   }
 
-  async refreshTypes(options = {}) {
+  async refreshTypes(options: any = {}) {
   if (!options.preserveBusy) {
     this.setBusy(true);
   }
@@ -730,7 +730,7 @@ export class GraphViewer {
   }
 
   async upsertGraphType(rootGlobalId, localId, label, color, element, directed = false, rank = element === "node" ? 50 : 30) {
-  const attrs = {
+  const attrs: any = {
     [graphKindAttribute]: "type",
     [graphElementAttribute]: element,
     label,
@@ -986,7 +986,7 @@ export class GraphViewer {
   }
 
   async loadSubgraph() {
-  const roots = this.parseCsv(this.document.querySelector("#subgraph-roots").value);
+  const roots = this.parseCsv((this.document.querySelector("#subgraph-roots") as HTMLInputElement).value);
   this.setBusy(true);
   try {
     const response = await this.apiJson("/api/graph/subgraph", {
@@ -994,7 +994,7 @@ export class GraphViewer {
       body: JSON.stringify({
         globalIds: roots.map(root => this.parseGlobalId(root)),
         maxDepth: this.readNumber("#subgraph-depth", 1),
-        includeDisconnectedRoots: this.document.querySelector("#subgraph-include-disconnected").checked
+        includeDisconnectedRoots: (this.document.querySelector("#subgraph-include-disconnected") as HTMLInputElement).checked
       })
     });
     this.loadSubgraphIntoViewer(response, roots);
@@ -1009,7 +1009,7 @@ export class GraphViewer {
 
   }
 
-  loadSubgraphIntoViewer(response, roots, options = {}) {
+  loadSubgraphIntoViewer(response, roots, options: any = {}) {
   this.graph.loaded.clear();
   this.graph.parentByNode.clear();
   this.graph.positions.clear();
@@ -1034,7 +1034,7 @@ export class GraphViewer {
 
   }
 
-  mergeSubgraphIntoViewer(response, options = {}) {
+  mergeSubgraphIntoViewer(response, options: any = {}) {
   const select = options.select ?? false;
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
@@ -1477,7 +1477,7 @@ export class GraphViewer {
       const rank = this.createTextRule("Ранг", GraphType.formatRankInput(type.rank), element === "node" ? "50" : "30");
       rules.append(visible.label, color.label, rank.label);
 
-      const extraControls = {};
+      const extraControls: any = {};
       if (element === "node") {
         extraControls.info = this.createTextRule("Инфо атрибут", type.infoAttribute || "", "например: status");
         rules.append(extraControls.info.label);
@@ -1698,7 +1698,7 @@ export class GraphViewer {
   }
 
   setActiveTab(name) {
-  this.document.querySelectorAll(".tab-button").forEach(button => {
+  this.document.querySelectorAll<HTMLElement>(".tab-button").forEach(button => {
     button.classList.toggle("active", button.dataset.tab === name);
   });
   this.document.querySelectorAll(".tab-panel").forEach(panel => {

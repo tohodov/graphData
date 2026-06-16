@@ -79,7 +79,7 @@ export class GraphProjection {
   }
 
   rank(graph: any): any {
-    const nodeStats = new Map(graph.nodes.map(node => [node.name, { weightedDegree: 0, focusBoost: 0, reasons: [] }]));
+    const nodeStats = new Map<string, any>(graph.nodes.map((node: any) => [node.name, { weightedDegree: 0, focusBoost: 0, reasons: [] }]));
     const rankedEdges = graph.edges.map(edge => {
       const edgeType = edge.typeGlobalId ? this.model.schema.edgeTypes.get(edge.typeGlobalId) : null;
       const basisWeight = GraphType.readRank(edge.typeRank ?? edgeType?.rank, edge.projected ? 35 : 8);
