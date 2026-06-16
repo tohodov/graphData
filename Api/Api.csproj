@@ -54,9 +54,15 @@
     </Exec>
     <Error Condition="'$(TypeScriptExitCode)' != '0'"
            Text="TypeScript compiler failed with exit code $(TypeScriptExitCode):%0A@(TypeScriptCompilerOutput, '%0A')" />
+    <ItemGroup>
+      <WgslSource Include="wwwroot\**\*.wgsl" />
+    </ItemGroup>
+    <MakeDir Directories="@(WgslSource->'$(MSBuildProjectDirectory)\obj\ts\%(RecursiveDir)')" />
+    <Copy SourceFiles="@(WgslSource)"
+          DestinationFiles="@(WgslSource->'$(MSBuildProjectDirectory)\obj\ts\%(RecursiveDir)%(Filename)%(Extension)')" />
     <MakeDir Directories="$(MSBuildProjectDirectory)\wwwroot\js" />
     <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
-          Command="&quot;$(NodeExe)&quot; &quot;node_modules\esbuild\bin\esbuild&quot; obj/ts/main.js --bundle --sourcemap --outfile=wwwroot/js/app.js"
+          Command="&quot;$(NodeExe)&quot; &quot;node_modules\esbuild\bin\esbuild&quot; obj/ts/main.js --bundle --sourcemap --loader:.wgsl=text --outfile=wwwroot/js/app.js"
           ConsoleToMsBuild="true"
           IgnoreExitCode="true"
           StandardOutputImportance="High"
