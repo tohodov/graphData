@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "Bundler",
+    "rootDir": "wwwroot",
+    "outDir": "obj/ts",
+    "sourceMap": true,
+    "noEmitOnError": true,
+    "allowJs": false,
+    "checkJs": false,
+    "strict": false,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true
+  },
+  "include": ["wwwroot/main.ts", "wwwroot/src/**/*.ts"],
+  "exclude": ["bin", "obj", "node_modules", "wwwroot/js"]
+}

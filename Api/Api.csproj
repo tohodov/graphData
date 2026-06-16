@@ -4,6 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <TypeScriptToolPath>$(MSBuildProjectDirectory)\node_modules\.bin</TypeScriptToolPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -15,5 +16,23 @@
     <ProjectReference Include="..\Core\Core.csproj" />
     <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
   </ItemGroup>
+
+  <Target Name="RestoreTypeScriptTooling"
+          BeforeTargets="BuildTypeScript"
+          Inputs="$(MSBuildProjectDirectory)\package.json"
+          Outputs="$(MSBuildProjectDirectory)\node_modules\.bin\tsc.cmd"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="npm install --no-audit --no-fund --no-package-lock" />
+  </Target>
+
+  <Target Name="BuildTypeScript" BeforeTargets="CoreCompile" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
+          Command="tsc -p tsconfig.json"
+          EnvironmentVariables="PATH=$(TypeScriptToolPath);$(PATH)" />
+    <MakeDir Directories="$(MSBuildProjectDirectory)\wwwroot\js" />
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
+          Command="esbuild obj/ts/main.js --bundle --sourcemap --outfile=wwwroot/js/app.js"
+          EnvironmentVariables="PATH=$(TypeScriptToolPath);$(PATH)" />
+  </Target>
 
 </Project>

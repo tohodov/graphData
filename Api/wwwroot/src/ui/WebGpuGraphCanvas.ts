@@ -8,6 +8,8 @@ const maxLabels = 280;
 const endpointControlPadding = 9;
 
 export class WebGpuGraphCanvas {
+  [key: string]: any;
+
   constructor({
     document,
     window,

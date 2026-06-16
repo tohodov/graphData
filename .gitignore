@@ -33,6 +33,9 @@ bld/
 # MSTest test Results
 [Tt]est[Rr]esult*/
 [Bb]uild[Ll]og.*
+node_modules/
+Api/wwwroot/js/app.js
+Api/wwwroot/js/app.js.map
 
 # .NET Core
 project.lock.json

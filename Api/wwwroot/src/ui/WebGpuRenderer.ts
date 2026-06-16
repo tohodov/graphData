@@ -112,6 +112,8 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 `;
 
 export class WebGpuRenderer {
+  [key: string]: any;
+
   constructor({ canvas, window }) {
     this.canvas = canvas;
     this.window = window;

@@ -12,7 +12,7 @@ export class GraphApi {
     });
     if (!response.ok) {
       const text = await response.text();
-      const error = new Error(text || "HTTP " + response.status);
+      const error = new Error(text || "HTTP " + response.status) as Error & { status: number };
       error.status = response.status;
       throw error;
     }
