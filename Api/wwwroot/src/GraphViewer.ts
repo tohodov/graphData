@@ -1124,6 +1124,15 @@ export class GraphViewer {
   const otherLoaded = this.graph.loaded.has(otherName);
   const otherLabel = this.edgeEndpointDisplayName(normalized, otherName);
 
+  if (anchorLoaded && this.graph.isEdgeCollapsed(normalized)) {
+    return {
+      kind: "expand",
+      text: "+",
+      title: `Развернуть связь с ${otherLabel}`,
+      otherName
+    };
+  }
+
   if (anchorLoaded && !otherLoaded) {
     return {
       kind: "expand",
@@ -1137,7 +1146,7 @@ export class GraphViewer {
     return {
       kind: "collapse",
       text: "-",
-      title: `Свернуть или выбрать ${otherLabel}`,
+      title: `Свернуть связь с ${otherLabel}`,
       otherName
     };
   }
@@ -1180,6 +1189,14 @@ export class GraphViewer {
   const anchorLoaded = this.graph.loaded.has(anchorName);
   const otherLoaded = this.graph.loaded.has(otherName);
 
+  if (anchorLoaded && this.graph.isEdgeCollapsed(edge)) {
+    this.graph.expandEdge(edge);
+    this.render();
+    this.runSimulation(18);
+    this.setStatus(`Развернута связь "${this.displayName(anchorName)}" - "${this.displayName(otherName)}"`);
+    return;
+  }
+
   if (anchorLoaded && !otherLoaded) {
     this.loadNeighbor(anchorName, this.edgeNeighborLocalId(edge, anchorName));
     return;
@@ -1191,19 +1208,28 @@ export class GraphViewer {
   }
 
   if (anchorLoaded && otherLoaded) {
-    if (this.graph.parentByNode.get(otherName) === anchorName) {
-      this.collapseNode(otherName);
-      return;
-    }
-
-    if (this.graph.parentByNode.get(anchorName) === otherName && anchorName !== this.graph.rootName) {
-      this.collapseNode(anchorName);
-      return;
-    }
-
-    this.graph.selectedName = otherName;
-    this.render();
+    this.collapseEdge(edge, anchorName);
   }
+
+  }
+
+  collapseEdge(edge, anchorName) {
+  const otherName = edge.sourceGlobalId === anchorName ? edge.targetGlobalId : edge.sourceGlobalId;
+  const childName = this.graph.parentByNode.get(otherName) === anchorName
+    ? otherName
+    : this.graph.parentByNode.get(anchorName) === otherName && anchorName !== this.graph.rootName
+      ? anchorName
+      : null;
+
+  if (childName) {
+    this.collapseNode(childName);
+    return;
+  }
+
+  this.graph.collapseEdge(edge);
+  this.render();
+  this.runSimulation(18);
+  this.setStatus(`Свернута связь "${this.displayName(anchorName)}" - "${this.displayName(otherName)}"`);
 
   }
 

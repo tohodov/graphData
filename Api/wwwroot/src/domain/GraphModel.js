@@ -10,6 +10,7 @@ export class GraphModel {
     this.selectedNames = new Set();
     this.loaded = new Map();
     this.parentByNode = new Map();
+    this.collapsedEdges = new Set();
     this.positions = new Map();
     this.velocities = new Map();
     this.view = { x: 0, y: 0, scale: 1 };
@@ -47,6 +48,7 @@ export class GraphModel {
     this.selectedName = null;
     this.loaded.clear();
     this.parentByNode.clear();
+    this.collapsedEdges.clear();
     this.positions.clear();
     this.velocities.clear();
   }
@@ -116,7 +118,9 @@ export class GraphModel {
       nodes.set(node.name, node.toViewNode());
       node.edges.forEach(edge => {
         if (!edges.has(edge.key)) {
-          edges.set(edge.key, edge.toViewEdge());
+          edges.set(edge.key, edge.toViewEdge({
+            collapsed: this.isEdgeCollapsed(edge)
+          }));
         }
       });
     }
@@ -131,6 +135,29 @@ export class GraphModel {
 
   projectedGraph(physical = this.physicalGraph()) {
     return new GraphProjection(this).project(physical);
+  }
+
+  collapseEdge(edge) {
+    const key = this.edgeKey(edge);
+    if (key) {
+      this.collapsedEdges.add(key);
+    }
+  }
+
+  expandEdge(edge) {
+    const key = this.edgeKey(edge);
+    if (key) {
+      this.collapsedEdges.delete(key);
+    }
+  }
+
+  isEdgeCollapsed(edge) {
+    const key = this.edgeKey(edge);
+    return Boolean(key && this.collapsedEdges.has(key));
+  }
+
+  edgeKey(edge) {
+    return typeof edge === "string" ? edge : GraphEdge.from(edge).key;
   }
 
   rankGraph(graph) {

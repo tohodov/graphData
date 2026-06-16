@@ -55,20 +55,24 @@ export class GraphProjection {
     const projectedEdges = relationInstances
       .filter(relation => visibleNodeIds.has(relation.sourceGlobalId) && visibleNodeIds.has(relation.targetGlobalId))
       .filter(relation => relation.type?.visible !== false)
-      .map(relation => ({
-        key: "projected:" + relation.relationGlobalId,
-        sourceGlobalId: relation.sourceGlobalId,
-        targetGlobalId: relation.targetGlobalId,
-        sourceLocalId: GraphId.localId(relation.sourceGlobalId),
-        targetLocalId: GraphId.localId(relation.targetGlobalId),
-        relationGlobalId: relation.relationGlobalId,
-        typeGlobalId: relation.type?.globalId,
-        label: relation.type?.labelVisible === false ? "" : relation.type?.label ?? relation.displayName,
-        color: relation.type?.color,
-        directed: relation.type?.directed ?? false,
-        typeRank: relation.type?.rank,
-        projected: true
-      }));
+      .map(relation => {
+        const key = "projected:" + relation.relationGlobalId;
+        return {
+          key,
+          sourceGlobalId: relation.sourceGlobalId,
+          targetGlobalId: relation.targetGlobalId,
+          sourceLocalId: GraphId.localId(relation.sourceGlobalId),
+          targetLocalId: GraphId.localId(relation.targetGlobalId),
+          relationGlobalId: relation.relationGlobalId,
+          typeGlobalId: relation.type?.globalId,
+          label: relation.type?.labelVisible === false ? "" : relation.type?.label ?? relation.displayName,
+          color: relation.type?.color,
+          directed: relation.type?.directed ?? false,
+          typeRank: relation.type?.rank,
+          projected: true,
+          collapsed: this.model.isEdgeCollapsed(key)
+        };
+      });
 
     return this.rank({ nodes: typedNodes, edges: [...physicalEdges, ...projectedEdges] });
   }

@@ -234,6 +234,10 @@ export class WebGpuGraphCanvas {
     const forces = new Map(graph.nodes.map(node => [node.name, { x: 0, y: 0 }]));
 
     graph.edges.forEach(edge => {
+      if (edge.collapsed) {
+        return;
+      }
+
       const source = this.positions.get(edge.sourceGlobalId);
       const target = this.positions.get(edge.targetGlobalId);
       const sourceForce = forces.get(edge.sourceGlobalId);
@@ -323,6 +327,10 @@ export class WebGpuGraphCanvas {
     const edgeMap = new Map();
 
     graph.edges.forEach(edge => {
+      if (edge.collapsed) {
+        return;
+      }
+
       const source = nodeIndexByName.get(edge.sourceGlobalId);
       const target = nodeIndexByName.get(edge.targetGlobalId);
       if (source === undefined || target === undefined || source === target) {
