@@ -9,7 +9,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.Search;
 
-[TestClass]
+[RelevantTestClass]
 public sealed class GraphSearchServiceTests
 {
     [TestMethod]

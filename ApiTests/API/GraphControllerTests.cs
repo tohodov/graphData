@@ -20,7 +20,7 @@ using Storage;
 
 namespace GraphData.Tests.Api;
 
-[TestClass]
+[RelevantTestClass]
 public sealed class GraphControllerTests {
     [TestMethod]
     public void ConnectNodesRequest_DeserializesJsonGlobalIdArrays() {

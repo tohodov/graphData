@@ -9,7 +9,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.Mcp;
 
-[TestClass]
+[RelevantTestClass]
 public sealed class GraphDataToolsTests
 {
     [TestMethod]

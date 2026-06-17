@@ -45,8 +45,9 @@ dotnet run --project PerformanceTests\PerformanceTests.csproj
 
 Для выборочного запуска MSTest по измененным C# API подключен сабмодуль
 `TestImpactOnCoverage ([origin](https://github.com/tohodov/TestImpactOnCoverage))`.
-Скрипт строит baseline через временный `git worktree`, генерирует `impact.json`/`usage.json`/`plan.json`
-и запускает только `DomainTests` и `ApiTests`; `PerformanceTests` в этот сценарий не входит.
+`DomainTests` и `ApiTests` помечены `[RelevantTestClass]`; при включенном `RelevantTestsEnabled`
+MSBuild target генерирует `RelevantTests.plan.json`, копирует его в output тестовой сборки,
+а нерелевантные методы завершаются ранним `TestResult` без выполнения тела. `PerformanceTests` в этот сценарий не входит.
 
 ```powershell
 git submodule update --init --recursive
@@ -56,6 +57,7 @@ powershell -ExecutionPolicy Bypass -File scripts\Run-RelevantTests.ps1 -Baseline
 По умолчанию артефакты попадают в `artifacts/test-impact/<timestamp>`.
 Если менялись сами тесты, `TestSupport`, UI-файлы в `Api/wwwroot`, `.csproj` или инфраструктура решения,
 скрипт запускает соответствующую тестовую сборку целиком, потому что Roslyn-анализатор отслеживает только C# API.
+Обычный `dotnet test` без `RelevantTestsEnabled=true` остается полным прогоном.
 
 ## MCP server
 

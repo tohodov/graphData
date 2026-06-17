@@ -6,7 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.Models;
 
-[TestClass]
+[RelevantTestClass]
 public sealed class GraphElementDslTests
 {
     [TestMethod]

@@ -8,7 +8,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.Ui;
 
-[TestClass]
+[RelevantTestClass]
 public sealed class GraphUiRegressionTests {
     [TestMethod]
     public void GraphModel_CollapsedEdgesStayInGraphForEndpointControls() {

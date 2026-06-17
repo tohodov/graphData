@@ -10,7 +10,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.Api;
 
-[TestClass]
+[RelevantTestClass]
 public sealed class ApiActionContractTests
 {
     [TestMethod]

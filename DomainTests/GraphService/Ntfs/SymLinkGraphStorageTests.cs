@@ -11,7 +11,7 @@ using Storage;
 
 namespace GraphData.Tests.Storage.Ntfs;
 
-[TestClass]
+[RelevantTestClass]
 public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
 {
     private NtfsGraphStorageOptions options = null!;

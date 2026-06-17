@@ -1,10 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\TestImpactOnCoverage\src\RelevantTests.MSTest\build\RelevantTests.MSTest.props" />
+
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <AssemblyName>DomainTests</AssemblyName>
+    <RelevantTestsCurrentRoot>$(MSBuildProjectDirectory)\..</RelevantTestsCurrentRoot>
   </PropertyGroup>
 
   <ItemGroup>
@@ -18,13 +21,26 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Using Include="RelevantTests.MSTest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Abstractions\Abstractions.csproj" />
     <ProjectReference Include="..\Domain\Domain.csproj" />
     <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
+    <ProjectReference Include="..\TestImpactOnCoverage\src\RelevantTests.MSTest\RelevantTests.MSTest.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <RelevantTestsTargetProject Include="..\Abstractions\Abstractions.csproj" TargetAssembly="Abstractions" />
+    <RelevantTestsTargetProject Include="..\Domain\Domain.csproj" TargetAssembly="Domain" />
+    <RelevantTestsTargetProject Include="..\SymLinkStorage\SymLinkStorage.csproj" TargetAssembly="SymLinkStorage" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="..\TestSupport\CancellationTokensAccessorMock.cs" Link="CancellationTokensAccessorMock.cs" />
     <Compile Include="..\TestSupport\TestGraphStorageScope.cs" Link="TestGraphStorageScope.cs" />
   </ItemGroup>
+
+  <Import Project="..\TestImpactOnCoverage\src\RelevantTests.MSTest\build\RelevantTests.MSTest.targets" />
 </Project>
