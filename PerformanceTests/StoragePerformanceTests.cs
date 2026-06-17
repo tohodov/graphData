@@ -7,26 +7,18 @@ using System.Threading.Tasks;
 using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.Performance;
 
-[TestClass]
-[TestCategory("Performance")]
 public sealed class StoragePerformanceTests {
-    public TestContext TestContext { get; set; } = null!;
-
-    [DataTestMethod]
-    //[DataRow(PerformanceStorageKind.PerNodeFile, 250, 2, 1729)]
-    //[DataRow(PerformanceStorageKind.BucketedFile, 250, 2, 1729)]
-    [DataRow(PerformanceStorageKind.SymLink, 250, 2, 1729)]
+    //[PerformanceScenario(PerformanceStorageKind.PerNodeFile, 250, 2, 1729)]
+    //[PerformanceScenario(PerformanceStorageKind.BucketedFile, 250, 2, 1729)]
+    [PerformanceScenario(PerformanceStorageKind.SymLink, 250, 2, 1729)]
     public async Task StorageOperations_ShouldRecordDetailedTimings(
         PerformanceStorageKind storageKind,
         int nodeCount,
         int connectionsPerNode,
         int seed) {
-        PerformanceTestGate.EnsureEnabled(storageKind);
-
         var graph = CreateGraph(nodeCount, connectionsPerNode, seed);
         AssertGraphContainsCycleWhenPossible(graph);
 
@@ -55,7 +47,7 @@ public sealed class StoragePerformanceTests {
 
         await run.MeasureEachAsync("get", sampleNodeNames, async name => {
             var node = await scope.Storage.Get(name).ConfigureAwait(false);
-            Assert.IsNotNull(node);
+            PerformanceAssert.IsNotNull(node);
         }).ConfigureAwait(false);
 
         await run.MeasureEachAsync("get-connected", sampleNodes, async node => {
@@ -74,13 +66,13 @@ public sealed class StoragePerformanceTests {
         if (scope.Storage is IGraphNodeCatalog catalog) {
             await run.MeasureAsync("catalog-get-all", graph.NodeCount, async () => {
                 var nodes = await catalog.GetAllNodesAsync().ConfigureAwait(false);
-                Assert.AreEqual(graph.NodeCount, nodes.Count);
+                PerformanceAssert.AreEqual(graph.NodeCount, nodes.Count);
             }).ConfigureAwait(false);
         }
 
         await run.MeasureAsync("subgraph-depth-2", 1, async () => {
             var subgraph = (await scope.Storage.GetSubgraphAsync(new SubgraphQuery { Nodes = [graph.Nodes[0].Path], MaxDepth = 2 }).ConfigureAwait(false)).Value!;
-            Assert.IsTrue(subgraph.Nodes.Count > 0);
+            PerformanceAssert.IsTrue(subgraph.Nodes.Count > 0);
         }).ConfigureAwait(false);
 
         await run.MeasureAsync("search-group-degree", 1, async () => {
@@ -106,16 +98,15 @@ public sealed class StoragePerformanceTests {
                 Limit = 50
             }).ToArrayAsync();
 
-            Assert.IsTrue(matches.Length > 0);
+            PerformanceAssert.IsTrue(matches.Length > 0);
         }).ConfigureAwait(false);
 
-        run.WriteReport(scope, TestContext);
+        run.WriteReport(scope, Console.Out);
     }
 
-    [DataTestMethod]
-    //[DataRow(PerformanceStorageKind.PerNodeFile, 500, 3, 1729, 4, 1000)]
-    //[DataRow(PerformanceStorageKind.BucketedFile, 500, 3, 1729, 4, 1000)]
-    [DataRow(PerformanceStorageKind.SymLink, 500, 3, 1729, 4, 1000)]
+    //[PerformanceScenario(PerformanceStorageKind.PerNodeFile, 500, 3, 1729, 4, 1000)]
+    //[PerformanceScenario(PerformanceStorageKind.BucketedFile, 500, 3, 1729, 4, 1000)]
+    [PerformanceScenario(PerformanceStorageKind.SymLink, 500, 3, 1729, 4, 1000)]
     public async Task ConcurrentReadLoad_ShouldRecordResourceUsage(
         PerformanceStorageKind storageKind,
         int nodeCount,
@@ -123,8 +114,6 @@ public sealed class StoragePerformanceTests {
         int seed,
         int parallelism,
         int operationCount) {
-        PerformanceTestGate.EnsureEnabled(storageKind);
-
         parallelism = PerformanceTestGate.GetInt("GRAPH_DATA_PERF_PARALLELISM", parallelism);
         operationCount = PerformanceTestGate.GetInt("GRAPH_DATA_PERF_LOAD_OPERATIONS", operationCount);
 
@@ -152,7 +141,7 @@ public sealed class StoragePerformanceTests {
 
                         try {
                             var node = (await scope.Storage.Get(workItems[index]).ConfigureAwait(false)).Value!;
-                            Assert.IsNotNull(node);
+                            PerformanceAssert.IsNotNull(node);
 
                             if (index % 3 == 0) {
                                 await scope.Storage.GetConnectedNodesAsync(node).ConfigureAwait(false);
@@ -169,23 +158,20 @@ public sealed class StoragePerformanceTests {
         }).ConfigureAwait(false);
 
         if (errors.TryPeek(out var error)) {
-            throw new AssertFailedException("Concurrent load operation failed.", error);
+            throw new PerformanceAssertionException("Concurrent load operation failed.", error);
         }
 
-        run.WriteReport(scope, TestContext);
+        run.WriteReport(scope, Console.Out);
     }
 
-    [DataTestMethod]
-    //[DataRow(PerformanceStorageKind.PerNodeFile, 500, 3, 1729)]
-    //[DataRow(PerformanceStorageKind.BucketedFile, 500, 3, 1729)]
-    [DataRow(PerformanceStorageKind.SymLink, 500, 3, 1729)]
+    //[PerformanceScenario(PerformanceStorageKind.PerNodeFile, 500, 3, 1729)]
+    //[PerformanceScenario(PerformanceStorageKind.BucketedFile, 500, 3, 1729)]
+    [PerformanceScenario(PerformanceStorageKind.SymLink, 500, 3, 1729)]
     public async Task RandomSubgraphReads_ShouldRecordDetailedTimings(
         PerformanceStorageKind storageKind,
         int nodeCount,
         int connectionsPerNode,
         int seed) {
-        PerformanceTestGate.EnsureEnabled(storageKind);
-
         var graph = CreateGraph(nodeCount, connectionsPerNode, seed);
         AssertGraphContainsCycleWhenPossible(graph);
 
@@ -218,7 +204,7 @@ public sealed class StoragePerformanceTests {
                 valueName: "nodes").ConfigureAwait(false);
         }
 
-        run.WriteReport(scope, TestContext);
+        run.WriteReport(scope, Console.Out);
     }
 
     private static async Task<Dictionary<NodeGlobalId, Node>> PopulateGraphAsync(IGraphStorage storage, GeneratedGraph graph) {
@@ -241,7 +227,7 @@ public sealed class StoragePerformanceTests {
         SubgraphQueryInput input,
         int depth) {
         var subgraph = (await storage.GetSubgraphAsync(new SubgraphQuery { Nodes = input.Roots, MaxDepth = depth } ).ConfigureAwait(false)).Value!;
-        Assert.IsTrue(subgraph.Nodes.Count > 0);
+        PerformanceAssert.IsTrue(subgraph.Nodes.Count > 0);
         return subgraph.Nodes.Count;
     }
 
@@ -270,16 +256,16 @@ public sealed class StoragePerformanceTests {
 
     private static void AssertGraphContainsCycleWhenPossible(GeneratedGraph graph) {
         if (graph.NodeCount >= 3 && graph.ConnectionsPerNode > 0) {
-            Assert.IsTrue(graph.ContainsCycle, "Generated performance graph must contain cycles.");
+            PerformanceAssert.IsTrue(graph.ContainsCycle, "Generated performance graph must contain cycles.");
         }
     }
 
     private static void AssertStorageRoot(PerformanceStorageScope scope, string scenario) {
         var expectedBaseRoot = PerformanceTestGate.GetStorageBaseRoot();
-        StringAssert.StartsWith(scope.RootPath, expectedBaseRoot);
-        StringAssert.Contains(scope.RootPath, PerformanceTestGate.RunId);
-        StringAssert.Contains(scope.RootPath, scenario);
-        StringAssert.Contains(scope.RootPath, scope.Kind.ToString());
+        PerformanceAssert.StartsWith(scope.RootPath, expectedBaseRoot);
+        PerformanceAssert.Contains(scope.RootPath, PerformanceTestGate.RunId);
+        PerformanceAssert.Contains(scope.RootPath, scenario);
+        PerformanceAssert.Contains(scope.RootPath, scope.Kind.ToString());
     }
 
     private static NodeVariableSearchSelector Var(string name) {

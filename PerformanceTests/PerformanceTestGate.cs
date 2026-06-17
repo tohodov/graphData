@@ -2,18 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.Performance;
 
 internal static class PerformanceTestGate {
-    private const string EnableVariableName = "GRAPH_DATA_PERF_TESTS";
     public static string RunId { get; } = $"{DateTime.Now:yyyy-MM-dd_HH-mm-ss-f}";
-
-    public static void EnsureEnabled(PerformanceStorageKind storageKind) {
-        if (!IsEnabled())
-            Assert.Inconclusive($"Performance tests are disabled by default. Set {EnableVariableName}=1 to run them.");
-    }
 
     public static int GetInt(string variableName, int defaultValue, int minValue = 1) {
         var value = Environment.GetEnvironmentVariable(variableName);
@@ -70,13 +63,5 @@ internal static class PerformanceTestGate {
             .ToArray();
 
         return new string(chars);
-    }
-
-    private static bool IsEnabled() {
-        var value = Environment.GetEnvironmentVariable(EnableVariableName) ?? Environment.GetEnvironmentVariable("GRAPHDATA_PERF_TESTS");
-        return value is not null
-            && (value.Equals("1", StringComparison.OrdinalIgnoreCase)
-                || value.Equals("true", StringComparison.OrdinalIgnoreCase)
-                || value.Equals("yes", StringComparison.OrdinalIgnoreCase));
     }
 }

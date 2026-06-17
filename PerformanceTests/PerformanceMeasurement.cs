@@ -6,7 +6,6 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.Performance;
 
@@ -94,16 +93,16 @@ internal sealed class PerformanceRun {
             valueName));
     }
 
-    public void WriteReport(PerformanceStorageScope scope, TestContext context) {
-        context.WriteLine($"Performance scenario: {Scenario}");
-        context.WriteLine($"Storage: {StorageKind}");
-        context.WriteLine($"Run id: {PerformanceTestGate.RunId}");
-        context.WriteLine($"Storage root: {StorageRootPath}");
-        context.WriteLine($"Graph: nodes={Graph.NodeCount}, connectionsPerNode={Graph.ConnectionsPerNode}, edges={Graph.Edges.Count}, seed={Graph.Seed}, containsCycle={Graph.ContainsCycle}");
-        context.WriteLine("operation | count | elapsed ms | avg us/op | min us | p50 us | p95 us | max us | cpu ms | cpu % | allocated MB | managed delta MB | working set delta MB | private delta MB | GC | metrics");
+    public void WriteReport(PerformanceStorageScope scope, TextWriter output) {
+        output.WriteLine($"Performance scenario: {Scenario}");
+        output.WriteLine($"Storage: {StorageKind}");
+        output.WriteLine($"Run id: {PerformanceTestGate.RunId}");
+        output.WriteLine($"Storage root: {StorageRootPath}");
+        output.WriteLine($"Graph: nodes={Graph.NodeCount}, connectionsPerNode={Graph.ConnectionsPerNode}, edges={Graph.Edges.Count}, seed={Graph.Seed}, containsCycle={Graph.ContainsCycle}");
+        output.WriteLine("operation | count | elapsed ms | avg us/op | min us | p50 us | p95 us | max us | cpu ms | cpu % | allocated MB | managed delta MB | working set delta MB | private delta MB | GC | metrics");
 
         foreach (var sample in _samples) {
-            context.WriteLine(
+            output.WriteLine(
                 string.Join(
                     " | ",
                     sample.Operation,
@@ -124,7 +123,7 @@ internal sealed class PerformanceRun {
                     FormatMetrics(sample.Metrics)));
         }
         var reportPath = WriteJsonReport(scope.RootPath);
-        context.WriteLine($"JSON report: {reportPath}");
+        output.WriteLine($"JSON report: {reportPath}");
     }
 
     private string WriteJsonReport(string root) {
