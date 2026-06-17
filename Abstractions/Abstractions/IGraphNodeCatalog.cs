@@ -2,7 +2,7 @@ using GraphData.Core.Models;
 
 namespace GraphData.Core.Abstractions;
 
-public interface IGraphNodeCatalog
+internal interface IGraphNodeCatalog
 {
     async Task<IReadOnlyCollection<NodeState>> GetRootNodesAsync() {
 #pragma warning disable CS0618

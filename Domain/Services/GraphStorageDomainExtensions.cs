@@ -3,7 +3,7 @@ using GraphData.Core.Models;
 
 namespace GraphData.Core.Services;
 
-public static class GraphStorageDomainExtensions
+internal static class GraphStorageDomainExtensions
 {
     public static async Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(this IGraphStorage storage, Node node) {
         var result = await storage.GetConnectedNodesAsync(node.RequireState());

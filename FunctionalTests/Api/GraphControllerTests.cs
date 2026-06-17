@@ -537,7 +537,7 @@ public sealed class GraphControllerTests {
     }
 
     private static GraphController CreateController(IGraphStorage storage) {
-        var controller = new GraphController(storage, new GraphSearchService(storage));
+        var controller = new GraphController(new GraphService(storage, new GraphSearchService(storage)));
         controller.ControllerContext = new ControllerContext {
             HttpContext = new DefaultHttpContext()
         };

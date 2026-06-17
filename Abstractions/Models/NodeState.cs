@@ -1,6 +1,6 @@
 namespace GraphData.Core.Models;
 
-public abstract class NodeState
+internal abstract class NodeState
 {
     public abstract NodeLocalId LocalId { get; }
     public abstract NodeGlobalId GlobalId { get; }

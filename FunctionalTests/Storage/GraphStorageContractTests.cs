@@ -10,11 +10,11 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace GraphData.Tests.Storage;
 
 public abstract partial class GraphStorageContractTests {
-    protected IGraphStorage Storage { get; private set; } = default!;
+    private IGraphStorage Storage { get; set; } = default!;
 
     [TestInitialize]
     public async Task TestInitializeAsync() {
-        Storage = await CreateStorageAsync();
+        Storage = (IGraphStorage)await CreateStorageAsync();
     }
 
     [TestCleanup]
@@ -37,7 +37,7 @@ public abstract partial class GraphStorageContractTests {
 
     protected virtual Task OnCleanupAsync() => Task.CompletedTask;
 
-    protected abstract Task<IGraphStorage> CreateStorageAsync();
+    protected abstract Task<object> CreateStorageAsync();
 
     protected async Task<Node> CreateNode(string? name = null) {
         var result = await Storage.Create(new(name ?? Guid.NewGuid().ToString()), null, new Dictionary<string, string>() {

@@ -1,9 +1,9 @@
 namespace GraphData.Core.Models;
 
 public class Edge {
-    protected EdgeState State;
+    private readonly EdgeState State;
 
-    public Edge(EdgeState state) {
+    internal Edge(EdgeState state) {
         State = state;
     }
 

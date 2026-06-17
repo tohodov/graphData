@@ -21,9 +21,10 @@ graphData - исследовательский прототип графовой
 Основная модель разделена на два нижних уровня:
 
 - `Abstractions` - минимальные контракты и состояния графа (`IGraphStorage`, `NodeState`, `EdgeState`, id-типы, `ServiceResult`). Реализации storage зависят только от этого уровня и не знают доменные `Node`/`Edge`.
-- `Domain` - доменная модель (`Node`, `Edge`, типы графовых элементов, query/search/subgraph-модели и доменные extension-операции поверх storage).
+- `Domain` - доменная модель (`Node`, `Edge`, типы графовых элементов, query/search/subgraph-модели) и фасад `GraphService`, который преобразует storage-state в доменные объекты.
 
-Исполняемые входы (`Api`, `Mcp`) и тесты могут зависеть от обоих уровней. Storage-проекты (`SymLinkStorage`, `PerNodeFileStorage`, `BucketedFileStorage`) должны оставаться ниже домена и ссылаться только на `Abstractions`.
+Исполняемые входы (`Api`, `Mcp`) должны работать через `GraphService`, а не через `IGraphStorage`. Storage-проекты (`SymLinkStorage`, `PerNodeFileStorage`, `BucketedFileStorage`) остаются ниже домена и ссылаются только на `Abstractions`.
+Storage-state типы и storage-контракты закрыты как `internal`; доступ к ним выдается только `Domain`, storage-проектам и тестовым сборкам через `InternalsVisibleTo`.
 
 ## Tests
 

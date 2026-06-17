@@ -8,7 +8,7 @@ using SymLinkStorage;
 
 namespace GraphData.SymLinkStorage;
 
-public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
+internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
     readonly DirectoryInfo root;

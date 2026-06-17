@@ -2,7 +2,7 @@ namespace GraphData.Core.Models;
 
 public class InstanceEdge : Edge, IGraphEdgeType
 {
-    public InstanceEdge(EdgeState state)
+    internal InstanceEdge(EdgeState state)
         : base(state) {
     }
 

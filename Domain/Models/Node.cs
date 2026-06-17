@@ -1,11 +1,11 @@
 namespace GraphData.Core.Models;
 
 public class Node {
-    public Node(NodeState state) {
+    internal Node(NodeState state) {
         State = state ?? throw new ArgumentNullException(nameof(state));
     }
 
-    protected NodeState? State { get; }
+    private NodeState? State { get; }
 
     public virtual NodeLocalId LocalId => RequireState().LocalId;
     public virtual NodeGlobalId GlobalId => RequireState().GlobalId;
@@ -20,7 +20,7 @@ public class Node {
 
     public virtual NodeGlobalId? TypeId => State?.TypeId;
 
-    public bool TryGetState<TState>(out TState state) where TState : NodeState {
+    internal bool TryGetState<TState>(out TState state) where TState : NodeState {
         if (State is TState typed) {
             state = typed;
             return true;

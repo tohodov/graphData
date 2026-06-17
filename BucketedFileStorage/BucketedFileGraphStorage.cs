@@ -12,7 +12,7 @@ using Microsoft.Extensions.Options;
 namespace GraphData.BucketedFileStorage;
 
 [Obsolete("пока SymLinkStorage основной", true)]
-public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
+internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {

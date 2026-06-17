@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using Client;
 using GraphData.Api.Runtime;
-using GraphData.Core.Services;
+using GraphData.Core.Extensions;
 using GraphData.Mcp.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,7 +32,7 @@ builder.Logging.AddConsole(options => {
 builder.AddTracker();
 
 builder.Services.AddSingleton<ICancellationTokenAccessor, McpCancellationTokenAccessor>();
-builder.Services.AddScoped<GraphSearchService, GraphSearchService>();
+builder.Services.AddDomain();
 builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
 builder.Services
     .AddMcpServer()

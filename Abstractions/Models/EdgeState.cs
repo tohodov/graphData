@@ -1,6 +1,6 @@
 ﻿namespace GraphData.Core.Models;
 
-public class EdgeState
+internal class EdgeState
 {
     protected EdgeState() { } //TODO заменить на protected
 

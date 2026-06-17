@@ -3,7 +3,7 @@ using GraphData.Core.Services;
 
 namespace GraphData.Core.Abstractions;
 
-public interface IGraphStorage
+internal interface IGraphStorage
 {
     Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null);
     Task<ServiceResult<NodeState>> Get(NodeGlobalId path);

@@ -20,7 +20,7 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
     private IReadOnlyList<string> baselineEntries = Array.Empty<string>();
     private bool parentInitiallyExisted;
 
-    protected override Task<IGraphStorage> CreateStorageAsync()
+    protected override Task<object> CreateStorageAsync()
     {
         var folder = "E:\\TTT";
         if (!Directory.Exists(folder))
@@ -38,7 +38,7 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
         };
 
         IGraphStorage storage = new SymLinkGraphStorage(Options.Create(options), new CancellationTokensAccessorMock(), NullLogger<SymLinkGraphStorage>.Instance);
-        return Task.FromResult(storage);
+        return Task.FromResult<object>(storage);
     }
 
     protected override async Task OnCleanupAsync()
@@ -101,7 +101,7 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
         var first = await CreateNode();
         var second = await CreateNode();
 
-        await Storage.Connect(first.GlobalId, second.GlobalId);
+        first.Nodes.Add(second);
 
         var firstLink = Path.Combine(options.RootPath, first.LocalId, second.LocalId);
         var secondLink = Path.Combine(options.RootPath, second.LocalId, first.LocalId);

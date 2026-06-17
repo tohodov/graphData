@@ -6,11 +6,15 @@ using GraphData.Core.Models;
 
 namespace GraphData.Core.Services;
 
-public sealed class GraphSearchService(IGraphStorage storage) {
+public sealed class GraphSearchService {
     private const int DefaultLimit = 50;
     private const int MaxLimit = 500;
 
-    private readonly IGraphStorage _storage = storage;
+    private readonly IGraphStorage _storage;
+
+    internal GraphSearchService(IGraphStorage storage) {
+        _storage = storage;
+    }
 
     public async IAsyncEnumerable<NodeSearchMatch> SearchNodesStreamAsync(NodeSearchQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default) {
         Validate(query);

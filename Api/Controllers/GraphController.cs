@@ -2,7 +2,6 @@ using System.Text.Json;
 using GraphData.Api.Models;
 using GraphData.Api.Runtime;
 using GraphData.Api.Services;
-using GraphData.Core.Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -11,59 +10,55 @@ namespace GraphData.Api.Controllers;
 
 [ApiController]
 [Route("api/graph")]
-public sealed class GraphController(IGraphStorage storage, GraphSearchService searchService) : ControllerBase {
+public sealed class GraphController(GraphService graph) : ControllerBase {
     private static readonly JsonSerializerOptions StreamJsonOptions = GraphJsonSerializerOptions.Create();
 
-    private readonly IGraphStorage _storage = storage;
-    private readonly GraphSearchService _searchService = searchService;
+    private readonly GraphService _graph = graph;
 
     [HttpGet("nodes")]
     public async Task<ActionResult<NodeResponse>> GetNodeAsync([FromQuery] string[] globalId) {
-        var result = await _storage.Get(new NodeGlobalId(globalId));
-        return ToActionResult<NodeState, NodeResponse>(result, static state => GraphResponseMapper.ToNodeResponse(new Node(state)));
+        var result = await _graph.GetNodeAsync(globalId);
+        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
     [HttpGet("nodes/{globalId}/neighbor/{localId}")]
     public async Task<ActionResult<NodeResponse>> GetNeighborNodeAsync([FromRoute] string globalId, [FromRoute] string localId) {
-        var result = await _storage.GetNeighbor(_storage.DeserializeGlobalId(globalId), new NodeLocalId(localId));
-        return ToActionResult<NodeState, NodeResponse>(result, static state => GraphResponseMapper.ToNodeResponse(new Node(state)));
+        var result = await _graph.GetNeighborNodeAsync(globalId, localId);
+        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
     [HttpPost("nodes")]
     public async Task<ActionResult<NodeResponse>> CreateNodeAsync([FromBody] CreateNodeRequest request) {
-        var result = await _storage.Create(new(request.LocalId), (NodeGlobalId?)request.ParentGlobalId, request.Attributes);
+        var result = await _graph.CreateNodeAsync(request.LocalId, request.ParentGlobalId, request.Attributes);
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             var globalId = result.Value.GlobalId;
             var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { globalId }) ?? $"/api/graph/nodes?{string.Join('&', globalId.Select(static segment => $"globalId={Uri.EscapeDataString(segment)}"))}";
-            return Created(location, GraphResponseMapper.ToNodeResponse(new Node(result.Value)));
+            return Created(location, GraphResponseMapper.ToNodeResponse(result.Value));
         }
-        return ToActionResult<NodeState, NodeResponse>(result, static state => GraphResponseMapper.ToNodeResponse(new Node(state)));
+        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
     [HttpPut("nodes")]
     public async Task<ActionResult<OperationResponse>> UpdateNodeAsync([FromQuery] string[] globalId, [FromBody] UpdateNodeRequest request) {
-        var result = await _storage.Update(new NodeGlobalId(globalId), request.Attributes);
+        var result = await _graph.UpdateNodeAsync(globalId, request.Attributes);
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result.Status, result.Error);
     }
 
     [HttpDelete("nodes")]
     public async Task<ActionResult<OperationResponse>> DeleteNodeAsync([FromQuery] string[] globalId) {
-        var result = await _storage.Delete(new NodeGlobalId(globalId));
+        var result = await _graph.DeleteNodeAsync(globalId);
         return ToActionResult<OperationResponse>(result);
     }
 
     [HttpPost("connections")]
     public async Task<ActionResult<OperationResponse>> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
-        var result = await _storage.Connect(new NodeGlobalId(request.SourceGlobalId), new NodeGlobalId(request.TargetGlobalId));
+        var result = await _graph.ConnectNodesAsync(request.SourceGlobalId, request.TargetGlobalId);
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
     }
 
     [HttpPost("subgraph")]
     public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request) {
-        var result = await _storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = request.GlobalIds.Select(static x => new NodeGlobalId(x)).ToArray(),
-            MaxDepth = request.MaxDepth,
-        });
+        var result = await _graph.GetSubgraphAsync(request.GlobalIds, request.MaxDepth);
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
@@ -75,7 +70,7 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
             return BadRequest();
         try {
             var query = GraphRequestMapper.ToNodeSearchQuery(request);
-            await using var matches = _searchService
+            await using var matches = _graph
                 .SearchNodesStreamAsync(query, cancellationToken)
                 .GetAsyncEnumerator(cancellationToken);
             var hasMatch = await matches.MoveNextAsync();

@@ -1,5 +1,5 @@
 using GraphData.Api.Runtime;
-using GraphData.Core.Services;
+using GraphData.Core.Extensions;
 using SymLinkStorage;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -11,7 +11,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ICancellationTokenAccessor, HttpContextCancellationTokenAccessor>();
-builder.Services.AddScoped<GraphSearchService, GraphSearchService>();
+builder.Services.AddDomain();
 builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
 
 var app = builder.Build();

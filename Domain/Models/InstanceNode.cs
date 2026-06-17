@@ -2,7 +2,7 @@ namespace GraphData.Core.Models;
 
 public class InstanceNode : Node, IGraphNodeType
 {
-    public InstanceNode(NodeState state)
+    internal InstanceNode(NodeState state)
         : base(state) {
     }
 
