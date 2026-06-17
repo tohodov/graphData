@@ -1,5 +1,7 @@
 import { nodeRadius } from "../domain/graphAttributes.js";
+import { SvgRenderer } from "./SvgRenderer.js";
 import { WebGpuRenderer } from "./WebGpuRenderer.js";
+import type { GraphRenderer } from "./GraphRenderer.js";
 
 const tapMoveThreshold = 8;
 const defaultEdgeColor = [0.20, 0.27, 0.30, 0.62];
@@ -54,9 +56,9 @@ export class WebGpuGraphCanvas {
       renderInspector,
       formatRank
     };
-    this.renderer = new WebGpuRenderer({ canvas: this.canvas, window: this.window });
+    this.renderer = null as GraphRenderer | null;
     this.rendererReady = false;
-    this.rendererMode = "webgpu";
+    this.rendererMode = this.preferredRendererMode();
     this.webGpuError = null;
     this.renderPending = false;
     this.memory = null;
@@ -65,20 +67,75 @@ export class WebGpuGraphCanvas {
     this.pointer = null;
     this.simulationHandle = null;
 
-    this.renderer.init()
-      .then(() => {
-        this.rendererReady = true;
-        this.setGpuWarning(null);
-        this.updateRendererGraph();
-        this.renderLabels();
-        this.requestDraw();
-      })
-      .catch(error => {
+    void this.initializeRenderer();
+  }
+
+  preferredRendererMode() {
+    const params = new URLSearchParams(this.window.location.search);
+    const mode = (params.get("renderer") ?? params.get("render") ?? "").toLowerCase();
+    return mode === "svg" ? "svg" : "webgpu";
+  }
+
+  createRenderer(mode) {
+    const host = {
+      document: this.document,
+      window: this.window,
+      surface: this.canvas
+    };
+    return mode === "svg"
+      ? new SvgRenderer(host)
+      : new WebGpuRenderer(host);
+  }
+
+  async initializeRenderer() {
+    const preferred = this.preferredRendererMode();
+    try {
+      await this.activateRenderer(preferred);
+      this.setGpuWarning(null);
+    } catch (error) {
+      if (preferred !== "svg") {
         this.webGpuError = error;
-        this.rendererReady = false;
-        this.setGpuWarning(error);
-        this.renderLabels();
-      });
+        try {
+          await this.activateRenderer("svg");
+          this.setGpuWarning(null);
+          return;
+        } catch (fallbackError) {
+          this.rendererReady = false;
+          this.setGpuWarning(fallbackError);
+          this.renderLabels();
+          return;
+        }
+      }
+
+      this.rendererReady = false;
+      this.setGpuWarning(error);
+      this.renderLabels();
+    }
+  }
+
+  async activateRenderer(mode) {
+    this.rendererReady = false;
+    this.renderer?.dispose();
+    this.renderer = null;
+    const renderer = this.createRenderer(mode);
+    this.renderer = renderer;
+    this.rendererMode = mode;
+
+    try {
+      await renderer.init();
+    } catch (error) {
+      if (this.renderer === renderer) {
+        renderer.dispose();
+        this.renderer = null;
+      }
+      throw error;
+    }
+
+    this.rendererMode = renderer.mode ?? mode;
+    this.rendererReady = true;
+    this.updateRendererGraph();
+    this.renderLabels();
+    this.requestDraw();
   }
 
   bindGraphSurface() {
@@ -414,7 +471,7 @@ export class WebGpuGraphCanvas {
       return;
     }
 
-    this.renderer.updateGraph(this.memory);
+    this.renderer?.updateGraph(this.memory);
   }
 
   requestDraw() {
@@ -425,7 +482,7 @@ export class WebGpuGraphCanvas {
     this.renderPending = true;
     this.window.requestAnimationFrame(() => {
       this.renderPending = false;
-      if (this.rendererReady) {
+      if (this.rendererReady && this.renderer) {
         this.renderer.draw(this.view);
       }
     });

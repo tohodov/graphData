@@ -1,12 +1,20 @@
 import edgeShader from "./shaders/edge.wgsl";
 import nodeShader from "./shaders/node.wgsl";
+import type { GraphRenderer, GraphRendererHost, GraphRenderMemory, GraphView } from "./GraphRenderer.js";
 
-export class WebGpuRenderer {
+export class WebGpuRenderer implements GraphRenderer {
   [key: string]: any;
 
-  constructor({ canvas, window }) {
-    this.canvas = canvas;
+  mode = "webgpu";
+
+  constructor({ document, window, surface, canvas }: GraphRendererHost & { canvas?: HTMLCanvasElement }) {
+    this.document = document;
     this.window = window;
+    this.surface = surface ?? canvas?.parentElement;
+    this.canvas = canvas ?? this.document.createElement("canvas");
+    this.ownsCanvas = !canvas;
+    this.canvas.classList.add("graph-render-layer", "graph-webgpu-layer");
+    this.canvas.setAttribute("aria-hidden", "true");
     this.device = null;
     this.context = null;
     this.format = null;
@@ -19,6 +27,10 @@ export class WebGpuRenderer {
     this.edgeVertexCount = 0;
     this.nodePipeline = null;
     this.edgePipeline = null;
+
+    if (this.ownsCanvas) {
+      this.surface.append(this.canvas);
+    }
   }
 
   async init() {
@@ -176,7 +188,7 @@ export class WebGpuRenderer {
     return true;
   }
 
-  setGraph(memory) {
+  setGraph(memory: GraphRenderMemory | null) {
     this.nodeBuffer?.destroy();
     this.edgeBuffer?.destroy();
     this.nodeBuffer = null;
@@ -195,7 +207,7 @@ export class WebGpuRenderer {
     }
   }
 
-  updateGraph(memory) {
+  updateGraph(memory: GraphRenderMemory | null) {
     const nextEdgeVertexCount = memory ? memory.edgeVertexData.length / 6 : 0;
     if (!memory
       || this.nodeCount !== memory.nodeCount
@@ -223,7 +235,7 @@ export class WebGpuRenderer {
     return buffer;
   }
 
-  draw(view) {
+  draw(view: GraphView) {
     if (!this.device || !this.context || !this.uniformBuffer || !this.uniformBindGroup) {
       return 0;
     }
@@ -273,6 +285,9 @@ export class WebGpuRenderer {
     this.nodeBuffer?.destroy();
     this.edgeBuffer?.destroy();
     this.uniformBuffer?.destroy();
+    if (this.ownsCanvas) {
+      this.canvas.remove();
+    }
   }
 
   gpuBufferUsage() {

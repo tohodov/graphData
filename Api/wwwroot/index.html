@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GraphData</title>
-  <link rel="stylesheet" href="./styles.css?v=20260613-webgpu-only">
+  <link rel="stylesheet" href="./styles.css?v=20260617-render-interface">
 </head>
 <body>
   <main class="app-shell">
@@ -14,7 +14,7 @@
           <button id="fit-button" type="button" title="Подогнать граф">Подогнать</button>
           <button id="reset-button" type="button" title="Сбросить граф">Сброс</button>
         </div>
-        <canvas id="graph" role="img" aria-label="Редактор графа GraphData"></canvas>
+        <div id="graph" role="img" aria-label="Редактор графа GraphData"></div>
         <div id="graph-label-layer" class="graph-label-layer" aria-hidden="true"></div>
         <div id="gpu-warning" class="gpu-warning" hidden></div>
         <div id="empty-state" class="empty-state">

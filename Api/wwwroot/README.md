@@ -37,12 +37,12 @@ This lets users walk the graph incrementally: every expanded node reveals the
 next ring of edge endpoints, and each endpoint button is both a navigation affordance
 and the boundary where additional graph data may be requested.
 
-WebGPU is the only active graph rendering layer. The SVG renderer is currently
-disabled so WebGPU initialization failures stay visible instead of being hidden
-by a slow fallback. The domain model, projection basis, rank logic, and API
-access stay in the TypeScript application code; render buffers are derived
-caches.
+The graph canvas uses a shared renderer interface. WebGPU is the default renderer,
+and SVG is available as both a fallback and an explicit mode via
+`/?renderer=svg`. The domain model, projection basis, rank logic, and API access
+stay in the TypeScript application code; render buffers are derived caches shared
+by both renderer implementations.
 
 Browsers expose WebGPU only in a secure context: `https://...`, `localhost`, or
 `127.0.0.1`. Opening the UI through an unsafe `http://<network-ip>` address will
-show the WebGPU error instead of falling back to another renderer.
+fall back to SVG rendering.

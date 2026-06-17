@@ -304,6 +304,26 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphRenderers_ShareRendererInterfaceAndSvgImplementation() {
+        var contract = ReadUiFile("Api/wwwroot/src/ui/GraphRenderer.ts");
+        var webGpu = ReadUiFile("Api/wwwroot/src/ui/WebGpuRenderer.ts");
+        var svg = ReadUiFile("Api/wwwroot/src/ui/SvgRenderer.ts");
+        var canvas = ReadUiFile("Api/wwwroot/src/ui/WebGpuGraphCanvas.ts");
+        var html = ReadUiFile("Api/wwwroot/index.html");
+
+        StringAssert.Contains(contract, "export interface GraphRenderer");
+        StringAssert.Contains(contract, "updateGraph(memory: GraphRenderMemory | null): void");
+        StringAssert.Contains(contract, "draw(view: GraphView): number");
+        StringAssert.Contains(webGpu, "implements GraphRenderer");
+        StringAssert.Contains(svg, "implements GraphRenderer");
+        StringAssert.Contains(svg, "mode = \"svg\"");
+        StringAssert.Contains(canvas, "new SvgRenderer(host)");
+        StringAssert.Contains(canvas, "new WebGpuRenderer(host)");
+        StringAssert.Contains(canvas, "await this.activateRenderer(\"svg\")");
+        StringAssert.Contains(html, "<div id=\"graph\"");
+    }
+
+    [TestMethod]
     public void GraphViewer_EdgeEndpointExpandControlsLoadUnloadedNeighbors() {
         foreach (var path in new[] {
             "Api/wwwroot/src/GraphViewer.ts",
@@ -327,6 +347,16 @@ public sealed class GraphUiRegressionTests {
 
     private static string ReadUiFile(string relativePath) {
         var fullPath = Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
+        if (!File.Exists(fullPath)
+            && relativePath.StartsWith("Api/wwwroot/", StringComparison.Ordinal)
+            && relativePath.EndsWith(".js", StringComparison.Ordinal)) {
+            var compiledRelativePath = "Api/obj/ts/" + relativePath["Api/wwwroot/".Length..];
+            var compiledPath = Path.Combine(RepoRoot(), compiledRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(compiledPath)) {
+                fullPath = compiledPath;
+            }
+        }
+
         return File.ReadAllText(fullPath, Encoding.UTF8);
     }
 
