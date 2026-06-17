@@ -43,6 +43,20 @@ dotnet test ApiTests\ApiTests.csproj
 dotnet run --project PerformanceTests\PerformanceTests.csproj
 ```
 
+Для выборочного запуска MSTest по измененным C# API подключен сабмодуль
+`TestImpactOnCoverage ([origin](https://github.com/tohodov/TestImpactOnCoverage))`.
+Скрипт строит baseline через временный `git worktree`, генерирует `impact.json`/`usage.json`/`plan.json`
+и запускает только `DomainTests` и `ApiTests`; `PerformanceTests` в этот сценарий не входит.
+
+```powershell
+git submodule update --init --recursive
+powershell -ExecutionPolicy Bypass -File scripts\Run-RelevantTests.ps1 -BaselineRef HEAD
+```
+
+По умолчанию артефакты попадают в `artifacts/test-impact/<timestamp>`.
+Если менялись сами тесты, `TestSupport`, UI-файлы в `Api/wwwroot`, `.csproj` или инфраструктура решения,
+скрипт запускает соответствующую тестовую сборку целиком, потому что Roslyn-анализатор отслеживает только C# API.
+
 ## MCP server
 
 В solution добавлен локальный MCP-сервер `Mcp` со stdio-транспортом. Его можно запускать из корня репозитория:
