@@ -50,4 +50,5 @@ fall back to SVG rendering.
 
 HTML-in-Canvas follows the WICG `drawElementImage` proposal and currently requires
 Chromium with `chrome://flags/#canvas-draw-element` enabled. When the API is not
-available, the UI keeps the current renderer active and shows the renderer warning.
+available, the renderer dropdown keeps the option visible but disables it after
+the one-time availability check performed during page startup.

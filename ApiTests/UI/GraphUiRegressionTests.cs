@@ -327,8 +327,12 @@ public sealed class GraphUiRegressionTests {
         StringAssert.Contains(canvas, "new SvgRenderer(host)");
         StringAssert.Contains(canvas, "new HtmlCanvasRenderer(host)");
         StringAssert.Contains(canvas, "new WebGpuRenderer(host)");
-        StringAssert.Contains(canvas, "await this.activateRenderer(\"svg\")");
+        StringAssert.Contains(canvas, "[\"webgpu\", \"svg\", \"html-canvas\"]");
         StringAssert.Contains(canvas, "normalizeRendererMode");
+        StringAssert.Contains(canvas, "checkRendererAvailability()");
+        StringAssert.Contains(canvas, "detectRendererAvailability()");
+        StringAssert.Contains(canvas, "option.disabled = !available");
+        StringAssert.Contains(canvas, "this.rendererSelect.disabled = !this.rendererAvailability");
         StringAssert.Contains(html, "<div id=\"graph\"");
         StringAssert.Contains(html, "<select id=\"renderer-select\"");
         StringAssert.Contains(css, ".renderer-picker");

@@ -9,6 +9,7 @@ const defaultEdgeColor = [0.20, 0.27, 0.30, 0.62];
 const defaultNodeStrokeColor = [0.09, 0.13, 0.14, 1];
 const maxLabels = 280;
 const endpointControlPadding = 9;
+const rendererModes = ["webgpu", "svg", "html-canvas"];
 
 export class WebGpuGraphCanvas {
   [key: string]: any;
@@ -62,6 +63,8 @@ export class WebGpuGraphCanvas {
     this.renderer = null as GraphRenderer | null;
     this.rendererReady = false;
     this.rendererMode = this.preferredRendererMode();
+    this.rendererAvailability = null;
+    this.rendererAvailabilityPromise = null;
     this.webGpuError = null;
     this.renderPending = false;
     this.memory = null;
@@ -98,28 +101,23 @@ export class WebGpuGraphCanvas {
 
   async initializeRenderer() {
     const preferred = this.preferredRendererMode();
-    try {
-      await this.activateRenderer(preferred);
-      this.setGpuWarning(null);
-    } catch (error) {
-      if (preferred !== "svg") {
-        this.webGpuError = error;
-        try {
-          await this.activateRenderer("svg");
-          this.setGpuWarning(null);
-          return;
-        } catch (fallbackError) {
-          this.rendererReady = false;
-          this.setGpuWarning(fallbackError);
-          this.renderLabels();
-          return;
-        }
-      }
+    await this.checkRendererAvailability();
 
-      this.rendererReady = false;
-      this.setGpuWarning(error);
-      this.renderLabels();
+    let lastError = null;
+    for (const mode of this.availableRendererOrder(preferred)) {
+      try {
+        await this.activateRenderer(mode);
+        this.setGpuWarning(null);
+        return;
+      } catch (error) {
+        lastError = error;
+        this.setRendererAvailability(mode, false, error);
+      }
     }
+
+    this.rendererReady = false;
+    this.setGpuWarning(lastError ?? new Error("No graph renderer is available"));
+    this.renderLabels();
   }
 
   async activateRenderer(mode) {
@@ -160,6 +158,7 @@ export class WebGpuGraphCanvas {
       return;
     }
 
+    this.rendererSelect.disabled = true;
     this.syncRendererSelect();
     this.rendererSelect.addEventListener("change", () => {
       void this.changeRenderer(this.rendererSelect.value);
@@ -168,6 +167,14 @@ export class WebGpuGraphCanvas {
 
   async changeRenderer(mode) {
     const targetMode = normalizeRendererMode(mode);
+    await this.checkRendererAvailability();
+
+    if (!this.isRendererAvailable(targetMode)) {
+      this.setGpuWarning(this.rendererAvailability?.get(targetMode)?.error);
+      this.syncRendererSelect();
+      return;
+    }
+
     if (targetMode === this.rendererMode && this.rendererReady) {
       this.syncRendererSelect();
       return;
@@ -178,6 +185,7 @@ export class WebGpuGraphCanvas {
       this.setGpuWarning(null);
       this.writeRendererModeToUrl(targetMode);
     } catch (error) {
+      this.setRendererAvailability(targetMode, false, error);
       this.setGpuWarning(error);
       this.syncRendererSelect();
     }
@@ -192,6 +200,117 @@ export class WebGpuGraphCanvas {
     if (option) {
       this.rendererSelect.value = this.rendererMode;
     }
+  }
+
+  async checkRendererAvailability() {
+    if (!this.rendererAvailabilityPromise) {
+      this.rendererAvailabilityPromise = this.detectRendererAvailability();
+    }
+
+    this.rendererAvailability = await this.rendererAvailabilityPromise;
+    this.syncRendererAvailability();
+    return this.rendererAvailability;
+  }
+
+  async detectRendererAvailability() {
+    const availability = new Map();
+    await Promise.all(rendererModes.map(async mode => {
+      try {
+        await this.assertRendererAvailable(mode);
+        availability.set(mode, { available: true, error: null });
+      } catch (error) {
+        availability.set(mode, { available: false, error });
+      }
+    }));
+    return availability;
+  }
+
+  async assertRendererAvailable(mode) {
+    if (mode === "svg") {
+      return;
+    }
+
+    if (mode === "html-canvas") {
+      const canvas = this.document.createElement("canvas") as HTMLCanvasElement & {
+        layoutSubtree?: boolean;
+        requestPaint?: () => void;
+      };
+      canvas.setAttribute("layoutsubtree", "");
+      canvas.layoutSubtree = true;
+      const context = canvas.getContext("2d") as (CanvasRenderingContext2D & {
+        drawElementImage?: (...args: any[]) => DOMMatrix;
+      }) | null;
+      if (!context) {
+        throw new Error("HTML-in-Canvas renderer requires a 2D canvas context.");
+      }
+
+      if (typeof context.drawElementImage !== "function"
+        || typeof canvas.requestPaint !== "function") {
+        throw new Error(
+          "HTML-in-Canvas is unavailable: enable chrome://flags/#canvas-draw-element in Chromium.");
+      }
+      return;
+    }
+
+    if (!this.window.isSecureContext) {
+      const origin = this.window.location?.origin ?? "unknown origin";
+      throw new Error(`WebGPU requires HTTPS or localhost. Current origin is not secure: ${origin}`);
+    }
+
+    const gpu = this.window.navigator.gpu;
+    if (!gpu) {
+      throw new Error("WebGPU is unavailable: this browser context did not expose navigator.gpu.");
+    }
+
+    if (!this.window.GPUBufferUsage && !globalThis["GPUBufferUsage"]) {
+      throw new Error("WebGPU buffer usage constants are unavailable");
+    }
+
+    if (!this.window.GPUShaderStage && !globalThis["GPUShaderStage"]) {
+      throw new Error("WebGPU shader stage constants are unavailable");
+    }
+
+    const adapter = await gpu.requestAdapter({ powerPreference: "high-performance" });
+    if (!adapter) {
+      throw new Error("WebGPU adapter was not found");
+    }
+  }
+
+  syncRendererAvailability() {
+    if (!this.rendererSelect) {
+      return;
+    }
+
+    this.rendererSelect.disabled = !this.rendererAvailability;
+    [...this.rendererSelect.options].forEach(option => {
+      const mode = normalizeRendererMode(option.value);
+      const status = this.rendererAvailability?.get(mode);
+      const available = status?.available === true;
+      option.disabled = !available;
+      option.title = available ? "" : (status?.error?.message ?? String(status?.error ?? "Renderer unavailable"));
+    });
+    this.syncRendererSelect();
+  }
+
+  setRendererAvailability(mode, available, error = null) {
+    if (!this.rendererAvailability) {
+      this.rendererAvailability = new Map();
+    }
+
+    this.rendererAvailability.set(normalizeRendererMode(mode), { available, error });
+    this.syncRendererAvailability();
+  }
+
+  isRendererAvailable(mode) {
+    return this.rendererAvailability?.get(normalizeRendererMode(mode))?.available === true;
+  }
+
+  availableRendererOrder(preferred) {
+    const mode = normalizeRendererMode(preferred);
+    const order = mode === "webgpu"
+      ? ["webgpu", "svg", "html-canvas"]
+      : [mode, "webgpu", "svg", "html-canvas"];
+    return [...new Set(order)].filter(candidate => this.isRendererAvailable(candidate));
   }
 
   writeRendererModeToUrl(mode) {
