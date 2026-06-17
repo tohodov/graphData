@@ -46,7 +46,7 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
     {
         if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
             return ServiceResult<Node>.BadRequest(validationError);
-        Node? parentNode = null;
+        StoredNode? parentNode = null;
         if (parentId != null) {
             parentNode = await FindNodeAsync(parentId.Value);
             if(parentNode == null)
@@ -61,12 +61,12 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         var node = await FindNodeAsync(path).ConfigureAwait(false);
         return node is null
             ? ServiceResult<Node>.NotFound()
-            : ServiceResult<Node>.Ok(node);
+            : ServiceResult<Node>.Ok(new Node(node));
     }
 
     public async Task<ServiceResult> Delete(NodeGlobalId path)
     {
-        var node = await FindNodeAsync(path).ConfigureAwait(false) as StoredNode;
+        var node = await FindNodeAsync(path).ConfigureAwait(false);
         if (node == null)
             return ServiceResult.NotFound();
         var nodeName = node.NodeName;
@@ -106,7 +106,7 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
         try
         {
-            await ConnectNodesAsync(sourceNode, targetNode).ConfigureAwait(false);
+            await ConnectNodesAsync(new Node(sourceNode), new Node(targetNode)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -128,7 +128,7 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         return ServiceResult<IReadOnlyCollection<Node>>.Ok(nodes);
     }
 
-    private async Task<Node> CreateNodeAsync(NodeLocalId name, Node? parent = null, IDictionary<string, string>? attributes = null)
+    private async Task<Node> CreateNodeAsync(NodeLocalId name, StoredNode? parent = null, IDictionary<string, string>? attributes = null)
     {
         var nodeName = GetNodePath(parent, name);
         var bucketKey = GetBucketKey(nodeName);
@@ -149,19 +149,19 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         }
 
         await EnsureConnectionBucketEntryAsync(nodeName).ConfigureAwait(false);
-        return CreateNode(document);
+        return new Node(CreateNode(document));
     }
 
-    private async Task<Node?> FindNodeAsync(Node? parent, NodeLocalId subNodeName)
+    private async Task<StoredNode?> FindNodeAsync(StoredNode? parent, NodeLocalId subNodeName)
     {
         var nodeName = GetNodePath(parent, subNodeName);
         var document = await ReadMetadataWithLockAsync(new(nodeName)).ConfigureAwait(false);
         return document is null ? null : CreateNode(document);
     }
 
-    private async Task<Node?> FindNodeAsync(NodeGlobalId query)
+    private async Task<StoredNode?> FindNodeAsync(NodeGlobalId query)
     {
-        Node? node = null;
+        StoredNode? node = null;
         foreach (var part in query)
         {
             node = await FindNodeAsync(node, part).ConfigureAwait(false);
@@ -238,7 +238,7 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             var document = await ReadMetadataWithLockAsync(connection).ConfigureAwait(false);
             if (document is not null)
             {
-                nodes.Add(CreateNode(document));
+                nodes.Add(new Node(CreateNode(document)));
             }
         }
 
@@ -266,7 +266,7 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             try
             {
                 var bucket = await ReadMetadataBucketAsync(bucketKey).ConfigureAwait(false);
-                nodes.AddRange(bucket.Values.Select(CreateNode));
+                nodes.AddRange(bucket.Values.Select(x => new Node(CreateNode(x))));
             }
             finally
             {
@@ -489,7 +489,7 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             : new Dictionary<string, string>(attributes, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static string GetNodePath(Node? parent, NodeLocalId subNodeName)
+    private static string GetNodePath(StoredNode? parent, NodeLocalId subNodeName)
     {
         return parent is null
             ? subNodeName.ToString()
@@ -513,7 +513,7 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
     private sealed record NodeDocument(string Name, Dictionary<string, string> Attributes);
 
-    private sealed class StoredNode(string nodeName) : Node
+    private sealed class StoredNode(string nodeName) : NodeState
     {
         private ICollection<Edge>? _edges;
         private ICollection<Node> _nodes = Array.Empty<Node>();
@@ -523,7 +523,7 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         public override NodeLocalId LocalId => new(NodeName);
         public override NodeGlobalId GlobalId => throw new NotImplementedException();
 
-        public override ICollection<Edge> Edges => _edges ??= _nodes.Select(x => (Edge)new StoredEdge(this, x)).ToArray();
+        public override ICollection<Edge> Edges => _edges ??= _nodes.Select(x => new Edge(new EdgeState(new Node(this), x))).ToArray();
 
         public override ICollection<Node> Nodes => _nodes;
 
@@ -546,12 +546,5 @@ public sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         {
             return StringComparer.OrdinalIgnoreCase.GetHashCode(NodeName);
         }
-    }
-
-    private sealed class StoredEdge(Node First, Node Second) : Edge
-    {
-        public override Node Node1 => First;
-
-        public override Node Node2 => Second;
     }
 }

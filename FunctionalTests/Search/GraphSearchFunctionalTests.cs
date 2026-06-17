@@ -305,7 +305,7 @@ public sealed class GraphSearchFunctionalTests
                 laterCandidateWasRead = true;
                 throw new AssertFailedException("Search inspected a later candidate before yielding the first match.");
             });
-        var service = new GraphSearchService(new StreamingProbeStorage(first, laterCandidate));
+        var service = new GraphSearchService(new StreamingProbeStorage(new Node(first), new Node(laterCandidate)));
 
         await using var matches = service.SearchNodesStreamAsync(new NodeSearchQuery
         {
@@ -444,7 +444,7 @@ public sealed class GraphSearchFunctionalTests
             throw new NotSupportedException();
     }
 
-    private sealed class StreamingProbeNode : Node
+    private sealed class StreamingProbeNode : NodeState
     {
         private readonly Func<IReadOnlyDictionary<string, string>> _readAttributes;
 

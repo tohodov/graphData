@@ -55,7 +55,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             return ServiceResult<Node>.NotFound($"Parent node '{parent}' was not found.");
 
         var created = await CreateNodeAsync(name, parentNode, attributes).ConfigureAwait(false);
-        return ServiceResult<Node>.Ok(created);
+        return ServiceResult<Node>.Ok(new Node(created));
     }
 
     public async Task<ServiceResult<Node>> Get(NodeGlobalId path)
@@ -63,7 +63,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         var node = await FindNodeAsync(path).ConfigureAwait(false);
         return node is null
             ? ServiceResult<Node>.NotFound()
-            : ServiceResult<Node>.Ok(node);
+            : ServiceResult<Node>.Ok(new Node(node));
     }
 
     public async Task<ServiceResult> Delete(NodeGlobalId path)
@@ -122,7 +122,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
         try
         {
-            await ConnectNodesAsync(sourceNode, targetNode).ConfigureAwait(false);
+            await ConnectNodesAsync(new Node(sourceNode), new Node(targetNode)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -141,10 +141,10 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             return ServiceResult<IReadOnlyCollection<Node>>.NotFound();
 
         var nodes = await GetConnectedNodesCoreAsync(node).ConfigureAwait(false);
-        return ServiceResult<IReadOnlyCollection<Node>>.Ok(nodes);
+        return ServiceResult<IReadOnlyCollection<Node>>.Ok(nodes.Select(x => new Node(x)).ToArray());
     }
 
-    private async Task<Node> CreateNodeAsync(string name, Node? parent = null, IDictionary<string, string>? attributes = null)
+    private async Task<StoredNode> CreateNodeAsync(string name, StoredNode? parent = null, IDictionary<string, string>? attributes = null)
     {
         var nodeName = GetNodeName(parent, name);
         var document = new NodeDocument(nodeName, CopyAttributes(attributes));
@@ -174,16 +174,16 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         return CreateNode(document);
     }
 
-    private async Task<Node?> FindNodeAsync(Node? parent, string subNodeName)
+    private async Task<StoredNode?> FindNodeAsync(StoredNode? parent, string subNodeName)
     {
         var nodeName = GetNodeName(parent, subNodeName);
         var document = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
         return document is null ? null : CreateNode(document);
     }
 
-    private async Task<Node?> FindNodeAsync(NodeGlobalId path)
+    private async Task<StoredNode?> FindNodeAsync(NodeGlobalId path)
     {
-        Node? node = null;
+        StoredNode? node = null;
         foreach (var part in path)
         {
             node = await FindNodeAsync(node, part).ConfigureAwait(false);
@@ -226,10 +226,10 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         }
     }
 
-    private async Task<IReadOnlyCollection<Node>> GetConnectedNodesCoreAsync(Node node)
+    private async Task<IReadOnlyCollection<StoredNode>> GetConnectedNodesCoreAsync(Node node)
     {
         var connections = await ReadConnectionsWithLockAsync(node.LocalId).ConfigureAwait(false);
-        var nodes = new List<Node>();
+        var nodes = new List<StoredNode>();
         foreach (var connection in connections)
         {
             var document = await ReadMetadataWithLockAsync(connection).ConfigureAwait(false);
@@ -262,7 +262,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             var document = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
             if (document is not null)
             {
-                nodes.Add(CreateNode(document));
+                nodes.Add(new Node(CreateNode(document)));
             }
         }
 
@@ -436,7 +436,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             : new Dictionary<string, string>(attributes, StringComparer.OrdinalIgnoreCase);
     }
 
-    private static string GetNodeName(Node? parent, string subNodeName)
+    private static string GetNodeName(StoredNode? parent, string subNodeName)
     {
         return parent is null
             ? subNodeName
@@ -478,7 +478,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
     private sealed record NodeDocument(string Name, Dictionary<string, string> Attributes);
 
-    private sealed class StoredNode(string nodeName) : Node
+    private sealed class StoredNode(string nodeName) : NodeState
     {
         private ICollection<Edge>? _edges;
         private ICollection<Node> _nodes = Array.Empty<Node>();
@@ -488,7 +488,7 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         public override NodeLocalId LocalId => new(NodeName);
         public override NodeGlobalId GlobalId => throw new NotImplementedException();
 
-        public override ICollection<Edge> Edges => _edges ??= _nodes.Select(x => (Edge)new StoredEdge(this, x)).ToArray();
+        public override ICollection<Edge> Edges => _edges ??= _nodes.Select(x => new Edge(new EdgeState(new Node(this), x))).ToArray();
 
         public override ICollection<Node> Nodes => _nodes;
 
@@ -512,12 +512,5 @@ public sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         {
             return StringComparer.OrdinalIgnoreCase.GetHashCode(NodeName);
         }
-    }
-
-    private sealed class StoredEdge(Node First, Node Second) : Edge
-    {
-        public override Node Node1 => First;
-
-        public override Node Node2 => Second;
     }
 }

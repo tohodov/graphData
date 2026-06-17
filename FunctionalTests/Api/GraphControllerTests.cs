@@ -651,8 +651,8 @@ public sealed class GraphControllerTests {
             var first = new StaticNode(new("same"), new("left", "same"));
             var second = new StaticNode(new("same"), new("right", "same"));
             root.EdgeSnapshot = [
-                new StaticEdge(root, first),
-                new StaticEdge(root, second)
+                new Edge(new EdgeState(new Node(root), new Node(first))),
+                new Edge(new EdgeState(new Node(root), new Node(second)))
             ];
 
             return new AmbiguousNeighborGraphStorage(root);
@@ -660,7 +660,7 @@ public sealed class GraphControllerTests {
 
         public Task<ServiceResult<Node>> Get(NodeGlobalId path) =>
             Task.FromResult(path == _root.GlobalId
-                ? ServiceResult<Node>.Ok(_root)
+                ? ServiceResult<Node>.Ok(new Node(_root))
                 : ServiceResult<Node>.NotFound());
 
         public Task<ServiceResult<Node>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
@@ -679,7 +679,7 @@ public sealed class GraphControllerTests {
             throw new NotSupportedException();
     }
 
-    private sealed class StaticNode(NodeLocalId localId, NodeGlobalId globalId) : Node {
+    private sealed class StaticNode(NodeLocalId localId, NodeGlobalId globalId) : NodeState {
         public override NodeLocalId LocalId { get; } = localId;
 
         public override NodeGlobalId GlobalId { get; } = globalId;
@@ -695,11 +695,5 @@ public sealed class GraphControllerTests {
 
         public override IDictionary<string, string> Attributes { get; set; } =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    }
-
-    private sealed class StaticEdge(Node First, Node Second) : Edge {
-        public override Node Node1 => First;
-
-        public override Node Node2 => Second;
     }
 }

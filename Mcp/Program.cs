@@ -1,15 +1,14 @@
+using System.Diagnostics;
+using Client;
 using GraphData.Api.Runtime;
-using GraphData.Api.Services;
-using GraphData.Core.Extensions;
+using GraphData.Core.Services;
 using GraphData.Mcp.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Client;
 using ModelContextProtocol.Protocol;
 using SymLinkStorage;
-using System.Diagnostics;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -33,7 +32,7 @@ builder.Logging.AddConsole(options => {
 builder.AddTracker();
 
 builder.Services.AddSingleton<ICancellationTokenAccessor, McpCancellationTokenAccessor>();
-builder.Services.AddGraphCore();
+builder.Services.AddScoped<GraphSearchService, GraphSearchService>();
 builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
 builder.Services
     .AddMcpServer()

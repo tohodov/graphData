@@ -19,7 +19,7 @@ internal sealed class NodeFileSystem {
     IDictionary<string, string>? attributes;
     Dictionary<string, string>? attributesSnapshot;
 
-    public Node AsNode => new GraphNode(new NodeFileSystemState(this));
+    public Node AsNode => new Node(new NodeFileSystemState(this));
     public string FolderPath => folderPath; //TODO encapsulate
     public string MetadataPath => Combine(FolderPath, MetadataFileName);
     internal string StorageRootPath => storageRootPath;
@@ -155,13 +155,13 @@ internal sealed class NodeFileSystem {
             yield break;
 
         if (TryGetParent(out var parent))
-            yield return new GraphEdge(new DirectoryEdgeFileSystemState(parent, this));
+            yield return new Edge(new DirectoryEdgeFileSystemState(parent, this));
 
         foreach (var child in GetChildNodes())
-            yield return new GraphEdge(new DirectoryEdgeFileSystemState(this, child));
+            yield return new Edge(new DirectoryEdgeFileSystemState(this, child));
 
         foreach (var link in GetSymLinks())
-            yield return new GraphEdge(new LinkEdgeFileSystemState(this, link));
+            yield return new Edge(new LinkEdgeFileSystemState(this, link));
     }
 
     IEnumerable<NodeFileSystem> GetChildNodes() {

@@ -1,10 +1,7 @@
 namespace GraphData.Core.Models;
 
-public abstract class Node {
-    protected Node() {
-    }
-
-    protected Node(NodeState state) {
+public class Node {
+    public Node(NodeState state) {
         State = state ?? throw new ArgumentNullException(nameof(state));
     }
 
