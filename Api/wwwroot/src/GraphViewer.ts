@@ -45,6 +45,7 @@ export class GraphViewer {
     this.gpuWarning = this.document.querySelector("#gpu-warning");
     this.fitButton = this.requireElement("#fit-button");
     this.resetButton = this.requireElement("#reset-button");
+    this.rendererSelect = this.requireElement("#renderer-select");
     this.mobileMenuToggle = this.requireElement("#mobile-menu-toggle");
     this.mobileMenuClose = this.requireElement("#mobile-menu-close");
     this.statusOutput = this.requireElement("#status");
@@ -91,6 +92,7 @@ export class GraphViewer {
       document: this.document,
       window: this.window,
       canvas: this.graphSurface,
+      rendererSelect: this.rendererSelect,
       labelLayer: this.labelLayer,
       emptyState: this.emptyState,
       gpuWarning: this.gpuWarning,

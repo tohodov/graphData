@@ -308,19 +308,31 @@ public sealed class GraphUiRegressionTests {
         var contract = ReadUiFile("Api/wwwroot/src/ui/GraphRenderer.ts");
         var webGpu = ReadUiFile("Api/wwwroot/src/ui/WebGpuRenderer.ts");
         var svg = ReadUiFile("Api/wwwroot/src/ui/SvgRenderer.ts");
+        var htmlCanvas = ReadUiFile("Api/wwwroot/src/ui/HtmlCanvasRenderer.ts");
         var canvas = ReadUiFile("Api/wwwroot/src/ui/WebGpuGraphCanvas.ts");
         var html = ReadUiFile("Api/wwwroot/index.html");
+        var css = ReadUiFile("Api/wwwroot/styles.css");
 
         StringAssert.Contains(contract, "export interface GraphRenderer");
         StringAssert.Contains(contract, "updateGraph(memory: GraphRenderMemory | null): void");
         StringAssert.Contains(contract, "draw(view: GraphView): number");
         StringAssert.Contains(webGpu, "implements GraphRenderer");
         StringAssert.Contains(svg, "implements GraphRenderer");
+        StringAssert.Contains(htmlCanvas, "implements GraphRenderer");
         StringAssert.Contains(svg, "mode = \"svg\"");
+        StringAssert.Contains(htmlCanvas, "mode = \"html-canvas\"");
+        StringAssert.Contains(htmlCanvas, "layoutsubtree");
+        StringAssert.Contains(htmlCanvas, "drawElementImage");
+        StringAssert.Contains(htmlCanvas, "requestPaint");
         StringAssert.Contains(canvas, "new SvgRenderer(host)");
+        StringAssert.Contains(canvas, "new HtmlCanvasRenderer(host)");
         StringAssert.Contains(canvas, "new WebGpuRenderer(host)");
         StringAssert.Contains(canvas, "await this.activateRenderer(\"svg\")");
+        StringAssert.Contains(canvas, "normalizeRendererMode");
         StringAssert.Contains(html, "<div id=\"graph\"");
+        StringAssert.Contains(html, "<select id=\"renderer-select\"");
+        StringAssert.Contains(css, ".renderer-picker");
+        StringAssert.Contains(css, ".graph-html-canvas-layer > .html-canvas-node");
     }
 
     [TestMethod]
@@ -413,6 +425,8 @@ public sealed class GraphUiRegressionTests {
               static fromApi(node) { return node; }
             };
             globalThis.GraphApi = class GraphApi {};
+            globalThis.HtmlCanvasRenderer = class HtmlCanvasRenderer {};
+            globalThis.SvgRenderer = class SvgRenderer {};
             globalThis.WebGpuRenderer = class WebGpuRenderer {};
             """);
 

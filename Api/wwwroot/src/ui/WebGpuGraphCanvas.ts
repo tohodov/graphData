@@ -1,4 +1,5 @@
 import { nodeRadius } from "../domain/graphAttributes.js";
+import { HtmlCanvasRenderer } from "./HtmlCanvasRenderer.js";
 import { SvgRenderer } from "./SvgRenderer.js";
 import { WebGpuRenderer } from "./WebGpuRenderer.js";
 import type { GraphRenderer } from "./GraphRenderer.js";
@@ -16,6 +17,7 @@ export class WebGpuGraphCanvas {
     document,
     window,
     canvas,
+    rendererSelect,
     labelLayer,
     emptyState,
     gpuWarning,
@@ -37,6 +39,7 @@ export class WebGpuGraphCanvas {
     this.document = document;
     this.window = window;
     this.canvas = canvas;
+    this.rendererSelect = rendererSelect;
     this.labelLayer = labelLayer;
     this.emptyState = emptyState;
     this.gpuWarning = gpuWarning;
@@ -67,13 +70,13 @@ export class WebGpuGraphCanvas {
     this.pointer = null;
     this.simulationHandle = null;
 
+    this.bindRendererSelect();
     void this.initializeRenderer();
   }
 
   preferredRendererMode() {
     const params = new URLSearchParams(this.window.location.search);
-    const mode = (params.get("renderer") ?? params.get("render") ?? "").toLowerCase();
-    return mode === "svg" ? "svg" : "webgpu";
+    return normalizeRendererMode(params.get("renderer") ?? params.get("render"));
   }
 
   createRenderer(mode) {
@@ -82,9 +85,15 @@ export class WebGpuGraphCanvas {
       window: this.window,
       surface: this.canvas
     };
-    return mode === "svg"
-      ? new SvgRenderer(host)
-      : new WebGpuRenderer(host);
+    if (mode === "svg") {
+      return new SvgRenderer(host);
+    }
+
+    if (mode === "html-canvas") {
+      return new HtmlCanvasRenderer(host);
+    }
+
+    return new WebGpuRenderer(host);
   }
 
   async initializeRenderer() {
@@ -114,28 +123,81 @@ export class WebGpuGraphCanvas {
   }
 
   async activateRenderer(mode) {
+    const targetMode = normalizeRendererMode(mode);
+    const previousRenderer = this.renderer;
+    const previousMode = this.rendererMode;
+    const previousReady = this.rendererReady;
     this.rendererReady = false;
-    this.renderer?.dispose();
-    this.renderer = null;
-    const renderer = this.createRenderer(mode);
+    const renderer = this.createRenderer(targetMode);
     this.renderer = renderer;
-    this.rendererMode = mode;
+    this.rendererMode = targetMode;
 
     try {
       await renderer.init();
     } catch (error) {
       if (this.renderer === renderer) {
         renderer.dispose();
-        this.renderer = null;
+        this.renderer = previousRenderer;
+        this.rendererMode = previousMode;
+        this.rendererReady = previousReady;
       }
       throw error;
     }
 
-    this.rendererMode = renderer.mode ?? mode;
+    if (previousRenderer && previousRenderer !== renderer) {
+      previousRenderer.dispose();
+    }
+    this.rendererMode = renderer.mode ?? targetMode;
     this.rendererReady = true;
+    this.syncRendererSelect();
     this.updateRendererGraph();
     this.renderLabels();
     this.requestDraw();
+  }
+
+  bindRendererSelect() {
+    if (!this.rendererSelect) {
+      return;
+    }
+
+    this.syncRendererSelect();
+    this.rendererSelect.addEventListener("change", () => {
+      void this.changeRenderer(this.rendererSelect.value);
+    });
+  }
+
+  async changeRenderer(mode) {
+    const targetMode = normalizeRendererMode(mode);
+    if (targetMode === this.rendererMode && this.rendererReady) {
+      this.syncRendererSelect();
+      return;
+    }
+
+    try {
+      await this.activateRenderer(targetMode);
+      this.setGpuWarning(null);
+      this.writeRendererModeToUrl(targetMode);
+    } catch (error) {
+      this.setGpuWarning(error);
+      this.syncRendererSelect();
+    }
+  }
+
+  syncRendererSelect() {
+    if (!this.rendererSelect) {
+      return;
+    }
+
+    const option = [...this.rendererSelect.options].find(item => item.value === this.rendererMode);
+    if (option) {
+      this.rendererSelect.value = this.rendererMode;
+    }
+  }
+
+  writeRendererModeToUrl(mode) {
+    const url = new URL(this.window.location.href);
+    url.searchParams.set("renderer", mode);
+    this.window.history.replaceState({}, "", url);
   }
 
   bindGraphSurface() {
@@ -754,4 +816,17 @@ function pointOnCircle(anchor, target, radius) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function normalizeRendererMode(mode) {
+  const text = String(mode ?? "").toLowerCase().replace(/[_\s]/g, "-");
+  if (text === "svg") {
+    return "svg";
+  }
+
+  if (text === "html" || text === "htmlcanvas" || text === "html-in-canvas" || text === "html-canvas") {
+    return "html-canvas";
+  }
+
+  return "webgpu";
 }

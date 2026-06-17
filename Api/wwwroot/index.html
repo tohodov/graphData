@@ -11,6 +11,14 @@
     <section class="workspace">
       <div class="graph-surface">
         <div class="graph-actions" aria-label="Управление видом графа">
+          <label class="renderer-picker">
+            <span>Рендер</span>
+            <select id="renderer-select" title="Рендер графа" aria-label="Рендер графа">
+              <option value="webgpu">WebGPU</option>
+              <option value="svg">SVG</option>
+              <option value="html-canvas">HTML-in-Canvas</option>
+            </select>
+          </label>
           <button id="fit-button" type="button" title="Подогнать граф">Подогнать</button>
           <button id="reset-button" type="button" title="Сбросить граф">Сброс</button>
         </div>

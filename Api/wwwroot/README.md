@@ -38,11 +38,16 @@ next ring of edge endpoints, and each endpoint button is both a navigation affor
 and the boundary where additional graph data may be requested.
 
 The graph canvas uses a shared renderer interface. WebGPU is the default renderer,
-and SVG is available as both a fallback and an explicit mode via
-`/?renderer=svg`. The domain model, projection basis, rank logic, and API access
-stay in the TypeScript application code; render buffers are derived caches shared
-by both renderer implementations.
+SVG is available as both a fallback and an explicit mode via `/?renderer=svg`,
+and the experimental HTML-in-Canvas renderer can be selected with
+`/?renderer=html-canvas` or from the toolbar dropdown. The domain model,
+projection basis, rank logic, and API access stay in the TypeScript application
+code; render buffers are derived caches shared by all renderer implementations.
 
 Browsers expose WebGPU only in a secure context: `https://...`, `localhost`, or
 `127.0.0.1`. Opening the UI through an unsafe `http://<network-ip>` address will
 fall back to SVG rendering.
+
+HTML-in-Canvas follows the WICG `drawElementImage` proposal and currently requires
+Chromium with `chrome://flags/#canvas-draw-element` enabled. When the API is not
+available, the UI keeps the current renderer active and shows the renderer warning.
