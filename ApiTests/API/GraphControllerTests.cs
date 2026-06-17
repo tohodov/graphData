@@ -323,7 +323,7 @@ public sealed class GraphControllerTests {
     }
 
     [TestMethod]
-    public async Task GetSubgraphAsync_ReturnsTopLevelEdgesWithoutDuplicatingThemOnNodes() {
+    public async Task GetSubgraphAsync_ReturnsNodeEdgesForLazyExpansionAndTopLevelEdgesForLoadedNodes() {
         await using var scope = TestGraphStorageScope.Create();
         var first = (await scope.Storage.Create(new("1"))).Value!;
         var second = (await scope.Storage.Create(new("2"))).Value!;
@@ -343,11 +343,17 @@ public sealed class GraphControllerTests {
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
         CollectionAssert.AreEquivalent(new[] { "1", "2" }, response.Nodes.Select(static node => node.LocalId).ToArray());
-        Assert.IsTrue(response.Nodes.All(static node => node.Edges.Count == 0));
 
         var edge = response.Edges.Single();
         Assert.AreEqual(first.LocalId.ToString(), edge.SourceLocalId);
         Assert.AreEqual(second.LocalId.ToString(), edge.TargetLocalId);
+        Assert.IsFalse(response.Edges.Any(edge => HasEndpoints(edge, second.GlobalId.ToString(), third.GlobalId.ToString())));
+
+        var firstNode = response.Nodes.Single(static node => node.LocalId == "1");
+        var secondNode = response.Nodes.Single(static node => node.LocalId == "2");
+        Assert.IsTrue(firstNode.Edges.Any(edge => HasEndpoints(edge, first.GlobalId.ToString(), second.GlobalId.ToString())));
+        Assert.IsTrue(secondNode.Edges.Any(edge => HasEndpoints(edge, first.GlobalId.ToString(), second.GlobalId.ToString())));
+        Assert.IsTrue(secondNode.Edges.Any(edge => HasEndpoints(edge, second.GlobalId.ToString(), third.GlobalId.ToString())));
     }
 
     [TestMethod]
@@ -374,11 +380,16 @@ public sealed class GraphControllerTests {
         CollectionAssert.AreEquivalent(
             new[] { ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString(), weapons.GlobalId.ToString() },
             response.Nodes.Select(static node => node.GlobalId).ToArray());
-        Assert.IsTrue(response.Nodes.All(static node => node.Edges.Count == 0));
 
         Assert.AreEqual(2, response.Edges.Count);
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString())));
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, weapons.GlobalId.ToString(), ak47.GlobalId.ToString())));
+
+        var ak47Node = response.Nodes.Single(node => node.GlobalId == ak47.GlobalId.ToString());
+        var assaultRifleNode = response.Nodes.Single(node => node.GlobalId == assaultRifle.GlobalId.ToString());
+        Assert.IsTrue(ak47Node.Edges.Any(edge => HasEndpoints(edge, ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString())));
+        Assert.IsTrue(ak47Node.Edges.Any(edge => HasEndpoints(edge, weapons.GlobalId.ToString(), ak47.GlobalId.ToString())));
+        Assert.IsTrue(assaultRifleNode.Edges.Any(edge => HasEndpoints(edge, categories.GlobalId.ToString(), assaultRifle.GlobalId.ToString())));
     }
 
     [TestMethod]
@@ -412,7 +423,7 @@ public sealed class GraphControllerTests {
         await using var scope = TestGraphStorageScope.Create();
         var firstRoot = (await scope.Storage.Create(new("first"))).Value!;
         var secondRoot = (await scope.Storage.Create(new("second"))).Value!;
-        await scope.Storage.Create(new("child"), firstRoot.GlobalId);
+        var child = (await scope.Storage.Create(new("child"), firstRoot.GlobalId)).Value!;
 
         var controller = CreateController(scope.Storage);
         var result = await controller.GetSubgraphAsync(new SubgraphRequest {
@@ -429,6 +440,11 @@ public sealed class GraphControllerTests {
             new[] { firstRoot.GlobalId.ToString(), secondRoot.GlobalId.ToString() },
             response.Nodes.Select(static node => node.GlobalId).ToArray());
         Assert.AreEqual(0, response.Edges.Count);
+
+        var firstNode = response.Nodes.Single(node => node.GlobalId == firstRoot.GlobalId.ToString());
+        var secondNode = response.Nodes.Single(node => node.GlobalId == secondRoot.GlobalId.ToString());
+        Assert.IsTrue(firstNode.Edges.Any(edge => HasEndpoints(edge, firstRoot.GlobalId.ToString(), child.GlobalId.ToString())));
+        Assert.AreEqual(0, secondNode.Edges.Count);
     }
 
     [TestMethod]
@@ -482,6 +498,8 @@ public sealed class GraphControllerTests {
         var match = matches.Single();
         Assert.AreEqual(first.LocalId.ToString(), match.Bindings["n"].LocalId);
         Assert.AreEqual(second.LocalId.ToString(), match.Bindings["x"].LocalId);
+        Assert.IsTrue(match.Bindings["n"].Edges.Any(edge => HasEndpoints(edge, first.GlobalId.ToString(), second.GlobalId.ToString())));
+        Assert.IsTrue(match.Bindings["x"].Edges.Any(edge => HasEndpoints(edge, first.GlobalId.ToString(), second.GlobalId.ToString())));
     }
 
     [TestMethod]

@@ -1018,16 +1018,32 @@ export class GraphViewer {
   this.graph.velocities.clear();
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
+  const edgesByNode = new Map();
+  edges.forEach(edge => {
+    [edge.sourceGlobalId, edge.targetGlobalId].forEach(name => {
+      if (!edgesByNode.has(name)) {
+        edgesByNode.set(name, []);
+      }
+      edgesByNode.get(name).push(edge);
+    });
+  });
   this.graph.rootName = roots[0] ?? nodes[0]?.name ?? null;
   this.graph.selectedName = options.selectRoot === false ? null : this.graph.rootName;
 
   nodes.forEach((node, index) => {
     this.graph.loaded.set(node.name, GraphNode.from({
       ...node,
-      edges: edges.filter(edge => edge.sourceGlobalId === node.name || edge.targetGlobalId === node.name)
+      edges: this.mergeEdges(node.edges, edgesByNode.get(node.name) ?? [])
     }));
     this.seedSubgraphPosition(node.name, index, nodes.length);
   });
+
+  for (const node of this.graph.loaded.values()) {
+    node.edges.forEach((edge, index) => {
+      const otherName = GraphEdge.from(edge).otherEndpoint(node.name);
+      this.seedPosition(otherName, node.name, index);
+    });
+  }
 
   this.render();
   this.renderTypeControls();

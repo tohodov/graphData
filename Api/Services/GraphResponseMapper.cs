@@ -20,7 +20,7 @@ public static class GraphResponseMapper
 
         return new SubgraphResponse
         {
-            Nodes = nodes.Select(static node => ToNodeResponse(node, [])).ToArray(),
+            Nodes = nodes.Select(static node => ToNodeResponse(node)).ToArray(),
             Edges = edges
         };
     }
@@ -45,7 +45,7 @@ public static class GraphResponseMapper
             Node = ToNodeResponse(match.Node),
             Bindings = match.Bindings.ToDictionary(
                 static binding => binding.Key,
-                static binding => ToNodeResponse(binding.Value, []),
+                static binding => ToNodeResponse(binding.Value),
                 StringComparer.OrdinalIgnoreCase),
             Score = match.Score,
             MatchedBy = match.MatchedBy

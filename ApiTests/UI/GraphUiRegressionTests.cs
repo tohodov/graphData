@@ -288,6 +288,55 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphViewer_LoadSubgraphPreservesNodeEdgesForLazyEndpointControls() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
+            ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
+
+        engine.Execute(
+            """
+            const viewer = Object.create(GraphViewer.prototype);
+            viewer.graph = new GraphModel();
+            viewer.normalizeNodeResponse = node => GraphNode.fromApi(node);
+            viewer.normalizeEdgeResponse = edge => GraphEdge.fromApi(edge);
+            viewer.mergeEdges = (left, right) => GraphEdge.mergeMany(left, right);
+            viewer.render = () => {};
+            viewer.renderTypeControls = () => {};
+            viewer.runSimulation = () => {};
+            viewer.fitView = () => {};
+
+            viewer.loadSubgraphIntoViewer({
+              nodes: [{
+                localId: "root",
+                globalId: "root",
+                edges: [{
+                  sourceGlobalId: "root",
+                  targetGlobalId: "root/child",
+                  sourceLocalId: "root",
+                  targetLocalId: "child",
+                  neighborLocalId: "child"
+                }]
+              }],
+              edges: []
+            }, [], { selectRoot: false });
+
+            const root = viewer.graph.loaded.get("root");
+            const edge = root.edges[0];
+            const control = viewer.edgeEndpointControl(edge, "root");
+
+            globalThis.__result = root.edges.length === 1
+              && viewer.graph.physicalGraph().edges.length === 1
+              && viewer.graph.positions.has("root/child")
+              && control?.kind === "expand"
+              && control?.text === "+";
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void WebGpuCanvas_RendersClickableEdgeEndpointControls() {
         foreach (var path in new[] {
             "Api/wwwroot/src/ui/WebGpuGraphCanvas.ts",

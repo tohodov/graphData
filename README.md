@@ -26,6 +26,22 @@ graphData - исследовательский прототип графовой
 Исполняемые входы (`Api`, `Mcp`) должны работать через `GraphService`, а не через `IGraphStorage`. Storage-проекты (`SymLinkStorage`, `PerNodeFileStorage`, `BucketedFileStorage`) остаются ниже домена и ссылаются только на `Abstractions`.
 Storage-state типы и storage-контракты закрыты как `internal`; доступ к ним выдается только `Domain`, storage-проектам и тестовым сборкам через `InternalsVisibleTo`.
 
+## Web UI lazy navigation
+
+Web UI открывается сразу с обзором корневых узлов: клиент вызывает `POST /api/graph/subgraph`
+с пустым списком `globalIds` и `maxDepth = 0`. Это намеренно не полная загрузка графа,
+а стартовая frontier-точка для пошагового просмотра.
+
+Все API-ответы, которые возвращают узел (`GET /api/graph/nodes`, `GET /api/graph/nodes/{globalId}/neighbor/{localId}`,
+`POST /api/graph/nodes`, `POST /api/graph/subgraph` в `nodes[]`, а также `POST /api/graph/search/nodes`
+в `node` и `bindings`), должны возвращать узел вместе с его incident `edges`. Благодаря этому UI видит
+связи к еще не загруженным соседям и рисует кнопки `+` на концах ребер. Нажатие на такую кнопку вызывает
+ленивую догрузку соседа через `/neighbor/{localId}`.
+
+`SubgraphResponse.edges` при этом остается отдельным дедуплицированным списком только тех ребер,
+у которых оба endpoint уже входят в `nodes[]`; он нужен для раскладки загруженного подграфа и не заменяет
+`NodeResponse.edges`.
+
 ## Tests
 
 В репозитории есть две тестовые сборки и отдельное консольное приложение для замеров:
