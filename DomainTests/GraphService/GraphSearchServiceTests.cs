@@ -10,7 +10,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace GraphData.Tests.Search;
 
 [TestClass]
-public sealed class GraphSearchFunctionalTests
+public sealed class GraphSearchServiceTests
 {
     [TestMethod]
     public async Task Search_ShouldFindVerticesWithoutEdges()

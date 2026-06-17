@@ -28,15 +28,17 @@ Storage-state типы и storage-контракты закрыты как `inte
 
 ## Tests
 
-В репозитории есть одна тестовая сборка и отдельное консольное приложение для замеров:
+В репозитории есть две тестовые сборки и отдельное консольное приложение для замеров:
 
-- `FunctionalTests` - основная проверка поведения через функциональные сценарии.
+- `DomainTests` - проверка доменных сервисов и активных DDD-сущностей `Node`/`Edge`.
+- `ApiTests` - проверка HTTP API и UI, который живет внутри проекта `Api`.
 - `PerformanceTests` - консольный раннер измерительных сценариев производительности.
 
 Unit-тестовой сборки в проекте намеренно нет: корректность должна подтверждаться функциональными тестами, которые проверяют поведение через реальные сервисы и хранилища.
 
 ```powershell
-dotnet test FunctionalTests\FunctionalTests.csproj
+dotnet test DomainTests\DomainTests.csproj
+dotnet test ApiTests\ApiTests.csproj
 
 dotnet run --project PerformanceTests\PerformanceTests.csproj
 ```

@@ -4,5 +4,6 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("SymLinkStorage")]
 [assembly: InternalsVisibleTo("PerNodeFileStorage")]
 [assembly: InternalsVisibleTo("BucketedFileStorage")]
-[assembly: InternalsVisibleTo("FunctionalTests")]
+[assembly: InternalsVisibleTo("ApiTests")]
+[assembly: InternalsVisibleTo("DomainTests")]
 [assembly: InternalsVisibleTo("PerformanceTests")]
