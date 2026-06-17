@@ -380,9 +380,7 @@ export class GraphViewer {
     this.graph.parentByNode.set(expansion.name, fromName);
   }
 
-  stored.edges.forEach((edge, index) => {
-    this.seedPosition(GraphEdge.from(edge).otherEndpoint(expansion.name), expansion.name, index);
-  });
+  this.refreshFrontierEdgeAngles();
 
   return stored;
 
@@ -1038,12 +1036,7 @@ export class GraphViewer {
     this.seedSubgraphPosition(node.name, index, nodes.length);
   });
 
-  for (const node of this.graph.loaded.values()) {
-    node.edges.forEach((edge, index) => {
-      const otherName = GraphEdge.from(edge).otherEndpoint(node.name);
-      this.seedPosition(otherName, node.name, index);
-    });
-  }
+  this.refreshFrontierEdgeAngles();
 
   this.render();
   this.renderTypeControls();
@@ -1147,7 +1140,8 @@ export class GraphViewer {
       kind: "expand",
       text: "+",
       title: `Развернуть ${otherLabel}`,
-      otherName
+      otherName,
+      angle: normalized.frontierAngleFor(anchorName)
     };
   }
 
@@ -1194,6 +1188,7 @@ export class GraphViewer {
         .filter(edge => edge.sourceGlobalId !== name && edge.targetGlobalId !== name);
     }
   }
+  this.refreshFrontierEdgeAngles();
 
   if (selectFallback && wasSelected) {
     this.graph.selectedName = this.graph.loaded.keys().next().value ?? null;
@@ -1796,6 +1791,36 @@ export class GraphViewer {
 
   displayName(globalId) {
     return this.graph.displayName(globalId);
+  }
+
+  refreshFrontierEdgeAngles() {
+  for (const node of this.graph.loaded.values()) {
+    this.assignFrontierEdgeAngles(node);
+  }
+
+  }
+
+  assignFrontierEdgeAngles(node) {
+  const nodeName = node.name ?? node.globalId;
+  const edges = (node.edges ?? []).map(edge => GraphEdge.from(edge));
+  const ordered = [...edges].sort((left, right) => {
+    const leftName = left.otherEndpoint(nodeName);
+    const rightName = right.otherEndpoint(nodeName);
+    return leftName.localeCompare(rightName, "ru") || left.key.localeCompare(right.key, "ru");
+  });
+  const step = ordered.length > 0 ? (Math.PI * 2) / ordered.length : 0;
+  const start = -Math.PI / 2;
+
+  ordered.forEach((edge, index) => {
+    const otherName = edge.otherEndpoint(nodeName);
+    if (this.graph.loaded.has(nodeName) && !this.graph.loaded.has(otherName)) {
+      edge.setFrontierAngle(nodeName, start + step * index);
+    } else {
+      edge.clearFrontierAngle();
+    }
+  });
+  node.edges = edges;
+
   }
 
   edgeEndpointDisplayName(edge, globalId) {

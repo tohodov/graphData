@@ -767,14 +767,18 @@ export class WebGpuGraphCanvas {
     }
 
     const anchor = this.positions.get(anchorName);
-    const other = this.positions.get(otherName);
-    if (!anchor || !other) {
+    if (!anchor) {
       return;
     }
 
     const anchorNode = nodesByName.get(anchorName);
     const radius = Number.isFinite(anchorNode?.viewRadius) ? anchorNode.viewRadius : nodeRadius;
-    const point = pointOnCircle(anchor, other, radius + endpointControlPadding);
+    const point = Number.isFinite(control.angle)
+      ? pointAtAngle(anchor, control.angle, radius + endpointControlPadding)
+      : this.edgeEndpointPoint(anchor, otherName, radius + endpointControlPadding);
+    if (!point) {
+      return;
+    }
     const x = point.x * this.view.scale + this.view.x;
     const y = point.y * this.view.scale + this.view.y;
     const margin = 36;
@@ -809,6 +813,11 @@ export class WebGpuGraphCanvas {
       this.callbacks.activateEdgeEndpoint?.(edge, anchorName);
     });
     fragment.append(button);
+  }
+
+  edgeEndpointPoint(anchor, otherName, radius) {
+    const other = this.positions.get(otherName);
+    return other ? pointOnCircle(anchor, other, radius) : null;
   }
 
   pickNearest(clientX, clientY) {
@@ -930,6 +939,13 @@ function pointOnCircle(anchor, target, radius) {
   return {
     x: anchor.x + (dx / distance) * radius,
     y: anchor.y + (dy / distance) * radius
+  };
+}
+
+function pointAtAngle(anchor, angle, radius) {
+  return {
+    x: anchor.x + Math.cos(angle) * radius,
+    y: anchor.y + Math.sin(angle) * radius
   };
 }
 

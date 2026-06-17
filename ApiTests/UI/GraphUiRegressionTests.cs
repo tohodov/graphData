@@ -311,13 +311,13 @@ public sealed class GraphUiRegressionTests {
               nodes: [{
                 localId: "root",
                 globalId: "root",
-                edges: [{
+                edges: ["a", "b", "c", "d"].map(name => ({
                   sourceGlobalId: "root",
-                  targetGlobalId: "root/child",
+                  targetGlobalId: "root/" + name,
                   sourceLocalId: "root",
-                  targetLocalId: "child",
-                  neighborLocalId: "child"
-                }]
+                  targetLocalId: name,
+                  neighborLocalId: name
+                }))
               }],
               edges: []
             }, [], { selectRoot: false });
@@ -325,12 +325,90 @@ public sealed class GraphUiRegressionTests {
             const root = viewer.graph.loaded.get("root");
             const edge = root.edges[0];
             const control = viewer.edgeEndpointControl(edge, "root");
+            const angles = root.edges.map(item => item.frontierAngle).sort((a, b) => a - b);
+            const step = Math.PI / 2;
+            const evenlySpaced = angles.every((angle, index) => {
+              const next = angles[(index + 1) % angles.length] + (index === angles.length - 1 ? Math.PI * 2 : 0);
+              return Math.abs((next - angle) - step) < 0.000001;
+            });
 
-            globalThis.__result = root.edges.length === 1
-              && viewer.graph.physicalGraph().edges.length === 1
-              && viewer.graph.positions.has("root/child")
+            viewer.storeNodeExpansion(new GraphNode({
+              localId: "a",
+              globalId: "root/a",
+              edges: [{
+                sourceGlobalId: "root",
+                targetGlobalId: "root/a",
+                sourceLocalId: "root",
+                targetLocalId: "a",
+                neighborLocalId: "root"
+              }]
+            }), "root", { select: false });
+
+            globalThis.__result = root.edges.length === 4
+              && viewer.graph.physicalGraph().edges.length === 4
+              && !viewer.graph.positions.has("root/b")
               && control?.kind === "expand"
-              && control?.text === "+";
+              && control?.text === "+"
+              && Number.isFinite(control?.angle)
+              && evenlySpaced
+              && root.edges.find(item => item.targetGlobalId === "root/a").frontierAngle === null;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void WebGpuCanvas_RendersFrontierEndpointControlsAtStoredAngle() {
+        var engine = CreateUiEngine(("Api/wwwroot/src/ui/WebGpuGraphCanvas.js", "WebGpuGraphCanvas"));
+
+        engine.Execute(
+            """
+            const buttons = [];
+            const canvas = Object.create(WebGpuGraphCanvas.prototype);
+            canvas.view = { x: 0, y: 0, scale: 1 };
+            canvas.positions = new Map([["a", { x: 10, y: 20 }]]);
+            canvas.callbacks = {
+              edgeEndpointControl() {
+                return { kind: "expand", text: "+", title: "expand", angle: 0, otherName: "b" };
+              },
+              activateEdgeEndpoint() {}
+            };
+            canvas.document = {
+              createElement() {
+                return {
+                  style: {},
+                  dataset: {},
+                  setAttribute() {},
+                  addEventListener() {}
+                };
+              }
+            };
+            const fragment = { append(button) { buttons.push(button); } };
+            const rect = { width: 500, height: 500 };
+            const edge = { key: "ab", sourceGlobalId: "a", targetGlobalId: "b" };
+            const nodesByName = new Map([["a", { name: "a", viewRadius: 34 }]]);
+
+            canvas.renderEdgeEndpointControl(fragment, rect, edge, "a", "b", nodesByName, new Set());
+            const first = buttons[0].style.transform.match(/translate\(([-0-9.]+)px, ([-0-9.]+)px\)/);
+            buttons.length = 0;
+            canvas.positions.set("a", { x: 100, y: 80 });
+            canvas.renderEdgeEndpointControl(fragment, rect, edge, "a", "b", nodesByName, new Set());
+            const second = buttons[0].style.transform.match(/translate\(([-0-9.]+)px, ([-0-9.]+)px\)/);
+
+            const firstOffset = {
+              x: Number(first[1]) - 10,
+              y: Number(first[2]) - 20
+            };
+            const secondOffset = {
+              x: Number(second[1]) - 100,
+              y: Number(second[2]) - 80
+            };
+
+            globalThis.__result = buttons.length === 1
+              && Math.abs(firstOffset.x - 43) < 0.000001
+              && Math.abs(firstOffset.y) < 0.000001
+              && Math.abs(secondOffset.x - firstOffset.x) < 0.000001
+              && Math.abs(secondOffset.y - firstOffset.y) < 0.000001;
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
@@ -348,7 +426,7 @@ public sealed class GraphUiRegressionTests {
             StringAssert.Contains(source, "graph-edge-control");
             StringAssert.Contains(source, "callbacks.edgeEndpointControl?.(edge, anchorName)");
             StringAssert.Contains(source, "callbacks.activateEdgeEndpoint?.(edge, anchorName)");
-            StringAssert.Contains(source, "pointOnCircle(anchor, other");
+            StringAssert.Contains(source, "pointAtAngle(anchor, control.angle");
         }
     }
 

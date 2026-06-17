@@ -14,6 +14,8 @@ export type GraphEdgeSnapshot = {
   viewRank?: number | null;
   viewRankReason?: string;
   collapsed?: boolean;
+  frontierAnchorGlobalId?: string | null;
+  frontierAngle?: number | null;
 };
 
 export class GraphEdge {
@@ -32,6 +34,8 @@ export class GraphEdge {
   viewRank: number | null;
   viewRankReason: string;
   collapsed: boolean;
+  frontierAnchorGlobalId: string | null;
+  frontierAngle: number | null;
   key: string;
   constructor({
     sourceGlobalId = "",
@@ -48,7 +52,9 @@ export class GraphEdge {
     typeRank = null,
     viewRank = null,
     viewRankReason = "",
-    collapsed = false
+    collapsed = false,
+    frontierAnchorGlobalId = null,
+    frontierAngle = null
   }: GraphEdgeSnapshot) {
     this.sourceGlobalId = sourceGlobalId;
     this.targetGlobalId = targetGlobalId;
@@ -65,6 +71,8 @@ export class GraphEdge {
     this.viewRank = viewRank;
     this.viewRankReason = viewRankReason;
     this.collapsed = Boolean(collapsed);
+    this.frontierAnchorGlobalId = frontierAnchorGlobalId;
+    this.frontierAngle = Number.isFinite(frontierAngle) ? frontierAngle : null;
     this.key = GraphEdge.keyFor(sourceGlobalId, targetGlobalId, relationGlobalId ?? typeGlobalId ?? "");
   }
 
@@ -91,6 +99,10 @@ export class GraphEdge {
         const existing = edges.get(normalized.key);
         if (existing?.collapsed && !normalized.collapsed) {
           normalized.collapsed = true;
+        }
+        if (existing && normalized.frontierAngle === null && existing.frontierAngle !== null) {
+          normalized.frontierAnchorGlobalId = existing.frontierAnchorGlobalId;
+          normalized.frontierAngle = existing.frontierAngle;
         }
         edges.set(normalized.key, normalized);
       }
@@ -124,6 +136,22 @@ export class GraphEdge {
     return this.sourceGlobalId === anchorGlobalId ? this.targetLocalId : this.sourceLocalId;
   }
 
+  setFrontierAngle(anchorGlobalId: string, angle: number | null): void {
+    this.frontierAnchorGlobalId = anchorGlobalId;
+    this.frontierAngle = Number.isFinite(angle) ? angle : null;
+  }
+
+  clearFrontierAngle(): void {
+    this.frontierAnchorGlobalId = null;
+    this.frontierAngle = null;
+  }
+
+  frontierAngleFor(anchorGlobalId: string): number | null {
+    return this.frontierAnchorGlobalId === anchorGlobalId && Number.isFinite(this.frontierAngle)
+      ? this.frontierAngle
+      : null;
+  }
+
   toViewEdge(extra: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       key: this.key,
@@ -141,6 +169,8 @@ export class GraphEdge {
       viewRank: this.viewRank,
       viewRankReason: this.viewRankReason,
       collapsed: this.collapsed,
+      frontierAnchorGlobalId: this.frontierAnchorGlobalId,
+      frontierAngle: this.frontierAngle,
       ...extra
     };
   }
