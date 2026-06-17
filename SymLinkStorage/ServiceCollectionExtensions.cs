@@ -1,9 +1,8 @@
-using GraphData.Core.Abstractions;
-using GraphData.SymLinkStorage;
+using Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace SymLinkStorage;
+namespace Storage;
 
 public static class ServiceCollectionExtensions
 {

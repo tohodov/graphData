@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using GraphData.Core.Abstractions;
+using Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;

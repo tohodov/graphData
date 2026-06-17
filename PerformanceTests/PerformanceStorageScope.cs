@@ -1,15 +1,10 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using GraphData.BucketedFileStorage;
-using GraphData.BucketedFileStorage.Options;
-using GraphData.Core.Abstractions;
-using GraphData.PerNodeFileStorage;
-using GraphData.PerNodeFileStorage.Options;
-using GraphData.SymLinkStorage;
+using Abstractions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using SymLinkStorage;
+using Storage;
 
 namespace GraphData.Tests.Performance;
 

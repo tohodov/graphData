@@ -1,11 +1,9 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
-using GraphData.Core.Abstractions;
-using GraphData.Core.Models;
-using GraphData.Core.Services;
+using Abstractions;
 using static System.IO.Path;
 
-namespace SymLinkStorage;
+namespace Storage;
 
 internal sealed class NodeFileSystem {
     const string MetadataFileName = "node.json";
@@ -13,7 +11,7 @@ internal sealed class NodeFileSystem {
     readonly string parentPath;
     readonly string storageRootPath;
     readonly string folderPath;
-    internal readonly IGraphStorage storage;
+    internal readonly SymLinkGraphStorage storage;
     IReadOnlyCollection<EdgeState>? edgeSnapshot;
     IReadOnlyCollection<NodeState>? nodeSnapshot;
     IDictionary<string, string>? attributes;
@@ -29,7 +27,7 @@ internal sealed class NodeFileSystem {
         GetRelativePath(storageRootPath, FolderPath)
             .Split(DirectorySeparatorChar, AltDirectorySeparatorChar)
             .Where(static part => part is not "." and not "")
-            .Select(GraphData.SymLinkStorage.SymLinkGraphStorage.NormalizeNodeName));
+            .Select(SymLinkGraphStorage.NormalizeNodeName));
     public ICollection<EdgeState> Edges { get; }
     public ICollection<NodeState> Nodes { get; }
     public IDictionary<string, string> Attributes {
@@ -39,31 +37,21 @@ internal sealed class NodeFileSystem {
         }
     }
 
-    public NodeFileSystem(DirectoryInfo info, IGraphStorage storage) {
+    public NodeFileSystem(DirectoryInfo info, SymLinkGraphStorage storage) {
         this.storage = storage;
         folderPath = ResolveDirectoryPath(info.FullName);
         LocalId = new NodeLocalId(new DirectoryInfo(folderPath).Name);
         parentPath = GetDirectoryName(folderPath) ?? "";
-        storageRootPath = parentPath;
+        storageRootPath = storage.root.FullName;
         Edges = new LiveEdgeCollection(this);
         Nodes = new LiveNodeCollection(this);
     }
-    public NodeFileSystem(NodeLocalId name, string storageRootPath, IGraphStorage storage) {
+    public NodeFileSystem(NodeLocalId name, SymLinkGraphStorage storage) {
         this.storage = storage;
         LocalId = name;
-        this.storageRootPath = ResolveDirectoryPath(storageRootPath);
+        storageRootPath = storage.root.FullName;
         parentPath = this.storageRootPath;
         folderPath = ResolveDirectoryPath(Combine(parentPath, name.ToString()));
-        Edges = new LiveEdgeCollection(this);
-        Nodes = new LiveNodeCollection(this);
-    }
-    public NodeFileSystem(DirectoryInfo info, string storageRootPath, IGraphStorage storage) {
-        this.storage = storage;
-        info = new DirectoryInfo(GetFullPath(info.FullName));
-        LocalId = new NodeLocalId(info.Name);
-        this.storageRootPath = ResolveDirectoryPath(storageRootPath);
-        folderPath = ResolveDirectoryPath(info.FullName);
-        parentPath = GetDirectoryName(folderPath) ?? this.storageRootPath;
         Edges = new LiveEdgeCollection(this);
         Nodes = new LiveNodeCollection(this);
     }
@@ -169,20 +157,20 @@ internal sealed class NodeFileSystem {
         foreach (var entry in directory.EnumerateDirectories()) {
             if ((entry.Attributes & FileAttributes.ReparsePoint) != 0)
                 continue;
-            yield return new NodeFileSystem(entry, storageRootPath, storage);
+            yield return new NodeFileSystem(entry, storage);
         }
     }
 
     bool TryGetParent([NotNullWhen(true)] out NodeFileSystem? parent) {
         parent = null;
-        if (IsStorageRoot(parentPath))
+        if (IsStorageRoot(folderPath) || IsStorageRoot(parentPath))
             return false;
 
         var parentDirectory = new DirectoryInfo(parentPath);
         if (!parentDirectory.Exists)
             return false;
 
-        parent = new NodeFileSystem(parentDirectory, storageRootPath, storage);
+        parent = new NodeFileSystem(parentDirectory, storage);
         return true;
     }
 
@@ -273,12 +261,12 @@ internal sealed class NodeFileSystem {
 
     async Task WriteMetadataAsync(Dictionary<string, string> data) {//TODO move to base
         await using var stream = new FileStream(MetadataPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
-        await JsonSerializer.SerializeAsync(stream, data, GraphData.SymLinkStorage.SymLinkGraphStorage.SerializerOptions);
+        await JsonSerializer.SerializeAsync(stream, data, SymLinkGraphStorage.SerializerOptions);
     }
     public void WriteMetadata(IDictionary<string, string> data) {//TODO move to base
         attributesSnapshot = null;
         using var stream = new FileStream(MetadataPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
-        JsonSerializer.Serialize(stream, data, GraphData.SymLinkStorage.SymLinkGraphStorage.SerializerOptions);
+        JsonSerializer.Serialize(stream, data, SymLinkGraphStorage.SerializerOptions);
     }
 
     sealed class LiveNodeCollection(NodeFileSystem owner) : ICollection<NodeState> {
@@ -394,7 +382,7 @@ internal sealed class LinkEdgeFileSystemState(NodeFileSystem node1, SymLink link
 
     public SymLink Link { get; } = link;
     public NodeFileSystem Parent { get; } = node1;
-    public NodeFileSystem Child => child ??= new NodeFileSystem(new DirectoryInfo(Link.TargetPath), Parent.StorageRootPath, Parent.storage);
+    public NodeFileSystem Child => child ??= new NodeFileSystem(new DirectoryInfo(Link.TargetPath), Parent.storage);
 
     public override NodeState Node1 => Parent.AsState;
     public override NodeState Node2 => Child.AsState;

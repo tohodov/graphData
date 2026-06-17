@@ -1,8 +1,8 @@
-﻿namespace GraphData.Core.Models;
+﻿namespace Abstractions;
 
 internal class EdgeState
 {
-    protected EdgeState() { } //TODO заменить на protected
+    protected EdgeState() { } //TODO подумать над иерархией
 
     public EdgeState(NodeState first, NodeState second, NodeGlobalId? type = null) {
         Node1 = first;

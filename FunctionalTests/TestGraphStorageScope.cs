@@ -1,11 +1,10 @@
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using GraphData.Core.Abstractions;
-using GraphData.SymLinkStorage;
+using Abstractions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using SymLinkStorage;
+using Storage;
 
 namespace GraphData.Tests;
 

@@ -1,4 +1,4 @@
-namespace GraphData.Core.Models;
+namespace Abstractions;
 
 internal abstract class NodeState
 {

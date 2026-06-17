@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Abstractions;
 using GraphData.Core.Models;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 

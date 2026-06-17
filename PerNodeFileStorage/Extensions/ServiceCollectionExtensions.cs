@@ -1,4 +1,4 @@
-using GraphData.Core.Abstractions;
+using Abstractions;
 using GraphData.PerNodeFileStorage.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

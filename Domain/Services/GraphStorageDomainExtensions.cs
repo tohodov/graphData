@@ -1,10 +1,9 @@
-using GraphData.Core.Abstractions;
+using Abstractions;
 using GraphData.Core.Models;
 
 namespace GraphData.Core.Services;
 
-internal static class GraphStorageDomainExtensions
-{
+internal static class GraphStorageDomainExtensions {
     public static async Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(this IGraphStorage storage, Node node) {
         var result = await storage.GetConnectedNodesAsync(node.RequireState());
         return result.Status == ServiceResultStatus.Ok && result.Value is not null
@@ -77,13 +76,12 @@ internal static class GraphStorageDomainExtensions
             .Where(static node => node.Any())
             .ToList();
 
-        if (storage is not IGraphNodeCatalog catalog)
-            return ServiceResult<IReadOnlyCollection<NodeGlobalId>>.Ok(explicitRoots);
-
-        var catalogRoots = (await catalog.GetRootNodesAsync())
+        var result = await storage.GetNeighbors(storage.Root);
+        if (result.Status != ServiceResultStatus.Ok || result.Value == null)
+            return ServiceResult<IReadOnlyCollection<NodeGlobalId>>.From(result);
+        var catalogRoots = await result.Value
             .Select(static node => node.GlobalId)
-            .Where(static globalId => globalId.Any());
-
+            .ToArrayAsync();
         explicitRoots.AddRange(catalogRoots);
         return ServiceResult<IReadOnlyCollection<NodeGlobalId>>.Ok(explicitRoots.Distinct().ToArray());
     }

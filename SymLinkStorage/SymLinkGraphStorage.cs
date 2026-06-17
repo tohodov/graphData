@@ -1,17 +1,16 @@
 using System.Text.Json;
-using GraphData.Core.Abstractions;
-using GraphData.Core.Models;
-using GraphData.Core.Services;
+using Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SymLinkStorage;
 
-namespace GraphData.SymLinkStorage;
+namespace Storage;
 
 internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    readonly DirectoryInfo root;
+    public NodeGlobalId Root => new NodeGlobalId(new string[0]);
+
+    internal readonly DirectoryInfo root;
     readonly NtfsGraphStorageOptions options;
     readonly ICancellationTokenAccessor cancellationTokens;
     readonly ILogger<SymLinkGraphStorage> logger;
@@ -25,19 +24,19 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             root.Create();
     }
 
-    public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parentId = null, IDictionary<string, string>? attributes = null) {
+    public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodePath? path = null, IDictionary<string, string>? attributes = null) {
         if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
             return Task.FromResult(ServiceResult<NodeState>.BadRequest(validationError));
 
-        var parentNode = parentId != null
-            ? FindNode(parentId.Value)
+        var parentNode = path != null
+            ? FindNode(path.Value)
             : null;
-        if (parentId != null && parentNode is null)
-            return Task.FromResult(ServiceResult<NodeState>.NotFound($"Parent node '{parentId}' was not found."));
+        if (path != null && parentNode is null)
+            return Task.FromResult(ServiceResult<NodeState>.NotFound($"Parent node '{path}' was not found."));
 
         NodeFileSystem node;
         if (parentNode is null)
-            node = new NodeFileSystem(new NodeLocalId(name), root.FullName, this);
+            node = new NodeFileSystem(new NodeLocalId(name), this);
         else
             node = new NodeFileSystem(new NodeLocalId(name), parentNode);
         Directory.CreateDirectory(node.FolderPath);
@@ -47,17 +46,18 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Task.FromResult(ServiceResult<NodeState>.Ok(node.AsState));
     }
 
-    public Task<ServiceResult<NodeState>> Get(NodeGlobalId path) {
+    public Task<ServiceResult<NodeState>> Get(NodePath path) {
         if (!TryValidatePath(path, "Node path", out var validationError))
             return Task.FromResult(ServiceResult<NodeState>.BadRequest(validationError));
-
+        if (Root.Equals(new NodeGlobalId(path)))
+            return Task.FromResult(ServiceResult<NodeState>.Ok(new NodeFileSystem(root, this).AsState));
         var node = FindNode(path);
         return Task.FromResult(node is null
             ? ServiceResult<NodeState>.NotFound()
             : ServiceResult<NodeState>.Ok(node.AsState));
     }
 
-    public Task<ServiceResult> Delete(NodeGlobalId path) {
+    public Task<ServiceResult> Delete(NodePath path) {
         if (!TryValidatePath(path, "Node path", out var validationError))
             return Task.FromResult(ServiceResult.BadRequest(validationError));
 
@@ -73,7 +73,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Task.FromResult(ServiceResult.Ok());
     }
 
-    public Task<ServiceResult> Connect(NodeGlobalId leftPath, NodeGlobalId rightPath) {
+    public Task<ServiceResult> Connect(NodePath leftPath, NodePath rightPath) {
         if (!TryValidatePath(leftPath, "Source node path", out var validationError))
             return Task.FromResult(ServiceResult.BadRequest(validationError));
         if (!TryValidatePath(rightPath, "Target node path", out validationError))
@@ -96,7 +96,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Task.FromResult(ServiceResult.Ok());
     }
 
-    public Task<ServiceResult> Disconnect(NodeGlobalId leftPath, NodeGlobalId rightPath) {
+    public Task<ServiceResult> Disconnect(NodePath leftPath, NodePath rightPath) {
         if (!TryValidatePath(leftPath, "Source node path", out var validationError))
             return Task.FromResult(ServiceResult.BadRequest(validationError));
         if (!TryValidatePath(rightPath, "Target node path", out validationError))
@@ -129,23 +129,6 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Task.FromResult(ServiceResult<IReadOnlyCollection<NodeState>>.Ok(GetConnectedNodes(node)));
     }
 
-    public Task<IReadOnlyCollection<NodeState>> GetRootNodesAsync() {
-        if (!root.Exists)
-            return Task.FromResult<IReadOnlyCollection<NodeState>>(Array.Empty<NodeState>());
-
-        var nodes = new List<NodeState>();
-        foreach (var directory in root.EnumerateDirectories()) {
-            cancellationTokens.Token.ThrowIfCancellationRequested();
-
-            if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
-                continue;
-
-            nodes.Add(new NodeFileSystem(directory, root.FullName, this).AsState);
-        }
-
-        return Task.FromResult<IReadOnlyCollection<NodeState>>(nodes);
-    }
-
     public Task<IReadOnlyCollection<NodeState>> GetAllNodesAsync() {
         if (!root.Exists)
             return Task.FromResult<IReadOnlyCollection<NodeState>>(Array.Empty<NodeState>());
@@ -164,7 +147,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
                 var relativePath = Path.GetRelativePath(root.FullName, directory.FullName);
                 if (!string.IsNullOrWhiteSpace(relativePath) && relativePath != ".")
-                    nodes.Add(new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), root.FullName, this).AsState);
+                    nodes.Add(new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), this).AsState);
 
                 stack.Push(directory);
             }
@@ -180,11 +163,11 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         if (!Directory.Exists(path))
             return null;
         return parent is null
-            ? new NodeFileSystem(nodeId, root.FullName, this)
+            ? new NodeFileSystem(nodeId, this)
             : new NodeFileSystem(nodeId, parent);
     }
 
-    private NodeFileSystem? FindNode(NodeGlobalId path) {
+    private NodeFileSystem? FindNode(NodePath path) {
         NodeFileSystem? node = null;
         foreach (var part in path) {
             if (GetInternal(node, part) is not NodeFileSystem child)
@@ -194,7 +177,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return node;
     }
 
-    private static bool TryValidatePath(NodeGlobalId path, string subject, out string error) {
+    private static bool TryValidatePath(NodePath path, string subject, out string error) {
         foreach (var segment in path) {
             if (!NodeNameValidator.TryValidateSegment(segment, $"{subject} segment", out error)) {
                 return false;

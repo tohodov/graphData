@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using GraphData.Core.Abstractions;
+using Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -429,19 +429,19 @@ public sealed class GraphSearchFunctionalTests
             return Task.FromResult(ServiceResult<IReadOnlyCollection<NodeState>>.Ok(Array.Empty<NodeState>()));
         }
 
-        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
+        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodePath? parent = null, IDictionary<string, string>? attributes = null) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult<NodeState>> Get(NodeGlobalId path) =>
+        public Task<ServiceResult<NodeState>> Get(NodePath path) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Delete(NodeGlobalId path) =>
+        public Task<ServiceResult> Delete(NodePath path) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Connect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+        public Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+        public Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath) =>
             throw new NotSupportedException();
     }
 

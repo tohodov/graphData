@@ -1,12 +1,6 @@
-using GraphData.Core.Models;
-using GraphData.Core.Services;
+namespace Abstractions;
 
-namespace GraphData.Core.Abstractions;
-
-internal interface IGraphStorage
-{
-    Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null);
-    Task<ServiceResult<NodeState>> Get(NodeGlobalId path);
+internal interface IGraphStorage {
 
     NodeGlobalId DeserializeGlobalId(string value) {
         var decoded = Uri.UnescapeDataString(value);
@@ -16,11 +10,12 @@ internal interface IGraphStorage
         return new NodeGlobalId(segments);
     }
 
-    async Task<ServiceResult<NodeState>> GetNeighbor(NodeGlobalId globalId, NodeLocalId localId) {
-        if (!NodeNameValidator.TryValidateSegment(localId, "Neighbor LocalId", out var validationError))
-            return ServiceResult<NodeState>.BadRequest(validationError);
+    NodeGlobalId Root => new NodeGlobalId(new string[0]);
 
-        var result = await Get(globalId);
+    Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodePath? parent = null, IDictionary<string, string>? attributes = null);
+    Task<ServiceResult<NodeState>> Get(NodePath path);
+    async Task<ServiceResult<NodeState>> GetNeighbor(NodePath path, NodeLocalId localId) {
+        var result = await Get(path);
         if (result.Status != ServiceResultStatus.Ok || result.Value is null)
             return ServiceResult<NodeState>.From(result);
 
@@ -35,11 +30,20 @@ internal interface IGraphStorage
         return matches.Length switch {
             0 => ServiceResult<NodeState>.NotFound(),
             1 => ServiceResult<NodeState>.Ok(matches[0]),
-            _ => ServiceResult<NodeState>.Conflict($"More than one neighbor with LocalId '{localId}' was found for node '{globalId}'.")
+            _ => ServiceResult<NodeState>.Conflict($"More than one neighbor with LocalId '{localId}' was found for node '{path}'.")
         };
     }
-
-    async Task<ServiceResult> Update(NodeGlobalId path, IDictionary<string, string> attributes) {
+    async Task<ServiceResult<IAsyncEnumerable<NodeState>>> GetNeighbors(NodePath path) {
+        var result = await Get(path);
+        if (result.Status != ServiceResultStatus.Ok || result.Value is null)
+            return ServiceResult<IAsyncEnumerable<NodeState>>.NotFound();
+        var node = result.Value;
+        var enumerable = node.Nodes;
+        var temp = enumerable.ToArray();
+        var asyncEnumerable = temp.ToAsyncEnumerable();
+        return ServiceResult<IAsyncEnumerable<NodeState>>.Ok(asyncEnumerable);
+    }
+    async Task<ServiceResult> Update(NodePath path, IDictionary<string, string> attributes) {
         var result = await Get(path);
         if (result.Status != ServiceResultStatus.Ok || result.Value is null)
             return ServiceResult.From(result);
@@ -52,9 +56,8 @@ internal interface IGraphStorage
 
         return ServiceResult.Ok();
     }
-
-    Task<ServiceResult> Delete(NodeGlobalId path);
-    Task<ServiceResult> Connect(NodeGlobalId sourcePath, NodeGlobalId targetPath);
-    Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath);
+    Task<ServiceResult> Delete(NodePath path);
+    Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath);
+    Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath);
     Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node);
 }

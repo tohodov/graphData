@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
-using SymLinkStorage;
+using Storage;
 
 var builder = Host.CreateApplicationBuilder(args);
 

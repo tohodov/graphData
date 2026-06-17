@@ -2,10 +2,8 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Abstractions;
 using GraphData.BucketedFileStorage.Options;
-using GraphData.Core.Abstractions;
-using GraphData.Core.Models;
-using GraphData.Core.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -42,21 +40,19 @@ internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalo
         Directory.CreateDirectory(_connectionsRoot);
     }
 
-    public async Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parentId = null, IDictionary<string, string>? attributes = null)
+    public async Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodePath? path = null, IDictionary<string, string>? attributes = null)
     {
-        if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
-            return ServiceResult<NodeState>.BadRequest(validationError);
         StoredNode? parentNode = null;
-        if (parentId != null) {
-            parentNode = await FindNodeAsync(parentId.Value);
+        if (path != null) {
+            parentNode = await FindNodeAsync(path.Value);
             if(parentNode == null)
-                return ServiceResult<NodeState>.NotFound($"Parent node '{parentId}' was not found.");
+                return ServiceResult<NodeState>.NotFound($"Parent node '{path}' was not found.");
         }
         var created = await CreateNodeAsync(name, parentNode, attributes).ConfigureAwait(false);
         return ServiceResult<NodeState>.Ok(created);
     }
 
-    public async Task<ServiceResult<NodeState>> Get(NodeGlobalId path)
+    public async Task<ServiceResult<NodeState>> Get(NodePath path)
     {
         var node = await FindNodeAsync(path).ConfigureAwait(false);
         return node is null
@@ -64,7 +60,7 @@ internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalo
             : ServiceResult<NodeState>.Ok(node);
     }
 
-    public async Task<ServiceResult> Delete(NodeGlobalId path)
+    public async Task<ServiceResult> Delete(NodePath path)
     {
         var node = await FindNodeAsync(path).ConfigureAwait(false);
         if (node == null)
@@ -94,7 +90,7 @@ internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalo
         return ServiceResult.Ok();
     }
 
-    public async Task<ServiceResult> Connect(NodeGlobalId sourcePath, NodeGlobalId targetPath)
+    public async Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath)
     {
         if (sourcePath.SequenceEqual(targetPath))
             return ServiceResult.BadRequest("SourcePath and TargetPath must be different.");
@@ -116,7 +112,7 @@ internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalo
         return ServiceResult.Ok();
     }
 
-    public Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+    public Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath) =>
         Task.FromResult(ServiceResult.InternalServerError(new NotImplementedException().ToString()));
 
     public async Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node)
@@ -159,7 +155,7 @@ internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalo
         return document is null ? null : CreateNode(document);
     }
 
-    private async Task<StoredNode?> FindNodeAsync(NodeGlobalId query)
+    private async Task<StoredNode?> FindNodeAsync(NodePath query)
     {
         StoredNode? node = null;
         foreach (var part in query)
@@ -275,14 +271,6 @@ internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalo
         }
 
         return nodes;
-    }
-
-    public async Task<IReadOnlyCollection<NodeState>> GetRootNodesAsync()
-    {
-#pragma warning disable CS0618
-        var nodes = await GetAllNodesAsync().ConfigureAwait(false);
-#pragma warning restore CS0618
-        return nodes.Where(static node => IsRootNodeName(node.LocalId.ToString())).ToArray();
     }
 
     private async Task<NodeDocument?> ReadMetadataWithLockAsync(string nodeName)
@@ -495,9 +483,6 @@ internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalo
             ? subNodeName.ToString()
             : $"{parent.LocalId}/{subNodeName}";
     }
-
-    private static bool IsRootNodeName(string nodeName) =>
-        nodeName.IndexOfAny(['/', '\\']) < 0;
 
     private static IReadOnlyList<string> Order(string firstKey, string secondKey)
     {

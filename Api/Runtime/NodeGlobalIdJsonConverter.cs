@@ -1,6 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using GraphData.Core.Models;
+using Abstractions;
 
 namespace GraphData.Api.Runtime;
 

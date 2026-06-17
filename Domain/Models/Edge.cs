@@ -1,3 +1,5 @@
+using Abstractions;
+
 namespace GraphData.Core.Models;
 
 public class Edge {

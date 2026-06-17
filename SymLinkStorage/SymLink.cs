@@ -1,4 +1,4 @@
-﻿namespace SymLinkStorage;
+﻿namespace Storage;
 
 internal class SymLink {
     public required string Directory { get; init; }

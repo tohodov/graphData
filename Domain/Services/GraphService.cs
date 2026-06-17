@@ -1,4 +1,4 @@
-using GraphData.Core.Abstractions;
+using Abstractions;
 using GraphData.Core.Models;
 
 namespace GraphData.Core.Services;

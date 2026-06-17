@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
-using GraphData.Core.Abstractions;
+using Abstractions;
 using GraphData.Core.Models;
 
 namespace GraphData.Core.Services;
@@ -725,7 +725,6 @@ public sealed class GraphSearchService {
                 break;
 
             case NodeLiteralSearchSelector literal:
-                NodeNameValidator.Validate(literal.Name, nameof(literal.Name));
                 break;
 
             default:

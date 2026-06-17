@@ -1,4 +1,6 @@
-namespace GraphData.Core.Services;
+using System.Diagnostics.CodeAnalysis;
+
+namespace Abstractions;
 
 public enum ServiceResultStatus {
     Ok,
@@ -24,4 +26,6 @@ public sealed record ServiceResult<T>(ServiceResultStatus Status, T? Value = def
     public static ServiceResult<T> Conflict(string? error = null) => new(ServiceResultStatus.Conflict, Error: error);
     public static ServiceResult<T> InternalServerError(string? error = null) => new(ServiceResultStatus.InternalServerError, Error: error);
     public static ServiceResult<T> From<TOther>(ServiceResult<TOther> result) => new(result.Status, Error: result.Error);
+
+    public static implicit operator ServiceResult<T>(T value) => new(ServiceResultStatus.Ok, value);
 }

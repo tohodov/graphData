@@ -1,5 +1,5 @@
+using Abstractions;
 using GraphData.BucketedFileStorage.Options;
-using GraphData.Core.Abstractions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 

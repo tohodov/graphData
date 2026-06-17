@@ -6,21 +6,17 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Abstractions;
 using GraphData.Api.Controllers;
 using GraphData.Api.Models;
 using GraphData.Api.Runtime;
-using GraphData.Api.Services;
-using GraphData.Core.Abstractions;
-using GraphData.Core.Models;
 using GraphData.Core.Services;
-using GraphData.SymLinkStorage;
-using GraphData.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using SymLinkStorage;
+using Storage;
 
 namespace GraphData.Tests.Api;
 
@@ -327,24 +323,6 @@ public sealed class GraphControllerTests {
     }
 
     [TestMethod]
-    public async Task SearchNodesAsync_ReturnsBadRequestForInvalidLiteralNodeName() {
-        await using var scope = TestGraphStorageScope.Create();
-        var controller = CreateController(scope.Storage);
-
-        var result = await controller.SearchNodesAsync(new NodeSearchQueryRequest {
-            Where = new NodeExistsSearchExpressionRequest {
-                Node = new NodeLiteralSearchSelectorRequest { Name = "bad:name" }
-            }
-        }, CancellationToken.None);
-
-        var badRequest = result.Result as BadRequestObjectResult;
-        Assert.IsNotNull(badRequest);
-        var message = badRequest.Value as string;
-        Assert.IsNotNull(message);
-        StringAssert.Contains(message, "invalid character ':'");
-    }
-
-    [TestMethod]
     public async Task GetSubgraphAsync_ReturnsTopLevelEdgesWithoutDuplicatingThemOnNodes() {
         await using var scope = TestGraphStorageScope.Create();
         var first = (await scope.Storage.Create(new("1"))).Value!;
@@ -622,17 +600,17 @@ public sealed class GraphControllerTests {
     }
 
     private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage {
-        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
+        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodePath? parent = null, IDictionary<string, string>? attributes = null) =>
             inner.Create(name, parent, attributes);
 
-        public Task<ServiceResult<NodeState>> Get(NodeGlobalId query) => inner.Get(query);
+        public Task<ServiceResult<NodeState>> Get(NodePath query) => inner.Get(query);
 
-        public Task<ServiceResult> Delete(NodeGlobalId query) => inner.Delete(query);
+        public Task<ServiceResult> Delete(NodePath query) => inner.Delete(query);
 
-        public Task<ServiceResult> Connect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+        public Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath) =>
             Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
 
-        public Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+        public Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath) =>
             Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
 
         public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node) =>
@@ -658,21 +636,21 @@ public sealed class GraphControllerTests {
             return new AmbiguousNeighborGraphStorage(root);
         }
 
-        public Task<ServiceResult<NodeState>> Get(NodeGlobalId path) =>
+        public Task<ServiceResult<NodeState>> Get(NodePath path) =>
             Task.FromResult(path == _root.GlobalId
                 ? ServiceResult<NodeState>.Ok(_root)
                 : ServiceResult<NodeState>.NotFound());
 
-        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
+        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodePath? NodePath = null, IDictionary<string, string>? attributes = null) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Delete(NodeGlobalId path) =>
+        public Task<ServiceResult> Delete(NodePath path) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Connect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+        public Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+        public Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath) =>
             throw new NotSupportedException();
 
         public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node) =>

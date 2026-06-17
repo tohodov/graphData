@@ -1,3 +1,5 @@
+using Abstractions;
+
 namespace GraphData.Core.Models;
 
 public interface IGraphNodeType

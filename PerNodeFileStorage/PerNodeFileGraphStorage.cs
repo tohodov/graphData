@@ -2,9 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using GraphData.Core.Abstractions;
-using GraphData.Core.Models;
-using GraphData.Core.Services;
+using Abstractions;
 using GraphData.PerNodeFileStorage.Options;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -43,22 +41,19 @@ internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         Directory.CreateDirectory(_connectionsRoot);
     }
 
-    public async Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null)
+    public async Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodePath? path = null, IDictionary<string, string>? attributes = null)
     {
-        if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
-            return ServiceResult<NodeState>.BadRequest(validationError);
-
-        var parentNode = parent != null
-            ? await FindNodeAsync(parent.Value).ConfigureAwait(false)
+        var parentNode = path != null
+            ? await FindNodeAsync(path.Value).ConfigureAwait(false)
             : null;
-        if (parent != null && parentNode is null)
-            return ServiceResult<NodeState>.NotFound($"Parent node '{parent}' was not found.");
+        if (path != null && parentNode is null)
+            return ServiceResult<NodeState>.NotFound($"Parent node '{path}' was not found.");
 
         var created = await CreateNodeAsync(name, parentNode, attributes).ConfigureAwait(false);
         return ServiceResult<NodeState>.Ok(created);
     }
 
-    public async Task<ServiceResult<NodeState>> Get(NodeGlobalId path)
+    public async Task<ServiceResult<NodeState>> Get(NodePath path)
     {
         var node = await FindNodeAsync(path).ConfigureAwait(false);
         return node is null
@@ -66,7 +61,7 @@ internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             : ServiceResult<NodeState>.Ok(node);
     }
 
-    public async Task<ServiceResult> Delete(NodeGlobalId path)
+    public async Task<ServiceResult> Delete(NodePath path)
     {
         var node = await FindNodeAsync(path).ConfigureAwait(false) as StoredNode;
         if (node == null)
@@ -110,7 +105,7 @@ internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         return ServiceResult.Ok();
     }
 
-    public async Task<ServiceResult> Connect(NodeGlobalId sourcePath, NodeGlobalId targetPath)
+    public async Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath)
     {
         if (sourcePath.SequenceEqual(targetPath))
             return ServiceResult.BadRequest("SourcePath and TargetPath must be different.");
@@ -132,7 +127,7 @@ internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         return ServiceResult.Ok();
     }
 
-    public Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
+    public Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath) =>
         Task.FromResult(ServiceResult.InternalServerError(new NotImplementedException().ToString()));
 
     public async Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node)
@@ -181,7 +176,7 @@ internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         return document is null ? null : CreateNode(document);
     }
 
-    private async Task<StoredNode?> FindNodeAsync(NodeGlobalId path)
+    private async Task<StoredNode?> FindNodeAsync(NodePath path)
     {
         StoredNode? node = null;
         foreach (var part in path)
@@ -267,14 +262,6 @@ internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         }
 
         return nodes;
-    }
-
-    public async Task<IReadOnlyCollection<NodeState>> GetRootNodesAsync()
-    {
-#pragma warning disable CS0618
-        var nodes = await GetAllNodesAsync().ConfigureAwait(false);
-#pragma warning restore CS0618
-        return nodes.Where(static node => IsRootNodeName(node.LocalId.ToString())).ToArray();
     }
 
     private async Task<NodeDocument?> ReadMetadataWithLockAsync(string nodeName)
@@ -442,9 +429,6 @@ internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             ? subNodeName
             : $"{parent.LocalId}/{subNodeName}";
     }
-
-    private static bool IsRootNodeName(string nodeName) =>
-        nodeName.IndexOfAny(['/', '\\']) < 0;
 
     private static IEnumerable<string> Order(string first, string second)
     {

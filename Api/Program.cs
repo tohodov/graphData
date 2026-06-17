@@ -1,6 +1,6 @@
 using GraphData.Api.Runtime;
 using GraphData.Core.Extensions;
-using SymLinkStorage;
+using Storage;
 
 var builder = WebApplication.CreateBuilder(args);
 

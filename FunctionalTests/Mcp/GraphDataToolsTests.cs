@@ -1,6 +1,7 @@
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
 using GraphData.Mcp.Tools;

@@ -3,12 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using GraphData.Core.Abstractions;
-using GraphData.SymLinkStorage;
+using Abstractions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using SymLinkStorage;
+using Storage;
 
 namespace GraphData.Tests.Storage.Ntfs;
 

@@ -1,4 +1,4 @@
-namespace GraphData.Core.Services;
+namespace Storage;
 
 public static class NodeNameValidator {
     public const string AllowedCharactersDescription =

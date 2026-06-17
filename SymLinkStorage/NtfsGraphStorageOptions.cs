@@ -1,4 +1,4 @@
-namespace SymLinkStorage;
+namespace Storage;
 
 public sealed class NtfsGraphStorageOptions
 {
