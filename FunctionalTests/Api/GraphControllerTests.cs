@@ -622,10 +622,10 @@ public sealed class GraphControllerTests {
     }
 
     private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage {
-        public Task<ServiceResult<Node>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
+        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
             inner.Create(name, parent, attributes);
 
-        public Task<ServiceResult<Node>> Get(NodeGlobalId query) => inner.Get(query);
+        public Task<ServiceResult<NodeState>> Get(NodeGlobalId query) => inner.Get(query);
 
         public Task<ServiceResult> Delete(NodeGlobalId query) => inner.Delete(query);
 
@@ -635,7 +635,7 @@ public sealed class GraphControllerTests {
         public Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
             Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
 
-        public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node) =>
+        public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node) =>
             inner.GetConnectedNodesAsync(node);
     }
 
@@ -651,19 +651,19 @@ public sealed class GraphControllerTests {
             var first = new StaticNode(new("same"), new("left", "same"));
             var second = new StaticNode(new("same"), new("right", "same"));
             root.EdgeSnapshot = [
-                new Edge(new EdgeState(new Node(root), new Node(first))),
-                new Edge(new EdgeState(new Node(root), new Node(second)))
+                new EdgeState(root, first),
+                new EdgeState(root, second)
             ];
 
             return new AmbiguousNeighborGraphStorage(root);
         }
 
-        public Task<ServiceResult<Node>> Get(NodeGlobalId path) =>
+        public Task<ServiceResult<NodeState>> Get(NodeGlobalId path) =>
             Task.FromResult(path == _root.GlobalId
-                ? ServiceResult<Node>.Ok(new Node(_root))
-                : ServiceResult<Node>.NotFound());
+                ? ServiceResult<NodeState>.Ok(_root)
+                : ServiceResult<NodeState>.NotFound());
 
-        public Task<ServiceResult<Node>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
+        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
             throw new NotSupportedException();
 
         public Task<ServiceResult> Delete(NodeGlobalId path) =>
@@ -675,7 +675,7 @@ public sealed class GraphControllerTests {
         public Task<ServiceResult> Disconnect(NodeGlobalId sourcePath, NodeGlobalId targetPath) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node) =>
+        public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node) =>
             throw new NotSupportedException();
     }
 
@@ -684,11 +684,11 @@ public sealed class GraphControllerTests {
 
         public override NodeGlobalId GlobalId { get; } = globalId;
 
-        public ICollection<Edge> EdgeSnapshot { get; set; } = Array.Empty<Edge>();
+        public ICollection<EdgeState> EdgeSnapshot { get; set; } = Array.Empty<EdgeState>();
 
-        public override ICollection<Edge> Edges => EdgeSnapshot;
+        public override ICollection<EdgeState> Edges => EdgeSnapshot;
 
-        public override ICollection<Node> Nodes => Edges
+        public override ICollection<NodeState> Nodes => Edges
             .SelectMany(static edge => new[] { edge.Node1, edge.Node2 })
             .Where(node => node.GlobalId != GlobalId)
             .ToArray();

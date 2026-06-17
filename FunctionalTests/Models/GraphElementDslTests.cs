@@ -25,9 +25,11 @@ public sealed class GraphElementDslTests
     [TestMethod]
     public void TypeAndInstance_ShouldExposeBaseTypeIds()
     {
-        var typeNode = new TypeNode(new InMemoryNodeState("type-node"));
-        var instanceNode = new InstanceNode(new InMemoryNodeState("instance-node"));
-        var edgeState = new InMemoryEdgeState(typeNode, instanceNode);
+        var typeState = new InMemoryNodeState("type-node");
+        var instanceState = new InMemoryNodeState("instance-node");
+        var typeNode = new TypeNode(typeState);
+        var instanceNode = new InstanceNode(instanceState);
+        var edgeState = new InMemoryEdgeState(typeState, instanceState);
         var typeEdge = new TypeEdge(edgeState);
         var instanceEdge = new InstanceEdge(edgeState);
 
@@ -38,23 +40,23 @@ public sealed class GraphElementDslTests
         Assert.AreEqual(GraphBaseTypeIds.NodeType, typeNode.TypeId);
         Assert.AreEqual(GraphBaseTypeIds.EdgeType, typeEdge.TypeId);
         Assert.AreEqual(GraphBaseTypeIds.EdgeInstance, instanceEdge.TypeId);
-        Assert.AreSame(typeNode, typeEdge.Node1);
-        Assert.AreSame(instanceNode, typeEdge.Node2);
+        Assert.AreEqual(typeNode.GlobalId, typeEdge.Node1.GlobalId);
+        Assert.AreEqual(instanceNode.GlobalId, typeEdge.Node2.GlobalId);
     }
 
     private sealed class InMemoryNodeState(string name) : NodeState
     {
         public override NodeLocalId LocalId { get; } = new(name);
         public override NodeGlobalId GlobalId { get; } = new(name);
-        public override ICollection<Edge> Edges { get; } = Array.Empty<Edge>();
-        public override ICollection<Node> Nodes { get; } = Array.Empty<Node>();
+        public override ICollection<EdgeState> Edges { get; } = Array.Empty<EdgeState>();
+        public override ICollection<NodeState> Nodes { get; } = Array.Empty<NodeState>();
         public override IDictionary<string, string> Attributes { get; set; } =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
-    private sealed class InMemoryEdgeState(Node node1, Node node2) : EdgeState
+    private sealed class InMemoryEdgeState(NodeState node1, NodeState node2) : EdgeState
     {
-        public override Node Node1 { get; } = node1;
-        public override Node Node2 { get; } = node2;
+        public override NodeState Node1 { get; } = node1;
+        public override NodeState Node2 { get; } = node2;
     }
 }

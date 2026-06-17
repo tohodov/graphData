@@ -937,6 +937,7 @@ public sealed class GraphSearchService(IGraphStorage storage) {
             }
 
             var nodes = (await catalog.GetAllNodesAsync().ConfigureAwait(false))
+                .Select(static state => new Node(state))
                 .OrderBy(static node => node.LocalId)
                 .ToArray();
             var knownNodes = nodes
@@ -945,12 +946,13 @@ public sealed class GraphSearchService(IGraphStorage storage) {
             var connections = new Dictionary<string, Node[]>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var node in nodes) {
-                var connectedResult = await storage.GetConnectedNodesAsync(node).ConfigureAwait(false);
+                var connectedResult = await storage.GetConnectedNodesAsync(node.RequireState()).ConfigureAwait(false);
                 if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null) {
                     throw new InvalidOperationException(connectedResult.Error ?? $"Failed to read connections for node '{node.LocalId}'.");
                 }
 
                 connections[NormalizeNodeName(node.LocalId)] = connectedResult.Value
+                    .Select(static state => new Node(state))
                     .Where(connection => knownNodes.Contains(NormalizeNodeName(connection.LocalId)))
                     .OrderBy(static connection => connection.LocalId)
                     .ToArray();

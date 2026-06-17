@@ -25,7 +25,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             return ToJson(new {
                 found = true,
-                node = GraphResponseMapper.ToNodeResponse(result.Value)
+                node = GraphResponseMapper.ToNodeResponse(new Node(result.Value))
             });
         }
 
@@ -46,7 +46,7 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
         [Description("Optional string attributes for the node.")] Dictionary<string, string>? attributes = null) {
         var result = await _storage.Create(new NodeLocalId(localId), parentGlobalId is null ? null : new NodeGlobalId(parentGlobalId), attributes);
 
-        return ToMutationJson(result, "node");
+        return ToMutationJson(result, "node", static state => GraphResponseMapper.ToNodeResponse(new Node(state)));
     }
 
     [McpServerTool]
@@ -140,13 +140,13 @@ public sealed class GraphDataTools(IGraphStorage storage, GraphSearchService sea
         }
     }
 
-    private static string ToMutationJson<T>(ServiceResult<T> result, string valuePropertyName) {
+    private static string ToMutationJson<T>(ServiceResult<T> result, string valuePropertyName, Func<T, object>? map = null) {
         if (result.Status != ServiceResultStatus.Ok || result.Value is null)
             return ToJson(ToErrorResponse(result.Status, result.Error));
 
         return ToJson(new Dictionary<string, object?> {
             ["success"] = true,
-            [valuePropertyName] = result.Value
+            [valuePropertyName] = map is null ? result.Value : map(result.Value)
         });
     }
 

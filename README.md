@@ -16,6 +16,15 @@ graphData - исследовательский прототип графовой
 4. Tests
 5. Docs
 
+## Architecture
+
+Основная модель разделена на два нижних уровня:
+
+- `Abstractions` - минимальные контракты и состояния графа (`IGraphStorage`, `NodeState`, `EdgeState`, id-типы, `ServiceResult`). Реализации storage зависят только от этого уровня и не знают доменные `Node`/`Edge`.
+- `Domain` - доменная модель (`Node`, `Edge`, типы графовых элементов, query/search/subgraph-модели и доменные extension-операции поверх storage).
+
+Исполняемые входы (`Api`, `Mcp`) и тесты могут зависеть от обоих уровней. Storage-проекты (`SymLinkStorage`, `PerNodeFileStorage`, `BucketedFileStorage`) должны оставаться ниже домена и ссылаться только на `Abstractions`.
+
 ## Tests
 
 В репозитории есть одна тестовая сборка и отдельное консольное приложение для замеров:

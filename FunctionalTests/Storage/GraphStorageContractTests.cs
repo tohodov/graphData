@@ -44,7 +44,7 @@ public abstract partial class GraphStorageContractTests {
             { "type", "test" },
             { "created", DateTime.UtcNow.ToString("O") }
         });
-        return result.Value!;
+        return new Node(result.Value!);
     }
 }
 [TestCategory(nameof(IGraphStorage.Create))]
@@ -290,7 +290,7 @@ partial class GraphStorageContractTests {
         CollectionAssert.DoesNotContain(connections, node);
     }
 }
-[TestCategory(nameof(IGraphStorage.GetSubgraphAsync))]
+[TestCategory(nameof(GraphStorageDomainExtensions.GetSubgraphAsync))]
 partial class GraphStorageContractTests {
     [TestMethod]
     public async Task ShouldRespectDepth() {

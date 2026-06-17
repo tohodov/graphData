@@ -17,7 +17,9 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Abstractions\Abstractions.csproj" />
     <ProjectReference Include="..\Api\Api.csproj" />
+    <ProjectReference Include="..\Domain\Domain.csproj" />
     <ProjectReference Include="..\Mcp\Mcp.csproj" />
     <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
   </ItemGroup>

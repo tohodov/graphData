@@ -20,13 +20,13 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
     [HttpGet("nodes")]
     public async Task<ActionResult<NodeResponse>> GetNodeAsync([FromQuery] string[] globalId) {
         var result = await _storage.Get(new NodeGlobalId(globalId));
-        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
+        return ToActionResult<NodeState, NodeResponse>(result, static state => GraphResponseMapper.ToNodeResponse(new Node(state)));
     }
 
     [HttpGet("nodes/{globalId}/neighbor/{localId}")]
     public async Task<ActionResult<NodeResponse>> GetNeighborNodeAsync([FromRoute] string globalId, [FromRoute] string localId) {
         var result = await _storage.GetNeighbor(_storage.DeserializeGlobalId(globalId), new NodeLocalId(localId));
-        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
+        return ToActionResult<NodeState, NodeResponse>(result, static state => GraphResponseMapper.ToNodeResponse(new Node(state)));
     }
 
     [HttpPost("nodes")]
@@ -35,9 +35,9 @@ public sealed class GraphController(IGraphStorage storage, GraphSearchService se
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             var globalId = result.Value.GlobalId;
             var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { globalId }) ?? $"/api/graph/nodes?{string.Join('&', globalId.Select(static segment => $"globalId={Uri.EscapeDataString(segment)}"))}";
-            return Created(location, GraphResponseMapper.ToNodeResponse(result.Value));
+            return Created(location, GraphResponseMapper.ToNodeResponse(new Node(result.Value)));
         }
-        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
+        return ToActionResult<NodeState, NodeResponse>(result, static state => GraphResponseMapper.ToNodeResponse(new Node(state)));
     }
 
     [HttpPut("nodes")]

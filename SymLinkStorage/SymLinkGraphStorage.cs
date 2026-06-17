@@ -25,15 +25,15 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
             root.Create();
     }
 
-    public Task<ServiceResult<Node>> Create(NodeLocalId name, NodeGlobalId? parentId = null, IDictionary<string, string>? attributes = null) {
+    public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parentId = null, IDictionary<string, string>? attributes = null) {
         if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
-            return Task.FromResult(ServiceResult<Node>.BadRequest(validationError));
+            return Task.FromResult(ServiceResult<NodeState>.BadRequest(validationError));
 
         var parentNode = parentId != null
             ? FindNode(parentId.Value)
             : null;
         if (parentId != null && parentNode is null)
-            return Task.FromResult(ServiceResult<Node>.NotFound($"Parent node '{parentId}' was not found."));
+            return Task.FromResult(ServiceResult<NodeState>.NotFound($"Parent node '{parentId}' was not found."));
 
         NodeFileSystem node;
         if (parentNode is null)
@@ -44,17 +44,17 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         if (attributes != null)
             node.WriteMetadata(attributes);
 
-        return Task.FromResult(ServiceResult<Node>.Ok(node.AsNode));
+        return Task.FromResult(ServiceResult<NodeState>.Ok(node.AsState));
     }
 
-    public Task<ServiceResult<Node>> Get(NodeGlobalId path) {
+    public Task<ServiceResult<NodeState>> Get(NodeGlobalId path) {
         if (!TryValidatePath(path, "Node path", out var validationError))
-            return Task.FromResult(ServiceResult<Node>.BadRequest(validationError));
+            return Task.FromResult(ServiceResult<NodeState>.BadRequest(validationError));
 
         var node = FindNode(path);
         return Task.FromResult(node is null
-            ? ServiceResult<Node>.NotFound()
-            : ServiceResult<Node>.Ok(node.AsNode));
+            ? ServiceResult<NodeState>.NotFound()
+            : ServiceResult<NodeState>.Ok(node.AsState));
     }
 
     public Task<ServiceResult> Delete(NodeGlobalId path) {
@@ -65,7 +65,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         if (node is null)
             return Task.FromResult(ServiceResult.NotFound());
 
-        var connections = GetConnectedNodes(node.AsNode);
+        var connections = GetConnectedNodes(node.AsState);
         foreach (var connection in connections)
             DeleteLinkIfExists(Path.Combine(GetNodePath(connection), GetLinkName(node.LocalId)));
         DeleteDirectoryWithoutFollowingLinks(node.GetInfo());
@@ -121,36 +121,36 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Task.FromResult(ServiceResult.Ok());
     }
 
-    public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node) {
+    public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node) {
         var nodePath = GetNodePath(node);
         if (!Directory.Exists(nodePath))
-            return Task.FromResult(ServiceResult<IReadOnlyCollection<Node>>.NotFound());
+            return Task.FromResult(ServiceResult<IReadOnlyCollection<NodeState>>.NotFound());
 
-        return Task.FromResult(ServiceResult<IReadOnlyCollection<Node>>.Ok(GetConnectedNodes(node)));
+        return Task.FromResult(ServiceResult<IReadOnlyCollection<NodeState>>.Ok(GetConnectedNodes(node)));
     }
 
-    public Task<IReadOnlyCollection<Node>> GetRootNodesAsync() {
+    public Task<IReadOnlyCollection<NodeState>> GetRootNodesAsync() {
         if (!root.Exists)
-            return Task.FromResult<IReadOnlyCollection<Node>>(Array.Empty<Node>());
+            return Task.FromResult<IReadOnlyCollection<NodeState>>(Array.Empty<NodeState>());
 
-        var nodes = new List<Node>();
+        var nodes = new List<NodeState>();
         foreach (var directory in root.EnumerateDirectories()) {
             cancellationTokens.Token.ThrowIfCancellationRequested();
 
             if ((directory.Attributes & FileAttributes.ReparsePoint) != 0)
                 continue;
 
-            nodes.Add(new NodeFileSystem(directory, root.FullName, this).AsNode);
+            nodes.Add(new NodeFileSystem(directory, root.FullName, this).AsState);
         }
 
-        return Task.FromResult<IReadOnlyCollection<Node>>(nodes);
+        return Task.FromResult<IReadOnlyCollection<NodeState>>(nodes);
     }
 
-    public Task<IReadOnlyCollection<Node>> GetAllNodesAsync() {
+    public Task<IReadOnlyCollection<NodeState>> GetAllNodesAsync() {
         if (!root.Exists)
-            return Task.FromResult<IReadOnlyCollection<Node>>(Array.Empty<Node>());
+            return Task.FromResult<IReadOnlyCollection<NodeState>>(Array.Empty<NodeState>());
 
-        var nodes = new List<Node>();
+        var nodes = new List<NodeState>();
         var stack = new Stack<DirectoryInfo>();
         stack.Push(root);
 
@@ -164,13 +164,13 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
                 var relativePath = Path.GetRelativePath(root.FullName, directory.FullName);
                 if (!string.IsNullOrWhiteSpace(relativePath) && relativePath != ".")
-                    nodes.Add(new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), root.FullName, this).AsNode);
+                    nodes.Add(new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), root.FullName, this).AsState);
 
                 stack.Push(directory);
             }
         }
 
-        return Task.FromResult<IReadOnlyCollection<Node>>(nodes);
+        return Task.FromResult<IReadOnlyCollection<NodeState>>(nodes);
     }
 
     internal NodeFileSystem? GetInternal(NodeFileSystem? parent, NodeLocalId nodeId) {
@@ -216,7 +216,7 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         CreateLinkIfMissing(targetPath, sourcePath, left.LocalId);
     }
 
-    private IReadOnlyCollection<Node> GetConnectedNodes(Node node) {
+    private IReadOnlyCollection<NodeState> GetConnectedNodes(NodeState node) {
         return node.Edges
             .Select(edge => edge.Node1.GlobalId == node.GlobalId ? edge.Node2 : edge.Node1)
             .Where(neighbor => neighbor.GlobalId != node.GlobalId)
@@ -233,8 +233,8 @@ public sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return node.FolderPath;
     }
 
-    private string GetNodePath(Node node) {
-        return node.TryGetState<NodeFileSystemState>(out var fileSystemState)
+    private string GetNodePath(NodeState node) {
+        return node is NodeFileSystemState fileSystemState
             ? fileSystemState.Handle.FolderPath
             : GetNodePath(node.LocalId);
     }

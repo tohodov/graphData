@@ -7,8 +7,10 @@ public class Edge {
         State = state;
     }
 
-    public virtual Node Node1 => State.Node1;
-    public virtual Node Node2 => State.Node2;
+    public virtual Node Node1 => new(State.Node1);
+    public virtual Node Node2 => new(State.Node2);
 
     public virtual NodeGlobalId? TypeId => State.TypeId;
+
+    internal EdgeState RequireState() => State;
 }

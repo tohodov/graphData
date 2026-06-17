@@ -305,7 +305,7 @@ public sealed class GraphSearchFunctionalTests
                 laterCandidateWasRead = true;
                 throw new AssertFailedException("Search inspected a later candidate before yielding the first match.");
             });
-        var service = new GraphSearchService(new StreamingProbeStorage(new Node(first), new Node(laterCandidate)));
+        var service = new GraphSearchService(new StreamingProbeStorage(first, laterCandidate));
 
         await using var matches = service.SearchNodesStreamAsync(new NodeSearchQuery
         {
@@ -399,14 +399,15 @@ public sealed class GraphSearchFunctionalTests
         return new NodeLiteralSearchSelector { Name = name };
     }
 
-    private static async Task ConnectPath(IGraphStorage storage, Node first, params object[] path)
+    private static async Task ConnectPath(IGraphStorage storage, NodeState first, params object[] path)
     {
         var current = first;
         foreach (var segment in path)
         {
             var next = segment switch
             {
-                Node node => node,
+                NodeState node => node,
+                Node node when node.TryGetState<NodeState>(out var state) => state,
                 string name => (await storage.Create(new(name))).Value!,
                 _ => throw new ArgumentException("Path segment must be a node or a node name.", nameof(path))
             };
@@ -416,22 +417,22 @@ public sealed class GraphSearchFunctionalTests
         }
     }
 
-    private sealed class StreamingProbeStorage(params Node[] nodes) : IGraphStorage, IGraphNodeCatalog
+    private sealed class StreamingProbeStorage(params NodeState[] nodes) : IGraphStorage, IGraphNodeCatalog
     {
-        public Task<IReadOnlyCollection<Node>> GetAllNodesAsync()
+        public Task<IReadOnlyCollection<NodeState>> GetAllNodesAsync()
         {
-            return Task.FromResult<IReadOnlyCollection<Node>>(nodes);
+            return Task.FromResult<IReadOnlyCollection<NodeState>>(nodes);
         }
 
-        public Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(Node node)
+        public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node)
         {
-            return Task.FromResult(ServiceResult<IReadOnlyCollection<Node>>.Ok(Array.Empty<Node>()));
+            return Task.FromResult(ServiceResult<IReadOnlyCollection<NodeState>>.Ok(Array.Empty<NodeState>()));
         }
 
-        public Task<ServiceResult<Node>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
+        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeGlobalId? parent = null, IDictionary<string, string>? attributes = null) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult<Node>> Get(NodeGlobalId path) =>
+        public Task<ServiceResult<NodeState>> Get(NodeGlobalId path) =>
             throw new NotSupportedException();
 
         public Task<ServiceResult> Delete(NodeGlobalId path) =>
@@ -459,9 +460,9 @@ public sealed class GraphSearchFunctionalTests
 
         public override NodeGlobalId GlobalId { get; }
 
-        public override ICollection<Edge> Edges { get; } = Array.Empty<Edge>();
+        public override ICollection<EdgeState> Edges { get; } = Array.Empty<EdgeState>();
 
-        public override ICollection<Node> Nodes { get; } = Array.Empty<Node>();
+        public override ICollection<NodeState> Nodes { get; } = Array.Empty<NodeState>();
 
         public override IDictionary<string, string> Attributes
         {

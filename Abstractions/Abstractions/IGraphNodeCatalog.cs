@@ -4,7 +4,7 @@ namespace GraphData.Core.Abstractions;
 
 public interface IGraphNodeCatalog
 {
-    async Task<IReadOnlyCollection<Node>> GetRootNodesAsync() {
+    async Task<IReadOnlyCollection<NodeState>> GetRootNodesAsync() {
 #pragma warning disable CS0618
         var nodes = await GetAllNodesAsync();
 #pragma warning restore CS0618
@@ -14,5 +14,5 @@ public interface IGraphNodeCatalog
     }
 
     [Obsolete("нельзя читать весь граф")]
-    Task<IReadOnlyCollection<Node>> GetAllNodesAsync();//TODO удалить, нельзя читать весь граф
+    Task<IReadOnlyCollection<NodeState>> GetAllNodesAsync();//TODO удалить, нельзя читать весь граф
 }
