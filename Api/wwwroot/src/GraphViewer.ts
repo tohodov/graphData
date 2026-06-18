@@ -1129,7 +1129,12 @@ export class GraphViewer {
 
   removeLocalNode(name, selectFallback = true, pruneEdges = true) {
   const wasSelected = this.graph.selectedName === name;
-  this.graph.loaded.delete(name);
+  const node = this.graph.loaded.get(name);
+  if (pruneEdges) {
+    this.graph.loaded.delete(name);
+  } else if (node) {
+    node.showed = false;
+  }
   this.graph.removeSelectedName?.(name);
   if (pruneEdges) {
     this.graph.positions.delete(name);

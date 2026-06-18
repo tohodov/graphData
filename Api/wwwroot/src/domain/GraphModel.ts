@@ -1,7 +1,148 @@
 import { defaultBasis } from "./graphAttributes.js";
 import { GraphEdge } from "./GraphEdge.js";
-import { GraphNode } from "./GraphNode.js";
+import { GraphNode, type GraphPoint } from "./GraphNode.js";
 import { GraphProjection } from "./GraphProjection.js";
+
+class GraphNodePositionMap {
+  private readonly nodes: Map<string, GraphNode>;
+  private readonly pending: Map<string, GraphPoint>;
+
+  constructor(nodes: Map<string, GraphNode>) {
+    this.nodes = nodes;
+    this.pending = new Map();
+  }
+
+  get size(): number {
+    return [...this.entries()].length;
+  }
+
+  get(name: string): GraphPoint | undefined {
+    return this.attach(name) ?? undefined;
+  }
+
+  has(name: string): boolean {
+    return this.attach(name) !== null;
+  }
+
+  set(name: string, position: GraphPoint): this {
+    const node = this.nodes.get(name);
+    if (node) {
+      this.setNodePosition(node, position);
+      this.pending.delete(name);
+    } else {
+      this.pending.set(name, { x: position.x, y: position.y });
+    }
+
+    return this;
+  }
+
+  delete(name: string): boolean {
+    const node = this.nodes.get(name);
+    const hadPosition = Boolean((node && this.nodeHasPosition(node)) || this.pending.has(name));
+    if (node) {
+      this.clearNodePosition(node);
+    }
+    this.pending.delete(name);
+    return hadPosition;
+  }
+
+  clear(): void {
+    for (const node of this.nodes.values()) {
+      this.clearNodePosition(node);
+    }
+    this.pending.clear();
+  }
+
+  *keys(): IterableIterator<string> {
+    const emitted = new Set<string>();
+    for (const [name, node] of this.nodes.entries()) {
+      if (this.nodeHasPosition(node)) {
+        emitted.add(name);
+        yield name;
+      }
+    }
+    for (const name of this.pending.keys()) {
+      if (!emitted.has(name)) {
+        yield name;
+      }
+    }
+  }
+
+  *values(): IterableIterator<GraphPoint> {
+    for (const [, position] of this.entries()) {
+      yield position;
+    }
+  }
+
+  *entries(): IterableIterator<[string, GraphPoint]> {
+    for (const [name, node] of this.nodes.entries()) {
+      const position = this.attach(name);
+      if (position) {
+        yield [name, position];
+      }
+    }
+
+    for (const [name, position] of this.pending.entries()) {
+      if (!this.nodes.has(name)) {
+        yield [name, position];
+      }
+    }
+  }
+
+  forEach(callback: (value: GraphPoint, key: string, map: GraphNodePositionMap) => void, thisArg?: unknown): void {
+    for (const [name, position] of this.entries()) {
+      callback.call(thisArg, position, name, this);
+    }
+  }
+
+  [Symbol.iterator](): IterableIterator<[string, GraphPoint]> {
+    return this.entries();
+  }
+
+  private attach(name: string): GraphPoint | null {
+    const node = this.nodes.get(name);
+    if (!node) {
+      return this.pending.get(name) ?? null;
+    }
+
+    const pendingPosition = this.pending.get(name);
+    if (!this.nodeHasPosition(node) && pendingPosition) {
+      this.setNodePosition(node, pendingPosition);
+    }
+    this.pending.delete(name);
+
+    return this.nodePosition(node);
+  }
+
+  private nodePosition(node: GraphNode): GraphPoint | null {
+    const position = (node as any).position;
+    return position && Number.isFinite(position.x) && Number.isFinite(position.y)
+      ? position
+      : null;
+  }
+
+  private nodeHasPosition(node: GraphNode): boolean {
+    return typeof (node as any).hasPosition === "function"
+      ? (node as any).hasPosition()
+      : this.nodePosition(node) !== null;
+  }
+
+  private setNodePosition(node: GraphNode, position: GraphPoint): void {
+    if (typeof (node as any).setPosition === "function") {
+      (node as any).setPosition(position);
+    } else {
+      (node as any).position = { x: position.x, y: position.y };
+    }
+  }
+
+  private clearNodePosition(node: GraphNode): void {
+    if (typeof (node as any).clearPosition === "function") {
+      (node as any).clearPosition();
+    } else {
+      (node as any).position = null;
+    }
+  }
+}
 
 export class GraphModel {
   rootName: string | null;
@@ -9,7 +150,7 @@ export class GraphModel {
   selectedNames: Set<string>;
   loaded: Map<string, GraphNode>;
   parentByNode: Map<string, string>;
-  positions: Map<string, { x: number; y: number }>;
+  positions: GraphNodePositionMap;
   velocities: Map<string, { x: number; y: number }>;
   view: { x: number; y: number; scale: number };
   dragging: any;
@@ -24,7 +165,7 @@ export class GraphModel {
     this.selectedNames = new Set();
     this.loaded = new Map();
     this.parentByNode = new Map();
-    this.positions = new Map();
+    this.positions = new GraphNodePositionMap(this.loaded);
     this.velocities = new Map();
     this.view = { x: 0, y: 0, scale: 1 };
     this.dragging = null;

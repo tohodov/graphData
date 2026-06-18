@@ -2,6 +2,14 @@ import { graphElementAttribute, graphKindAttribute, graphTypeNameAttribute } fro
 import { GraphEdge } from "./GraphEdge.js";
 import { GraphId } from "./GraphId.js";
 
+export type GraphPoint = { x: number; y: number };
+
+function normalizePoint(value: GraphPoint | null | undefined): GraphPoint | null {
+  return value && Number.isFinite(value.x) && Number.isFinite(value.y)
+    ? { x: value.x, y: value.y }
+    : null;
+}
+
 export class GraphNode {
   globalId: string;
   name: string;
@@ -11,7 +19,28 @@ export class GraphNode {
   edges: GraphEdge[];
   collapsed: boolean;
   showed: boolean;
-  constructor({ globalId, name, localId, displayName, attributes = {}, edges = [], collapsed = false, showed = true }: { globalId?: string; name?: string; localId?: string; displayName?: string; attributes?: Record<string, string>; edges?: any[]; collapsed?: boolean; showed?: boolean }) {
+  position: GraphPoint | null;
+  constructor({
+    globalId,
+    name,
+    localId,
+    displayName,
+    attributes = {},
+    edges = [],
+    collapsed = false,
+    showed = true,
+    position = null
+  }: {
+    globalId?: string;
+    name?: string;
+    localId?: string;
+    displayName?: string;
+    attributes?: Record<string, string>;
+    edges?: any[];
+    collapsed?: boolean;
+    showed?: boolean;
+    position?: GraphPoint | null;
+  }) {
     this.globalId = globalId ?? name;
     this.name = this.globalId;
     this.localId = localId ?? GraphId.localId(this.globalId);
@@ -20,6 +49,7 @@ export class GraphNode {
     this.edges = edges.map(edge => GraphEdge.from(edge));
     this.collapsed = Boolean(collapsed);
     this.showed = showed !== false;
+    this.position = normalizePoint(position);
   }
 
   static fromApi(node: any): GraphNode {
@@ -40,6 +70,21 @@ export class GraphNode {
     this.edges = GraphEdge.mergeMany(this.edges, next.edges);
     this.collapsed = this.collapsed || next.collapsed;
     this.showed = this.showed || next.showed;
+    this.position = next.position ?? this.position;
+    return this;
+  }
+
+  hasPosition(): boolean {
+    return this.position !== null;
+  }
+
+  setPosition(position: GraphPoint): GraphNode {
+    this.position = normalizePoint(position);
+    return this;
+  }
+
+  clearPosition(): GraphNode {
+    this.position = null;
     return this;
   }
 
@@ -101,6 +146,7 @@ export class GraphNode {
       attributes: { ...this.attributes },
       collapsed: this.collapsed,
       showed: this.showed,
+      position: this.position ? { ...this.position } : null,
       ...extra
     };
   }

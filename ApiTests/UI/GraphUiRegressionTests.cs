@@ -115,6 +115,39 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphModel_PositionMapStoresCoordinatesOnNodes() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            model.loaded.set("a", new GraphNode({ globalId: "a" }));
+            model.positions.set("a", { x: 10, y: 20 });
+
+            model.positions.set("b", { x: -5, y: 7 });
+            model.loaded.set("b", new GraphNode({ globalId: "b" }));
+            const pendingPosition = model.positions.get("b");
+            const pendingAttachedToNode = pendingPosition === model.loaded.get("b").position;
+
+            const deleted = model.positions.delete("a");
+            model.positions.set("a", { x: 1, y: 2 });
+            model.positions.clear();
+
+            globalThis.__result = model.loaded.get("a").position === null
+              && deleted === true
+              && pendingAttachedToNode
+              && pendingPosition.x === -5
+              && pendingPosition.y === 7
+              && !model.positions.has("a")
+              && !model.positions.has("b");
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphViewer_LoadedButNotShowedNeighborsRemainExpandableUntilShown() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
@@ -166,6 +199,7 @@ public sealed class GraphUiRegressionTests {
             viewer.handleEdgeControl(before.edges[0], control);
             const after = model.visibleGraph();
             const position = model.positions.get("b");
+            const nodePosition = model.loaded.get("b").position;
 
             globalThis.__debug = {
               hasLoadedHiddenNode: model.hasNode("b"),
@@ -188,7 +222,8 @@ public sealed class GraphUiRegressionTests {
               renderedTypes: calls.includes("types"),
               statusUpdated: calls.includes("status:Развернуто узлов: 2"),
               seededX: Math.abs(position.x - 10) < 0.000001,
-              seededY: Math.abs(position.y + 184) < 0.000001
+              seededY: Math.abs(position.y + 184) < 0.000001,
+              positionOwnedByNode: nodePosition === position
             };
             globalThis.__result = Object.values(globalThis.__debug).every(Boolean);
             """);
@@ -253,7 +288,9 @@ public sealed class GraphUiRegressionTests {
             globalThis.__result = root.showed === true
               && types.showed === false
               && model.positions.has("root")
+              && root.position === model.positions.get("root")
               && !model.positions.has("root/types")
+              && types.position === null
               && graph.nodes.length === 1
               && graph.nodes[0].name === "root"
               && graph.edges.length === 1
@@ -724,8 +761,10 @@ public sealed class GraphUiRegressionTests {
             const after = snapshotRemainingPositions();
 
             globalThis.__result = before === after
-              && !model.loaded.has("child")
+              && model.loaded.has("child")
+              && model.loaded.get("child").showed === false
               && model.positions.has("child")
+              && model.loaded.get("child").position === model.positions.get("child")
               && model.selectedName === "root"
               && renderCalls === 1
               && stopCalls === 1
