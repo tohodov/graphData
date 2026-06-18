@@ -186,6 +186,77 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphViewer_BackgroundLoadKeepsOnlyPositionedNodesShowed() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
+            ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
+
+        engine.Execute(
+            """
+            const edge = new GraphEdge({
+              sourceGlobalId: "root",
+              targetGlobalId: "root/types",
+              sourceLocalId: "root",
+              targetLocalId: "types",
+              neighborLocalId: "types"
+            });
+            const model = new GraphModel();
+            model.rootName = "root";
+            model.loaded.set("root", new GraphNode({
+              globalId: "root",
+              displayName: "Root",
+              showed: true,
+              edges: [edge]
+            }));
+            model.loaded.set("root/types", new GraphNode({
+              globalId: "root/types",
+              displayName: "Types",
+              showed: true,
+              edges: [edge]
+            }));
+            model.positions.set("root", { x: 10, y: 20 });
+            model.velocities.set("root", { x: 0, y: 0 });
+
+            const viewer = Object.create(GraphViewer.prototype);
+            viewer.graph = model;
+            viewer.normalizeNodeResponse = node => GraphNode.fromApi(node);
+            viewer.normalizeEdgeResponse = edge => GraphEdge.fromApi(edge);
+            viewer.mergeEdges = (left, right) => GraphEdge.mergeMany(left, right);
+            viewer.renderTypeControls = () => {};
+
+            viewer.mergeSubgraphIntoViewer({
+              nodes: [
+                { globalId: "root", displayName: "Root", edges: [edge] },
+                { globalId: "root/types", displayName: "Types", edges: [edge] }
+              ],
+              edges: [edge]
+            }, { select: false, showed: false });
+
+            const root = model.loaded.get("root");
+            const types = model.loaded.get("root/types");
+            const graph = model.visibleGraph();
+            const control = graph.edges[0].controls[0];
+
+            globalThis.__result = root.showed === true
+              && types.showed === false
+              && model.positions.has("root")
+              && !model.positions.has("root/types")
+              && graph.nodes.length === 1
+              && graph.nodes[0].name === "root"
+              && graph.edges.length === 1
+              && control.action === "load-neighbor"
+              && control.anchorName === "root"
+              && control.otherName === "root/types"
+              && control.neighborLocalId === "types"
+              && Number.isFinite(control.angle);
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphModel_ProjectedEdgeStateIsStoredOnRelationObject() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),

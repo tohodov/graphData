@@ -372,9 +372,12 @@ export class GraphViewer {
   storeNodeExpansion(expansion, fromName, options: any = {}) {
   const select = options.select ?? true;
   const incoming = GraphNode.from(expansion);
-  incoming.showed = options.showed !== false;
   const existing = this.graph.loaded.get(incoming.name);
+  const shouldShow = options.showed !== false
+    || Boolean(existing && existing.showed !== false && this.graph.positions.has(incoming.name));
+  incoming.showed = shouldShow;
   const stored = existing ? this.mergeNodeResponses(existing, incoming) : incoming;
+  stored.showed = shouldShow;
   this.graph.loaded.set(incoming.name, stored);
 
   if (!fromName && this.graph.rootName && !this.graph.loaded.has(this.graph.rootName)) {
@@ -1785,6 +1788,10 @@ export class GraphViewer {
 
   refreshEdgeAngles() {
   for (const node of this.graph.loaded.values()) {
+    if (node.showed === false) {
+      continue;
+    }
+
     this.assignEdgeAngles(node);
   }
 
