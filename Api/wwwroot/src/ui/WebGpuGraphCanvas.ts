@@ -68,6 +68,8 @@ export class WebGpuGraphCanvas {
     this.dragging = null;
     this.pointer = null;
     this.simulationHandle = null;
+    this.resizeObserver = null;
+    this.resizePending = false;
 
     this.bindRendererSelect();
     void this.initializeRenderer();
@@ -316,6 +318,8 @@ export class WebGpuGraphCanvas {
   }
 
   bindGraphSurface() {
+    this.bindCanvasResizeObserver();
+
     this.canvas.addEventListener("pointerdown", event => {
       if (event.button !== 0) {
         return;
@@ -430,6 +434,15 @@ export class WebGpuGraphCanvas {
     }, { passive: false });
 
     this.window.addEventListener("resize", () => this.applyView());
+  }
+
+  bindCanvasResizeObserver() {
+    if (this.resizeObserver || typeof this.window.ResizeObserver !== "function") {
+      return;
+    }
+
+    this.resizeObserver = new this.window.ResizeObserver(() => this.scheduleResizeRefresh());
+    this.resizeObserver.observe(this.canvas);
   }
 
   render() {
@@ -559,6 +572,18 @@ export class WebGpuGraphCanvas {
   applyView() {
     this.renderLabels();
     this.requestDraw();
+  }
+
+  scheduleResizeRefresh() {
+    if (this.resizePending) {
+      return;
+    }
+
+    this.resizePending = true;
+    this.window.requestAnimationFrame(() => {
+      this.resizePending = false;
+      this.applyView();
+    });
   }
 
   screenToGraph(x, y) {
