@@ -1123,12 +1123,8 @@ export class GraphViewer {
     return false;
   }
 
-  if (this.graph.parentByNode.has(name)) {
-    if (this.isEdgeElementNode(name)) {
-      return false;
-    }
-
-    return true;
+  if (this.isEdgeElementNode(name)) {
+    return false;
   }
 
   for (const parent of this.graph.parentByNode.values()) {

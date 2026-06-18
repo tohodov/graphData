@@ -354,17 +354,24 @@ public sealed class GraphUiRegressionTests {
               rootName: "root",
               loaded: new Map([
                 ["root", { globalId: "root", attributes: {} }],
-                ["node-child", { globalId: "node-child", attributes: { [graphElementAttribute]: "node" } }],
-                ["edge-child", { globalId: "edge-child", attributes: { [graphElementAttribute]: "edge" } }]
+                ["node-leaf", { globalId: "node-leaf", attributes: { [graphElementAttribute]: "node" } }],
+                ["node-branch", { globalId: "node-branch", attributes: { [graphElementAttribute]: "node" } }],
+                ["node-grandchild", { globalId: "node-grandchild", attributes: { [graphElementAttribute]: "node" } }],
+                ["edge-branch", { globalId: "edge-branch", attributes: { [graphElementAttribute]: "edge" } }],
+                ["edge-grandchild", { globalId: "edge-grandchild", attributes: { [graphElementAttribute]: "node" } }]
               ]),
               parentByNode: new Map([
-                ["node-child", "root"],
-                ["edge-child", "root"]
+                ["node-leaf", "root"],
+                ["node-branch", "root"],
+                ["node-grandchild", "node-branch"],
+                ["edge-branch", "root"],
+                ["edge-grandchild", "edge-branch"]
               ])
             };
 
-            globalThis.__result = viewer.canCollapseNode("node-child") === true
-              && viewer.canCollapseNode("edge-child") === false;
+            globalThis.__result = viewer.canCollapseNode("node-leaf") === false
+              && viewer.canCollapseNode("node-branch") === true
+              && viewer.canCollapseNode("edge-branch") === false;
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
