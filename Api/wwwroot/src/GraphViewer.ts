@@ -1154,6 +1154,12 @@ export class GraphViewer {
     };
   }
 
+  if (anchorLoaded && otherLoaded
+      && this.edgeTreeChildName(normalized, anchorName)
+      && !this.graph.isEdgeCollapsed(normalized)) {
+    return null;
+  }
+
   if (anchorLoaded && this.graph.isEdgeCollapsed(normalized)) {
     return {
       kind: "expand",
@@ -1173,6 +1179,17 @@ export class GraphViewer {
   }
 
   return null;
+
+  }
+
+  edgeTreeChildName(edge, anchorName) {
+  const normalized = GraphEdge.from(edge);
+  const otherName = normalized.sourceGlobalId === anchorName ? normalized.targetGlobalId : normalized.sourceGlobalId;
+  return this.graph.parentByNode.get(otherName) === anchorName
+    ? otherName
+    : this.graph.parentByNode.get(anchorName) === otherName && anchorName !== this.graph.rootName
+      ? anchorName
+      : null;
 
   }
 
@@ -1237,11 +1254,7 @@ export class GraphViewer {
 
   collapseEdge(edge, anchorName) {
   const otherName = edge.sourceGlobalId === anchorName ? edge.targetGlobalId : edge.sourceGlobalId;
-  const childName = this.graph.parentByNode.get(otherName) === anchorName
-    ? otherName
-    : this.graph.parentByNode.get(anchorName) === otherName && anchorName !== this.graph.rootName
-      ? anchorName
-      : null;
+  const childName = this.edgeTreeChildName(edge, anchorName);
 
   if (childName) {
     this.collapseNode(childName);

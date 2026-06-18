@@ -316,11 +316,13 @@ public sealed class GraphUiRegressionTests {
 
             const treeFromParent = makeViewer(["a", "b"]);
             treeFromParent.viewer.graph.parentByNode.set("b", "a");
+            const parentTreeControl = treeFromParent.viewer.edgeEndpointControl(edge, "a");
             treeFromParent.viewer.handleEndpointClick(edge, "a");
             const parentEndCollapsesChild = treeFromParent.calls.includes("collapseNode:b");
 
             const treeFromChild = makeViewer(["a", "b"]);
             treeFromChild.viewer.graph.parentByNode.set("b", "a");
+            const childTreeControl = treeFromChild.viewer.edgeEndpointControl(edge, "b");
             treeFromChild.viewer.handleEndpointClick(edge, "b");
             const childEndCollapsesChild = treeFromChild.calls.includes("collapseNode:b");
 
@@ -330,6 +332,8 @@ public sealed class GraphUiRegressionTests {
               && collapsedControl.kind === "expand"
               && frontierClickLoadsNeighbor
               && frontierControl.kind === "expand"
+              && parentTreeControl === null
+              && childTreeControl === null
               && parentEndCollapsesChild
               && childEndCollapsesChild;
             """);
