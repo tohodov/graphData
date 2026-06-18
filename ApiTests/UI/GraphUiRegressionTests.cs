@@ -65,6 +65,56 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphModel_VisibleEdgesOwnEndpointControls() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const edge = new GraphEdge({
+              sourceGlobalId: "a",
+              targetGlobalId: "b",
+              sourceLocalId: "a",
+              targetLocalId: "b-local"
+            });
+
+            function loadedNode(name, edges) {
+              return {
+                name,
+                displayName: name,
+                edges,
+                toViewNode() { return { name, globalId: name, displayName: name }; }
+              };
+            }
+
+            const loadedModel = new GraphModel();
+            loadedModel.loaded.set("a", loadedNode("a", [edge]));
+            loadedModel.loaded.set("b", loadedNode("b", [edge]));
+            const loadedControls = loadedModel.visibleGraph().edges[0].controls;
+            loadedModel.collapseEdge(edge);
+            const collapsedControls = loadedModel.visibleGraph().edges[0].controls;
+
+            edge.collapsed = false;
+            const frontierModel = new GraphModel();
+            frontierModel.loaded.set("a", loadedNode("a", [edge]));
+            const frontierControls = frontierModel.visibleGraph().edges[0].controls;
+
+            globalThis.__result = loadedControls.length === 2
+              && loadedControls.every(control => control.action === "collapse-edge")
+              && loadedControls.map(control => control.anchorName).sort().join(",") === "a,b"
+              && collapsedControls.length === 2
+              && collapsedControls.every(control => control.action === "expand-edge")
+              && frontierControls.length === 1
+              && frontierControls[0].action === "load-neighbor"
+              && frontierControls[0].anchorName === "a"
+              && frontierControls[0].neighborLocalId === "b-local";
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphModel_ProjectedEdgeStateIsStoredOnRelationObject() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
@@ -254,6 +304,7 @@ public sealed class GraphUiRegressionTests {
     public void GraphViewer_EdgeEndpointClicksCollapseExpandAndLoadByState() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
             ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
 
         engine.Execute(
@@ -268,22 +319,27 @@ public sealed class GraphUiRegressionTests {
             function makeViewer(loadedNames) {
               const calls = [];
               const viewer = Object.create(GraphViewer.prototype);
-              viewer.graph = {
-                loaded: new Map(loadedNames.map(name => [name, {}])),
-                parentByNode: new Map(),
-                rootName: "a",
-                isEdgeCollapsed(edge) { return edge.collapsed === true; },
-                collapseEdge(edge) {
-                  edge.collapsed = true;
-                  calls.push("collapse:" + edge.key);
-                },
-                expandEdge(edge) {
-                  edge.collapsed = false;
-                  calls.push("expand:" + edge.key);
-                }
+              const model = new GraphModel();
+              model.rootName = "a";
+              loadedNames.forEach(name => model.loaded.set(name, {
+                name,
+                displayName: name,
+                edges: [],
+                toViewNode() { return { name, displayName: name }; }
+              }));
+              const collapseEdge = model.collapseEdge.bind(model);
+              model.collapseEdge = edge => {
+                collapseEdge(edge);
+                calls.push("collapse:" + edge.key);
               };
+              const expandEdge = model.expandEdge.bind(model);
+              model.expandEdge = edge => {
+                expandEdge(edge);
+                calls.push("expand:" + edge.key);
+              };
+              viewer.graph = model;
               viewer.loadNeighbor = (anchorName, neighborLocalId) => calls.push("load:" + anchorName + ":" + neighborLocalId);
-              viewer.collapseNode = name => calls.push("collapseNode:" + name);
+              viewer.collapseTreeBranch = name => calls.push("collapseTreeBranch:" + name);
               viewer.render = () => calls.push("render");
               viewer.runSimulation = frames => calls.push("simulation:" + frames);
               viewer.setStatus = message => calls.push("status:" + message);
@@ -292,15 +348,15 @@ public sealed class GraphUiRegressionTests {
             }
 
             const loaded = makeViewer(["a", "b"]);
-            const loadedControl = loaded.viewer.edgeEndpointControl(edge, "a");
-            loaded.viewer.handleEndpointClick(edge, "a");
+            const loadedControl = loaded.viewer.graph.edgeEndpointControl(edge, "a");
+            loaded.viewer.handleEdgeControl(edge, loadedControl);
             const loadedClickCollapsesEdge = loaded.calls.includes("collapse:" + edge.key)
               && edge.collapsed === true
               && !loaded.calls.some(call => call.startsWith("load:"));
 
             const collapsed = makeViewer(["a", "b"]);
-            const collapsedControl = collapsed.viewer.edgeEndpointControl(edge, "a");
-            collapsed.viewer.handleEndpointClick(edge, "a");
+            const collapsedControl = collapsed.viewer.graph.edgeEndpointControl(edge, "a");
+            collapsed.viewer.handleEdgeControl(edge, collapsedControl);
             const collapsedClickExpandsOnly = collapsed.calls.includes("expand:" + edge.key)
               && edge.collapsed === false
               && collapsed.calls.includes("render")
@@ -308,23 +364,23 @@ public sealed class GraphUiRegressionTests {
 
             edge.collapsed = true;
             const frontier = makeViewer(["a"]);
-            const frontierControl = frontier.viewer.edgeEndpointControl(edge, "a");
-            frontier.viewer.handleEndpointClick(edge, "a");
+            const frontierControl = frontier.viewer.graph.edgeEndpointControl(edge, "a");
+            frontier.viewer.handleEdgeControl(edge, frontierControl);
             const frontierClickLoadsNeighbor = frontier.calls.includes("load:a:b-local")
               && !frontier.calls.some(call => call.startsWith("collapse:"));
             edge.collapsed = false;
 
             const treeFromParent = makeViewer(["a", "b"]);
             treeFromParent.viewer.graph.parentByNode.set("b", "a");
-            const parentTreeControl = treeFromParent.viewer.edgeEndpointControl(edge, "a");
-            treeFromParent.viewer.handleEndpointClick(edge, "a");
-            const parentEndCollapsesChild = treeFromParent.calls.includes("collapseNode:b");
+            const parentTreeControl = treeFromParent.viewer.graph.edgeEndpointControl(edge, "a");
+            treeFromParent.viewer.handleEdgeControl(edge, parentTreeControl);
+            const parentEndCollapsesChild = treeFromParent.calls.includes("collapseTreeBranch:b");
 
             const treeFromChild = makeViewer(["a", "b"]);
             treeFromChild.viewer.graph.parentByNode.set("b", "a");
-            const childTreeControl = treeFromChild.viewer.edgeEndpointControl(edge, "b");
-            treeFromChild.viewer.handleEndpointClick(edge, "b");
-            const childEndCollapsesChild = treeFromChild.calls.includes("collapseNode:b");
+            const childTreeControl = treeFromChild.viewer.graph.edgeEndpointControl(edge, "b");
+            treeFromChild.viewer.handleEdgeControl(edge, childTreeControl);
+            const childEndCollapsesChild = treeFromChild.calls.includes("collapseTreeBranch:b");
 
             globalThis.__result = loadedClickCollapsesEdge
               && loadedControl.kind === "collapse"
@@ -336,42 +392,6 @@ public sealed class GraphUiRegressionTests {
               && childTreeControl?.kind === "collapse"
               && parentEndCollapsesChild
               && childEndCollapsesChild;
-            """);
-
-        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
-    }
-
-    [TestMethod]
-    public void GraphViewer_NodeCollapseControlsSkipEdgeElementNodes() {
-        var engine = CreateUiEngine(
-            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
-            ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
-
-        engine.Execute(
-            """
-            const viewer = Object.create(GraphViewer.prototype);
-            viewer.graph = {
-              rootName: "root",
-              loaded: new Map([
-                ["root", { globalId: "root", attributes: {} }],
-                ["node-leaf", { globalId: "node-leaf", attributes: { [graphElementAttribute]: "node" } }],
-                ["node-branch", { globalId: "node-branch", attributes: { [graphElementAttribute]: "node" } }],
-                ["node-grandchild", { globalId: "node-grandchild", attributes: { [graphElementAttribute]: "node" } }],
-                ["edge-branch", { globalId: "edge-branch", attributes: { [graphElementAttribute]: "edge" } }],
-                ["edge-grandchild", { globalId: "edge-grandchild", attributes: { [graphElementAttribute]: "node" } }]
-              ]),
-              parentByNode: new Map([
-                ["node-leaf", "root"],
-                ["node-branch", "root"],
-                ["node-grandchild", "node-branch"],
-                ["edge-branch", "root"],
-                ["edge-grandchild", "edge-branch"]
-              ])
-            };
-
-            globalThis.__result = viewer.canCollapseNode("node-leaf") === false
-              && viewer.canCollapseNode("node-branch") === true
-              && viewer.canCollapseNode("edge-branch") === false;
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
@@ -570,7 +590,8 @@ public sealed class GraphUiRegressionTests {
 
             const root = viewer.graph.loaded.get("root");
             const edge = root.edges[0];
-            const control = viewer.edgeEndpointControl(edge, "root");
+            const control = viewer.graph.edgeEndpointControl(edge, "root");
+            const graphEdgeControl = viewer.graph.visibleGraph().edges.find(item => item.key === edge.key)?.controls?.[0];
             const rootPosition = viewer.graph.positions.get("root");
             const angles = root.edges.map(item => item.frontierAngle).sort((a, b) => a - b);
             const step = Math.PI / 2;
@@ -605,6 +626,7 @@ public sealed class GraphUiRegressionTests {
               && !viewer.graph.positions.has("root/b")
               && control?.kind === "expand"
               && control?.text === "+"
+              && graphEdgeControl?.key === control?.key
               && Number.isFinite(control?.angle)
               && evenlySpaced
               && Math.abs(loadedOffset.x) < 0.000001
@@ -628,10 +650,7 @@ public sealed class GraphUiRegressionTests {
             canvas.view = { x: 0, y: 0, scale: 1 };
             canvas.positions = new Map([["a", { x: 10, y: 20 }]]);
             canvas.callbacks = {
-              edgeEndpointControl() {
-                return { kind: "expand", text: "+", title: "expand", angle: 0, otherName: "b" };
-              },
-              activateEdgeEndpoint() {},
+              activateEdgeControl() {},
               syncEdgeAngles() { calls.push("sync"); }
             };
             canvas.memory = {};
@@ -652,13 +671,14 @@ public sealed class GraphUiRegressionTests {
             const fragment = { append(button) { buttons.push(button); } };
             const rect = { width: 500, height: 500 };
             const edge = { key: "ab", sourceGlobalId: "a", targetGlobalId: "b" };
+            const control = { key: "ab\\0a\\0load-neighbor", action: "load-neighbor", kind: "expand", text: "+", title: "expand", angle: 0, anchorName: "a", otherName: "b" };
             const nodesByName = new Map([["a", { name: "a", viewRadius: 34 }]]);
 
-            canvas.renderEdgeEndpointControl(fragment, rect, edge, "a", "b", nodesByName, new Set());
+            canvas.renderEdgeEndpointControl(fragment, rect, edge, control, nodesByName, new Set());
             const first = buttons[0].style.transform.match(/translate\(([-0-9.]+)px, ([-0-9.]+)px\)/);
             buttons.length = 0;
             canvas.positions.set("a", { x: 100, y: 80 });
-            canvas.renderEdgeEndpointControl(fragment, rect, edge, "a", "b", nodesByName, new Set());
+            canvas.renderEdgeEndpointControl(fragment, rect, edge, control, nodesByName, new Set());
             const second = buttons[0].style.transform.match(/translate\(([-0-9.]+)px, ([-0-9.]+)px\)/);
 
             const firstOffset = {
@@ -672,6 +692,7 @@ public sealed class GraphUiRegressionTests {
             canvas.updateDynamicGraph();
 
             globalThis.__result = buttons.length === 1
+              && buttons[0].dataset.edgeAction === "load-neighbor"
               && Math.abs(firstOffset.x - 43) < 0.000001
               && Math.abs(firstOffset.y) < 0.000001
               && Math.abs(secondOffset.x - firstOffset.x) < 0.000001
@@ -692,9 +713,10 @@ public sealed class GraphUiRegressionTests {
 
             StringAssert.Contains(source, "renderEdgeEndpointControls(fragment, rect)");
             StringAssert.Contains(source, "graph-edge-control");
-            StringAssert.Contains(source, "callbacks.edgeEndpointControl?.(edge, anchorName)");
-            StringAssert.Contains(source, "callbacks.activateEdgeEndpoint?.(edge, anchorName)");
+            StringAssert.Contains(source, "edge.controls ?? []");
+            StringAssert.Contains(source, "callbacks.activateEdgeControl?.(edge, control)");
             StringAssert.Contains(source, "pointAtAngle(anchor, control.angle");
+            Assert.IsFalse(source.Contains("graph-node-collapse", StringComparison.Ordinal));
         }
     }
 
@@ -742,11 +764,21 @@ public sealed class GraphUiRegressionTests {
         }) {
             var source = ReadUiFile(path);
 
-            StringAssert.Contains(source, "edgeEndpointControl: (edge, anchorName) => this.edgeEndpointControl(edge, anchorName)");
-            StringAssert.Contains(source, "activateEdgeEndpoint: (edge, anchorName) => this.handleEndpointClick(edge, anchorName)");
-            AssertMatches(source, @"if\s*\(anchorLoaded && !otherLoaded\)\s*\{\s*return\s*\{.*?kind:\s*""expand"".*?text:\s*""\+""", path);
-            AssertMatches(source, @"if\s*\(anchorLoaded && !otherLoaded\)\s*\{\s*this\.loadNeighbor\(anchorName,\s*this\.edgeNeighborLocalId\(edge,\s*anchorName\)\);", path);
-            AssertMatches(source, @"if\s*\(!anchorLoaded && otherLoaded\)\s*\{\s*this\.loadNeighbor\(otherName,\s*this\.edgeNeighborLocalId\(edge,\s*otherName\)\);", path);
+            StringAssert.Contains(source, "activateEdgeControl: (edge, control) => this.handleEdgeControl(edge, control)");
+            StringAssert.Contains(source, "control.action === \"load-neighbor\"");
+            StringAssert.Contains(source, "this.loadNeighbor(anchorName, control.neighborLocalId");
+            Assert.IsFalse(source.Contains("collapseNode", StringComparison.Ordinal));
+        }
+
+        foreach (var path in new[] {
+            "Api/wwwroot/src/domain/GraphEdge.ts",
+            "Api/wwwroot/src/domain/GraphEdge.js"
+        }) {
+            var source = ReadUiFile(path);
+
+            StringAssert.Contains(source, "GraphEdgeControl.loadNeighbor");
+            StringAssert.Contains(source, "GraphEdgeControl.expandEdge");
+            StringAssert.Contains(source, "GraphEdgeControl.collapseEdge");
         }
     }
 

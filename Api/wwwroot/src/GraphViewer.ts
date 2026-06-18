@@ -112,10 +112,7 @@ export class GraphViewer {
         this.graph.toggleSelectedName(name);
         this.render();
       },
-      canCollapseNode: name => this.canCollapseNode(name),
-      collapseNode: name => this.collapseNode(name),
-      edgeEndpointControl: (edge, anchorName) => this.edgeEndpointControl(edge, anchorName),
-      activateEdgeEndpoint: (edge, anchorName) => this.handleEndpointClick(edge, anchorName),
+      activateEdgeControl: (edge, control) => this.handleEdgeControl(edge, control),
       syncEdgeAngles: () => this.refreshEdgeAngles(),
       renderInspector: graph => this.renderInspector(graph),
       formatRank: value => GraphType.formatRank(value)
@@ -1093,7 +1090,7 @@ export class GraphViewer {
 
   }
 
-  collapseNode(name) {
+  collapseTreeBranch(name) {
   if (!name || name === this.graph.rootName || !this.graph.loaded.has(name)) {
     return;
   }
@@ -1115,81 +1112,6 @@ export class GraphViewer {
   this.stopSimulation();
   this.render();
   this.setStatus(`Развернуто узлов: ${this.graph.loaded.size}`);
-
-  }
-
-  canCollapseNode(name) {
-  if (!name || name === this.graph.rootName || !this.graph.loaded.has(name)) {
-    return false;
-  }
-
-  if (this.isEdgeElementNode(name)) {
-    return false;
-  }
-
-  for (const parent of this.graph.parentByNode.values()) {
-    if (parent === name) {
-      return true;
-    }
-  }
-
-  return false;
-
-  }
-
-  edgeEndpointControl(edge, anchorName) {
-  const normalized = GraphEdge.from(edge);
-  const otherName = normalized.otherEndpoint(anchorName);
-  const anchorLoaded = this.graph.loaded.has(anchorName);
-  const otherLoaded = this.graph.loaded.has(otherName);
-  const otherLabel = this.edgeEndpointDisplayName(normalized, otherName);
-
-  if (anchorLoaded && !otherLoaded) {
-    return {
-      kind: "expand",
-      text: "+",
-      title: `Развернуть ${otherLabel}`,
-      otherName,
-      angle: normalized.frontierAngleFor(anchorName)
-    };
-  }
-
-  if (anchorLoaded && this.graph.isEdgeCollapsed(normalized)) {
-    return {
-      kind: "expand",
-      text: "+",
-      title: `Развернуть связь с ${otherLabel}`,
-      otherName
-    };
-  }
-
-  if (anchorLoaded && otherLoaded) {
-    return {
-      kind: "collapse",
-      text: "-",
-      title: `Свернуть связь с ${otherLabel}`,
-      otherName
-    };
-  }
-
-  return null;
-
-  }
-
-  isEdgeElementNode(name) {
-  const node = this.graph.loaded.get(name);
-  return GraphNode.from(node).graphElement("node") === "edge";
-
-  }
-
-  edgeTreeChildName(edge, anchorName) {
-  const normalized = GraphEdge.from(edge);
-  const otherName = normalized.sourceGlobalId === anchorName ? normalized.targetGlobalId : normalized.sourceGlobalId;
-  return this.graph.parentByNode.get(otherName) === anchorName
-    ? otherName
-    : this.graph.parentByNode.get(anchorName) === otherName && anchorName !== this.graph.rootName
-      ? anchorName
-      : null;
 
   }
 
@@ -1224,21 +1146,27 @@ export class GraphViewer {
   }
 
   handleEndpointClick(edge, anchorName) {
-  const otherName = edge.sourceGlobalId === anchorName ? edge.targetGlobalId : edge.sourceGlobalId;
-  const anchorLoaded = this.graph.loaded.has(anchorName);
-  const otherLoaded = this.graph.loaded.has(otherName);
+  const control = this.graph.edgeEndpointControl(edge, anchorName);
+  if (control) {
+    this.handleEdgeControl(edge, control);
+  }
 
-  if (anchorLoaded && !otherLoaded) {
-    this.loadNeighbor(anchorName, this.edgeNeighborLocalId(edge, anchorName));
+  }
+
+  handleEdgeControl(edge, control) {
+  if (!control?.anchorName) {
     return;
   }
 
-  if (!anchorLoaded && otherLoaded) {
-    this.loadNeighbor(otherName, this.edgeNeighborLocalId(edge, otherName));
+  const anchorName = control.anchorName;
+  const otherName = control.otherName ?? GraphEdge.from(edge).otherEndpoint(anchorName);
+
+  if (control.action === "load-neighbor") {
+    this.loadNeighbor(anchorName, control.neighborLocalId ?? this.edgeNeighborLocalId(edge, anchorName));
     return;
   }
 
-  if (anchorLoaded && this.graph.isEdgeCollapsed(edge)) {
+  if (control.action === "expand-edge") {
     this.stopSimulation();
     this.graph.expandEdge(edge);
     this.render();
@@ -1246,7 +1174,7 @@ export class GraphViewer {
     return;
   }
 
-  if (anchorLoaded && otherLoaded) {
+  if (control.action === "collapse-edge") {
     this.collapseEdge(edge, anchorName);
   }
 
@@ -1254,10 +1182,10 @@ export class GraphViewer {
 
   collapseEdge(edge, anchorName) {
   const otherName = edge.sourceGlobalId === anchorName ? edge.targetGlobalId : edge.sourceGlobalId;
-  const childName = this.edgeTreeChildName(edge, anchorName);
+  const childName = this.graph.treeChildNameForEdge(edge, anchorName);
 
   if (childName) {
-    this.collapseNode(childName);
+    this.collapseTreeBranch(childName);
     return;
   }
 

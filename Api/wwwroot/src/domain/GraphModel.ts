@@ -163,11 +163,40 @@ export class GraphModel {
 
   visibleGraph(): any {
     const physical = this.physicalGraph();
-    return this.schema.projectionBasis === "empty" ? physical : this.projectedGraph(physical);
+    const graph = this.schema.projectionBasis === "empty" ? physical : this.projectedGraph(physical);
+    return this.withEdgeControls(graph);
   }
 
   projectedGraph(physical: any = this.physicalGraph()): any {
     return new GraphProjection(this).project(physical);
+  }
+
+  withEdgeControls(graph: any): any {
+    return {
+      ...graph,
+      edges: (graph.edges ?? []).map(edge => ({
+        ...edge,
+        controls: this.edgeControls(edge)
+      }))
+    };
+  }
+
+  edgeControls(edge: GraphEdge | any): any[] {
+    const normalized = GraphEdge.from(edge);
+    return normalized.controls({
+      isEndpointLoaded: globalId => this.loaded.has(globalId),
+      isCollapsed: this.isEdgeCollapsed(normalized),
+      displayName: globalId => this.displayName(globalId)
+    });
+  }
+
+  edgeEndpointControl(edge: GraphEdge | any, anchorName: string): any | null {
+    const normalized = GraphEdge.from(edge);
+    return normalized.endpointControl(anchorName, {
+      isEndpointLoaded: globalId => this.loaded.has(globalId),
+      isCollapsed: this.isEdgeCollapsed(normalized),
+      displayName: globalId => this.displayName(globalId)
+    });
   }
 
   collapseEdge(edge: GraphEdge | string | any): void {
@@ -281,6 +310,16 @@ export class GraphModel {
     return globalId === this.basis.nodeTypeRoot
       || globalId === this.basis.edgeTypeRoot
       || globalId === this.basis.relationRoot;
+  }
+
+  treeChildNameForEdge(edge: GraphEdge | any, anchorName: string): string | null {
+    const normalized = GraphEdge.from(edge);
+    const otherName = normalized.otherEndpoint(anchorName);
+    return this.parentByNode.get(otherName) === anchorName
+      ? otherName
+      : this.parentByNode.get(anchorName) === otherName && anchorName !== this.rootName
+        ? anchorName
+        : null;
   }
 
   formatProjectedNodeName(node: any, nodeType: any): string {

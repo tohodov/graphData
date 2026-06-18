@@ -18,6 +18,103 @@ export type GraphEdgeSnapshot = {
   frontierAngle?: number | null;
 };
 
+export type GraphEdgeControlKind = "expand" | "collapse";
+export type GraphEdgeControlAction = "load-neighbor" | "expand-edge" | "collapse-edge";
+
+export type GraphEdgeControlSnapshot = {
+  key?: string;
+  action?: GraphEdgeControlAction;
+  kind?: GraphEdgeControlKind;
+  text?: string;
+  title?: string;
+  anchorName?: string;
+  otherName?: string;
+  neighborLocalId?: string | null;
+  angle?: number | null;
+};
+
+export type GraphEdgeControlContext = {
+  isEndpointLoaded(globalId: string): boolean;
+  isCollapsed: boolean;
+  displayName(globalId: string): string;
+};
+
+class GraphEdgeControl {
+  key: string;
+  action: GraphEdgeControlAction;
+  kind: GraphEdgeControlKind;
+  text: string;
+  title: string;
+  anchorName: string;
+  otherName: string;
+  neighborLocalId: string | null;
+  angle: number | null;
+
+  constructor({
+    key = "",
+    action = "collapse-edge",
+    kind = "collapse",
+    text = "-",
+    title = "",
+    anchorName = "",
+    otherName = "",
+    neighborLocalId = null,
+    angle = null
+  }: GraphEdgeControlSnapshot) {
+    this.key = key;
+    this.action = action;
+    this.kind = kind;
+    this.text = text;
+    this.title = title;
+    this.anchorName = anchorName;
+    this.otherName = otherName;
+    this.neighborLocalId = neighborLocalId;
+    this.angle = Number.isFinite(angle) ? angle : null;
+  }
+
+  static loadNeighbor(edge: GraphEdge, anchorName: string, otherName: string, otherLabel: string): GraphEdgeControl {
+    return new GraphEdgeControl({
+      key: GraphEdgeControl.keyFor(edge, anchorName, "load-neighbor"),
+      action: "load-neighbor",
+      kind: "expand",
+      text: "+",
+      title: `Развернуть ${otherLabel}`,
+      anchorName,
+      otherName,
+      neighborLocalId: edge.neighborLocalIdFor(anchorName),
+      angle: edge.frontierAngleFor(anchorName)
+    });
+  }
+
+  static expandEdge(edge: GraphEdge, anchorName: string, otherName: string, otherLabel: string): GraphEdgeControl {
+    return new GraphEdgeControl({
+      key: GraphEdgeControl.keyFor(edge, anchorName, "expand-edge"),
+      action: "expand-edge",
+      kind: "expand",
+      text: "+",
+      title: `Развернуть связь с ${otherLabel}`,
+      anchorName,
+      otherName
+    });
+  }
+
+  static collapseEdge(edge: GraphEdge, anchorName: string, otherName: string, otherLabel: string): GraphEdgeControl {
+    return new GraphEdgeControl({
+      key: GraphEdgeControl.keyFor(edge, anchorName, "collapse-edge"),
+      action: "collapse-edge",
+      kind: "collapse",
+      text: "-",
+      title: `Свернуть связь с ${otherLabel}`,
+      anchorName,
+      otherName
+    });
+  }
+
+  private static keyFor(edge: GraphEdge, anchorName: string, action: GraphEdgeControlAction): string {
+    return `${edge.key}\0${anchorName}\0${action}`;
+  }
+}
+
 export class GraphEdge {
   sourceGlobalId: string;
   targetGlobalId: string;
@@ -150,6 +247,37 @@ export class GraphEdge {
     return this.frontierAnchorGlobalId === anchorGlobalId && Number.isFinite(this.frontierAngle)
       ? this.frontierAngle
       : null;
+  }
+
+  controls(context: GraphEdgeControlContext): GraphEdgeControlSnapshot[] {
+    return [this.sourceGlobalId, this.targetGlobalId]
+      .map(anchorName => this.endpointControl(anchorName, context))
+      .filter((control): control is GraphEdgeControl => control !== null);
+  }
+
+  endpointControl(anchorName: string, context: GraphEdgeControlContext): GraphEdgeControl | null {
+    if (!anchorName || !this.connects(anchorName)) {
+      return null;
+    }
+
+    const otherName = this.otherEndpoint(anchorName);
+    const anchorLoaded = context.isEndpointLoaded(anchorName);
+    const otherLoaded = context.isEndpointLoaded(otherName);
+    const otherLabel = this.endpointDisplayName(otherName, context.displayName);
+
+    if (anchorLoaded && !otherLoaded) {
+      return GraphEdgeControl.loadNeighbor(this, anchorName, otherName, otherLabel);
+    }
+
+    if (anchorLoaded && context.isCollapsed) {
+      return GraphEdgeControl.expandEdge(this, anchorName, otherName, otherLabel);
+    }
+
+    if (anchorLoaded && otherLoaded) {
+      return GraphEdgeControl.collapseEdge(this, anchorName, otherName, otherLabel);
+    }
+
+    return null;
   }
 
   toViewEdge(extra: Record<string, unknown> = {}): Record<string, unknown> {

@@ -299,7 +299,6 @@ textarea:focus {
   color: var(--accent-strong);
 }
 
-.graph-node-collapse,
 .graph-edge-control {
   position: absolute;
   z-index: 2;
@@ -338,7 +337,6 @@ textarea:focus {
   color: #ffffff;
 }
 
-.graph-node-collapse:hover,
 .graph-edge-control:hover {
   border-color: rgba(255, 255, 255, 0.98);
   background: var(--accent-strong);

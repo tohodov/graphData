@@ -30,10 +30,7 @@ export class WebGpuGraphCanvas {
     selectOnlyNode,
     addNodeToSelection,
     toggleNodeSelection,
-    canCollapseNode,
-    collapseNode,
-    edgeEndpointControl,
-    activateEdgeEndpoint,
+    activateEdgeControl,
     syncEdgeAngles,
     renderInspector,
     formatRank
@@ -54,10 +51,7 @@ export class WebGpuGraphCanvas {
       selectOnlyNode,
       addNodeToSelection,
       toggleNodeSelection,
-      canCollapseNode,
-      collapseNode,
-      edgeEndpointControl,
-      activateEdgeEndpoint,
+      activateEdgeControl,
       syncEdgeAngles,
       renderInspector,
       formatRank
@@ -729,27 +723,6 @@ export class WebGpuGraphCanvas {
       label.style.width = `${Math.max(28, radius * 2 - 16)}px`;
       label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
       fragment.append(label);
-
-      if (this.callbacks.canCollapseNode?.(node.name)) {
-        const collapseButton = this.document.createElement("button");
-        const controlRadius = radius + (selected ? 4 : 0);
-        collapseButton.type = "button";
-        collapseButton.className = "graph-node-collapse";
-        collapseButton.textContent = "-";
-        collapseButton.title = "Свернуть узел";
-        collapseButton.setAttribute("aria-label", "Свернуть узел");
-        collapseButton.style.transform = `translate(${x + controlRadius * 0.72}px, ${y - controlRadius * 0.72}px) translate(-50%, -50%)`;
-        collapseButton.addEventListener("pointerdown", event => {
-          event.preventDefault();
-          event.stopPropagation();
-        });
-        collapseButton.addEventListener("click", event => {
-          event.preventDefault();
-          event.stopPropagation();
-          this.callbacks.collapseNode?.(node.name);
-        });
-        fragment.append(collapseButton);
-      }
     });
 
     this.labelLayer.append(fragment);
@@ -764,18 +737,16 @@ export class WebGpuGraphCanvas {
     const nodesByName = new Map((graph.nodes ?? []).map(node => [node.name, node]));
     const rendered = new Set();
     graph.edges.forEach(edge => {
-      this.renderEdgeEndpointControl(fragment, rect, edge, edge.sourceGlobalId, edge.targetGlobalId, nodesByName, rendered);
-      this.renderEdgeEndpointControl(fragment, rect, edge, edge.targetGlobalId, edge.sourceGlobalId, nodesByName, rendered);
+      (edge.controls ?? []).forEach(control => {
+        this.renderEdgeEndpointControl(fragment, rect, edge, control, nodesByName, rendered);
+      });
     });
   }
 
-  renderEdgeEndpointControl(fragment, rect, edge, anchorName, otherName, nodesByName, rendered) {
+  renderEdgeEndpointControl(fragment, rect, edge, control, nodesByName, rendered) {
+    const anchorName = control?.anchorName;
+    const otherName = control?.otherName;
     if (!anchorName || !otherName) {
-      return;
-    }
-
-    const control = this.callbacks.edgeEndpointControl?.(edge, anchorName);
-    if (!control) {
       return;
     }
 
@@ -799,7 +770,7 @@ export class WebGpuGraphCanvas {
       return;
     }
 
-    const key = `${edge.key ?? ""}\0${anchorName}\0${otherName}\0${control.kind ?? ""}`;
+    const key = control.key ?? `${edge.key ?? ""}\0${anchorName}\0${otherName}\0${control.kind ?? ""}`;
     if (rendered.has(key)) {
       return;
     }
@@ -812,6 +783,7 @@ export class WebGpuGraphCanvas {
     button.textContent = control.text ?? (control.kind === "expand" ? "+" : "-");
     button.title = title;
     button.setAttribute("aria-label", title);
+    button.dataset.edgeAction = control.action ?? "";
     button.dataset.edgeEndpoint = control.kind ?? "";
     button.dataset.anchorName = anchorName;
     button.dataset.otherName = control.otherName ?? otherName;
@@ -823,7 +795,7 @@ export class WebGpuGraphCanvas {
     button.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
-      this.callbacks.activateEdgeEndpoint?.(edge, anchorName);
+      this.callbacks.activateEdgeControl?.(edge, control);
     });
     fragment.append(button);
   }
