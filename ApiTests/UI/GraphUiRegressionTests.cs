@@ -159,34 +159,41 @@ public sealed class GraphUiRegressionTests {
             viewer.refreshEdgeAngles();
             const before = model.visibleGraph();
             const control = before.edges[0].controls[0];
+            const beforeSourceNodeName = before.edges[0].sourceNode?.name;
+            const beforeTargetNodeName = before.edges[0].targetNode?.name;
+            const beforeSourceVisible = before.edges[0].sourceNode?.showed !== false;
+            const beforeTargetVisible = before.edges[0].targetNode?.showed !== false;
             viewer.handleEdgeControl(before.edges[0], control);
             const after = model.visibleGraph();
             const position = model.positions.get("b");
 
-            globalThis.__result = model.hasNode("b")
-              && !before.nodes.some(node => node.name === "b")
-              && before.edges.length === 1
-              && before.edges[0].sourceLoaded === true
-              && before.edges[0].targetLoaded === true
-              && before.edges[0].sourceShowed === true
-              && before.edges[0].targetShowed === false
-              && control.action === "load-neighbor"
-              && control.otherName === "b"
-              && !calls.includes("load")
-              && model.isNodeVisible("b")
-              && after.nodes.some(node => node.name === "b")
-              && after.edges[0].controls.every(item => item.action === "collapse-edge")
-              && model.parentByNode.get("b") === "a"
-              && model.selectedName === "b"
-              && calls.includes("stop")
-              && calls.includes("render")
-              && calls.includes("types")
-              && calls.includes("status:Развернуто узлов: 2")
-              && Math.abs(position.x - 10) < 0.000001
-              && Math.abs(position.y + 184) < 0.000001;
+            globalThis.__debug = {
+              hasLoadedHiddenNode: model.hasNode("b"),
+              hiddenBeforeRender: !before.nodes.some(node => node.name === "b"),
+              singleVisibleEdge: before.edges.length === 1,
+              sourceNodeLinked: beforeSourceNodeName === "a",
+              targetNodeLinked: beforeTargetNodeName === "b",
+              sourceVisibleFromNode: beforeSourceVisible,
+              targetHiddenFromNode: !beforeTargetVisible,
+              loadControl: control.action === "load-neighbor",
+              controlTargetsHiddenNode: control.otherName === "b",
+              didNotLoadAgain: !calls.includes("load"),
+              visibleAfterReveal: model.isNodeVisible("b"),
+              renderedAfterReveal: after.nodes.some(node => node.name === "b"),
+              collapseControlsAfterReveal: after.edges[0].controls.every(item => item.action === "collapse-edge"),
+              parentAssigned: model.parentByNode.get("b") === "a",
+              selectedRevealedNode: model.selectedName === "b",
+              stoppedSimulation: calls.includes("stop"),
+              rendered: calls.includes("render"),
+              renderedTypes: calls.includes("types"),
+              statusUpdated: calls.includes("status:Развернуто узлов: 2"),
+              seededX: Math.abs(position.x - 10) < 0.000001,
+              seededY: Math.abs(position.y + 184) < 0.000001
+            };
+            globalThis.__result = Object.values(globalThis.__debug).every(Boolean);
             """);
 
-        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean(), engine.Evaluate("JSON.stringify(__debug)").AsString());
     }
 
     [TestMethod]

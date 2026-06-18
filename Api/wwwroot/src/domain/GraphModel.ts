@@ -166,7 +166,7 @@ export class GraphModel {
       nodes.set(node.name, node.toViewNode());
       node.edges.forEach(edge => {
         if (!edges.has(edge.key)) {
-          edges.set(edge.key, edge.toViewEdge(this.edgeEndpointState(edge)));
+          edges.set(edge.key, edge.toViewEdge(this.edgeEndpointNodes(edge)));
         }
       });
     }
@@ -195,7 +195,7 @@ export class GraphModel {
   }
 
   edgeControls(edge: GraphEdge | any): any[] {
-    const normalized = this.edgeWithEndpointState(edge);
+    const normalized = this.edgeWithEndpointNodes(edge);
     return normalized.controls({
       isCollapsed: this.isEdgeCollapsed(normalized),
       displayName: globalId => this.displayName(globalId)
@@ -203,25 +203,23 @@ export class GraphModel {
   }
 
   edgeEndpointControl(edge: GraphEdge | any, anchorName: string): any | null {
-    const normalized = this.edgeWithEndpointState(edge);
+    const normalized = this.edgeWithEndpointNodes(edge);
     return normalized.endpointControl(anchorName, {
       isCollapsed: this.isEdgeCollapsed(normalized),
       displayName: globalId => this.displayName(globalId)
     });
   }
 
-  edgeWithEndpointState(edge: GraphEdge | any): GraphEdge {
+  edgeWithEndpointNodes(edge: GraphEdge | any): GraphEdge {
     const normalized = GraphEdge.from(edge);
-    return GraphEdge.from(normalized.toViewEdge(this.edgeEndpointState(normalized)));
+    return GraphEdge.from(normalized.toViewEdge(this.edgeEndpointNodes(normalized)));
   }
 
-  edgeEndpointState(edge: GraphEdge | any): Record<string, boolean> {
+  edgeEndpointNodes(edge: GraphEdge | any): Record<string, unknown> {
     const normalized = GraphEdge.from(edge);
     return {
-      sourceLoaded: this.loaded.has(normalized.sourceGlobalId),
-      targetLoaded: this.loaded.has(normalized.targetGlobalId),
-      sourceShowed: this.isNodeVisible(normalized.sourceGlobalId),
-      targetShowed: this.isNodeVisible(normalized.targetGlobalId),
+      sourceNode: this.loaded.get(normalized.sourceGlobalId) ?? null,
+      targetNode: this.loaded.get(normalized.targetGlobalId) ?? null,
       sourcePositioned: this.positions.has(normalized.sourceGlobalId),
       targetPositioned: this.positions.has(normalized.targetGlobalId)
     };

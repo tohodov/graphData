@@ -1,3 +1,5 @@
+import type { GraphNode } from "./GraphNode.js";
+
 export type GraphEdgeSnapshot = {
   sourceGlobalId?: string;
   targetGlobalId?: string;
@@ -16,10 +18,8 @@ export type GraphEdgeSnapshot = {
   collapsed?: boolean;
   controlAnchorGlobalId?: string | null;
   controlAngle?: number | null;
-  sourceLoaded?: boolean;
-  targetLoaded?: boolean;
-  sourceShowed?: boolean;
-  targetShowed?: boolean;
+  sourceNode?: GraphNode | null;
+  targetNode?: GraphNode | null;
   sourcePositioned?: boolean;
   targetPositioned?: boolean;
 };
@@ -138,10 +138,8 @@ export class GraphEdge {
   collapsed: boolean;
   controlAnchorGlobalId: string | null;
   controlAngle: number | null;
-  sourceLoaded: boolean;
-  targetLoaded: boolean;
-  sourceShowed: boolean;
-  targetShowed: boolean;
+  sourceNode: GraphNode | null;
+  targetNode: GraphNode | null;
   sourcePositioned: boolean;
   targetPositioned: boolean;
   key: string;
@@ -163,10 +161,8 @@ export class GraphEdge {
     collapsed = false,
     controlAnchorGlobalId = null,
     controlAngle = null,
-    sourceLoaded = false,
-    targetLoaded = false,
-    sourceShowed = false,
-    targetShowed = false,
+    sourceNode = null,
+    targetNode = null,
     sourcePositioned = false,
     targetPositioned = false
   }: GraphEdgeSnapshot) {
@@ -187,10 +183,8 @@ export class GraphEdge {
     this.collapsed = Boolean(collapsed);
     this.controlAnchorGlobalId = controlAnchorGlobalId;
     this.controlAngle = Number.isFinite(controlAngle) ? controlAngle : null;
-    this.sourceLoaded = Boolean(sourceLoaded);
-    this.targetLoaded = Boolean(targetLoaded);
-    this.sourceShowed = Boolean(sourceShowed);
-    this.targetShowed = Boolean(targetShowed);
+    this.sourceNode = sourceNode ?? null;
+    this.targetNode = targetNode ?? null;
     this.sourcePositioned = Boolean(sourcePositioned);
     this.targetPositioned = Boolean(targetPositioned);
     this.key = GraphEdge.keyFor(sourceGlobalId, targetGlobalId, relationGlobalId ?? typeGlobalId ?? "");
@@ -256,24 +250,23 @@ export class GraphEdge {
     return this.sourceGlobalId === anchorGlobalId ? this.targetLocalId : this.sourceLocalId;
   }
 
-  endpointLoaded(globalId: string): boolean {
+  endpointNode(globalId: string): GraphNode | null {
     if (this.sourceGlobalId === globalId) {
-      return this.sourceLoaded;
+      return this.sourceNode;
     }
     if (this.targetGlobalId === globalId) {
-      return this.targetLoaded;
+      return this.targetNode;
     }
-    return false;
+    return null;
+  }
+
+  endpointLoaded(globalId: string): boolean {
+    return this.endpointNode(globalId) !== null;
   }
 
   endpointShowed(globalId: string): boolean {
-    if (this.sourceGlobalId === globalId) {
-      return this.sourceShowed;
-    }
-    if (this.targetGlobalId === globalId) {
-      return this.targetShowed;
-    }
-    return false;
+    const node = this.endpointNode(globalId);
+    return Boolean(node && node.showed !== false);
   }
 
   endpointPositioned(globalId: string): boolean {
@@ -352,10 +345,8 @@ export class GraphEdge {
       collapsed: this.collapsed,
       controlAnchorGlobalId: this.controlAnchorGlobalId,
       controlAngle: this.controlAngle,
-      sourceLoaded: this.sourceLoaded,
-      targetLoaded: this.targetLoaded,
-      sourceShowed: this.sourceShowed,
-      targetShowed: this.targetShowed,
+      sourceNode: this.sourceNode,
+      targetNode: this.targetNode,
       sourcePositioned: this.sourcePositioned,
       targetPositioned: this.targetPositioned,
       ...extra
