@@ -335,7 +335,7 @@ export class GraphViewer {
 
     this.render();
     this.renderTypeControls();
-    this.setStatus(`Развернуто узлов: ${this.graph.loaded.size}`);
+    this.setStatus(`Развернуто узлов: ${this.graph.visibleNodeCount()}`);
   } catch (error) {
     this.setStatus(error.message);
   } finally {
@@ -355,13 +355,12 @@ export class GraphViewer {
     const expansion = this.normalizeNodeResponse(await this.apiJson(
       `/api/graph/nodes/${encodeURIComponent(anchorName)}/neighbor/${encodeURIComponent(neighborLocalId)}`));
     const alreadyLoaded = this.graph.loaded.has(expansion.name);
-    this.storeNodeExpansion(expansion, anchorName, { select: true });
+    this.storeNodeExpansion(expansion, anchorName, { select: false, showed: false });
+    this.revealLoadedNode(expansion.name, anchorName, { select: true });
 
-    this.render();
-    this.renderTypeControls();
-    this.setStatus(alreadyLoaded
-      ? `Узел "${expansion.displayName}" уже был загружен, связь добавлена`
-      : `Развернуто узлов: ${this.graph.loaded.size}`);
+    if (alreadyLoaded) {
+      this.setStatus(`Узел "${expansion.displayName}" уже был загружен, связь добавлена`);
+    }
   } catch (error) {
     this.setStatus(this.formatNeighborError(error, neighborLocalId));
   } finally {
@@ -372,21 +371,29 @@ export class GraphViewer {
 
   storeNodeExpansion(expansion, fromName, options: any = {}) {
   const select = options.select ?? true;
-  const existing = this.graph.loaded.get(expansion.name);
-  const stored = existing ? this.mergeNodeResponses(existing, expansion) : expansion;
-  this.graph.loaded.set(expansion.name, stored);
+  const incoming = GraphNode.from(expansion);
+  incoming.showed = options.showed !== false;
+  const existing = this.graph.loaded.get(incoming.name);
+  const stored = existing ? this.mergeNodeResponses(existing, incoming) : incoming;
+  this.graph.loaded.set(incoming.name, stored);
 
   if (!fromName && this.graph.rootName && !this.graph.loaded.has(this.graph.rootName)) {
-    this.graph.rootName = expansion.name;
+    this.graph.rootName = incoming.name;
   }
 
   if (select) {
-    this.graph.selectedName = expansion.name;
+    this.graph.selectedName = incoming.name;
   }
 
-  this.seedPosition(expansion.name, fromName, 0, this.edgeAngleFromAnchor(fromName, expansion.name));
-  if (fromName && fromName !== expansion.name && !this.graph.parentByNode.has(expansion.name)) {
-    this.graph.parentByNode.set(expansion.name, fromName);
+  if (stored.showed === false) {
+    this.graph.positions.delete(incoming.name);
+    this.graph.velocities.delete(incoming.name);
+  } else {
+    this.seedPosition(incoming.name, fromName, 0, this.edgeAngleFromAnchor(fromName, incoming.name));
+  }
+
+  if (stored.showed !== false && fromName && fromName !== incoming.name && !this.graph.parentByNode.has(incoming.name)) {
+    this.graph.parentByNode.set(incoming.name, fromName);
   }
 
   this.refreshEdgeAngles();
@@ -425,7 +432,7 @@ export class GraphViewer {
     this.createNodeParent.value = "";
     this.graph.rootName = this.graph.rootName ?? created.name;
     this.graph.selectedName = created.name;
-    this.seedPosition(created.name, this.graph.rootName === created.name ? null : this.graph.rootName, this.graph.loaded.size);
+    this.seedPosition(created.name, this.graph.rootName === created.name ? null : this.graph.rootName, this.graph.visibleNodeCount());
     if (typeGlobalId) {
       const expanded = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(created.globalId)}`));
       this.storeNodeExpansion(expanded, null, { select: true });
@@ -628,7 +635,7 @@ export class GraphViewer {
     this.readBasisInputs();
     const basis = this.getBasis();
     const response = await this.loadSubgraphForRoots([basis.nodeTypeRoot, basis.edgeTypeRoot], 4);
-    this.mergeSubgraphIntoViewer(response, { select: false });
+    this.mergeSubgraphIntoViewer(response, { select: false, showed: false });
     const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
     this.graph.schema.nodeTypes = new Map();
     this.graph.schema.edgeTypes = new Map();
@@ -1073,7 +1080,8 @@ export class GraphViewer {
       edges: this.mergeEdges(node.edges, edgesByNode.get(node.name) ?? [])
     });
     this.storeNodeExpansion(expansion, options.fromName ?? null, {
-      select: select && index === 0
+      select: select && index === 0,
+      showed: options.showed ?? true
     });
   });
   this.renderTypeControls();
@@ -1112,7 +1120,7 @@ export class GraphViewer {
   this.graph.selectedName = fallbackSelection;
   this.stopSimulation();
   this.render();
-  this.setStatus(`Развернуто узлов: ${this.graph.loaded.size}`);
+  this.setStatus(`Развернуто узлов: ${this.graph.visibleNodeCount()}`);
 
   }
 
@@ -1163,6 +1171,11 @@ export class GraphViewer {
   const otherName = control.otherName ?? GraphEdge.from(edge).otherEndpoint(anchorName);
 
   if (control.action === "load-neighbor") {
+    if (otherName && this.graph.hasNode(otherName)) {
+      this.revealLoadedNode(otherName, anchorName, { select: true });
+      return;
+    }
+
     this.loadNeighbor(anchorName, control.neighborLocalId ?? this.edgeNeighborLocalId(edge, anchorName));
     return;
   }
@@ -1178,6 +1191,24 @@ export class GraphViewer {
   if (control.action === "collapse-edge") {
     this.collapseEdge(edge, anchorName);
   }
+
+  }
+
+  revealLoadedNode(name, fromName, options: any = {}) {
+  const node = this.graph.loaded.get(name);
+  if (!node) {
+    return false;
+  }
+
+  this.stopSimulation();
+  this.storeNodeExpansion(node, fromName, {
+    select: options.select ?? true,
+    showed: true
+  });
+  this.render();
+  this.renderTypeControls();
+  this.setStatus(`Развернуто узлов: ${this.graph.visibleNodeCount()}`);
+  return true;
 
   }
 
@@ -1250,7 +1281,7 @@ export class GraphViewer {
       (candidate.sourceGlobalId === name && candidate.targetGlobalId === selected.name));
     const row = this.document.createElement("button");
     row.type = "button";
-    row.className = `neighbor-row${this.graph.loaded.has(name) ? " loaded" : ""}`;
+    row.className = `neighbor-row${this.graph.isNodeVisible(name) ? " loaded" : ""}`;
     const dot = this.document.createElement("span");
     dot.className = "neighbor-dot";
     const text = this.document.createElement("span");
@@ -1428,6 +1459,7 @@ export class GraphViewer {
       open.title = type.globalId;
       open.addEventListener("click", async () => {
         await this.ensureNodeLoaded(type.globalId);
+        this.revealLoadedNode(type.globalId, this.graph.rootName, { select: false });
         this.graph.selectedName = type.globalId;
         this.render();
         this.setActiveTab("node");

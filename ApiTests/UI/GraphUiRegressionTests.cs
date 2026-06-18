@@ -115,6 +115,77 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphViewer_LoadedButNotShowedNeighborsStayFrontierUntilExpanded() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
+            ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
+
+        engine.Execute(
+            """
+            const edge = new GraphEdge({
+              sourceGlobalId: "a",
+              targetGlobalId: "b",
+              sourceLocalId: "a",
+              targetLocalId: "b-local"
+            });
+            const model = new GraphModel();
+            model.rootName = "a";
+            model.loaded.set("a", new GraphNode({
+              globalId: "a",
+              displayName: "A",
+              edges: [edge]
+            }));
+            model.loaded.set("b", new GraphNode({
+              globalId: "b",
+              displayName: "B",
+              showed: false,
+              edges: []
+            }));
+            model.positions.set("a", { x: 10, y: 20 });
+            model.velocities.set("a", { x: 0, y: 0 });
+
+            const viewer = Object.create(GraphViewer.prototype);
+            const calls = [];
+            viewer.graph = model;
+            viewer.loadNeighbor = () => calls.push("load");
+            viewer.stopSimulation = () => calls.push("stop");
+            viewer.render = () => calls.push("render");
+            viewer.renderTypeControls = () => calls.push("types");
+            viewer.setStatus = message => calls.push("status:" + message);
+            viewer.displayName = id => model.displayName(id);
+
+            viewer.refreshEdgeAngles();
+            const before = model.visibleGraph();
+            const control = before.edges[0].controls[0];
+            viewer.handleEdgeControl(before.edges[0], control);
+            const after = model.visibleGraph();
+            const position = model.positions.get("b");
+
+            globalThis.__result = model.hasNode("b")
+              && !before.nodes.some(node => node.name === "b")
+              && before.edges.length === 1
+              && control.action === "load-neighbor"
+              && control.otherName === "b"
+              && !calls.includes("load")
+              && model.isNodeVisible("b")
+              && after.nodes.some(node => node.name === "b")
+              && after.edges[0].controls.every(item => item.action === "collapse-edge")
+              && model.parentByNode.get("b") === "a"
+              && model.selectedName === "b"
+              && calls.includes("stop")
+              && calls.includes("render")
+              && calls.includes("types")
+              && calls.includes("status:Развернуто узлов: 2")
+              && Math.abs(position.x - 10) < 0.000001
+              && Math.abs(position.y + 184) < 0.000001;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphModel_ProjectedEdgeStateIsStoredOnRelationObject() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),

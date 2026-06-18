@@ -131,6 +131,15 @@ export class GraphModel {
     return this.loaded.has(globalId);
   }
 
+  isNodeVisible(globalId: string): boolean {
+    const node = this.loaded.get(globalId);
+    return Boolean(node && node.showed !== false);
+  }
+
+  visibleNodeCount(): number {
+    return [...this.loaded.values()].filter(node => node.showed !== false).length;
+  }
+
   node(globalId: string): GraphNode | null {
     return this.loaded.get(globalId) ?? null;
   }
@@ -150,6 +159,10 @@ export class GraphModel {
     const edges = new Map();
 
     for (const node of this.loaded.values()) {
+      if (node.showed === false) {
+        continue;
+      }
+
       nodes.set(node.name, node.toViewNode());
       node.edges.forEach(edge => {
         if (!edges.has(edge.key)) {
@@ -184,7 +197,7 @@ export class GraphModel {
   edgeControls(edge: GraphEdge | any): any[] {
     const normalized = GraphEdge.from(edge);
     return normalized.controls({
-      isEndpointLoaded: globalId => this.loaded.has(globalId),
+      isEndpointLoaded: globalId => this.isNodeVisible(globalId),
       isCollapsed: this.isEdgeCollapsed(normalized),
       displayName: globalId => this.displayName(globalId)
     });
@@ -193,7 +206,7 @@ export class GraphModel {
   edgeEndpointControl(edge: GraphEdge | any, anchorName: string): any | null {
     const normalized = GraphEdge.from(edge);
     return normalized.endpointControl(anchorName, {
-      isEndpointLoaded: globalId => this.loaded.has(globalId),
+      isEndpointLoaded: globalId => this.isNodeVisible(globalId),
       isCollapsed: this.isEdgeCollapsed(normalized),
       displayName: globalId => this.displayName(globalId)
     });
