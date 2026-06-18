@@ -117,6 +117,7 @@ export class GraphViewer {
       collapseNode: name => this.collapseNode(name),
       edgeEndpointControl: (edge, anchorName) => this.edgeEndpointControl(edge, anchorName),
       activateEdgeEndpoint: (edge, anchorName) => this.handleEndpointClick(edge, anchorName),
+      syncEdgeAngles: () => this.refreshEdgeAngles(),
       renderInspector: graph => this.renderInspector(graph),
       formatRank: value => GraphType.formatRank(value)
     });
@@ -375,12 +376,12 @@ export class GraphViewer {
     this.graph.selectedName = expansion.name;
   }
 
-  this.seedPosition(expansion.name, fromName, 0);
+  this.seedPosition(expansion.name, fromName, 0, this.edgeAngleFromAnchor(fromName, expansion.name));
   if (fromName && fromName !== expansion.name && !this.graph.parentByNode.has(expansion.name)) {
     this.graph.parentByNode.set(expansion.name, fromName);
   }
 
-  this.refreshFrontierEdgeAngles();
+  this.refreshEdgeAngles();
 
   return stored;
 
@@ -1036,7 +1037,7 @@ export class GraphViewer {
     this.seedSubgraphPosition(node.name, index, nodes.length);
   });
 
-  this.refreshFrontierEdgeAngles();
+  this.refreshEdgeAngles();
 
   this.render();
   this.renderTypeControls();
@@ -1188,7 +1189,7 @@ export class GraphViewer {
         .filter(edge => edge.sourceGlobalId !== name && edge.targetGlobalId !== name);
     }
   }
-  this.refreshFrontierEdgeAngles();
+  this.refreshEdgeAngles();
 
   if (selectFallback && wasSelected) {
     this.graph.selectedName = this.graph.loaded.keys().next().value ?? null;
@@ -1664,7 +1665,7 @@ export class GraphViewer {
 
   }
 
-  seedPosition(name, fromName, index) {
+  seedPosition(name, fromName, index, angleOverride = null) {
   if (this.graph.positions.has(name)) {
     return;
   }
@@ -1676,7 +1677,9 @@ export class GraphViewer {
   }
 
   const source = this.graph.positions.get(fromName);
-  const angle = index * 2.399963 + [...name].reduce((sum, char) => sum + char.charCodeAt(0), 0) * 0.017;
+  const angle = Number.isFinite(angleOverride)
+    ? angleOverride
+    : index * 2.399963 + [...name].reduce((sum, char) => sum + char.charCodeAt(0), 0) * 0.017;
   const distance = 92;
   this.graph.positions.set(name, {
     x: source.x + Math.cos(angle) * distance,
@@ -1793,14 +1796,14 @@ export class GraphViewer {
     return this.graph.displayName(globalId);
   }
 
-  refreshFrontierEdgeAngles() {
+  refreshEdgeAngles() {
   for (const node of this.graph.loaded.values()) {
-    this.assignFrontierEdgeAngles(node);
+    this.assignEdgeAngles(node);
   }
 
   }
 
-  assignFrontierEdgeAngles(node) {
+  assignEdgeAngles(node) {
   const nodeName = node.name ?? node.globalId;
   const edges = (node.edges ?? []).map(edge => GraphEdge.from(edge));
   const ordered = [...edges].sort((left, right) => {
@@ -1813,13 +1816,49 @@ export class GraphViewer {
 
   ordered.forEach((edge, index) => {
     const otherName = edge.otherEndpoint(nodeName);
-    if (this.graph.loaded.has(nodeName) && !this.graph.loaded.has(otherName)) {
+    const currentAngle = edge.frontierAngleFor(nodeName);
+    const loadedAngle = this.loadedEdgeAngle(nodeName, otherName);
+    if (loadedAngle !== null) {
+      edge.setFrontierAngle(nodeName, loadedAngle);
+    } else if (currentAngle === null) {
       edge.setFrontierAngle(nodeName, start + step * index);
-    } else {
-      edge.clearFrontierAngle();
     }
   });
   node.edges = edges;
+
+  }
+
+  edgeAngleFromAnchor(anchorName, otherName) {
+  if (!anchorName || !otherName) {
+    return null;
+  }
+
+  const anchor = this.graph.loaded.get(anchorName);
+  const edge = anchor?.edges
+    ?.map(item => GraphEdge.from(item))
+    .find(item => item.otherEndpoint(anchorName) === otherName);
+  return edge?.frontierAngleFor(anchorName) ?? this.loadedEdgeAngle(anchorName, otherName);
+
+  }
+
+  loadedEdgeAngle(anchorName, otherName) {
+  if (!this.graph.loaded.has(anchorName) || !this.graph.loaded.has(otherName)) {
+    return null;
+  }
+
+  const anchor = this.graph.positions.get(anchorName);
+  const other = this.graph.positions.get(otherName);
+  if (!anchor || !other) {
+    return null;
+  }
+
+  const dx = other.x - anchor.x;
+  const dy = other.y - anchor.y;
+  if (Math.hypot(dx, dy) < 0.01) {
+    return null;
+  }
+
+  return Math.atan2(dy, dx);
 
   }
 

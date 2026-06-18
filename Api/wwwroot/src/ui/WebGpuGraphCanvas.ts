@@ -34,6 +34,7 @@ export class WebGpuGraphCanvas {
     collapseNode,
     edgeEndpointControl,
     activateEdgeEndpoint,
+    syncEdgeAngles,
     renderInspector,
     formatRank
   }) {
@@ -57,6 +58,7 @@ export class WebGpuGraphCanvas {
       collapseNode,
       edgeEndpointControl,
       activateEdgeEndpoint,
+      syncEdgeAngles,
       renderInspector,
       formatRank
     };
@@ -641,6 +643,7 @@ export class WebGpuGraphCanvas {
       return;
     }
 
+    this.callbacks.syncEdgeAngles?.();
     this.writeVertexData(this.memory);
     this.renderLabels();
     this.updateRendererGraph();

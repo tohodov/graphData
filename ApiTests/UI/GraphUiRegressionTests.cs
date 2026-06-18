@@ -325,6 +325,7 @@ public sealed class GraphUiRegressionTests {
             const root = viewer.graph.loaded.get("root");
             const edge = root.edges[0];
             const control = viewer.edgeEndpointControl(edge, "root");
+            const rootPosition = viewer.graph.positions.get("root");
             const angles = root.edges.map(item => item.frontierAngle).sort((a, b) => a - b);
             const step = Math.PI / 2;
             const evenlySpaced = angles.every((angle, index) => {
@@ -343,6 +344,15 @@ public sealed class GraphUiRegressionTests {
                 neighborLocalId: "root"
               }]
             }), "root", { select: false });
+            const loadedPosition = viewer.graph.positions.get("root/a");
+            const loadedOffset = {
+              x: loadedPosition.x - rootPosition.x,
+              y: loadedPosition.y - rootPosition.y
+            };
+            const rootEdge = root.edges.find(item => item.targetGlobalId === "root/a");
+            const angleAfterLoad = rootEdge.frontierAngle;
+            viewer.graph.positions.set("root/a", { x: rootPosition.x + 92, y: rootPosition.y });
+            viewer.refreshEdgeAngles();
 
             globalThis.__result = root.edges.length === 4
               && viewer.graph.physicalGraph().edges.length === 4
@@ -351,7 +361,10 @@ public sealed class GraphUiRegressionTests {
               && control?.text === "+"
               && Number.isFinite(control?.angle)
               && evenlySpaced
-              && root.edges.find(item => item.targetGlobalId === "root/a").frontierAngle === null;
+              && Math.abs(loadedOffset.x) < 0.000001
+              && Math.abs(loadedOffset.y + 92) < 0.000001
+              && Math.abs(angleAfterLoad + Math.PI / 2) < 0.000001
+              && Math.abs(rootEdge.frontierAngle) < 0.000001;
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
@@ -364,6 +377,7 @@ public sealed class GraphUiRegressionTests {
         engine.Execute(
             """
             const buttons = [];
+            const calls = [];
             const canvas = Object.create(WebGpuGraphCanvas.prototype);
             canvas.view = { x: 0, y: 0, scale: 1 };
             canvas.positions = new Map([["a", { x: 10, y: 20 }]]);
@@ -371,8 +385,14 @@ public sealed class GraphUiRegressionTests {
               edgeEndpointControl() {
                 return { kind: "expand", text: "+", title: "expand", angle: 0, otherName: "b" };
               },
-              activateEdgeEndpoint() {}
+              activateEdgeEndpoint() {},
+              syncEdgeAngles() { calls.push("sync"); }
             };
+            canvas.memory = {};
+            canvas.writeVertexData = () => calls.push("write");
+            canvas.renderLabels = () => calls.push("labels");
+            canvas.updateRendererGraph = () => calls.push("renderer");
+            canvas.requestDraw = () => calls.push("draw");
             canvas.document = {
               createElement() {
                 return {
@@ -403,12 +423,14 @@ public sealed class GraphUiRegressionTests {
               x: Number(second[1]) - 100,
               y: Number(second[2]) - 80
             };
+            canvas.updateDynamicGraph();
 
             globalThis.__result = buttons.length === 1
               && Math.abs(firstOffset.x - 43) < 0.000001
               && Math.abs(firstOffset.y) < 0.000001
               && Math.abs(secondOffset.x - firstOffset.x) < 0.000001
-              && Math.abs(secondOffset.y - firstOffset.y) < 0.000001;
+              && Math.abs(secondOffset.y - firstOffset.y) < 0.000001
+              && calls.join(",") === "sync,write,labels,renderer,draw";
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
