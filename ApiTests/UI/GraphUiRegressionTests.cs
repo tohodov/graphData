@@ -332,10 +332,39 @@ public sealed class GraphUiRegressionTests {
               && collapsedControl.kind === "expand"
               && frontierClickLoadsNeighbor
               && frontierControl.kind === "expand"
-              && parentTreeControl === null
-              && childTreeControl === null
+              && parentTreeControl?.kind === "collapse"
+              && childTreeControl?.kind === "collapse"
               && parentEndCollapsesChild
               && childEndCollapsesChild;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void GraphViewer_NodeCollapseControlsSkipEdgeElementNodes() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
+
+        engine.Execute(
+            """
+            const viewer = Object.create(GraphViewer.prototype);
+            viewer.graph = {
+              rootName: "root",
+              loaded: new Map([
+                ["root", { globalId: "root", attributes: {} }],
+                ["node-child", { globalId: "node-child", attributes: { [graphElementAttribute]: "node" } }],
+                ["edge-child", { globalId: "edge-child", attributes: { [graphElementAttribute]: "edge" } }]
+              ]),
+              parentByNode: new Map([
+                ["node-child", "root"],
+                ["edge-child", "root"]
+              ])
+            };
+
+            globalThis.__result = viewer.canCollapseNode("node-child") === true
+              && viewer.canCollapseNode("edge-child") === false;
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());

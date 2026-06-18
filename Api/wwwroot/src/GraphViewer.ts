@@ -1124,6 +1124,10 @@ export class GraphViewer {
   }
 
   if (this.graph.parentByNode.has(name)) {
+    if (this.isEdgeElementNode(name)) {
+      return false;
+    }
+
     return true;
   }
 
@@ -1154,12 +1158,6 @@ export class GraphViewer {
     };
   }
 
-  if (anchorLoaded && otherLoaded
-      && this.edgeTreeChildName(normalized, anchorName)
-      && !this.graph.isEdgeCollapsed(normalized)) {
-    return null;
-  }
-
   if (anchorLoaded && this.graph.isEdgeCollapsed(normalized)) {
     return {
       kind: "expand",
@@ -1179,6 +1177,12 @@ export class GraphViewer {
   }
 
   return null;
+
+  }
+
+  isEdgeElementNode(name) {
+  const node = this.graph.loaded.get(name);
+  return GraphNode.from(node).graphElement("node") === "edge";
 
   }
 
