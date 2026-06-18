@@ -45,6 +45,16 @@ public sealed class GraphElementDslTests
         Assert.AreEqual(instanceNode.GlobalId, typeEdge.Node2.GlobalId);
     }
 
+    [TestMethod]
+    public void SystemNodeIds_ShouldExposeRuntimeTypeRoots()
+    {
+        Assert.AreEqual(new NodeGlobalId("graphdata", "types", "nodes"), GraphSystemNodeIds.NodeTypeRoot);
+        Assert.AreEqual(new NodeGlobalId("graphdata", "types", "edges"), GraphSystemNodeIds.EdgeTypeRoot);
+        Assert.AreEqual(new NodeGlobalId("graphdata", "relations"), GraphSystemNodeIds.RelationRoot);
+        Assert.AreEqual(GraphSystemNodeIds.NodeTypeRoot, GraphBaseTypeIds.NodeTypeRoot);
+        Assert.AreEqual(GraphSystemNodeIds.EdgeTypeRoot, GraphBaseTypeIds.EdgeTypeRoot);
+    }
+
     private sealed class InMemoryNodeState(string name) : NodeState
     {
         public override NodeLocalId LocalId { get; } = new(name);

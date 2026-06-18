@@ -4,6 +4,9 @@ namespace GraphData.Core.Models;
 
 public static class GraphBaseTypeIds
 {
+    public static NodeGlobalId NodeTypeRoot => GraphSystemNodeIds.NodeTypeRoot;
+    public static NodeGlobalId EdgeTypeRoot => GraphSystemNodeIds.EdgeTypeRoot;
+
     public static NodeGlobalId NodeType { get; } = new("graphdata", "types", "nodes", "Type");
     public static NodeGlobalId NodeInstance { get; } = new("graphdata", "types", "nodes", "Instance");
     public static NodeGlobalId EdgeType { get; } = new("graphdata", "types", "edges", "Type");

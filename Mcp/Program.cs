@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Client;
 using GraphData.Api.Runtime;
 using GraphData.Core.Extensions;
+using GraphData.Core.Services;
 using GraphData.Mcp.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -42,4 +43,6 @@ builder.Services
     .WithListResourceTemplatesHandler((_, _) => ValueTask.FromResult(new ListResourceTemplatesResult { ResourceTemplates = [] }))
     .WithToolsFromAssembly(serializerOptions: GraphJsonSerializerOptions.Create());
 
-await builder.Build().RunAsync();
+var app = builder.Build();
+await app.Services.GetRequiredService<GraphStorageInitializer>().InitializeAsync();
+await app.RunAsync();

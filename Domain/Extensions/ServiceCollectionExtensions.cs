@@ -13,6 +13,8 @@ public static class ServiceCollectionExtensions
             new GraphService(
                 provider.GetRequiredService<IGraphStorage>(),
                 provider.GetRequiredService<GraphSearchService>()));
+        services.AddTransient<GraphStorageInitializer>(static provider =>
+            new GraphStorageInitializer(provider.GetRequiredService<IGraphStorage>()));
         return services;
     }
 }

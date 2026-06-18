@@ -1,5 +1,6 @@
 using GraphData.Api.Runtime;
 using GraphData.Core.Extensions;
+using GraphData.Core.Services;
 using Storage;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,6 +16,8 @@ builder.Services.AddDomain();
 builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
 
 var app = builder.Build();
+
+await app.Services.GetRequiredService<GraphStorageInitializer>().InitializeAsync();
 
 if (app.Environment.IsDevelopment())
 {
