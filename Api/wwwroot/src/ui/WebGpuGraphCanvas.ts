@@ -495,7 +495,7 @@ export class WebGpuGraphCanvas {
       let dx = target.x - source.x;
       let dy = target.y - source.y;
       let distance = Math.max(1, Math.hypot(dx, dy));
-      const desired = 130 + Math.min(90, Math.max(0, (edge.viewRank ?? 0) * 0.3));
+      const desired = nodeRadius * 3 + Math.min(90, Math.max(0, (edge.viewRank ?? 0) * 0.3));
       const strength = (distance - desired) * 0.018;
       const fx = (dx / distance) * strength;
       const fy = (dy / distance) * strength;
@@ -541,10 +541,11 @@ export class WebGpuGraphCanvas {
       return;
     }
 
-    const minX = Math.min(...points.map(point => point.x)) - 120;
-    const maxX = Math.max(...points.map(point => point.x)) + 120;
-    const minY = Math.min(...points.map(point => point.y)) - 120;
-    const maxY = Math.max(...points.map(point => point.y)) + 120;
+    const padding = nodeRadius * 2;
+    const minX = Math.min(...points.map(point => point.x)) - padding;
+    const maxX = Math.max(...points.map(point => point.x)) + padding;
+    const minY = Math.min(...points.map(point => point.y)) - padding;
+    const maxY = Math.max(...points.map(point => point.y)) + padding;
     const width = Math.max(1, maxX - minX);
     const height = Math.max(1, maxY - minY);
     const scale = clamp(Math.min(rect.width / width, rect.height / height), 0.04, 2.2);
@@ -698,8 +699,8 @@ export class WebGpuGraphCanvas {
 
         const x = position.x * this.view.scale + this.view.x;
         const y = position.y * this.view.scale + this.view.y;
-        const radius = node.viewRadius ?? nodeRadius;
-        const margin = Math.max(80, radius * this.view.scale + 40);
+        const radius = screenNodeRadius(node, this.view.scale);
+        const margin = Math.max(80, radius + 40);
         return x >= -margin && x <= rect.width + margin && y >= -margin && y <= rect.height + margin;
       })
       .sort((left, right) =>
@@ -712,7 +713,7 @@ export class WebGpuGraphCanvas {
         return;
       }
 
-      const radius = node.viewRadius ?? nodeRadius;
+      const radius = screenNodeRadius(node, this.view.scale);
       const x = position.x * this.view.scale + this.view.x;
       const y = position.y * this.view.scale + this.view.y;
       const selected = this.callbacks.isNodeSelected(node.name);
@@ -756,7 +757,7 @@ export class WebGpuGraphCanvas {
     }
 
     const anchorNode = nodesByName.get(anchorName);
-    const radius = Number.isFinite(anchorNode?.viewRadius) ? anchorNode.viewRadius : nodeRadius;
+    const radius = screenNodeRadius(anchorNode, this.view.scale);
     const anchor = this.graphToScreen(anchorPosition);
     const point = Number.isFinite(control.angle)
       ? pointAtAngle(anchor, control.angle, radius + endpointControlPadding)
@@ -833,7 +834,7 @@ export class WebGpuGraphCanvas {
 
       const sx = position.x * this.view.scale + this.view.x;
       const sy = position.y * this.view.scale + this.view.y;
-      const radius = clamp((node.viewRadius ?? nodeRadius) + 10, 12, 56);
+      const radius = Math.max(12, screenNodeRadius(node, this.view.scale) + 10);
       const distance = (sx - x) ** 2 + (sy - y) ** 2;
       if (distance <= radius ** 2 && distance < bestDistance) {
         bestDistance = distance;
@@ -940,6 +941,11 @@ function pointAtAngle(anchor, angle, radius) {
     x: anchor.x + Math.cos(angle) * radius,
     y: anchor.y + Math.sin(angle) * radius
   };
+}
+
+function screenNodeRadius(node, scale) {
+  const radius = Number.isFinite(node?.viewRadius) ? node.viewRadius : nodeRadius;
+  return radius * scale;
 }
 
 function clamp(value, min, max) {

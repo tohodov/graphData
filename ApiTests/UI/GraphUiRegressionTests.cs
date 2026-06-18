@@ -244,6 +244,35 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void FrontendDefaults_UseDoubleNodeRadius()
+    {
+        var attributes = ReadUiFile("Api/wwwroot/src/domain/graphAttributes.ts");
+        StringAssert.Contains(attributes, "export const nodeRadius = 68;");
+
+        var engine = new Engine();
+        engine.Execute(
+            """
+            const graphElementAttribute = "graphElement";
+            const projectionColorAttribute = "projectionColor";
+            const projectionDirectedAttribute = "projectionDirected";
+            const projectionInfoAttribute = "projectionInfo";
+            const projectionLabelVisibleAttribute = "projectionLabelVisible";
+            const projectionRankAttribute = "projectionRank";
+            const projectionVisibleAttribute = "projectionVisible";
+            const nodeRadius = 68;
+            """);
+        engine.Execute(ReadUiJsModule("Api/wwwroot/src/domain/GraphType.js", "GraphType"));
+        engine.Execute(
+            """
+            globalThis.__result = GraphType.rankToRadius(55) === 68
+              && GraphType.rankToRadius(0) === 56
+              && GraphType.rankToRadius(200) === 96;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void WebGpuCanvas_DoesNotRenderCollapsedEdgesAsLines() {
         var engine = CreateUiEngine(("Api/wwwroot/src/ui/WebGpuGraphCanvas.js", "WebGpuGraphCanvas"));
 
@@ -618,7 +647,7 @@ public sealed class GraphUiRegressionTests {
             };
             const rootEdge = root.edges.find(item => item.targetGlobalId === "root/a");
             const angleAfterLoad = rootEdge.frontierAngle;
-            viewer.graph.positions.set("root/a", { x: rootPosition.x + 92, y: rootPosition.y });
+            viewer.graph.positions.set("root/a", { x: rootPosition.x + 204, y: rootPosition.y });
             viewer.refreshEdgeAngles();
 
             globalThis.__result = root.edges.length === 4
@@ -630,7 +659,7 @@ public sealed class GraphUiRegressionTests {
               && Number.isFinite(control?.angle)
               && evenlySpaced
               && Math.abs(loadedOffset.x) < 0.000001
-              && Math.abs(loadedOffset.y + 92) < 0.000001
+              && Math.abs(loadedOffset.y + 204) < 0.000001
               && Math.abs(angleAfterLoad + Math.PI / 2) < 0.000001
               && Math.abs(rootEdge.frontierAngle) < 0.000001;
             """);
@@ -720,10 +749,10 @@ public sealed class GraphUiRegressionTests {
               && Math.abs(firstOffset.y) < 0.000001
               && Math.abs(secondOffset.x - firstOffset.x) < 0.000001
               && Math.abs(secondOffset.y - firstOffset.y) < 0.000001
-              && Math.abs(scaledOffset.x - firstOffset.x) < 0.000001
-              && Math.abs(scaledOffset.y - firstOffset.y) < 0.000001
-              && Math.abs(loadedOffset.x - firstOffset.x) < 0.000001
-              && Math.abs(loadedOffset.y - firstOffset.y) < 0.000001
+              && Math.abs(scaledOffset.x - 94) < 0.000001
+              && Math.abs(scaledOffset.y) < 0.000001
+              && Math.abs(loadedOffset.x - scaledOffset.x) < 0.000001
+              && Math.abs(loadedOffset.y - scaledOffset.y) < 0.000001
               && calls.join(",") === "sync,write,labels,renderer,draw";
             """);
 
@@ -868,7 +897,7 @@ public sealed class GraphUiRegressionTests {
               edgeTypeRoot: "",
               relationRoot: ""
             };
-            const nodeRadius = 34;
+            const nodeRadius = 68;
             const GraphId = {
               localId(globalId) {
                 const text = String(globalId ?? "");

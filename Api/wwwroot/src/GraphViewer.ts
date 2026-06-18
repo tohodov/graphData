@@ -8,7 +8,8 @@ import {
   projectionLabelVisibleAttribute,
   projectionRankAttribute,
   projectionVisibleAttribute,
-  graphRoleAttribute
+  graphRoleAttribute,
+  nodeRadius
 } from "./domain/graphAttributes.js";
 import { GraphApi } from "./infrastructure/GraphApi.js";
 import { WebGpuGraphCanvas } from "./ui/WebGpuGraphCanvas.js";
@@ -1634,7 +1635,7 @@ export class GraphViewer {
   const angle = Number.isFinite(angleOverride)
     ? angleOverride
     : index * 2.399963 + [...name].reduce((sum, char) => sum + char.charCodeAt(0), 0) * 0.017;
-  const distance = 92;
+  const distance = nodeRadius * 3;
   this.graph.positions.set(name, {
     x: source.x + Math.cos(angle) * distance,
     y: source.y + Math.sin(angle) * distance
@@ -1644,7 +1645,7 @@ export class GraphViewer {
   }
 
   seedSubgraphPosition(name, index, count) {
-  const radius = Math.max(120, Math.min(320, count * 32));
+  const radius = Math.max(nodeRadius * 3, Math.min(nodeRadius * 8, count * nodeRadius));
   const angle = count <= 1 ? 0 : (Math.PI * 2 * index) / count;
   this.graph.positions.set(name, {
     x: Math.cos(angle) * radius,

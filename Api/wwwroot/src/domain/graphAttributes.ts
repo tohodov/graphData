@@ -1,4 +1,4 @@
-export const nodeRadius = 34;
+export const nodeRadius = 68;
 export const endpointOffset = nodeRadius + 9;
 export const defaultBasis = {
   nodeTypeRoot: "",

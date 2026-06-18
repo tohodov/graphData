@@ -81,7 +81,7 @@ export class SvgRenderer implements GraphRenderer {
     for (let index = 0; index < data.length; index += 8) {
       const node = memory.nodes[index / 8];
       const selected = data[index + 7] > 0.5;
-      const radius = data[index + 6] + (selected ? 4 : 0);
+      const radius = (data[index + 6] + (selected ? 4 : 0)) * view.scale;
       const group = this.createSvg("g", {
         class: `graph-svg-node${selected ? " selected" : ""}`,
         transform: `translate(${data[index + 0] * view.scale + view.x} ${data[index + 1] * view.scale + view.y})`

@@ -1,5 +1,6 @@
 import {
   graphElementAttribute,
+  nodeRadius,
   projectionColorAttribute,
   projectionDirectedAttribute,
   projectionInfoAttribute,
@@ -69,7 +70,8 @@ export class GraphType {
   }
 
   static rankToRadius(rank: number): number {
-    return Math.round(Math.max(28, Math.min(48, 34 + (rank - 55) * 0.14)));
+    const radius = nodeRadius + (rank - 55) * 0.28;
+    return Math.round(Math.max(nodeRadius - 12, Math.min(nodeRadius + 28, radius)));
   }
 
   static normalizeColor(value: unknown): string {

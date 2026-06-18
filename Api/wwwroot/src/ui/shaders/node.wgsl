@@ -34,7 +34,7 @@ fn vs(
 
   let unit = corners[vertexIndex];
   let selected = select(0.0, 1.0, flags > 0.5);
-  let radius = size + selected * 4.0;
+  let radius = (size + selected * 4.0) * uniforms.scale;
   let css = world * uniforms.scale + uniforms.offset + unit * radius;
   let screen = css * uniforms.pixelRatio;
   let clip = vec2<f32>(

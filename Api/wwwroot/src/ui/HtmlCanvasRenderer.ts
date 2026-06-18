@@ -160,7 +160,7 @@ export class HtmlCanvasRenderer implements GraphRenderer {
       }
 
       const selected = memory.nodeVertexData[index + 7] > 0.5;
-      const radius = memory.nodeVertexData[index + 6] + (selected ? 4 : 0);
+      const radius = (memory.nodeVertexData[index + 6] + (selected ? 4 : 0)) * view.scale;
       const diameter = radius * 2;
       const x = memory.nodeVertexData[index + 0] * view.scale + view.x - radius;
       const y = memory.nodeVertexData[index + 1] * view.scale + view.y - radius;
