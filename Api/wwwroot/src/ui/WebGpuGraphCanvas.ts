@@ -450,9 +450,7 @@ export class WebGpuGraphCanvas {
   }
 
   runSimulation(frames) {
-    if (this.simulationHandle) {
-      this.window.cancelAnimationFrame(this.simulationHandle);
-    }
+    this.stopSimulation();
 
     if (!this.currentGraph) {
       this.render();
@@ -460,6 +458,7 @@ export class WebGpuGraphCanvas {
 
     let remaining = frames;
     const tick = () => {
+      this.simulationHandle = null;
       this.simulateStep();
       this.updateDynamicGraph();
       remaining -= 1;
@@ -469,6 +468,15 @@ export class WebGpuGraphCanvas {
     };
 
     this.simulationHandle = this.window.requestAnimationFrame(tick);
+  }
+
+  stopSimulation() {
+    if (this.simulationHandle === null || this.simulationHandle === undefined) {
+      return;
+    }
+
+    this.window.cancelAnimationFrame(this.simulationHandle);
+    this.simulationHandle = null;
   }
 
   simulateStep() {

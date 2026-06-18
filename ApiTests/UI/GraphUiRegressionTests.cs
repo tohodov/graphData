@@ -338,6 +338,86 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphViewer_EdgeCollapseExpandDoesNotMoveExistingNodes() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
+            ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            const edge = new GraphEdge({
+              sourceGlobalId: "a",
+              targetGlobalId: "b",
+              sourceLocalId: "a",
+              targetLocalId: "b"
+            });
+
+            function loadedNode(name, displayName, edges) {
+              return {
+                name,
+                displayName,
+                edges,
+                toViewNode() { return { name, globalId: name, displayName }; }
+              };
+            }
+
+            model.loaded.set("a", loadedNode("a", "A", [edge]));
+            model.loaded.set("b", loadedNode("b", "B", []));
+            model.loaded.set("c", loadedNode("c", "C", []));
+            model.positions.set("a", { x: 10, y: 20 });
+            model.positions.set("b", { x: 140, y: -30 });
+            model.positions.set("c", { x: -75, y: 90 });
+            model.velocities.set("a", { x: 5, y: 5 });
+            model.velocities.set("b", { x: -5, y: 4 });
+            model.velocities.set("c", { x: 3, y: -2 });
+
+            const viewer = Object.create(GraphViewer.prototype);
+            viewer.graph = model;
+            viewer.displayName = id => model.displayName(id);
+            viewer.setStatus = () => {};
+            let renderCalls = 0;
+            let stopCalls = 0;
+            let simulationCalls = 0;
+            viewer.render = () => { renderCalls += 1; };
+            viewer.stopSimulation = () => { stopCalls += 1; };
+            viewer.runSimulation = frames => {
+              simulationCalls += 1;
+              for (const position of model.positions.values()) {
+                position.x += frames;
+                position.y -= frames;
+              }
+            };
+
+            function snapshotPositions() {
+              return JSON.stringify([...model.positions.entries()]
+                .map(([name, position]) => [name, position.x, position.y])
+                .sort((left, right) => left[0].localeCompare(right[0], "ru")));
+            }
+
+            const before = snapshotPositions();
+            viewer.handleEndpointClick(edge, "a");
+            const afterCollapse = snapshotPositions();
+            const collapsed = edge.collapsed === true && model.isEdgeCollapsed(edge);
+
+            viewer.handleEndpointClick(edge, "a");
+            const afterExpand = snapshotPositions();
+            const expanded = edge.collapsed === false && !model.isEdgeCollapsed(edge);
+
+            globalThis.__result = collapsed
+              && expanded
+              && renderCalls === 2
+              && stopCalls === 2
+              && simulationCalls === 0
+              && before === afterCollapse
+              && before === afterExpand;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphViewer_LoadSubgraphPreservesNodeEdgesForLazyEndpointControls() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),

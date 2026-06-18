@@ -1225,9 +1225,9 @@ export class GraphViewer {
   }
 
   if (anchorLoaded && this.graph.isEdgeCollapsed(edge)) {
+    this.stopSimulation();
     this.graph.expandEdge(edge);
     this.render();
-    this.runSimulation(18);
     this.setStatus(`Развернута связь "${this.displayName(anchorName)}" - "${this.displayName(otherName)}"`);
     return;
   }
@@ -1252,8 +1252,8 @@ export class GraphViewer {
   }
 
   this.graph.collapseEdge(edge);
+  this.stopSimulation();
   this.render();
-  this.runSimulation(18);
   this.setStatus(`Свернута связь "${this.displayName(anchorName)}" - "${this.displayName(otherName)}"`);
 
   }
@@ -1268,6 +1268,10 @@ export class GraphViewer {
 
   runSimulation(frames) {
     this.canvas.runSimulation(frames);
+  }
+
+  stopSimulation() {
+    this.canvas?.stopSimulation?.();
   }
 
   fitView() {
