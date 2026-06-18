@@ -449,7 +449,7 @@ export class WebGpuGraphCanvas {
     this.requestDraw();
   }
 
-  runSimulation(frames) {
+  runSimulation(frames, onComplete = null) {
     this.stopSimulation();
 
     if (!this.currentGraph) {
@@ -464,6 +464,8 @@ export class WebGpuGraphCanvas {
       remaining -= 1;
       if (remaining > 0) {
         this.simulationHandle = this.window.requestAnimationFrame(tick);
+      } else {
+        onComplete?.();
       }
     };
 

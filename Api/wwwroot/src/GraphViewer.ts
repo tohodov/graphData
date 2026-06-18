@@ -173,7 +173,10 @@ export class GraphViewer {
   }
 
   bindToolbar() {
-    this.fitButton.addEventListener("click", () => this.fitView());
+    this.fitButton.addEventListener("click", () => {
+      this.fitView();
+      this.runSimulation(40, () => this.fitView());
+    });
     this.resetButton.addEventListener("click", () => {
       this.graph.resetGraph();
       this.render();
@@ -272,7 +275,6 @@ export class GraphViewer {
         await this.refreshTypes();
       }
       this.render();
-      this.runSimulation(18);
     });
 
     this.loadBasisButton.addEventListener("click", () => void this.loadBasis());
@@ -335,7 +337,6 @@ export class GraphViewer {
 
     this.render();
     this.renderTypeControls();
-    this.runSimulation(34);
     this.setStatus(`Развернуто узлов: ${this.graph.loaded.size}`);
   } catch (error) {
     this.setStatus(error.message);
@@ -360,7 +361,6 @@ export class GraphViewer {
 
     this.render();
     this.renderTypeControls();
-    this.runSimulation(alreadyLoaded ? 18 : 34);
     this.setStatus(alreadyLoaded
       ? `Узел "${expansion.displayName}" уже был загружен, связь добавлена`
       : `Развернуто узлов: ${this.graph.loaded.size}`);
@@ -528,7 +528,6 @@ export class GraphViewer {
     this.connectEdgeName.value = "";
     this.render();
     this.renderTypeControls();
-    this.runSimulation(32);
     this.setStatus(`Связаны "${this.displayName(sourceGlobalId)}" и "${this.displayName(targetGlobalId)}"`);
   } catch (error) {
     this.setStatus(error.message);
@@ -685,7 +684,6 @@ export class GraphViewer {
 
     this.renderTypeControls();
     this.render();
-    this.runSimulation(32);
     this.setStatus(`Инстансы связей загружены: ${relationIds.length}`);
   } catch (error) {
     this.setStatus(error.message);
@@ -1052,7 +1050,6 @@ export class GraphViewer {
 
   this.render();
   this.renderTypeControls();
-  this.runSimulation(40);
   this.fitView();
 
   }
@@ -1115,8 +1112,8 @@ export class GraphViewer {
   visit(name);
   removed.forEach(nodeName => this.removeLocalNode(nodeName, false, false));
   this.graph.selectedName = fallbackSelection;
+  this.stopSimulation();
   this.render();
-  this.runSimulation(18);
   this.setStatus(`Развернуто узлов: ${this.graph.loaded.size}`);
 
   }
@@ -1266,8 +1263,8 @@ export class GraphViewer {
     this.canvas.render();
   }
 
-  runSimulation(frames) {
-    this.canvas.runSimulation(frames);
+  runSimulation(frames, onComplete = null) {
+    this.canvas.runSimulation(frames, onComplete);
   }
 
   stopSimulation() {

@@ -418,6 +418,82 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphViewer_CollapsingTreeEdgeDoesNotRunSimulationOrMoveRemainingNodes() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
+            ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            const edge = new GraphEdge({
+              sourceGlobalId: "root",
+              targetGlobalId: "child",
+              sourceLocalId: "root",
+              targetLocalId: "child"
+            });
+
+            function loadedNode(name, displayName, edges) {
+              return {
+                name,
+                displayName,
+                edges,
+                toViewNode() { return { name, globalId: name, displayName }; }
+              };
+            }
+
+            model.rootName = "root";
+            model.selectedName = "child";
+            model.loaded.set("root", loadedNode("root", "Root", [edge]));
+            model.loaded.set("child", loadedNode("child", "Child", [edge]));
+            model.loaded.set("sibling", loadedNode("sibling", "Sibling", []));
+            model.parentByNode.set("child", "root");
+            model.positions.set("root", { x: 10, y: 20 });
+            model.positions.set("child", { x: 140, y: -30 });
+            model.positions.set("sibling", { x: -75, y: 90 });
+
+            const viewer = Object.create(GraphViewer.prototype);
+            viewer.graph = model;
+            viewer.displayName = id => model.displayName(id);
+            viewer.setStatus = () => {};
+            let renderCalls = 0;
+            let stopCalls = 0;
+            let simulationCalls = 0;
+            viewer.render = () => { renderCalls += 1; };
+            viewer.stopSimulation = () => { stopCalls += 1; };
+            viewer.runSimulation = frames => {
+              simulationCalls += 1;
+              for (const position of model.positions.values()) {
+                position.x += frames;
+                position.y -= frames;
+              }
+            };
+
+            function snapshotRemainingPositions() {
+              return JSON.stringify(["root", "sibling"].map(name => {
+                const position = model.positions.get(name);
+                return [name, position.x, position.y];
+              }));
+            }
+
+            const before = snapshotRemainingPositions();
+            viewer.handleEndpointClick(edge, "root");
+            const after = snapshotRemainingPositions();
+
+            globalThis.__result = before === after
+              && !model.loaded.has("child")
+              && model.positions.has("child")
+              && model.selectedName === "root"
+              && renderCalls === 1
+              && stopCalls === 1
+              && simulationCalls === 0;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphViewer_LoadSubgraphPreservesNodeEdgesForLazyEndpointControls() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
@@ -631,6 +707,25 @@ public sealed class GraphUiRegressionTests {
             AssertMatches(source, @"if\s*\(anchorLoaded && !otherLoaded\)\s*\{\s*return\s*\{.*?kind:\s*""expand"".*?text:\s*""\+""", path);
             AssertMatches(source, @"if\s*\(anchorLoaded && !otherLoaded\)\s*\{\s*this\.loadNeighbor\(anchorName,\s*this\.edgeNeighborLocalId\(edge,\s*anchorName\)\);", path);
             AssertMatches(source, @"if\s*\(!anchorLoaded && otherLoaded\)\s*\{\s*this\.loadNeighbor\(otherName,\s*this\.edgeNeighborLocalId\(edge,\s*otherName\)\);", path);
+        }
+    }
+
+    [TestMethod]
+    public void GraphViewer_RunSimulationOnlyFromFitButton() {
+        foreach (var path in new[] {
+            "Api/wwwroot/src/GraphViewer.ts",
+            "Api/wwwroot/src/GraphViewer.js"
+        }) {
+            var source = ReadUiFile(path);
+
+            Assert.AreEqual(
+                1,
+                Regex.Matches(source, @"this\.runSimulation\s*\(").Count,
+                $"Unexpected implicit runSimulation call in {path}.");
+            AssertMatches(
+                source,
+                @"fitButton\.addEventListener\(""click"",\s*\(\)\s*=>\s*\{\s*this\.fitView\(\);\s*this\.runSimulation\(40,\s*\(\)\s*=>\s*this\.fitView\(\)\);",
+                path);
         }
     }
 
