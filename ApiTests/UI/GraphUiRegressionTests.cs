@@ -648,7 +648,10 @@ public sealed class GraphUiRegressionTests {
             const calls = [];
             const canvas = Object.create(WebGpuGraphCanvas.prototype);
             canvas.view = { x: 0, y: 0, scale: 1 };
-            canvas.positions = new Map([["a", { x: 10, y: 20 }]]);
+            canvas.positions = new Map([
+              ["a", { x: 10, y: 20 }],
+              ["b", { x: 110, y: 20 }]
+            ]);
             canvas.callbacks = {
               activateEdgeControl() {},
               syncEdgeAngles() { calls.push("sync"); }
@@ -674,29 +677,53 @@ public sealed class GraphUiRegressionTests {
             const control = { key: "ab\\0a\\0load-neighbor", action: "load-neighbor", kind: "expand", text: "+", title: "expand", angle: 0, anchorName: "a", otherName: "b" };
             const nodesByName = new Map([["a", { name: "a", viewRadius: 34 }]]);
 
-            canvas.renderEdgeEndpointControl(fragment, rect, edge, control, nodesByName, new Set());
-            const first = buttons[0].style.transform.match(/translate\(([-0-9.]+)px, ([-0-9.]+)px\)/);
-            buttons.length = 0;
-            canvas.positions.set("a", { x: 100, y: 80 });
-            canvas.renderEdgeEndpointControl(fragment, rect, edge, control, nodesByName, new Set());
-            const second = buttons[0].style.transform.match(/translate\(([-0-9.]+)px, ([-0-9.]+)px\)/);
+            function parsePoint(button) {
+              const match = button.style.transform.match(/translate\(([-0-9.]+)px, ([-0-9.]+)px\)/);
+              return { x: Number(match[1]), y: Number(match[2]) };
+            }
 
-            const firstOffset = {
-              x: Number(first[1]) - 10,
-              y: Number(first[2]) - 20
-            };
-            const secondOffset = {
-              x: Number(second[1]) - 100,
-              y: Number(second[2]) - 80
-            };
+            function anchorScreen(name) {
+              const position = canvas.positions.get(name);
+              return {
+                x: position.x * canvas.view.scale + canvas.view.x,
+                y: position.y * canvas.view.scale + canvas.view.y
+              };
+            }
+
+            function renderOffset(controlToRender) {
+              buttons.length = 0;
+              canvas.renderEdgeEndpointControl(fragment, rect, edge, controlToRender, nodesByName, new Set());
+              const point = parsePoint(buttons[0]);
+              const anchor = anchorScreen(controlToRender.anchorName);
+              return {
+                x: point.x - anchor.x,
+                y: point.y - anchor.y,
+                action: buttons[0].dataset.edgeAction
+              };
+            }
+
+            const firstOffset = renderOffset(control);
+            canvas.positions.set("a", { x: 100, y: 80 });
+            const secondOffset = renderOffset(control);
+            canvas.view = { x: -30, y: 17, scale: 2.5 };
+            const scaledOffset = renderOffset(control);
+            const loadedControl = { ...control, key: "ab\\0a\\0collapse-edge", action: "collapse-edge", kind: "collapse", text: "-", angle: null };
+            canvas.positions.set("a", { x: 10, y: 20 });
+            canvas.positions.set("b", { x: 110, y: 20 });
+            const loadedOffset = renderOffset(loadedControl);
             canvas.updateDynamicGraph();
 
             globalThis.__result = buttons.length === 1
-              && buttons[0].dataset.edgeAction === "load-neighbor"
+              && firstOffset.action === "load-neighbor"
+              && loadedOffset.action === "collapse-edge"
               && Math.abs(firstOffset.x - 43) < 0.000001
               && Math.abs(firstOffset.y) < 0.000001
               && Math.abs(secondOffset.x - firstOffset.x) < 0.000001
               && Math.abs(secondOffset.y - firstOffset.y) < 0.000001
+              && Math.abs(scaledOffset.x - firstOffset.x) < 0.000001
+              && Math.abs(scaledOffset.y - firstOffset.y) < 0.000001
+              && Math.abs(loadedOffset.x - firstOffset.x) < 0.000001
+              && Math.abs(loadedOffset.y - firstOffset.y) < 0.000001
               && calls.join(",") === "sync,write,labels,renderer,draw";
             """);
 

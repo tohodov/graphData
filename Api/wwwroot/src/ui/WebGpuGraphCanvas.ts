@@ -750,21 +750,22 @@ export class WebGpuGraphCanvas {
       return;
     }
 
-    const anchor = this.positions.get(anchorName);
-    if (!anchor) {
+    const anchorPosition = this.positions.get(anchorName);
+    if (!anchorPosition) {
       return;
     }
 
     const anchorNode = nodesByName.get(anchorName);
     const radius = Number.isFinite(anchorNode?.viewRadius) ? anchorNode.viewRadius : nodeRadius;
+    const anchor = this.graphToScreen(anchorPosition);
     const point = Number.isFinite(control.angle)
       ? pointAtAngle(anchor, control.angle, radius + endpointControlPadding)
       : this.edgeEndpointPoint(anchor, otherName, radius + endpointControlPadding);
     if (!point) {
       return;
     }
-    const x = point.x * this.view.scale + this.view.x;
-    const y = point.y * this.view.scale + this.view.y;
+    const x = point.x;
+    const y = point.y;
     const margin = 36;
     if (x < -margin || x > rect.width + margin || y < -margin || y > rect.height + margin) {
       return;
@@ -802,7 +803,14 @@ export class WebGpuGraphCanvas {
 
   edgeEndpointPoint(anchor, otherName, radius) {
     const other = this.positions.get(otherName);
-    return other ? pointOnCircle(anchor, other, radius) : null;
+    return other ? pointOnCircle(anchor, this.graphToScreen(other), radius) : null;
+  }
+
+  graphToScreen(position) {
+    return {
+      x: position.x * this.view.scale + this.view.x,
+      y: position.y * this.view.scale + this.view.y
+    };
   }
 
   pickNearest(clientX, clientY) {
