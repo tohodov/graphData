@@ -166,7 +166,7 @@ export class GraphModel {
       nodes.set(node.name, node.toViewNode());
       node.edges.forEach(edge => {
         if (!edges.has(edge.key)) {
-          edges.set(edge.key, edge.toViewEdge());
+          edges.set(edge.key, edge.toViewEdge(this.edgeEndpointState(edge)));
         }
       });
     }
@@ -195,21 +195,36 @@ export class GraphModel {
   }
 
   edgeControls(edge: GraphEdge | any): any[] {
-    const normalized = GraphEdge.from(edge);
+    const normalized = this.edgeWithEndpointState(edge);
     return normalized.controls({
-      isEndpointLoaded: globalId => this.isNodeVisible(globalId),
       isCollapsed: this.isEdgeCollapsed(normalized),
       displayName: globalId => this.displayName(globalId)
     });
   }
 
   edgeEndpointControl(edge: GraphEdge | any, anchorName: string): any | null {
-    const normalized = GraphEdge.from(edge);
+    const normalized = this.edgeWithEndpointState(edge);
     return normalized.endpointControl(anchorName, {
-      isEndpointLoaded: globalId => this.isNodeVisible(globalId),
       isCollapsed: this.isEdgeCollapsed(normalized),
       displayName: globalId => this.displayName(globalId)
     });
+  }
+
+  edgeWithEndpointState(edge: GraphEdge | any): GraphEdge {
+    const normalized = GraphEdge.from(edge);
+    return GraphEdge.from(normalized.toViewEdge(this.edgeEndpointState(normalized)));
+  }
+
+  edgeEndpointState(edge: GraphEdge | any): Record<string, boolean> {
+    const normalized = GraphEdge.from(edge);
+    return {
+      sourceLoaded: this.loaded.has(normalized.sourceGlobalId),
+      targetLoaded: this.loaded.has(normalized.targetGlobalId),
+      sourceShowed: this.isNodeVisible(normalized.sourceGlobalId),
+      targetShowed: this.isNodeVisible(normalized.targetGlobalId),
+      sourcePositioned: this.positions.has(normalized.sourceGlobalId),
+      targetPositioned: this.positions.has(normalized.targetGlobalId)
+    };
   }
 
   collapseEdge(edge: GraphEdge | string | any): void {

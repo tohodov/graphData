@@ -14,8 +14,14 @@ export type GraphEdgeSnapshot = {
   viewRank?: number | null;
   viewRankReason?: string;
   collapsed?: boolean;
-  frontierAnchorGlobalId?: string | null;
-  frontierAngle?: number | null;
+  controlAnchorGlobalId?: string | null;
+  controlAngle?: number | null;
+  sourceLoaded?: boolean;
+  targetLoaded?: boolean;
+  sourceShowed?: boolean;
+  targetShowed?: boolean;
+  sourcePositioned?: boolean;
+  targetPositioned?: boolean;
 };
 
 export type GraphEdgeControlKind = "expand" | "collapse";
@@ -34,7 +40,6 @@ export type GraphEdgeControlSnapshot = {
 };
 
 export type GraphEdgeControlContext = {
-  isEndpointLoaded(globalId: string): boolean;
   isCollapsed: boolean;
   displayName(globalId: string): string;
 };
@@ -82,7 +87,7 @@ class GraphEdgeControl {
       anchorName,
       otherName,
       neighborLocalId: edge.neighborLocalIdFor(anchorName),
-      angle: edge.frontierAngleFor(anchorName)
+      angle: edge.controlAngleFor(anchorName)
     });
   }
 
@@ -131,8 +136,14 @@ export class GraphEdge {
   viewRank: number | null;
   viewRankReason: string;
   collapsed: boolean;
-  frontierAnchorGlobalId: string | null;
-  frontierAngle: number | null;
+  controlAnchorGlobalId: string | null;
+  controlAngle: number | null;
+  sourceLoaded: boolean;
+  targetLoaded: boolean;
+  sourceShowed: boolean;
+  targetShowed: boolean;
+  sourcePositioned: boolean;
+  targetPositioned: boolean;
   key: string;
   constructor({
     sourceGlobalId = "",
@@ -150,8 +161,14 @@ export class GraphEdge {
     viewRank = null,
     viewRankReason = "",
     collapsed = false,
-    frontierAnchorGlobalId = null,
-    frontierAngle = null
+    controlAnchorGlobalId = null,
+    controlAngle = null,
+    sourceLoaded = false,
+    targetLoaded = false,
+    sourceShowed = false,
+    targetShowed = false,
+    sourcePositioned = false,
+    targetPositioned = false
   }: GraphEdgeSnapshot) {
     this.sourceGlobalId = sourceGlobalId;
     this.targetGlobalId = targetGlobalId;
@@ -168,8 +185,14 @@ export class GraphEdge {
     this.viewRank = viewRank;
     this.viewRankReason = viewRankReason;
     this.collapsed = Boolean(collapsed);
-    this.frontierAnchorGlobalId = frontierAnchorGlobalId;
-    this.frontierAngle = Number.isFinite(frontierAngle) ? frontierAngle : null;
+    this.controlAnchorGlobalId = controlAnchorGlobalId;
+    this.controlAngle = Number.isFinite(controlAngle) ? controlAngle : null;
+    this.sourceLoaded = Boolean(sourceLoaded);
+    this.targetLoaded = Boolean(targetLoaded);
+    this.sourceShowed = Boolean(sourceShowed);
+    this.targetShowed = Boolean(targetShowed);
+    this.sourcePositioned = Boolean(sourcePositioned);
+    this.targetPositioned = Boolean(targetPositioned);
     this.key = GraphEdge.keyFor(sourceGlobalId, targetGlobalId, relationGlobalId ?? typeGlobalId ?? "");
   }
 
@@ -197,9 +220,9 @@ export class GraphEdge {
         if (existing?.collapsed && !normalized.collapsed) {
           normalized.collapsed = true;
         }
-        if (existing && normalized.frontierAngle === null && existing.frontierAngle !== null) {
-          normalized.frontierAnchorGlobalId = existing.frontierAnchorGlobalId;
-          normalized.frontierAngle = existing.frontierAngle;
+        if (existing && normalized.controlAngle === null && existing.controlAngle !== null) {
+          normalized.controlAnchorGlobalId = existing.controlAnchorGlobalId;
+          normalized.controlAngle = existing.controlAngle;
         }
         edges.set(normalized.key, normalized);
       }
@@ -233,19 +256,49 @@ export class GraphEdge {
     return this.sourceGlobalId === anchorGlobalId ? this.targetLocalId : this.sourceLocalId;
   }
 
-  setFrontierAngle(anchorGlobalId: string, angle: number | null): void {
-    this.frontierAnchorGlobalId = anchorGlobalId;
-    this.frontierAngle = Number.isFinite(angle) ? angle : null;
+  endpointLoaded(globalId: string): boolean {
+    if (this.sourceGlobalId === globalId) {
+      return this.sourceLoaded;
+    }
+    if (this.targetGlobalId === globalId) {
+      return this.targetLoaded;
+    }
+    return false;
   }
 
-  clearFrontierAngle(): void {
-    this.frontierAnchorGlobalId = null;
-    this.frontierAngle = null;
+  endpointShowed(globalId: string): boolean {
+    if (this.sourceGlobalId === globalId) {
+      return this.sourceShowed;
+    }
+    if (this.targetGlobalId === globalId) {
+      return this.targetShowed;
+    }
+    return false;
   }
 
-  frontierAngleFor(anchorGlobalId: string): number | null {
-    return this.frontierAnchorGlobalId === anchorGlobalId && Number.isFinite(this.frontierAngle)
-      ? this.frontierAngle
+  endpointPositioned(globalId: string): boolean {
+    if (this.sourceGlobalId === globalId) {
+      return this.sourcePositioned;
+    }
+    if (this.targetGlobalId === globalId) {
+      return this.targetPositioned;
+    }
+    return false;
+  }
+
+  setControlAngle(anchorGlobalId: string, angle: number | null): void {
+    this.controlAnchorGlobalId = anchorGlobalId;
+    this.controlAngle = Number.isFinite(angle) ? angle : null;
+  }
+
+  clearControlAngle(): void {
+    this.controlAnchorGlobalId = null;
+    this.controlAngle = null;
+  }
+
+  controlAngleFor(anchorGlobalId: string): number | null {
+    return this.controlAnchorGlobalId === anchorGlobalId && Number.isFinite(this.controlAngle)
+      ? this.controlAngle
       : null;
   }
 
@@ -261,19 +314,19 @@ export class GraphEdge {
     }
 
     const otherName = this.otherEndpoint(anchorName);
-    const anchorLoaded = context.isEndpointLoaded(anchorName);
-    const otherLoaded = context.isEndpointLoaded(otherName);
+    const anchorShowed = this.endpointShowed(anchorName);
+    const otherShowed = this.endpointShowed(otherName);
     const otherLabel = this.endpointDisplayName(otherName, context.displayName);
 
-    if (anchorLoaded && !otherLoaded) {
+    if (anchorShowed && !otherShowed) {
       return GraphEdgeControl.loadNeighbor(this, anchorName, otherName, otherLabel);
     }
 
-    if (anchorLoaded && context.isCollapsed) {
+    if (anchorShowed && context.isCollapsed) {
       return GraphEdgeControl.expandEdge(this, anchorName, otherName, otherLabel);
     }
 
-    if (anchorLoaded && otherLoaded) {
+    if (anchorShowed && otherShowed) {
       return GraphEdgeControl.collapseEdge(this, anchorName, otherName, otherLabel);
     }
 
@@ -297,8 +350,14 @@ export class GraphEdge {
       viewRank: this.viewRank,
       viewRankReason: this.viewRankReason,
       collapsed: this.collapsed,
-      frontierAnchorGlobalId: this.frontierAnchorGlobalId,
-      frontierAngle: this.frontierAngle,
+      controlAnchorGlobalId: this.controlAnchorGlobalId,
+      controlAngle: this.controlAngle,
+      sourceLoaded: this.sourceLoaded,
+      targetLoaded: this.targetLoaded,
+      sourceShowed: this.sourceShowed,
+      targetShowed: this.targetShowed,
+      sourcePositioned: this.sourcePositioned,
+      targetPositioned: this.targetPositioned,
       ...extra
     };
   }

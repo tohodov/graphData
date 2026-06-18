@@ -1810,12 +1810,12 @@ export class GraphViewer {
 
   ordered.forEach((edge, index) => {
     const otherName = edge.otherEndpoint(nodeName);
-    const currentAngle = edge.frontierAngleFor(nodeName);
+    const currentAngle = edge.controlAngleFor(nodeName);
     const loadedAngle = this.loadedEdgeAngle(nodeName, otherName);
     if (loadedAngle !== null) {
-      edge.setFrontierAngle(nodeName, loadedAngle);
+      edge.setControlAngle(nodeName, loadedAngle);
     } else if (currentAngle === null) {
-      edge.setFrontierAngle(nodeName, start + step * index);
+      edge.setControlAngle(nodeName, start + step * index);
     }
   });
   node.edges = edges;
@@ -1831,7 +1831,7 @@ export class GraphViewer {
   const edge = anchor?.edges
     ?.map(item => GraphEdge.from(item))
     .find(item => item.otherEndpoint(anchorName) === otherName);
-  return edge?.frontierAngleFor(anchorName) ?? this.loadedEdgeAngle(anchorName, otherName);
+  return edge?.controlAngleFor(anchorName) ?? this.loadedEdgeAngle(anchorName, otherName);
 
   }
 

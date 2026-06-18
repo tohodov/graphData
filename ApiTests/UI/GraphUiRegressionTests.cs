@@ -96,26 +96,26 @@ public sealed class GraphUiRegressionTests {
             const collapsedControls = loadedModel.visibleGraph().edges[0].controls;
 
             edge.collapsed = false;
-            const frontierModel = new GraphModel();
-            frontierModel.loaded.set("a", loadedNode("a", [edge]));
-            const frontierControls = frontierModel.visibleGraph().edges[0].controls;
+            const oneEndpointModel = new GraphModel();
+            oneEndpointModel.loaded.set("a", loadedNode("a", [edge]));
+            const oneEndpointControls = oneEndpointModel.visibleGraph().edges[0].controls;
 
             globalThis.__result = loadedControls.length === 2
               && loadedControls.every(control => control.action === "collapse-edge")
               && loadedControls.map(control => control.anchorName).sort().join(",") === "a,b"
               && collapsedControls.length === 2
               && collapsedControls.every(control => control.action === "expand-edge")
-              && frontierControls.length === 1
-              && frontierControls[0].action === "load-neighbor"
-              && frontierControls[0].anchorName === "a"
-              && frontierControls[0].neighborLocalId === "b-local";
+              && oneEndpointControls.length === 1
+              && oneEndpointControls[0].action === "load-neighbor"
+              && oneEndpointControls[0].anchorName === "a"
+              && oneEndpointControls[0].neighborLocalId === "b-local";
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
     }
 
     [TestMethod]
-    public void GraphViewer_LoadedButNotShowedNeighborsStayFrontierUntilExpanded() {
+    public void GraphViewer_LoadedButNotShowedNeighborsRemainExpandableUntilShown() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
             ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
@@ -166,6 +166,10 @@ public sealed class GraphUiRegressionTests {
             globalThis.__result = model.hasNode("b")
               && !before.nodes.some(node => node.name === "b")
               && before.edges.length === 1
+              && before.edges[0].sourceLoaded === true
+              && before.edges[0].targetLoaded === true
+              && before.edges[0].sourceShowed === true
+              && before.edges[0].targetShowed === false
               && control.action === "load-neighbor"
               && control.otherName === "b"
               && !calls.includes("load")
@@ -534,11 +538,11 @@ public sealed class GraphUiRegressionTests {
               && !collapsed.calls.some(call => call.startsWith("load:"));
 
             edge.collapsed = true;
-            const frontier = makeViewer(["a"]);
-            const frontierControl = frontier.viewer.graph.edgeEndpointControl(edge, "a");
-            frontier.viewer.handleEdgeControl(edge, frontierControl);
-            const frontierClickLoadsNeighbor = frontier.calls.includes("load:a:b-local")
-              && !frontier.calls.some(call => call.startsWith("collapse:"));
+            const oneEndpoint = makeViewer(["a"]);
+            const oneEndpointControl = oneEndpoint.viewer.graph.edgeEndpointControl(edge, "a");
+            oneEndpoint.viewer.handleEdgeControl(edge, oneEndpointControl);
+            const oneEndpointClickLoadsNeighbor = oneEndpoint.calls.includes("load:a:b-local")
+              && !oneEndpoint.calls.some(call => call.startsWith("collapse:"));
             edge.collapsed = false;
 
             const treeFromParent = makeViewer(["a", "b"]);
@@ -557,8 +561,8 @@ public sealed class GraphUiRegressionTests {
               && loadedControl.kind === "collapse"
               && collapsedClickExpandsOnly
               && collapsedControl.kind === "expand"
-              && frontierClickLoadsNeighbor
-              && frontierControl.kind === "expand"
+              && oneEndpointClickLoadsNeighbor
+              && oneEndpointControl.kind === "expand"
               && parentTreeControl?.kind === "collapse"
               && childTreeControl?.kind === "collapse"
               && parentEndCollapsesChild
@@ -764,7 +768,7 @@ public sealed class GraphUiRegressionTests {
             const control = viewer.graph.edgeEndpointControl(edge, "root");
             const graphEdgeControl = viewer.graph.visibleGraph().edges.find(item => item.key === edge.key)?.controls?.[0];
             const rootPosition = viewer.graph.positions.get("root");
-            const angles = root.edges.map(item => item.frontierAngle).sort((a, b) => a - b);
+            const angles = root.edges.map(item => item.controlAngle).sort((a, b) => a - b);
             const step = Math.PI / 2;
             const evenlySpaced = angles.every((angle, index) => {
               const next = angles[(index + 1) % angles.length] + (index === angles.length - 1 ? Math.PI * 2 : 0);
@@ -788,7 +792,7 @@ public sealed class GraphUiRegressionTests {
               y: loadedPosition.y - rootPosition.y
             };
             const rootEdge = root.edges.find(item => item.targetGlobalId === "root/a");
-            const angleAfterLoad = rootEdge.frontierAngle;
+            const angleAfterLoad = rootEdge.controlAngle;
             viewer.graph.positions.set("root/a", { x: rootPosition.x + 204, y: rootPosition.y });
             viewer.refreshEdgeAngles();
 
@@ -803,14 +807,14 @@ public sealed class GraphUiRegressionTests {
               && Math.abs(loadedOffset.x) < 0.000001
               && Math.abs(loadedOffset.y + 204) < 0.000001
               && Math.abs(angleAfterLoad + Math.PI / 2) < 0.000001
-              && Math.abs(rootEdge.frontierAngle) < 0.000001;
+              && Math.abs(rootEdge.controlAngle) < 0.000001;
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
     }
 
     [TestMethod]
-    public void WebGpuCanvas_RendersFrontierEndpointControlsAtStoredAngle() {
+    public void WebGpuCanvas_RendersUnshownEndpointControlsAtStoredAngle() {
         var engine = CreateUiEngine(("Api/wwwroot/src/ui/WebGpuGraphCanvas.js", "WebGpuGraphCanvas"));
 
         engine.Execute(
