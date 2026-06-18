@@ -34,9 +34,32 @@ export class GraphModel {
     this.busy = false;
     this.schema = {
       projectionBasis: "empty",
+      defaultBasis: { ...defaultBasis },
       basis: { ...defaultBasis },
+      systemNodeIds: {},
+      baseTypeIds: {},
       nodeTypes: new Map(),
       edgeTypes: new Map()
+    };
+  }
+
+  applyUiSettings(settings: any): void {
+    const basis = GraphModel.readBasis(settings?.basis ?? settings?.systemNodeIds, this.schema.defaultBasis);
+    this.schema.defaultBasis = { ...basis };
+    this.schema.basis = { ...basis };
+    this.schema.systemNodeIds = { ...(settings?.systemNodeIds ?? {}) };
+    this.schema.baseTypeIds = { ...(settings?.baseTypeIds ?? {}) };
+  }
+
+  defaultBasis(): { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string } {
+    return this.schema.defaultBasis;
+  }
+
+  static readBasis(value: any, fallback: any = defaultBasis): { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string } {
+    return {
+      nodeTypeRoot: String(value?.nodeTypeRoot || fallback?.nodeTypeRoot || ""),
+      edgeTypeRoot: String(value?.edgeTypeRoot || fallback?.edgeTypeRoot || ""),
+      relationRoot: String(value?.relationRoot || fallback?.relationRoot || "")
     };
   }
 

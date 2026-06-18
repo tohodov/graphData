@@ -8,4 +8,4 @@ declare global {
 
 const graphViewer = new GraphViewer({ document, window });
 window.graphViewer = graphViewer;
-graphViewer.start();
+void graphViewer.start();

@@ -8,7 +8,6 @@ import {
   projectionLabelVisibleAttribute,
   projectionRankAttribute,
   projectionVisibleAttribute,
-  defaultBasis,
   graphRoleAttribute
 } from "./domain/graphAttributes.js";
 import { GraphApi } from "./infrastructure/GraphApi.js";
@@ -123,7 +122,7 @@ export class GraphViewer {
     });
   }
 
-  start() {
+  async start() {
     this.bindTabs();
     this.bindToolbar();
     this.bindMobileMenu();
@@ -133,6 +132,7 @@ export class GraphViewer {
     this.bindProjection();
     this.bindGraphSurface();
 
+    await this.loadUiSettings();
     this.setSearchQueryTemplate("all");
     this.syncBasisInputs();
     this.renderTypeControls();
@@ -145,6 +145,16 @@ export class GraphViewer {
     } else {
       void this.loadGraphRoots();
     }
+  }
+
+  async loadUiSettings() {
+    try {
+      const settings = await this.apiJson("/api/ui/settings");
+      this.graph.applyUiSettings(settings);
+    } catch (error) {
+      this.setStatus(`Не удалось загрузить настройки UI: ${error.message}`);
+    }
+
   }
 
   requireElement(selector) {
@@ -552,6 +562,7 @@ export class GraphViewer {
   this.setBusy(true);
   try {
     const basisNode = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(basisName)}`));
+    const defaultBasis = this.graph.defaultBasis();
     this.graph.schema.basis = {
       nodeTypeRoot: basisNode.attributes?.nodeTypeRoot || defaultBasis.nodeTypeRoot,
       edgeTypeRoot: basisNode.attributes?.edgeTypeRoot || defaultBasis.edgeTypeRoot,
@@ -1643,6 +1654,7 @@ export class GraphViewer {
   }
 
   readBasisInputs() {
+  const defaultBasis = this.graph.defaultBasis();
   this.graph.schema.basis = {
     nodeTypeRoot: this.nodeTypeRootInput.value.trim() || defaultBasis.nodeTypeRoot,
     edgeTypeRoot: this.edgeTypeRootInput.value.trim() || defaultBasis.edgeTypeRoot,

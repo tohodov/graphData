@@ -75,6 +75,13 @@ public sealed class GraphUiRegressionTests {
         engine.Execute(
             """
             const model = new GraphModel();
+            model.applyUiSettings({
+              basis: {
+                nodeTypeRoot: "graphdata/types/nodes",
+                edgeTypeRoot: "graphdata/types/edges",
+                relationRoot: "graphdata/relations"
+              }
+            });
             model.schema.projectionBasis = "relations";
 
             const relationId = model.basis.relationRoot + "/r1";
@@ -141,6 +148,49 @@ public sealed class GraphUiRegressionTests {
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void GraphModel_AppliesUiSettingsBasis()
+    {
+        var engine = CreateUiEngine(("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            model.applyUiSettings({
+              systemNodeIds: {
+                graphDataRoot: "backend/root",
+                nodeTypeRoot: "backend/types/nodes",
+                edgeTypeRoot: "backend/types/edges",
+                relationRoot: "backend/relations"
+              },
+              baseTypeIds: {
+                nodeInstance: "backend/types/nodes/Instance"
+              }
+            });
+
+            globalThis.__result = model.basis.nodeTypeRoot === "backend/types/nodes"
+              && model.basis.edgeTypeRoot === "backend/types/edges"
+              && model.basis.relationRoot === "backend/relations"
+              && model.defaultBasis().relationRoot === "backend/relations"
+              && model.schema.systemNodeIds.graphDataRoot === "backend/root"
+              && model.schema.baseTypeIds.nodeInstance === "backend/types/nodes/Instance";
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void FrontendDefaults_DoNotHardcodeGraphSystemNodeIds()
+    {
+        var attributes = ReadUiFile("Api/wwwroot/src/domain/graphAttributes.ts");
+        var html = ReadUiFile("Api/wwwroot/index.html");
+
+        Assert.IsFalse(attributes.Contains("graphdata/types", StringComparison.Ordinal));
+        Assert.IsFalse(attributes.Contains("graphdata/relations", StringComparison.Ordinal));
+        Assert.IsFalse(html.Contains("graphdata/types", StringComparison.Ordinal));
+        Assert.IsFalse(html.Contains("graphdata/relations", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -540,9 +590,9 @@ public sealed class GraphUiRegressionTests {
             const projectionVisibleAttribute = "projectionVisible";
             const graphRoleAttribute = "graphRole";
             const defaultBasis = {
-              nodeTypeRoot: "graphdata/types/nodes",
-              edgeTypeRoot: "graphdata/types/edges",
-              relationRoot: "graphdata/relations"
+              nodeTypeRoot: "",
+              edgeTypeRoot: "",
+              relationRoot: ""
             };
             const nodeRadius = 34;
             const GraphId = {
