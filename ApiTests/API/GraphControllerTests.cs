@@ -324,7 +324,7 @@ public sealed class GraphControllerTests {
     }
 
     [TestMethod]
-    public async Task ChangeEdgeTypeAsync_ReplacesRelationTypeConnectionAndAttribute() {
+    public async Task ChangeEdgeTypeAsync_CreatesRelationSubgraphForBasicEdgeAndReturnsIt() {
         await using var scope = TestGraphStorageScope.Create();
         var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
         var typeRoot = (await scope.Storage.Create(new("types"), graphData.GlobalId)).Value!;
@@ -332,36 +332,54 @@ public sealed class GraphControllerTests {
             [GraphRuntimeAttributeNames.GraphKind] = "type-root",
             [GraphRuntimeAttributeNames.GraphElement] = "edge"
         })).Value!;
-        var oldType = (await scope.Storage.Create(new("old-type"), edgeTypeRoot.GlobalId, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "type",
-            [GraphRuntimeAttributeNames.GraphElement] = "edge"
-        })).Value!;
         var newType = (await scope.Storage.Create(new("new-type"), edgeTypeRoot.GlobalId, new Dictionary<string, string> {
             [GraphRuntimeAttributeNames.GraphKind] = "type",
             [GraphRuntimeAttributeNames.GraphElement] = "edge"
         })).Value!;
         var relationRoot = (await scope.Storage.Create(new("relations"), graphData.GlobalId)).Value!;
-        var relation = (await scope.Storage.Create(new("relation-1"), relationRoot.GlobalId, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "edge-instance",
-            [GraphRuntimeAttributeNames.GraphElement] = "edge",
-            [GraphRuntimeAttributeNames.GraphTypeName] = oldType.GlobalId.ToString()
-        })).Value!;
-        await scope.Storage.Connect(relation.GlobalId, oldType.GlobalId);
+        var source = (await scope.Storage.Create(new("source"))).Value!;
+        var target = (await scope.Storage.Create(new("target"))).Value!;
+        await scope.Storage.Connect(source.GlobalId, target.GlobalId);
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
-            RelationGlobalId = relation.GlobalId.Select(static segment => segment.ToString()).ToArray(),
-            TypeGlobalId = newType.GlobalId.Select(static segment => segment.ToString()).ToArray()
+            SourceGlobalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            TargetGlobalId = target.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            TypeGlobalId = newType.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            RelationRootGlobalId = relationRoot.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            RelationLocalId = "relation-1"
         });
 
-        Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+        var response = ok.Value as SubgraphResponse;
+        Assert.IsNotNull(response);
 
-        var updatedRelation = (await scope.Storage.Get(relation.GlobalId)).Value!;
-        Assert.AreEqual(newType.GlobalId.ToString(), updatedRelation.Attributes[GraphRuntimeAttributeNames.GraphTypeName]);
+        var relation = response.Nodes.Single(node => node.Attributes.TryGetValue(GraphRuntimeAttributeNames.GraphKind, out var kind) && kind == "edge-instance");
+        Assert.AreEqual("graphdata/relations/relation-1", relation.GlobalId);
+        Assert.AreEqual(newType.GlobalId.ToString(), relation.Attributes[GraphRuntimeAttributeNames.GraphTypeName]);
 
-        var connected = (await scope.Storage.GetConnectedNodesAsync(updatedRelation)).Value!;
-        Assert.IsTrue(connected.Any(node => node.GlobalId == newType.GlobalId));
-        Assert.IsFalse(connected.Any(node => node.GlobalId == oldType.GlobalId));
+        var returnedIds = response.Nodes.Select(static node => node.GlobalId).ToHashSet(StringComparer.Ordinal);
+        Assert.IsTrue(returnedIds.Contains(source.GlobalId.ToString()));
+        Assert.IsTrue(returnedIds.Contains(target.GlobalId.ToString()));
+        Assert.IsTrue(returnedIds.Contains(newType.GlobalId.ToString()));
+
+        var sourcePort = response.Nodes.Single(node => node.Attributes.TryGetValue(GraphRuntimeAttributeNames.GraphRole, out var role) && role == "source");
+        var targetPort = response.Nodes.Single(node => node.Attributes.TryGetValue(GraphRuntimeAttributeNames.GraphRole, out var role) && role == "target");
+        var typePort = response.Nodes.Single(node => node.Attributes.TryGetValue(GraphRuntimeAttributeNames.GraphRole, out var role) && role == "type");
+
+        Assert.IsTrue(GraphIdIsChildOf(sourcePort.GlobalId, relation.GlobalId));
+        Assert.IsTrue(GraphIdIsChildOf(targetPort.GlobalId, relation.GlobalId));
+        Assert.IsTrue(GraphIdIsChildOf(typePort.GlobalId, relation.GlobalId));
+        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, sourcePort.GlobalId, source.GlobalId.ToString())));
+        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, targetPort.GlobalId, target.GlobalId.ToString())));
+        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, typePort.GlobalId, newType.GlobalId.ToString())));
+
+        var storedRelation = (await scope.Storage.Get(new("graphdata", "relations", "relation-1"))).Value!;
+        Assert.AreEqual(newType.GlobalId.ToString(), storedRelation.Attributes[GraphRuntimeAttributeNames.GraphTypeName]);
+
+        var sourceConnections = (await scope.Storage.GetConnectedNodesAsync(source)).Value!;
+        Assert.IsFalse(sourceConnections.Any(node => node.GlobalId == target.GlobalId));
     }
 
     [TestMethod]
@@ -607,6 +625,9 @@ public sealed class GraphControllerTests {
     private static bool HasEndpoints(EdgeResponse edge, string left, string right) =>
         (edge.SourceGlobalId == left && edge.TargetGlobalId == right) ||
         (edge.SourceGlobalId == right && edge.TargetGlobalId == left);
+
+    private static bool GraphIdIsChildOf(string globalId, string parentGlobalId) =>
+        globalId.StartsWith(parentGlobalId + "/", StringComparison.Ordinal);
 
     private sealed class SymLinkGraphStorageScope : IAsyncDisposable {
         private readonly string _rootPath;

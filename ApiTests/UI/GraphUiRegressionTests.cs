@@ -465,6 +465,86 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphProjection_ResolvesEdgeTypeThroughTypePort() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            model.applyUiSettings({
+              basis: {
+                nodeTypeRoot: "graphdata/types/nodes",
+                edgeTypeRoot: "graphdata/types/edges",
+                relationRoot: "graphdata/relations"
+              }
+            });
+            model.schema.projectionBasis = "relations";
+
+            const typeId = "graphdata/types/edges/DependsOn";
+            const relationId = "graphdata/relations/r1";
+            const sourcePortId = relationId + "/source";
+            const targetPortId = relationId + "/target";
+            const typePortId = relationId + "/type";
+            model.schema.edgeTypes.set(typeId, {
+              globalId: typeId,
+              label: "DependsOn",
+              directed: true,
+              rank: 77
+            });
+
+            model.putNode(new GraphNode({
+              globalId: "a",
+              displayName: "A",
+              edges: [{ sourceGlobalId: "a", targetGlobalId: sourcePortId }]
+            }));
+            model.putNode(new GraphNode({
+              globalId: sourcePortId,
+              attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "source" },
+              edges: [{ sourceGlobalId: sourcePortId, targetGlobalId: relationId }]
+            }));
+            model.putNode(new GraphNode({
+              globalId: relationId,
+              attributes: { [graphKindAttribute]: "edge-instance", [graphElementAttribute]: "edge" },
+              edges: [
+                { sourceGlobalId: relationId, targetGlobalId: targetPortId },
+                { sourceGlobalId: relationId, targetGlobalId: typePortId }
+              ]
+            }));
+            model.putNode(new GraphNode({
+              globalId: targetPortId,
+              attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "target" },
+              edges: [{ sourceGlobalId: targetPortId, targetGlobalId: "b" }]
+            }));
+            model.putNode(new GraphNode({
+              globalId: typePortId,
+              attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "type" },
+              edges: [{ sourceGlobalId: typePortId, targetGlobalId: typeId }]
+            }));
+            model.putNode(new GraphNode({
+              globalId: "b",
+              displayName: "B",
+              edges: []
+            }));
+            model.putNode(new GraphNode({
+              globalId: typeId,
+              displayName: "DependsOn",
+              edges: []
+            }));
+
+            const edge = model.visibleGraph().edges.find(item => item.projected);
+            globalThis.__result = edge?.typeGlobalId === typeId
+              && edge?.label === "DependsOn"
+              && edge?.directed === true;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphModel_AppliesUiSettingsBasis()
     {
         var engine = CreateUiEngine(("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));

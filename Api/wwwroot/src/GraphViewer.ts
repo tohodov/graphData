@@ -8,7 +8,6 @@ import {
   projectionLabelVisibleAttribute,
   projectionRankAttribute,
   projectionVisibleAttribute,
-  graphRoleAttribute,
   nodeRadius
 } from "./domain/graphAttributes.js";
 import { GraphApi } from "./infrastructure/GraphApi.js";
@@ -557,14 +556,14 @@ export class GraphViewer {
   this.setBusy(true);
   try {
     if (typeGlobalId) {
-      const relation = await this.createTypedEdgeRelation(
+      const subgraph = await this.changeGraphEdgeType({
         sourceGlobalId,
         targetGlobalId,
-        typeGlobalId,
-        options.relationLocalId || "");
-      const subgraph = await this.loadSubgraphForRoots([relation.globalId, sourceGlobalId, targetGlobalId, typeGlobalId], 2);
+        relationGlobalId: null
+      }, typeGlobalId, { relationLocalId: options.relationLocalId || "" });
       this.mergeSubgraphIntoViewer(subgraph, { select: false });
       this.graph.selectedName = sourceGlobalId;
+      this.selectReturnedRelationEdges(subgraph);
     } else {
       await this.connectGraphNodes(sourceGlobalId, targetGlobalId);
       await this.loadNode(sourceGlobalId, null, { select: true });
@@ -774,10 +773,10 @@ export class GraphViewer {
   }
 
   async assignSelectedEdgeType() {
-  const edges = this.selectedTypedEdgeObjects();
+  const edges = this.selectedEdgeObjects();
   const typeGlobalId = this.assignEdgeType.value;
   if (edges.length === 0 || !typeGlobalId) {
-    this.setStatus("Выберите типизированные связи и тип связи");
+    this.setStatus("Выберите связи и тип связи");
     return;
   }
 
@@ -787,22 +786,27 @@ export class GraphViewer {
 
   async changeEdgeTypeForEdges(edges, typeGlobalId) {
   if (!edges?.length || !typeGlobalId) {
-    this.setStatus("Выберите типизированные связи и тип связи");
+    this.setStatus("Выберите связи и тип связи");
     return;
   }
 
-  const relationIds = [...new Set(edges.map(edge => this.edgeEditableNodeId(edge)).filter(Boolean))];
+  const nextEdgeKeys = [];
   this.setBusy(true);
   try {
-    for (const relationId of relationIds) {
-      await this.changeGraphEdgeType(relationId, typeGlobalId);
-      const subgraph = await this.loadSubgraphForRoots([relationId, typeGlobalId], 2);
-      this.replaceLoadedRelationSubgraph(subgraph, relationId);
+    for (const edge of edges) {
+      const subgraph = await this.changeGraphEdgeType(edge, typeGlobalId);
+      this.graph.removeSelectedEdge(edge.key);
+      this.removeLocalEdge(edge.sourceGlobalId, edge.targetGlobalId);
+      if (edge.relationGlobalId) {
+        this.removeLocalRelationSubgraph(edge.relationGlobalId);
+      }
       this.mergeSubgraphIntoViewer(subgraph, { select: false });
+      nextEdgeKeys.push(...this.projectedEdgeKeysFromSubgraph(subgraph));
     }
+    nextEdgeKeys.forEach(key => this.graph.selectedEdgeKeys.add(key));
     this.render();
     this.renderTypeControls();
-    this.setStatus(`Тип ${this.displayName(typeGlobalId)} назначен связям: ${relationIds.length}`);
+    this.setStatus(`Тип ${this.displayName(typeGlobalId)} назначен связям: ${edges.length}`);
   } catch (error) {
     this.setStatus(error.message);
   } finally {
@@ -811,39 +815,18 @@ export class GraphViewer {
 
   }
 
-  async changeGraphEdgeType(relationGlobalId, typeGlobalId) {
-  await this.apiJson("/api/graph/edges/type", {
+  async changeGraphEdgeType(edge, typeGlobalId, options: any = {}) {
+  return this.apiJson("/api/graph/edges/type", {
     method: "PUT",
     body: JSON.stringify({
-      relationGlobalId: this.parseGlobalId(relationGlobalId),
-      typeGlobalId: this.parseGlobalId(typeGlobalId)
-    }),
-    expectJson: false
+      relationGlobalId: edge.relationGlobalId ? this.parseGlobalId(edge.relationGlobalId) : null,
+      sourceGlobalId: edge.sourceGlobalId ? this.parseGlobalId(edge.sourceGlobalId) : null,
+      targetGlobalId: edge.targetGlobalId ? this.parseGlobalId(edge.targetGlobalId) : null,
+      typeGlobalId: this.parseGlobalId(typeGlobalId),
+      relationRootGlobalId: this.parseGlobalId(this.getBasis().relationRoot),
+      relationLocalId: options.relationLocalId || null
+    })
   });
-
-  }
-
-  async createTypedEdgeRelation(source, target, typeGlobalId, relationLocalId = "") {
-  this.readBasisInputs();
-  await this.ensurePath(this.getBasis().relationRoot);
-  const relation = await this.createGraphNode(relationLocalId || this.createRelationLocalId(typeGlobalId), this.getBasis().relationRoot, {
-    [graphKindAttribute]: "edge-instance",
-    [graphElementAttribute]: "edge",
-    [graphTypeNameAttribute]: typeGlobalId
-  });
-  const sourcePort = await this.createGraphNode("source", relation.globalId, {
-    [graphKindAttribute]: "edge-port",
-    [graphRoleAttribute]: "source"
-  });
-  const targetPort = await this.createGraphNode("target", relation.globalId, {
-    [graphKindAttribute]: "edge-port",
-    [graphRoleAttribute]: "target"
-  });
-
-  await this.connectGraphNodes(relation.globalId, typeGlobalId);
-  await this.connectGraphNodes(sourcePort.globalId, source);
-  await this.connectGraphNodes(targetPort.globalId, target);
-  return relation;
 
   }
 
@@ -1191,37 +1174,43 @@ export class GraphViewer {
 
   }
 
-  replaceLoadedRelationSubgraph(response, relationId) {
-  const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
-  const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
-  const edgesByNode = new Map();
+  removeLocalRelationSubgraph(relationId) {
+  [...this.graph.loaded.keys()]
+    .filter(name => name === relationId || GraphId.isChildOf(name, relationId))
+    .sort((left, right) => right.length - left.length)
+    .forEach(name => this.removeLocalNode(name, false, true));
 
-  edges.forEach(edge => {
-    [edge.sourceGlobalId, edge.targetGlobalId].forEach(name => {
-      if (!edgesByNode.has(name)) {
-        edgesByNode.set(name, []);
-      }
-      edgesByNode.get(name).push(edge);
-    });
-  });
+  }
 
-  nodes
-    .filter(node => node.name === relationId || GraphId.isChildOf(node.name, relationId))
-    .forEach(node => {
-      const existing = this.graph.loaded.get(node.name);
-      if (!existing) {
-        return;
-      }
+  removeLocalEdge(sourceGlobalId, targetGlobalId) {
+  if (!sourceGlobalId || !targetGlobalId) {
+    return;
+  }
 
-      const replacement = GraphNode.from({
-        ...node,
-        edges: this.mergeEdges(node.edges, edgesByNode.get(node.name) ?? [])
-      });
-      replacement.showed = existing.showed !== false;
-      replacement.position = existing.position ?? replacement.position;
-      this.graph.loaded.set(node.name, replacement);
-    });
+  const key = GraphEdge.keyFor(sourceGlobalId, targetGlobalId);
+  for (const node of this.graph.loaded.values()) {
+    node.edges = (node.edges ?? []).filter(edge => edge.key !== key);
+  }
+  this.graph.removeSelectedEdge(key);
   this.refreshEdgeAngles();
+
+  }
+
+  selectReturnedRelationEdges(response) {
+  this.projectedEdgeKeysFromSubgraph(response).forEach(key => this.graph.selectedEdgeKeys.add(key));
+
+  }
+
+  projectedEdgeKeysFromSubgraph(response): string[] {
+  return this.relationIdsFromSubgraph(response).map(relationId => `projected:${relationId}`);
+
+  }
+
+  relationIdsFromSubgraph(response): string[] {
+  return (response.nodes ?? [])
+    .map(node => this.normalizeNodeResponse(node))
+    .filter(node => node.attributes?.[graphKindAttribute] === "edge-instance")
+    .map(node => node.globalId);
 
   }
 
@@ -1711,11 +1700,6 @@ export class GraphViewer {
 
   }
 
-  selectedTypedEdgeObjects(graph = null): any[] {
-  return this.selectedEdgeObjects(graph).filter(edge => Boolean(this.edgeEditableNodeId(edge)));
-
-  }
-
   pruneSelectionToGraph(graph) {
   const nodeNames = new Set((graph.nodes ?? []).map(node => node.name));
   const edgeKeys = new Set((graph.edges ?? []).map(edge => edge.key));
@@ -2144,12 +2128,6 @@ export class GraphViewer {
 
   }
 
-  createRelationLocalId(typeGlobalId) {
-  const typeName = GraphId.localId(typeGlobalId).replace(/[^A-Za-z0-9._ -]/g, "-");
-  return `${typeName}-${Date.now().toString(36)}`;
-
-  }
-
   seedPosition(name, fromName, index, angleOverride = null) {
   if (this.graph.positions.has(name)) {
     return;
@@ -2249,12 +2227,11 @@ export class GraphViewer {
   updateEditorState(graph = null) {
   const nodeCount = this.selectedNodeObjects(graph).length;
   const edgeCount = this.selectedEdgeObjects(graph).length;
-  const typedEdgeCount = this.selectedTypedEdgeObjects(graph).length;
   const total = nodeCount + edgeCount;
   this.clearSelectionButton.disabled = this.graph.busy || total === 0;
   this.deleteSelectedNodesButton.disabled = this.graph.busy || nodeCount === 0;
   this.assignNodeTypeButton.disabled = this.graph.busy || nodeCount === 0 || !this.assignNodeType.value;
-  this.assignEdgeTypeButton.disabled = this.graph.busy || typedEdgeCount === 0 || !this.assignEdgeType.value;
+  this.assignEdgeTypeButton.disabled = this.graph.busy || edgeCount === 0 || !this.assignEdgeType.value;
   this.connectForm.querySelector("button").disabled = this.graph.busy
     || nodeCount !== 1
     || !this.connectTargetName.value.trim();

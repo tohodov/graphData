@@ -58,9 +58,15 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
     }
 
     [HttpPut("edges/type")]
-    public async Task<ActionResult<OperationResponse>> ChangeEdgeTypeAsync([FromBody] ChangeEdgeTypeRequest request) {
-        var result = await graph.ChangeEdgeTypeAsync(request.RelationGlobalId, request.TypeGlobalId);
-        return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
+    public async Task<ActionResult<SubgraphResponse>> ChangeEdgeTypeAsync([FromBody] ChangeEdgeTypeRequest request) {
+        var result = await graph.ChangeEdgeTypeAsync(
+            request.SourceGlobalId,
+            request.TargetGlobalId,
+            request.TypeGlobalId,
+            request.RelationGlobalId,
+            request.RelationRootGlobalId,
+            request.RelationLocalId);
+        return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
     [HttpPost("subgraph")]

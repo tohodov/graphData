@@ -8,6 +8,8 @@ public sealed class GraphService {
     const string EdgeInstanceKind = "edge-instance";
     const string EdgePortKind = "edge-port";
     const string TypeKind = "type";
+    const string SourcePortRole = "source";
+    const string TargetPortRole = "target";
     const string TypePortRole = "type";
 
     readonly IGraphStorage storage;
@@ -49,59 +51,61 @@ public sealed class GraphService {
         return storage.Connect(new NodeGlobalId(sourceGlobalId), new NodeGlobalId(targetGlobalId));
     }
 
-    public async Task<ServiceResult> ChangeEdgeTypeAsync(
-        IReadOnlyCollection<string> relationGlobalId,
-        IReadOnlyCollection<string> typeGlobalId) {
-        var relationId = new NodeGlobalId(relationGlobalId);
+    public async Task<ServiceResult<Subgraph>> ChangeEdgeTypeAsync(
+        IReadOnlyCollection<string>? sourceGlobalId,
+        IReadOnlyCollection<string>? targetGlobalId,
+        IReadOnlyCollection<string> typeGlobalId,
+        IReadOnlyCollection<string>? relationGlobalId = null,
+        IReadOnlyCollection<string>? relationRootGlobalId = null,
+        string? relationLocalId = null) {
+        var sourceId = ToOptionalGlobalId(sourceGlobalId);
+        var targetId = ToOptionalGlobalId(targetGlobalId);
         var typeId = new NodeGlobalId(typeGlobalId);
+        var oldRelationId = ToOptionalGlobalId(relationGlobalId);
 
-        var relationResult = await storage.Get(relationId);
-        if (relationResult.Status != ServiceResultStatus.Ok || relationResult.Value is null)
-            return ServiceResult.From(relationResult);
+        var endpointsResult = await ResolveEdgeEndpointsAsync(sourceId, targetId, oldRelationId);
+        if (endpointsResult.Status != ServiceResultStatus.Ok || endpointsResult.Value is null)
+            return ServiceResult<Subgraph>.From(endpointsResult);
 
         var typeResult = await storage.Get(typeId);
         if (typeResult.Status != ServiceResultStatus.Ok || typeResult.Value is null)
-            return ServiceResult.From(typeResult);
+            return ServiceResult<Subgraph>.From(typeResult);
 
-        var relation = relationResult.Value;
         var type = typeResult.Value;
-        if (!IsEdgeRelation(relation))
-            return ServiceResult.BadRequest($"Node '{relationId}' is not a typed edge relation.");
         if (!IsEdgeType(type))
-            return ServiceResult.BadRequest($"Node '{typeId}' is not an edge type.");
+            return ServiceResult<Subgraph>.BadRequest($"Node '{typeId}' is not an edge type.");
 
-        var connectorResult = await GetEdgeTypeConnectorAsync(relation);
-        if (connectorResult.Status != ServiceResultStatus.Ok || connectorResult.Value is null)
-            return connectorResult.Status == ServiceResultStatus.Ok
-                ? ServiceResult.InternalServerError("Failed to resolve edge type connector.")
-                : ServiceResult.From(connectorResult);
-
-        var connector = connectorResult.Value;
-        var connectedResult = await storage.GetConnectedNodesAsync(connector);
-        if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null)
-            return ServiceResult.From(connectedResult);
-
-        var alreadyConnected = false;
-        foreach (var connected in connectedResult.Value.Where(IsEdgeType)) {
-            if (connected.GlobalId == typeId) {
-                alreadyConnected = true;
-                continue;
-            }
-
-            var disconnect = await storage.Disconnect(connector.GlobalId, connected.GlobalId);
+        if (oldRelationId is null) {
+            var disconnect = await DisconnectBasicEdgeIfPresentAsync(endpointsResult.Value.SourceId, endpointsResult.Value.TargetId);
             if (disconnect.Status != ServiceResultStatus.Ok)
-                return disconnect;
+                return ToSubgraphResult(disconnect);
+        } else {
+            var delete = await storage.Delete(oldRelationId.Value);
+            if (delete.Status != ServiceResultStatus.Ok)
+                return ToSubgraphResult(delete);
         }
 
-        if (!alreadyConnected) {
-            var connect = await storage.Connect(connector.GlobalId, typeId);
-            if (connect.Status != ServiceResultStatus.Ok)
-                return connect;
-        }
+        var relationRootId = ToOptionalGlobalId(relationRootGlobalId)
+            ?? (oldRelationId is { } existingRelationId ? ParentOf(existingRelationId) : GraphSystemNodeIds.RelationRoot);
+        var localId = !string.IsNullOrWhiteSpace(relationLocalId)
+            ? relationLocalId.Trim()
+            : oldRelationId is { } existingRelationIdForLocalId
+                ? LocalIdOf(existingRelationIdForLocalId)
+                : CreateRelationLocalId(typeId);
 
-        var attributes = relation.Attributes.ToDictionary();
-        attributes[GraphRuntimeAttributeNames.GraphTypeName] = typeId.ToString();
-        return await storage.Update(relationId, attributes);
+        var ensureRoot = await EnsurePathAsync(relationRootId, new Dictionary<string, string> {
+            [GraphRuntimeAttributeNames.GraphKind] = "relation-root",
+            [GraphRuntimeAttributeNames.GraphElement] = EdgeElement
+        });
+        if (ensureRoot.Status != ServiceResultStatus.Ok)
+            return ToSubgraphResult(ensureRoot);
+
+        return await CreateTypedEdgeRelationSubgraphAsync(
+            endpointsResult.Value.SourceId,
+            endpointsResult.Value.TargetId,
+            typeId,
+            relationRootId,
+            localId);
     }
 
     public Task<ServiceResult<Subgraph>> GetSubgraphAsync(
@@ -125,14 +129,6 @@ public sealed class GraphService {
             : ServiceResult<Node>.From(result);
     }
 
-    private async Task<ServiceResult<NodeState>> GetEdgeTypeConnectorAsync(NodeState relation) {
-        var connectedResult = await storage.GetConnectedNodesAsync(relation);
-        if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null)
-            return ServiceResult<NodeState>.From(connectedResult);
-
-        return ServiceResult<NodeState>.Ok(connectedResult.Value.FirstOrDefault(IsTypePort) ?? relation);
-    }
-
     private static bool IsEdgeRelation(NodeState node) =>
         HasAttribute(node, GraphRuntimeAttributeNames.GraphKind, EdgeInstanceKind) ||
         HasAttribute(node, GraphRuntimeAttributeNames.GraphElement, EdgeElement)
@@ -143,9 +139,13 @@ public sealed class GraphService {
         && HasAttribute(node, GraphRuntimeAttributeNames.GraphElement, EdgeElement)
         || IsChildOf(node.GlobalId, GraphSystemNodeIds.EdgeTypeRoot);
 
-    private static bool IsTypePort(NodeState node) =>
+    private static bool IsSourcePort(NodeState node) => IsPort(node, SourcePortRole);
+
+    private static bool IsTargetPort(NodeState node) => IsPort(node, TargetPortRole);
+
+    private static bool IsPort(NodeState node, string role) =>
         HasAttribute(node, GraphRuntimeAttributeNames.GraphKind, EdgePortKind)
-        && HasAttribute(node, GraphRuntimeAttributeNames.GraphRole, TypePortRole);
+        && HasAttribute(node, GraphRuntimeAttributeNames.GraphRole, role);
 
     private static bool HasAttribute(NodeState node, string key, string value) =>
         node.Attributes.TryGetValue(key, out var actual)
@@ -163,4 +163,193 @@ public sealed class GraphService {
 
         return true;
     }
+
+    private async Task<ServiceResult<EdgeEndpoints>> ResolveEdgeEndpointsAsync(
+        NodeGlobalId? sourceId,
+        NodeGlobalId? targetId,
+        NodeGlobalId? relationId) {
+        if (sourceId is { } source && targetId is { } target) {
+            if (source == target)
+                return ServiceResult<EdgeEndpoints>.BadRequest("Source and target nodes must be different.");
+
+            var sourceResult = await storage.Get(source);
+            if (sourceResult.Status != ServiceResultStatus.Ok || sourceResult.Value is null)
+                return ServiceResult<EdgeEndpoints>.From(sourceResult);
+            var targetResult = await storage.Get(target);
+            if (targetResult.Status != ServiceResultStatus.Ok || targetResult.Value is null)
+                return ServiceResult<EdgeEndpoints>.From(targetResult);
+
+            return ServiceResult<EdgeEndpoints>.Ok(new EdgeEndpoints(source, target));
+        }
+
+        if (sourceId is not null || targetId is not null)
+            return ServiceResult<EdgeEndpoints>.BadRequest("Both sourceGlobalId and targetGlobalId must be provided.");
+
+        if (relationId is null)
+            return ServiceResult<EdgeEndpoints>.BadRequest("Provide either source/target nodes or relationGlobalId.");
+
+        return await ResolveRelationEndpointsAsync(relationId.Value);
+    }
+
+    private async Task<ServiceResult<EdgeEndpoints>> ResolveRelationEndpointsAsync(NodeGlobalId relationId) {
+        var relationResult = await storage.Get(relationId);
+        if (relationResult.Status != ServiceResultStatus.Ok || relationResult.Value is null)
+            return ServiceResult<EdgeEndpoints>.From(relationResult);
+
+        var relation = relationResult.Value;
+        if (!IsEdgeRelation(relation))
+            return ServiceResult<EdgeEndpoints>.BadRequest($"Node '{relationId}' is not a typed edge relation.");
+
+        var connectedResult = await storage.GetConnectedNodesAsync(relation);
+        if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null)
+            return ServiceResult<EdgeEndpoints>.From(connectedResult);
+
+        var sourcePort = connectedResult.Value.FirstOrDefault(IsSourcePort);
+        var targetPort = connectedResult.Value.FirstOrDefault(IsTargetPort);
+        if (sourcePort is null || targetPort is null)
+            return ServiceResult<EdgeEndpoints>.BadRequest($"Relation '{relationId}' does not have source/target ports.");
+
+        var sourceResult = await ResolvePortEndpointAsync(sourcePort, relationId, SourcePortRole);
+        if (sourceResult.Status != ServiceResultStatus.Ok)
+            return ServiceResult<EdgeEndpoints>.From(sourceResult);
+        var targetResult = await ResolvePortEndpointAsync(targetPort, relationId, TargetPortRole);
+        if (targetResult.Status != ServiceResultStatus.Ok)
+            return ServiceResult<EdgeEndpoints>.From(targetResult);
+
+        return ServiceResult<EdgeEndpoints>.Ok(new EdgeEndpoints(sourceResult.Value, targetResult.Value));
+    }
+
+    private async Task<ServiceResult<NodeGlobalId>> ResolvePortEndpointAsync(
+        NodeState port,
+        NodeGlobalId relationId,
+        string role) {
+        var connectedResult = await storage.GetConnectedNodesAsync(port);
+        if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null)
+            return ServiceResult<NodeGlobalId>.From(connectedResult);
+
+        var endpoint = connectedResult.Value.FirstOrDefault(node => node.GlobalId != relationId);
+        return endpoint is null
+            ? ServiceResult<NodeGlobalId>.BadRequest($"Relation port '{role}' does not have an endpoint.")
+            : ServiceResult<NodeGlobalId>.Ok(endpoint.GlobalId);
+    }
+
+    private async Task<ServiceResult> DisconnectBasicEdgeIfPresentAsync(NodeGlobalId sourceId, NodeGlobalId targetId) {
+        var sourceResult = await storage.Get(sourceId);
+        if (sourceResult.Status != ServiceResultStatus.Ok || sourceResult.Value is null)
+            return ServiceResult.From(sourceResult);
+
+        var connectedResult = await storage.GetConnectedNodesAsync(sourceResult.Value);
+        if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null)
+            return ServiceResult.From(connectedResult);
+
+        return connectedResult.Value.Any(node => node.GlobalId == targetId)
+            ? await storage.Disconnect(sourceId, targetId)
+            : ServiceResult.Ok();
+    }
+
+    private async Task<ServiceResult<Subgraph>> CreateTypedEdgeRelationSubgraphAsync(
+        NodeGlobalId sourceId,
+        NodeGlobalId targetId,
+        NodeGlobalId typeId,
+        NodeGlobalId relationRootId,
+        string relationLocalId) {
+        var relationResult = await storage.Create(new NodeLocalId(relationLocalId), relationRootId, new Dictionary<string, string> {
+            [GraphRuntimeAttributeNames.GraphKind] = EdgeInstanceKind,
+            [GraphRuntimeAttributeNames.GraphElement] = EdgeElement,
+            [GraphRuntimeAttributeNames.GraphTypeName] = typeId.ToString()
+        });
+        if (relationResult.Status != ServiceResultStatus.Ok || relationResult.Value is null)
+            return ServiceResult<Subgraph>.From(relationResult);
+
+        var relation = relationResult.Value;
+        var sourcePort = await CreatePortAsync(relation.GlobalId, SourcePortRole);
+        if (sourcePort.Status != ServiceResultStatus.Ok || sourcePort.Value is null)
+            return ServiceResult<Subgraph>.From(sourcePort);
+        var targetPort = await CreatePortAsync(relation.GlobalId, TargetPortRole);
+        if (targetPort.Status != ServiceResultStatus.Ok || targetPort.Value is null)
+            return ServiceResult<Subgraph>.From(targetPort);
+        var typePort = await CreatePortAsync(relation.GlobalId, TypePortRole);
+        if (typePort.Status != ServiceResultStatus.Ok || typePort.Value is null)
+            return ServiceResult<Subgraph>.From(typePort);
+
+        var connect = await storage.Connect(sourcePort.Value.GlobalId, sourceId);
+        if (connect.Status != ServiceResultStatus.Ok)
+            return ToSubgraphResult(connect);
+        connect = await storage.Connect(targetPort.Value.GlobalId, targetId);
+        if (connect.Status != ServiceResultStatus.Ok)
+            return ToSubgraphResult(connect);
+        connect = await storage.Connect(typePort.Value.GlobalId, typeId);
+        if (connect.Status != ServiceResultStatus.Ok)
+            return ToSubgraphResult(connect);
+
+        return await storage.GetSubgraphAsync(new SubgraphQuery {
+            Nodes = [relation.GlobalId],
+            MaxDepth = 2
+        });
+    }
+
+    private Task<ServiceResult<NodeState>> CreatePortAsync(NodeGlobalId relationId, string role) =>
+        storage.Create(new NodeLocalId(CreatePortLocalId(role)), relationId, new Dictionary<string, string> {
+            [GraphRuntimeAttributeNames.GraphKind] = EdgePortKind,
+            [GraphRuntimeAttributeNames.GraphRole] = role
+        });
+
+    private async Task<ServiceResult> EnsurePathAsync(NodeGlobalId id, IDictionary<string, string>? leafAttributes = null) {
+        var segments = id.ToArray();
+        for (var index = 0; index < segments.Length; index++) {
+            var current = new NodeGlobalId(segments.Take(index + 1));
+            var get = await storage.Get(current);
+            if (get.Status == ServiceResultStatus.Ok)
+                continue;
+            if (get.Status != ServiceResultStatus.NotFound)
+                return ServiceResult.From(get);
+
+            NodePath? parent = null;
+            if (index > 0)
+                parent = new NodePath(segments.Take(index));
+            var attributes = index == segments.Length - 1 ? leafAttributes : null;
+            var create = await storage.Create(segments[index], parent, attributes);
+            if (create.Status != ServiceResultStatus.Ok)
+                return ServiceResult.From(create);
+        }
+
+        return ServiceResult.Ok();
+    }
+
+    private static NodeGlobalId? ToOptionalGlobalId(IReadOnlyCollection<string>? segments) =>
+        segments is null || segments.Count == 0 ? null : new NodeGlobalId(segments);
+
+    private static NodeGlobalId ParentOf(NodeGlobalId id) {
+        var segments = id.ToArray();
+        return new NodeGlobalId(segments.Take(Math.Max(0, segments.Length - 1)));
+    }
+
+    private static string LocalIdOf(NodeGlobalId id) =>
+        id.ToArray().LastOrDefault().ToString() ?? CreateRelationLocalId(id);
+
+    private static string CreateRelationLocalId(NodeGlobalId typeId) {
+        var typeName = LocalIdOfType(typeId);
+        var safeTypeName = new string(typeName
+            .Select(static character => char.IsLetterOrDigit(character) || character is '-' or '_' or '.'
+                ? character
+                : '-')
+            .ToArray());
+        if (string.IsNullOrWhiteSpace(safeTypeName))
+            safeTypeName = "edge";
+
+        return $"{safeTypeName}-{Guid.NewGuid():N}"[..^24];
+    }
+
+    private static string CreatePortLocalId(string role) =>
+        $"port-{role}-{Guid.NewGuid():N}"[..^24];
+
+    private static string LocalIdOfType(NodeGlobalId id) {
+        var segments = id.ToArray();
+        return segments.Length == 0 ? "edge" : segments[^1].ToString();
+    }
+
+    private static ServiceResult<Subgraph> ToSubgraphResult(ServiceResult result) =>
+        new(result.Status, Error: result.Error);
+
+    private sealed record EdgeEndpoints(NodeGlobalId SourceId, NodeGlobalId TargetId);
 }

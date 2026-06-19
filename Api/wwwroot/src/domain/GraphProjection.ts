@@ -147,7 +147,10 @@ export class GraphProjection {
           ?? ports.find(port => this.model.schema.edgeTypes.has(port.name));
         const sourceGlobalId = sourcePort ? this.portEndpoint(sourcePort.name, edgesByNode, relation.name) : null;
         const targetGlobalId = targetPort ? this.portEndpoint(targetPort.name, edgesByNode, relation.name) : null;
-        const type = typePort ? this.model.schema.edgeTypes.get(typePort.name) : null;
+        const typeGlobalId = typePort?.attributes?.[graphRoleAttribute] === "type"
+          ? this.portEndpoint(typePort.name, edgesByNode, relation.name)
+          : typePort?.name;
+        const type = typeGlobalId ? this.model.schema.edgeTypes.get(typeGlobalId) : null;
         const physicalEdgeKeys = new Set(incident.map(edge => edge.key ?? GraphEdge.keyFor(edge.sourceGlobalId, edge.targetGlobalId)));
         for (const port of ports) {
           for (const edge of edgesByNode.get(port.name) ?? []) {
