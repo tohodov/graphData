@@ -1173,6 +1173,68 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void WebGpuCanvas_DragsSelectedNodesTogether() {
+        var engine = CreateUiEngine(("Api/wwwroot/src/ui/WebGpuGraphCanvas.js", "WebGpuGraphCanvas"));
+
+        engine.Execute(
+            """
+            const canvas = Object.create(WebGpuGraphCanvas.prototype);
+            canvas.view = { x: 0, y: 0, scale: 2 };
+            canvas.positions = new Map([
+              ["a", { x: 0, y: 0 }],
+              ["b", { x: 100, y: 10 }],
+              ["c", { x: 300, y: 40 }]
+            ]);
+            canvas.memory = {
+              nodes: [
+                { name: "a" },
+                { name: "b" },
+                { name: "c" }
+              ]
+            };
+
+            const selectedNames = new Set(["a", "b"]);
+            let updateCount = 0;
+            canvas.callbacks = {
+              isNodeSelected(name) {
+                return selectedNames.has(name);
+              }
+            };
+            canvas.updateDynamicGraph = () => updateCount += 1;
+
+            canvas.beginNodeDrag({ name: "a" }, {
+              clientX: 10,
+              clientY: 20,
+              pointerType: "mouse"
+            });
+            canvas.dragSelectedNodes({
+              clientX: 18,
+              clientY: 26
+            });
+
+            const a = canvas.positions.get("a");
+            const b = canvas.positions.get("b");
+            const c = canvas.positions.get("c");
+            const selectedDragNames = canvas.dragging.names.join(",");
+            const unselectedDragNames = canvas.dragNodeNames("c").join(",");
+            globalThis.__debug = { a, b, c, selectedDragNames, unselectedDragNames, updateCount };
+            globalThis.__result = selectedDragNames === "a,b"
+              && unselectedDragNames === "c"
+              && a.x === 4
+              && a.y === 3
+              && b.x === 104
+              && b.y === 13
+              && c.x === 300
+              && c.y === 40
+              && canvas.dragging.x === 18
+              && canvas.dragging.y === 26
+              && updateCount === 1;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean(), engine.Evaluate("JSON.stringify(__debug)").AsString());
+    }
+
+    [TestMethod]
     public void WebGpuCanvas_RendersClickableEdgeEndpointControls() {
         foreach (var path in new[] {
             "Api/wwwroot/src/ui/WebGpuGraphCanvas.ts",

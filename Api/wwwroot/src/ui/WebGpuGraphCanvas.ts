@@ -364,14 +364,7 @@ export class WebGpuGraphCanvas {
 
       const hit = this.pickNearest(event.clientX, event.clientY);
       if (hit) {
-        this.dragging = {
-          name: hit.name,
-          x: event.clientX,
-          y: event.clientY,
-          startX: event.clientX,
-          startY: event.clientY,
-          pointerType: event.pointerType ?? "mouse"
-        };
+        this.beginNodeDrag(hit, event);
       } else {
         this.pointer = {
           x: event.clientX,
@@ -393,18 +386,7 @@ export class WebGpuGraphCanvas {
       }
 
       if (this.dragging) {
-        const position = this.positions.get(this.dragging.name);
-        if (!position) {
-          return;
-        }
-
-        const dx = (event.clientX - this.dragging.x) / this.view.scale;
-        const dy = (event.clientY - this.dragging.y) / this.view.scale;
-        position.x += dx;
-        position.y += dy;
-        this.dragging.x = event.clientX;
-        this.dragging.y = event.clientY;
-        this.updateDynamicGraph();
+        this.dragSelectedNodes(event);
         return;
       }
 
@@ -498,6 +480,58 @@ export class WebGpuGraphCanvas {
     }, { passive: false });
 
     this.window.addEventListener("resize", () => this.applyView());
+  }
+
+  beginNodeDrag(hit, event) {
+    this.dragging = {
+      name: hit.name,
+      names: this.dragNodeNames(hit.name),
+      x: event.clientX,
+      y: event.clientY,
+      startX: event.clientX,
+      startY: event.clientY,
+      pointerType: event.pointerType ?? "mouse"
+    };
+  }
+
+  dragNodeNames(name) {
+    if (!this.callbacks.isNodeSelected?.(name)) {
+      return [name];
+    }
+
+    const selectedNames = this.memory?.nodes
+      ?.map(node => node.name)
+      .filter(nodeName => nodeName && this.positions.has(nodeName) && this.callbacks.isNodeSelected?.(nodeName))
+      ?? [];
+    return selectedNames.length > 0 ? [...new Set(selectedNames)] : [name];
+  }
+
+  dragSelectedNodes(event) {
+    if (!this.dragging) {
+      return;
+    }
+
+    const dx = (event.clientX - this.dragging.x) / this.view.scale;
+    const dy = (event.clientY - this.dragging.y) / this.view.scale;
+    const names = this.dragging.names ?? [this.dragging.name];
+    let moved = false;
+
+    names.forEach(name => {
+      const position = this.positions.get(name);
+      if (!position) {
+        return;
+      }
+
+      position.x += dx;
+      position.y += dy;
+      moved = true;
+    });
+
+    this.dragging.x = event.clientX;
+    this.dragging.y = event.clientY;
+    if (moved) {
+      this.updateDynamicGraph();
+    }
   }
 
   bindCanvasResizeObserver() {
