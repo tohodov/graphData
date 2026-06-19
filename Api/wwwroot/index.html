@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GraphData</title>
-  <link rel="stylesheet" href="./styles.css?v=20260619-selection-overlay">
+  <link rel="stylesheet" href="./styles.css?v=20260619-selection-accordion">
 </head>
 <body>
   <main class="app-shell">
@@ -23,9 +23,9 @@
           <button id="reset-button" type="button" title="Сбросить граф">Сброс</button>
         </div>
         <div id="selection-overlay" class="selection-overlay" hidden aria-label="Выбранные элементы графа">
-          <div class="selection-overlay-header">
+          <button id="selection-overlay-toggle" class="selection-overlay-header" type="button" aria-expanded="true" title="Свернуть список выбранных элементов">
             <span id="selection-summary">Выбрано: 0</span>
-          </div>
+          </button>
           <div id="selection-list" class="selection-list"></div>
         </div>
         <div id="graph" role="img" aria-label="Редактор графа GraphData"></div>
@@ -49,35 +49,26 @@
           </button>
         </div>
         <nav class="tabs" aria-label="Разделы редактора">
-          <button class="tab-button active" type="button" data-tab="node">Узел</button>
+          <button class="tab-button active" type="button" data-tab="operations">Операции</button>
           <button class="tab-button" type="button" data-tab="types">Базис</button>
           <button class="tab-button" type="button" data-tab="search">Поиск</button>
           <button class="tab-button" type="button" data-tab="subgraph">Подграф</button>
         </nav>
 
-        <section id="tab-node" class="tab-panel active">
-          <div class="panel-block selected-node">
-            <span class="eyebrow">Выбран</span>
-            <h1 id="selected-name">-</h1>
-            <div id="selected-rank" class="selected-rank">rank: -</div>
-            <div class="button-row">
-              <button id="save-node-button" type="button">Сохранить</button>
-              <button id="delete-node-button" class="danger-button" type="button">Удалить</button>
-            </div>
-          </div>
-
+        <section id="tab-operations" class="tab-panel active">
           <div class="panel-block">
-            <div class="section-heading">
-              <span class="eyebrow">Атрибуты</span>
-              <button id="add-attribute-button" type="button">Добавить</button>
+            <span class="eyebrow">Текущий выбор</span>
+            <div id="operation-selection-summary" class="result-summary">Выберите узлы или связи</div>
+            <div class="button-row">
+              <button id="clear-selection-button" type="button">Снять выбор</button>
+              <button id="delete-selected-nodes-button" class="danger-button" type="button">Удалить узлы</button>
             </div>
-            <div id="attribute-editor" class="attribute-editor"></div>
           </div>
 
           <div class="panel-block stack-form">
-            <span class="eyebrow">Тип выбранного узла</span>
+            <span class="eyebrow">Тип выбранных узлов</span>
             <select id="assign-node-type"></select>
-            <button id="assign-node-type-button" type="button">Назначить выбранному</button>
+            <button id="assign-node-type-button" type="button">Назначить выбранным узлам</button>
           </div>
 
           <form id="create-node-form" class="panel-block stack-form">
@@ -89,7 +80,7 @@
           </form>
 
           <form id="connect-form" class="panel-block stack-form">
-            <span class="eyebrow">Соединить с выбранным</span>
+            <span class="eyebrow">Соединить активный узел</span>
             <input id="connect-target-name" type="text" autocomplete="off" spellcheck="false" placeholder="GlobalId узла">
             <select id="connect-edge-type"></select>
             <input id="connect-edge-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId связи, если выбран тип">
@@ -198,6 +189,6 @@
     </section>
   </main>
 
-  <script type="module" src="./js/app.js?v=20260619-selection-overlay"></script>
+  <script type="module" src="./js/app.js?v=20260619-selection-accordion"></script>
 </body>
 </html>

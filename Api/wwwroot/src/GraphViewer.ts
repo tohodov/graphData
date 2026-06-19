@@ -43,8 +43,11 @@ export class GraphViewer {
     this.graphSurface = this.requireElement("#graph");
     this.labelLayer = this.requireElement("#graph-label-layer");
     this.selectionOverlay = this.requireElement("#selection-overlay");
+    this.selectionOverlayToggle = this.requireElement("#selection-overlay-toggle");
     this.selectionSummary = this.requireElement("#selection-summary");
     this.selectionList = this.requireElement("#selection-list");
+    this.selectionOverlayCollapsed = false;
+    this.expandedSelectionKeys = new Set();
     this.gpuWarning = this.document.querySelector("#gpu-warning");
     this.fitButton = this.requireElement("#fit-button");
     this.resetButton = this.requireElement("#reset-button");
@@ -54,12 +57,9 @@ export class GraphViewer {
     this.statusOutput = this.requireElement("#status");
     this.emptyState = this.requireElement("#empty-state");
     this.emptyTitle = this.requireElement("#empty-state .empty-title");
-    this.selectedName = this.requireElement("#selected-name");
-    this.selectedRank = this.requireElement("#selected-rank");
-    this.attributeEditor = this.requireElement("#attribute-editor");
-    this.addAttributeButton = this.requireElement("#add-attribute-button");
-    this.saveNodeButton = this.requireElement("#save-node-button");
-    this.deleteNodeButton = this.requireElement("#delete-node-button");
+    this.operationSelectionSummary = this.requireElement("#operation-selection-summary");
+    this.clearSelectionButton = this.requireElement("#clear-selection-button");
+    this.deleteSelectedNodesButton = this.requireElement("#delete-selected-nodes-button");
     this.createNodeForm = this.requireElement("#create-node-form");
     this.createNodeName = this.requireElement("#create-node-name");
     this.createNodeParent = this.requireElement("#create-node-parent");
@@ -143,6 +143,7 @@ export class GraphViewer {
   async start() {
     this.bindTabs();
     this.bindToolbar();
+    this.bindSelectionOverlay();
     this.bindMobileMenu();
     this.bindNodeForms();
     this.bindSearch();
@@ -197,8 +198,16 @@ export class GraphViewer {
     });
     this.resetButton.addEventListener("click", () => {
       this.graph.resetGraph();
+      this.expandedSelectionKeys.clear();
       this.render();
       this.setStatus("");
+    });
+  }
+
+  bindSelectionOverlay() {
+    this.selectionOverlayToggle.addEventListener("click", () => {
+      this.selectionOverlayCollapsed = !this.selectionOverlayCollapsed;
+      this.render();
     });
   }
 
@@ -230,9 +239,14 @@ export class GraphViewer {
   }
 
   bindNodeForms() {
-    this.addAttributeButton.addEventListener("click", () => this.addAttributeRow("", ""));
-    this.saveNodeButton.addEventListener("click", () => void this.saveSelectedNode());
-    this.deleteNodeButton.addEventListener("click", () => void this.deleteSelectedNode());
+    this.clearSelectionButton.addEventListener("click", () => {
+      this.graph.clearSelection();
+      this.expandedSelectionKeys.clear();
+      this.render();
+    });
+    this.deleteSelectedNodesButton.addEventListener("click", () => void this.deleteSelectedNodes());
+    this.assignNodeType.addEventListener("change", () => this.updateEditorState());
+    this.connectTargetName.addEventListener("input", () => this.updateEditorState());
 
     this.createNodeForm.addEventListener("submit", event => {
       event.preventDefault();
@@ -250,10 +264,11 @@ export class GraphViewer {
 
     this.connectForm.addEventListener("submit", event => {
       event.preventDefault();
-      const sourceGlobalId = this.graph.selectedName;
+      const selectedNodeNames = this.selectedNodeNames();
+      const sourceGlobalId = selectedNodeNames.length === 1 ? selectedNodeNames[0] : null;
       const targetGlobalId = this.connectTargetName.value.trim();
       if (!sourceGlobalId || !targetGlobalId) {
-        this.setStatus("Выберите узел и укажите цель связи");
+        this.setStatus("Выберите ровно один узел и укажите цель связи");
         return;
       }
 
@@ -464,7 +479,7 @@ export class GraphViewer {
     }
     this.render();
     this.renderTypeControls();
-    this.setActiveTab("node");
+    this.setActiveTab("operations");
     this.setStatus(`Создан узел "${created.displayName}"`);
   } catch (error) {
     this.setStatus(error.message);
@@ -486,21 +501,18 @@ export class GraphViewer {
 
   }
 
-  async saveSelectedNode() {
-  const nodeName = this.graph.selectedName;
-  if (!nodeName) {
-    this.setStatus("Узел не выбран");
+  async saveNodeAttributes(nodeName, attributes) {
+  if (!nodeName || !this.graph.loaded.has(nodeName)) {
+    this.setStatus("Узел не загружен");
     return;
   }
 
   this.setBusy(true);
   try {
-    await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(nodeName)}`, {
-      method: "PUT",
-      body: JSON.stringify({ attributes: this.readAttributeEditor() }),
-      expectJson: false
-    });
-    await this.loadNode(nodeName, null, { select: true });
+    await this.updateGraphNodeAttributes(nodeName, attributes);
+    await this.refreshLoadedNodeForEditing(nodeName);
+    this.render();
+    this.renderTypeControls();
     this.setStatus(`Сохранен узел "${this.displayName(nodeName)}"`);
   } catch (error) {
     this.setStatus(error.message);
@@ -510,23 +522,26 @@ export class GraphViewer {
 
   }
 
-  async deleteSelectedNode() {
-  const nodeName = this.graph.selectedName;
-  if (!nodeName) {
-    this.setStatus("Узел не выбран");
+  async deleteSelectedNodes() {
+  const nodeNames = this.selectedNodeNames();
+  if (nodeNames.length === 0) {
+    this.setStatus("Нет выбранных узлов для удаления");
     return;
   }
 
   this.setBusy(true);
   try {
-    await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(nodeName)}`, {
-      method: "DELETE",
-      expectJson: false
-    });
-    this.removeLocalNode(nodeName);
+    for (const nodeName of nodeNames) {
+      await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(nodeName)}`, {
+        method: "DELETE",
+        expectJson: false
+      });
+      this.removeLocalNode(nodeName, false);
+      this.expandedSelectionKeys.delete(this.selectionKeyForNode(nodeName));
+    }
     this.render();
     this.renderTypeControls();
-    this.setStatus(`Удален узел "${this.displayName(nodeName)}"`);
+    this.setStatus(`Удалено узлов: ${nodeNames.length}`);
   } catch (error) {
     this.setStatus(error.message);
   } finally {
@@ -722,19 +737,32 @@ export class GraphViewer {
   }
 
   async assignSelectedNodeType() {
-  const nodeName = this.graph.selectedName;
+  const nodeNames = this.selectedNodeNames();
   const typeGlobalId = this.assignNodeType.value;
-  if (!nodeName || !this.graph.loaded.has(nodeName) || !typeGlobalId) {
-    this.setStatus("Выберите загруженный узел и тип узла");
+  if (nodeNames.length === 0 || !typeGlobalId) {
+    this.setStatus("Выберите узлы и тип узла");
+    return;
+  }
+
+  await this.assignNodeTypeToNodes(nodeNames, typeGlobalId);
+
+  }
+
+  async assignNodeTypeToNodes(nodeNames, typeGlobalId) {
+  if (!nodeNames?.length || !typeGlobalId) {
+    this.setStatus("Выберите узлы и тип узла");
     return;
   }
 
   this.setBusy(true);
   try {
-    await this.connectGraphNodes(nodeName, typeGlobalId);
-    await this.loadNode(nodeName, null, { select: true });
+    for (const nodeName of nodeNames) {
+      await this.connectGraphNodes(nodeName, typeGlobalId);
+      await this.refreshLoadedNodeForEditing(nodeName);
+    }
     this.render();
-    this.setStatus(`Тип ${this.displayName(typeGlobalId)} назначен узлу ${this.displayName(nodeName)}`);
+    this.renderTypeControls();
+    this.setStatus(`Тип ${this.displayName(typeGlobalId)} назначен узлам: ${nodeNames.length}`);
   } catch (error) {
     this.setStatus(error.message);
   } finally {
@@ -1287,26 +1315,42 @@ export class GraphViewer {
 
   renderInspector(graph) {
   this.renderSelectionOverlay(graph);
-  const selected = graph.nodes.find(node => node.name === this.graph.selectedName);
-  this.selectedName.textContent = selected?.displayName ?? "-";
-  this.selectedName.title = selected?.globalId ?? "";
-  this.selectedRank.textContent = selected?.viewRank === undefined ? "rank: -" : `rank: ${GraphType.formatRank(selected.viewRank)}`;
-  this.selectedRank.title = selected?.viewRankReason ?? "";
-  this.updateEditorState();
-  this.renderAttributeEditor(selected?.attributes ?? {});
+  this.renderOperationPanel(graph);
+  this.renderNeighborOperations(graph);
+
+  }
+
+  renderOperationPanel(graph) {
+  const nodeCount = this.selectedNodeObjects(graph).length;
+  const edgeCount = this.selectedEdgeObjects(graph).length;
+  const total = nodeCount + edgeCount;
+  this.operationSelectionSummary.textContent = total === 0
+    ? "Выберите узлы или связи"
+    : `Выбрано: ${this.formatSelectionCount(nodeCount, edgeCount)}`;
+  this.updateEditorState(graph);
+
+  }
+
+  renderNeighborOperations(graph) {
+  const selected = this.singleSelectedNode(graph);
+  const edges: any[] = graph.edges ?? [];
   this.neighborList.replaceChildren();
 
   if (!selected) {
+    const summary = this.document.createElement("div");
+    summary.className = "result-summary";
+    summary.textContent = "Доступно, когда выбран ровно один узел";
+    this.neighborList.append(summary);
     return;
   }
 
-  const neighbors = graph.edges
+  const neighbors = edges
     .filter(edge => edge.sourceGlobalId === selected.name || edge.targetGlobalId === selected.name)
     .map(edge => edge.sourceGlobalId === selected.name ? edge.targetGlobalId : edge.sourceGlobalId)
     .sort((a, b) => this.displayName(a).localeCompare(this.displayName(b), "ru"));
 
   neighbors.forEach(name => {
-    const edge = graph.edges.find(candidate =>
+    const edge = edges.find(candidate =>
       (candidate.sourceGlobalId === selected.name && candidate.targetGlobalId === name) ||
       (candidate.sourceGlobalId === name && candidate.targetGlobalId === selected.name));
     const row = this.document.createElement("button");
@@ -1329,34 +1373,19 @@ export class GraphViewer {
   }
 
   renderSelectionOverlay(graph) {
-  const graphNodes: any[] = graph.nodes ?? [];
-  const graphEdges: any[] = graph.edges ?? [];
-  const nodesByName = new Map(graphNodes.map(node => [node.name, node]));
-  const edgesByKey = new Map(graphEdges.map(edge => [edge.key, edge]));
-
-  for (const name of [...this.graph.selectedNames]) {
-    if (!nodesByName.has(name)) {
-      this.graph.removeSelectedName(name);
-    }
-  }
-
-  for (const key of [...this.graph.selectedEdgeKeys]) {
-    if (!edgesByKey.has(key)) {
-      this.graph.removeSelectedEdge(key);
-    }
-  }
-
-  const selectedNodes: any[] = [...this.graph.selectedNames]
-    .map(name => nodesByName.get(name))
-    .filter(Boolean)
+  this.pruneSelectionToGraph(graph);
+  const selectedNodes: any[] = this.selectedNodeObjects(graph)
     .sort((left, right) => this.displayName(left.name).localeCompare(this.displayName(right.name), "ru"));
-  const selectedEdges: any[] = [...this.graph.selectedEdgeKeys]
-    .map(key => edgesByKey.get(key))
-    .filter(Boolean)
+  const selectedEdges: any[] = this.selectedEdgeObjects(graph)
     .sort((left, right) => this.edgeSelectionTitle(left).localeCompare(this.edgeSelectionTitle(right), "ru"));
   const total = selectedNodes.length + selectedEdges.length;
 
   this.selectionOverlay.hidden = total === 0;
+  this.selectionOverlay.classList.toggle("collapsed", this.selectionOverlayCollapsed);
+  this.selectionOverlayToggle.setAttribute("aria-expanded", String(!this.selectionOverlayCollapsed));
+  this.selectionOverlayToggle.title = this.selectionOverlayCollapsed
+    ? "Развернуть список выбранных элементов"
+    : "Свернуть список выбранных элементов";
   this.selectionList.replaceChildren();
   this.selectionSummary.textContent = total === 0
     ? "Выбрано: 0"
@@ -1364,11 +1393,14 @@ export class GraphViewer {
 
   selectedNodes.forEach(node => {
     this.selectionList.append(this.createSelectionRow({
+      key: this.selectionKeyForNode(node.name),
       kind: "Узел",
       title: node.displayName ?? node.name,
       subtitle: node.globalId ?? node.name,
+      body: () => this.createNodeSelectionDetails(node),
       remove: () => {
         this.graph.removeSelectedName(node.name);
+        this.expandedSelectionKeys.delete(this.selectionKeyForNode(node.name));
         this.render();
       }
     }));
@@ -1376,11 +1408,19 @@ export class GraphViewer {
 
   selectedEdges.forEach(edge => {
     this.selectionList.append(this.createSelectionRow({
+      key: this.selectionKeyForEdge(edge.key),
       kind: "Связь",
       title: this.edgeSelectionTitle(edge),
       subtitle: this.edgeSelectionSubtitle(edge),
+      body: () => this.createEdgeSelectionDetails(edge),
+      onExpand: () => {
+        if (this.edgeEditableNodeId(edge) && !this.graph.loaded.has(this.edgeEditableNodeId(edge))) {
+          void this.ensureEdgeRelationLoaded(edge);
+        }
+      },
       remove: () => {
         this.graph.removeSelectedEdge(edge.key);
+        this.expandedSelectionKeys.delete(this.selectionKeyForEdge(edge.key));
         this.render();
       }
     }));
@@ -1388,9 +1428,32 @@ export class GraphViewer {
 
   }
 
-  createSelectionRow({ kind, title, subtitle, remove }) {
+  createSelectionRow({ key, kind, title, subtitle, body, remove, onExpand = null }) {
+  const expanded = this.expandedSelectionKeys.has(key);
   const row = this.document.createElement("div");
-  row.className = "selection-row";
+  row.className = `selection-row${expanded ? " expanded" : ""}`;
+
+  const header = this.document.createElement("div");
+  header.className = "selection-row-header";
+  header.tabIndex = 0;
+  header.setAttribute("role", "button");
+  header.setAttribute("aria-expanded", String(expanded));
+  const toggle = () => {
+    if (expanded) {
+      this.expandedSelectionKeys.delete(key);
+    } else {
+      this.expandedSelectionKeys.add(key);
+      onExpand?.();
+    }
+    this.render();
+  };
+  header.addEventListener("click", toggle);
+  header.addEventListener("keydown", event => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggle();
+    }
+  });
 
   const badge = this.document.createElement("span");
   badge.className = "selection-kind";
@@ -1416,8 +1479,124 @@ export class GraphViewer {
     remove();
   });
 
-  row.append(badge, text, removeButton);
+  header.append(badge, text, removeButton);
+  row.append(header);
+  if (expanded) {
+    row.append(body());
+  }
   return row;
+
+  }
+
+  createNodeSelectionDetails(node) {
+  const details = this.document.createElement("div");
+  details.className = "selection-details";
+  details.append(this.createDetailsList([
+    ["GlobalId", node.globalId ?? node.name],
+    ["Rank", node.viewRank === undefined ? "-" : GraphType.formatRank(node.viewRank)],
+    ["Причина rank", node.viewRankReason || "-"]
+  ]));
+
+  const editor = this.createAttributeEditor(node.attributes ?? {});
+  details.append(this.createDetailsSection("Атрибуты", editor.element, [
+    this.createCompactButton("Добавить", () => editor.addRow("", "")),
+    this.createCompactButton("Сохранить", () => void this.saveNodeAttributes(node.name, editor.read()))
+  ]));
+
+  const typeSelect = this.document.createElement("select");
+  this.renderTypeSelect(typeSelect, this.graph.schema.nodeTypes, "Не менять тип");
+  details.append(this.createDetailsSection("Тип узла", typeSelect, [
+    this.createCompactButton("Назначить", () => void this.assignNodeTypeToNodes([node.name], typeSelect.value))
+  ]));
+
+  return details;
+
+  }
+
+  createEdgeSelectionDetails(edge) {
+  const details = this.document.createElement("div");
+  details.className = "selection-details";
+  const relationId = this.edgeEditableNodeId(edge);
+  details.append(this.createDetailsList([
+    ["Источник", this.edgeEndpointDisplayName(edge, edge.sourceGlobalId)],
+    ["Цель", this.edgeEndpointDisplayName(edge, edge.targetGlobalId)],
+    ["Тип", edge.typeGlobalId ? this.displayName(edge.typeGlobalId) : "физическая связь"],
+    ["Инстанс связи", relationId || "-"],
+    ["Rank", edge.viewRank === undefined ? "-" : GraphType.formatRank(edge.viewRank)]
+  ]));
+
+  if (!relationId) {
+    const note = this.document.createElement("div");
+    note.className = "selection-note";
+    note.textContent = "У физической связи нет relation-узла, поэтому атрибуты пока доступны только для чтения.";
+    details.append(note);
+    return details;
+  }
+
+  const relation = this.graph.loaded.get(relationId);
+  if (!relation) {
+    const note = this.document.createElement("div");
+    note.className = "selection-note";
+    note.textContent = "Атрибуты инстанса связи загружаются...";
+    details.append(note);
+    return details;
+  }
+
+  const editor = this.createAttributeEditor(relation.attributes ?? {});
+  details.append(this.createDetailsSection("Атрибуты связи", editor.element, [
+    this.createCompactButton("Добавить", () => editor.addRow("", "")),
+    this.createCompactButton("Сохранить", () => void this.saveNodeAttributes(relationId, editor.read()))
+  ]));
+  return details;
+
+  }
+
+  createDetailsList(items) {
+  const list = this.document.createElement("div");
+  list.className = "selection-details-list";
+  items.forEach(([label, value]) => {
+    const row = this.document.createElement("div");
+    const labelElement = this.document.createElement("span");
+    labelElement.textContent = label;
+    const valueElement = this.document.createElement("strong");
+    valueElement.textContent = value;
+    valueElement.title = value;
+    row.append(labelElement, valueElement);
+    list.append(row);
+  });
+  return list;
+
+  }
+
+  createDetailsSection(title, content, actions = []) {
+  const section = this.document.createElement("div");
+  section.className = "selection-details-section";
+  const header = this.document.createElement("div");
+  header.className = "section-heading";
+  const titleElement = this.document.createElement("span");
+  titleElement.className = "eyebrow";
+  titleElement.textContent = title;
+  const actionRow = this.document.createElement("div");
+  actionRow.className = "button-row";
+  actions.forEach(action => actionRow.append(action));
+  header.append(titleElement, actionRow);
+  section.append(header, content);
+  return section;
+
+  }
+
+  createCompactButton(text, action, disabled = false) {
+  const button = this.document.createElement("button");
+  button.type = "button";
+  button.className = "compact-button";
+  button.textContent = text;
+  button.disabled = Boolean(disabled);
+  button.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    action();
+  });
+  return button;
 
   }
 
@@ -1470,24 +1649,133 @@ export class GraphViewer {
 
   }
 
-  renderAttributeEditor(attributes) {
-  const focused = this.document.activeElement;
-  if (focused?.closest("#attribute-editor")) {
+  selectedNodeObjects(graph = null): any[] {
+  const nodes: any[] = graph?.nodes ?? [...this.graph.loaded.values()].filter(node => node.showed !== false);
+  const nodesByName = new Map<string, any>(nodes.map(node => [node.name, node]));
+  return [...this.graph.selectedNames]
+    .map(name => nodesByName.get(name))
+    .filter(Boolean);
+
+  }
+
+  selectedNodeNames(graph = null): string[] {
+  return this.selectedNodeObjects(graph).map(node => node.name);
+
+  }
+
+  selectedEdgeObjects(graph = null): any[] {
+  const source = graph ?? this.graph.visibleGraph();
+  const edges: any[] = source.edges ?? [];
+  const edgesByKey = new Map<string, any>(edges.map(edge => [edge.key, edge]));
+  return [...this.graph.selectedEdgeKeys]
+    .map(key => edgesByKey.get(key))
+    .filter(Boolean);
+
+  }
+
+  singleSelectedNode(graph): any {
+  const nodes = this.selectedNodeObjects(graph);
+  return nodes.length === 1 ? nodes[0] : null;
+
+  }
+
+  pruneSelectionToGraph(graph) {
+  const nodeNames = new Set((graph.nodes ?? []).map(node => node.name));
+  const edgeKeys = new Set((graph.edges ?? []).map(edge => edge.key));
+
+  for (const name of [...this.graph.selectedNames]) {
+    if (!nodeNames.has(name)) {
+      this.graph.removeSelectedName(name);
+      this.expandedSelectionKeys.delete(this.selectionKeyForNode(name));
+    }
+  }
+
+  for (const key of [...this.graph.selectedEdgeKeys]) {
+    if (!edgeKeys.has(key)) {
+      this.graph.removeSelectedEdge(key);
+      this.expandedSelectionKeys.delete(this.selectionKeyForEdge(key));
+    }
+  }
+
+  const liveSelectionKeys = new Set([
+    ...[...this.graph.selectedNames].map(name => this.selectionKeyForNode(name)),
+    ...[...this.graph.selectedEdgeKeys].map(key => this.selectionKeyForEdge(key))
+  ]);
+  for (const key of [...this.expandedSelectionKeys]) {
+    if (!liveSelectionKeys.has(key)) {
+      this.expandedSelectionKeys.delete(key);
+    }
+  }
+
+  }
+
+  selectionKeyForNode(name) {
+  return `node:${name}`;
+
+  }
+
+  selectionKeyForEdge(key) {
+  return `edge:${key}`;
+
+  }
+
+  edgeEditableNodeId(edge) {
+  return edge?.relationGlobalId || null;
+
+  }
+
+  async ensureEdgeRelationLoaded(edge) {
+  const relationId = this.edgeEditableNodeId(edge);
+  if (!relationId || this.graph.loaded.has(relationId)) {
     return;
   }
 
-  this.attributeEditor.replaceChildren();
+  try {
+    await this.refreshLoadedNodeForEditing(relationId);
+    this.render();
+  } catch (error) {
+    this.setStatus(error.message);
+  }
+
+  }
+
+  async refreshLoadedNodeForEditing(globalId) {
+  const expansion = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(globalId)}`));
+  const incoming = GraphNode.from(expansion);
+  const existing = this.graph.loaded.get(incoming.name);
+  const showed = existing ? existing.showed !== false : false;
+  const stored = existing ? this.mergeNodeResponses(existing, incoming) : incoming;
+  stored.showed = showed;
+  this.graph.loaded.set(incoming.name, stored);
+  if (stored.showed === false) {
+    this.graph.positions.delete(incoming.name);
+    this.graph.velocities.delete(incoming.name);
+  }
+  this.refreshEdgeAngles();
+  return stored;
+
+  }
+
+  createAttributeEditor(attributes) {
+  const container = this.document.createElement("div");
+  container.className = "attribute-editor";
+  const addRow = (key, value) => this.addAttributeRow(container, key, value);
   const entries = Object.entries(attributes);
   if (entries.length === 0) {
-    this.addAttributeRow("", "");
-    return;
+    addRow("", "");
+  } else {
+    entries.forEach(([key, value]) => addRow(key, value));
   }
 
-  entries.forEach(([key, value]) => this.addAttributeRow(key, value));
+  return {
+    element: container,
+    addRow,
+    read: () => this.readAttributeEditor(container)
+  };
 
   }
 
-  addAttributeRow(key, value) {
+  addAttributeRow(container, key, value) {
   const row = this.document.createElement("div");
   row.className = "attribute-row";
   const keyInput = this.document.createElement("input");
@@ -1504,13 +1792,13 @@ export class GraphViewer {
   removeButton.textContent = "×";
   removeButton.addEventListener("click", () => row.remove());
   row.append(keyInput, valueInput, removeButton);
-  this.attributeEditor.append(row);
+  container.append(row);
 
   }
 
-  readAttributeEditor() {
+  readAttributeEditor(container) {
   const attributes = {};
-  this.attributeEditor.querySelectorAll(".attribute-row").forEach(row => {
+  container.querySelectorAll(".attribute-row").forEach(row => {
     const key = row.querySelector(".attribute-key").value.trim();
     const value = row.querySelector(".attribute-value").value;
     if (key) {
@@ -1544,7 +1832,7 @@ export class GraphViewer {
   button.title = node.globalId;
   button.addEventListener("click", () => {
     this.loadRoot(node.globalId);
-    this.setActiveTab("node");
+    this.setActiveTab("operations");
   });
   this.searchResults.append(button);
 
@@ -1566,7 +1854,7 @@ export class GraphViewer {
     button.title = node.globalId;
     button.addEventListener("click", () => {
       this.graph.selectedName = node.name;
-      this.setActiveTab("node");
+      this.setActiveTab("operations");
       this.render();
     });
     this.subgraphResults.append(button);
@@ -1634,7 +1922,7 @@ export class GraphViewer {
         this.revealLoadedNode(type.globalId, this.graph.rootName, { select: false });
         this.graph.selectedName = type.globalId;
         this.render();
-        this.setActiveTab("node");
+        this.setActiveTab("operations");
       });
       const save = this.document.createElement("button");
       save.type = "button";
@@ -1774,7 +2062,7 @@ export class GraphViewer {
       open.addEventListener("click", () => {
         this.graph.selectedName = relation.relationGlobalId;
         this.render();
-        this.setActiveTab("node");
+        this.setActiveTab("operations");
       });
       row.append(open);
       this.typedEdgeList.append(row);
@@ -1920,11 +2208,16 @@ export class GraphViewer {
 
   }
 
-  updateEditorState() {
-  const hasSelection = Boolean(this.graph.selectedName && this.graph.loaded.has(this.graph.selectedName));
-  this.saveNodeButton.disabled = this.graph.busy || !hasSelection;
-  this.deleteNodeButton.disabled = this.graph.busy || !hasSelection;
-  this.connectForm.querySelector("button").disabled = this.graph.busy || !hasSelection;
+  updateEditorState(graph = null) {
+  const nodeCount = this.selectedNodeObjects(graph).length;
+  const edgeCount = this.selectedEdgeObjects(graph).length;
+  const total = nodeCount + edgeCount;
+  this.clearSelectionButton.disabled = this.graph.busy || total === 0;
+  this.deleteSelectedNodesButton.disabled = this.graph.busy || nodeCount === 0;
+  this.assignNodeTypeButton.disabled = this.graph.busy || nodeCount === 0 || !this.assignNodeType.value;
+  this.connectForm.querySelector("button").disabled = this.graph.busy
+    || nodeCount !== 1
+    || !this.connectTargetName.value.trim();
   if (!this.graph.searchAbort) {
     this.setSearchStreaming(false);
   }
