@@ -2,7 +2,7 @@ using Abstractions;
 
 namespace GraphData.Core.Models;
 
-public class TypeEdge : Edge, IGraphEdgeType
+internal sealed class TypeEdge : EdgeType, IGraphEdgeType
 {
     internal TypeEdge(EdgeState state)
         : base(state) {

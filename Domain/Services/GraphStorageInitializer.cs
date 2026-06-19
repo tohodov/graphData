@@ -72,6 +72,7 @@ public sealed class GraphStorageInitializer
         foreach (var type in DiscoverRuntimeTypeDefinitions()) {
             cancellationToken.ThrowIfCancellationRequested();
             await EnsureNodeAsync(type.TypeId, CreateRuntimeTypeAttributes(type)).ConfigureAwait(false);
+            await EnsureEdgeTypeDefinitionAsync(type).ConfigureAwait(false);
         }
 
         await MarkRuntimeTypesInitializerCompletedAsync().ConfigureAwait(false);
@@ -173,6 +174,25 @@ public sealed class GraphStorageInitializer
     private IReadOnlyCollection<RuntimeGraphTypeDefinition> DiscoverRuntimeTypeDefinitions() =>
         _runtimeTypes.Types;
 
+    private async Task EnsureEdgeTypeDefinitionAsync(RuntimeGraphTypeDefinition type)
+    {
+        if (type.EdgeTypeDescriptor is null)
+            return;
+
+        if (!_runtimeTypes.TryCreateEdgeTypeDefinition(type.TypeId, out var definition))
+            return;
+
+        foreach (var endpoint in definition.Endpoints) {
+            var endpointId = new NodeGlobalId(type.TypeId.Concat([new NodeLocalId(endpoint.Name)]));
+            await EnsureNodeAsync(endpointId).ConfigureAwait(false);
+            if (endpoint.NodeTypeId is { } nodeTypeId) {
+                await EnsureNodeAsync(nodeTypeId).ConfigureAwait(false);
+                var connect = await _storage.Connect(endpointId, nodeTypeId).ConfigureAwait(false);
+                RequireOk(connect, $"connect edge endpoint '{endpointId}' to node type '{nodeTypeId}'");
+            }
+        }
+    }
+
     private static Dictionary<string, string> CreateRuntimeTypeAttributes(RuntimeGraphTypeDefinition type)
     {
         if (!IsChildOf(type.TypeId, type.RootId))
@@ -215,6 +235,8 @@ public sealed class GraphStorageInitializer
             return name[..^nameof(NodeType).Length];
         if (type.Element == "node" && name.EndsWith(nameof(Node), StringComparison.Ordinal))
             return name[..^nameof(Node).Length];
+        if (type.Element == "edge" && name.EndsWith(nameof(EdgeType), StringComparison.Ordinal))
+            return name[..^nameof(EdgeType).Length];
         if (type.Element == "edge" && name.EndsWith(nameof(Edge), StringComparison.Ordinal))
             return name[..^nameof(Edge).Length];
         return name;

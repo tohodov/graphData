@@ -37,6 +37,8 @@ internal sealed class GraphRuntimeTypeCatalog
 {
     private readonly IReadOnlyDictionary<NodeGlobalId, RuntimeGraphTypeDefinition> _nodeTypeDescriptors;
     private readonly IReadOnlyDictionary<Type, RuntimeGraphTypeDefinition> _nodeTypeDescriptorsByClrType;
+    private readonly IReadOnlyDictionary<NodeGlobalId, RuntimeGraphTypeDefinition> _edgeTypeDescriptors;
+    private readonly IReadOnlyDictionary<Type, RuntimeGraphTypeDefinition> _edgeTypeDescriptorsByClrType;
 
     private GraphRuntimeTypeCatalog(IReadOnlyCollection<RuntimeGraphTypeDefinition> types)
     {
@@ -46,6 +48,12 @@ internal sealed class GraphRuntimeTypeCatalog
             .ToDictionary(static type => type.TypeId);
         _nodeTypeDescriptorsByClrType = Types
             .Where(static type => type.NodeTypeDescriptor is not null)
+            .ToDictionary(static type => type.ClrType);
+        _edgeTypeDescriptors = Types
+            .Where(static type => type.EdgeTypeDescriptor is not null)
+            .ToDictionary(static type => type.TypeId);
+        _edgeTypeDescriptorsByClrType = Types
+            .Where(static type => type.EdgeTypeDescriptor is not null)
             .ToDictionary(static type => type.ClrType);
         Fingerprint = CreateFingerprint(Types);
     }
@@ -113,9 +121,33 @@ internal sealed class GraphRuntimeTypeCatalog
         throw new InvalidOperationException($"CLR type '{type.FullName}' is not a registered node type.");
     }
 
+    public bool TryCreateEdgeTypeDefinition(
+        NodeGlobalId typeId,
+        out EdgeTypeDefinition definition)
+    {
+        if (_edgeTypeDescriptors.TryGetValue(typeId, out var runtimeType)
+            && runtimeType.EdgeTypeDescriptor is { } descriptor) {
+            definition = descriptor.DefineRegistered(typeId, GetNodeTypeId);
+            return true;
+        }
+
+        definition = default!;
+        return false;
+    }
+
+    public NodeGlobalId GetEdgeTypeId(Type type)
+    {
+        if (_edgeTypeDescriptorsByClrType.TryGetValue(type, out var runtimeType))
+            return runtimeType.TypeId;
+
+        throw new InvalidOperationException($"CLR type '{type.FullName}' is not a registered edge type.");
+    }
+
     private static RuntimeGraphTypeDefinition? CreateRuntimeTypeDefinition(Type type)
     {
         if (type.DeclaringType == typeof(NodeType))
+            return null;
+        if (type.DeclaringType == typeof(EdgeType))
             return null;
 
         if (typeof(Node).IsAssignableFrom(type) && typeof(IGraphNodeType).IsAssignableFrom(type))
@@ -124,6 +156,7 @@ internal sealed class GraphRuntimeTypeCatalog
                 GetStaticTypeId(type),
                 "node",
                 GraphSystemNodeIds.NodeTypeRoot,
+                null,
                 null);
 
         if (typeof(NodeType).IsAssignableFrom(type))
@@ -132,7 +165,8 @@ internal sealed class GraphRuntimeTypeCatalog
                 NodeType.CreateDefaultTypeId(type),
                 "node",
                 GraphSystemNodeIds.NodeTypeRoot,
-                CreateNodeTypeDescriptor(type));
+                CreateNodeTypeDescriptor(type),
+                null);
 
         if (typeof(Edge).IsAssignableFrom(type) && typeof(IGraphEdgeType).IsAssignableFrom(type))
             return new RuntimeGraphTypeDefinition(
@@ -140,7 +174,17 @@ internal sealed class GraphRuntimeTypeCatalog
                 GetStaticTypeId(type),
                 "edge",
                 GraphSystemNodeIds.EdgeTypeRoot,
+                null,
                 null);
+
+        if (typeof(EdgeType).IsAssignableFrom(type))
+            return new RuntimeGraphTypeDefinition(
+                type,
+                EdgeType.CreateDefaultTypeId(type),
+                "edge",
+                GraphSystemNodeIds.EdgeTypeRoot,
+                null,
+                CreateEdgeTypeDescriptor(type));
 
         return null;
     }
@@ -153,6 +197,18 @@ internal sealed class GraphRuntimeTypeCatalog
         } catch (MissingMethodException ex) {
             throw new InvalidOperationException(
                 $"Runtime node type descriptor '{type.FullName}' must expose a parameterless constructor.",
+                ex);
+        }
+    }
+
+    private static EdgeType CreateEdgeTypeDescriptor(Type type)
+    {
+        try {
+            return Activator.CreateInstance(type, nonPublic: true) as EdgeType
+                ?? throw new InvalidOperationException($"Runtime edge type descriptor '{type.FullName}' could not be created.");
+        } catch (MissingMethodException ex) {
+            throw new InvalidOperationException(
+                $"Runtime edge type descriptor '{type.FullName}' must expose a parameterless constructor.",
                 ex);
         }
     }
@@ -204,4 +260,5 @@ internal sealed record RuntimeGraphTypeDefinition(
     NodeGlobalId TypeId,
     string Element,
     NodeGlobalId RootId,
-    NodeType? NodeTypeDescriptor);
+    NodeType? NodeTypeDescriptor,
+    EdgeType? EdgeTypeDescriptor);

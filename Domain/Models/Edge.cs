@@ -3,10 +3,16 @@ using Abstractions;
 namespace GraphData.Core.Models;
 
 public class Edge {
-    internal readonly EdgeState State;
+    private readonly EdgeState? _state;
+
+    internal EdgeState State => _state ?? throw new InvalidOperationException(
+        $"Edge '{GetType().Name}' is a type descriptor and is not bound to a graph edge.");
+
+    protected Edge() {
+    }
 
     internal Edge(EdgeState state) {
-        State = state;
+        _state = state;
     }
 
     public virtual Node Node1 => new(State.Node1);
