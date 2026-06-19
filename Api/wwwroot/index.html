@@ -57,8 +57,7 @@
 
         <section id="tab-operations" class="tab-panel active">
           <div class="panel-block">
-            <span class="eyebrow">Текущий выбор</span>
-            <div id="operation-selection-summary" class="result-summary">Выберите узлы или связи</div>
+            <span class="eyebrow">Выбор</span>
             <div class="button-row">
               <button id="clear-selection-button" type="button">Снять выбор</button>
               <button id="delete-selected-nodes-button" class="danger-button" type="button">Удалить узлы</button>
@@ -69,6 +68,12 @@
             <span class="eyebrow">Тип выбранных узлов</span>
             <select id="assign-node-type"></select>
             <button id="assign-node-type-button" type="button">Назначить выбранным узлам</button>
+          </div>
+
+          <div class="panel-block stack-form">
+            <span class="eyebrow">Тип выбранных связей</span>
+            <select id="assign-edge-type"></select>
+            <button id="assign-edge-type-button" type="button">Назначить выбранным связям</button>
           </div>
 
           <form id="create-node-form" class="panel-block stack-form">
@@ -86,11 +91,6 @@
             <input id="connect-edge-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId связи, если выбран тип">
             <button type="submit">Связать</button>
           </form>
-
-          <div class="panel-block">
-            <span class="eyebrow">Соседи</span>
-            <div id="neighbor-list" class="neighbor-list"></div>
-          </div>
         </section>
 
         <section id="tab-types" class="tab-panel">

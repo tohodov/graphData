@@ -10,6 +10,7 @@ using Abstractions;
 using GraphData.Api.Controllers;
 using GraphData.Api.Models;
 using GraphData.Api.Runtime;
+using GraphData.Core.Models;
 using GraphData.Core.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -320,6 +321,47 @@ public sealed class GraphControllerTests {
         Assert.IsNotNull(message);
         StringAssert.Contains(message, "InvalidOperationException");
         StringAssert.Contains(message, "diagnostic connect failure");
+    }
+
+    [TestMethod]
+    public async Task ChangeEdgeTypeAsync_ReplacesRelationTypeConnectionAndAttribute() {
+        await using var scope = TestGraphStorageScope.Create();
+        var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
+        var typeRoot = (await scope.Storage.Create(new("types"), graphData.GlobalId)).Value!;
+        var edgeTypeRoot = (await scope.Storage.Create(new("edges"), typeRoot.GlobalId, new Dictionary<string, string> {
+            [GraphRuntimeAttributeNames.GraphKind] = "type-root",
+            [GraphRuntimeAttributeNames.GraphElement] = "edge"
+        })).Value!;
+        var oldType = (await scope.Storage.Create(new("old-type"), edgeTypeRoot.GlobalId, new Dictionary<string, string> {
+            [GraphRuntimeAttributeNames.GraphKind] = "type",
+            [GraphRuntimeAttributeNames.GraphElement] = "edge"
+        })).Value!;
+        var newType = (await scope.Storage.Create(new("new-type"), edgeTypeRoot.GlobalId, new Dictionary<string, string> {
+            [GraphRuntimeAttributeNames.GraphKind] = "type",
+            [GraphRuntimeAttributeNames.GraphElement] = "edge"
+        })).Value!;
+        var relationRoot = (await scope.Storage.Create(new("relations"), graphData.GlobalId)).Value!;
+        var relation = (await scope.Storage.Create(new("relation-1"), relationRoot.GlobalId, new Dictionary<string, string> {
+            [GraphRuntimeAttributeNames.GraphKind] = "edge-instance",
+            [GraphRuntimeAttributeNames.GraphElement] = "edge",
+            [GraphRuntimeAttributeNames.GraphTypeName] = oldType.GlobalId.ToString()
+        })).Value!;
+        await scope.Storage.Connect(relation.GlobalId, oldType.GlobalId);
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
+            RelationGlobalId = relation.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            TypeGlobalId = newType.GlobalId.Select(static segment => segment.ToString()).ToArray()
+        });
+
+        Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
+
+        var updatedRelation = (await scope.Storage.Get(relation.GlobalId)).Value!;
+        Assert.AreEqual(newType.GlobalId.ToString(), updatedRelation.Attributes[GraphRuntimeAttributeNames.GraphTypeName]);
+
+        var connected = (await scope.Storage.GetConnectedNodesAsync(updatedRelation)).Value!;
+        Assert.IsTrue(connected.Any(node => node.GlobalId == newType.GlobalId));
+        Assert.IsFalse(connected.Any(node => node.GlobalId == oldType.GlobalId));
     }
 
     [TestMethod]

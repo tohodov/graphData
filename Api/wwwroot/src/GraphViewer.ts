@@ -57,7 +57,6 @@ export class GraphViewer {
     this.statusOutput = this.requireElement("#status");
     this.emptyState = this.requireElement("#empty-state");
     this.emptyTitle = this.requireElement("#empty-state .empty-title");
-    this.operationSelectionSummary = this.requireElement("#operation-selection-summary");
     this.clearSelectionButton = this.requireElement("#clear-selection-button");
     this.deleteSelectedNodesButton = this.requireElement("#delete-selected-nodes-button");
     this.createNodeForm = this.requireElement("#create-node-form");
@@ -68,7 +67,6 @@ export class GraphViewer {
     this.connectTargetName = this.requireElement("#connect-target-name");
     this.connectEdgeType = this.requireElement("#connect-edge-type");
     this.connectEdgeName = this.requireElement("#connect-edge-name");
-    this.neighborList = this.requireElement("#neighbor-list");
     this.searchForm = this.requireElement("#search-form");
     this.searchQueryJson = this.requireElement("#search-query-json");
     this.searchSubmitButton = this.requireElement("#search-submit-button");
@@ -89,6 +87,8 @@ export class GraphViewer {
     this.nodeTypeList = this.requireElement("#node-type-list");
     this.assignNodeType = this.requireElement("#assign-node-type");
     this.assignNodeTypeButton = this.requireElement("#assign-node-type-button");
+    this.assignEdgeType = this.requireElement("#assign-edge-type");
+    this.assignEdgeTypeButton = this.requireElement("#assign-edge-type-button");
     this.edgeTypeList = this.requireElement("#edge-type-list");
     this.typedEdgeList = this.requireElement("#typed-edge-list");
     this.canvas = new WebGpuGraphCanvas({
@@ -246,6 +246,7 @@ export class GraphViewer {
     });
     this.deleteSelectedNodesButton.addEventListener("click", () => void this.deleteSelectedNodes());
     this.assignNodeType.addEventListener("change", () => this.updateEditorState());
+    this.assignEdgeType.addEventListener("change", () => this.updateEditorState());
     this.connectTargetName.addEventListener("input", () => this.updateEditorState());
 
     this.createNodeForm.addEventListener("submit", event => {
@@ -315,6 +316,7 @@ export class GraphViewer {
     this.refreshTypesButton.addEventListener("click", () => void this.refreshTypes());
     this.loadRelationsButton.addEventListener("click", () => void this.loadRelationInstances());
     this.assignNodeTypeButton.addEventListener("click", () => void this.assignSelectedNodeType());
+    this.assignEdgeTypeButton.addEventListener("click", () => void this.assignSelectedEdgeType());
   }
 
 
@@ -771,6 +773,56 @@ export class GraphViewer {
 
   }
 
+  async assignSelectedEdgeType() {
+  const edges = this.selectedTypedEdgeObjects();
+  const typeGlobalId = this.assignEdgeType.value;
+  if (edges.length === 0 || !typeGlobalId) {
+    this.setStatus("Выберите типизированные связи и тип связи");
+    return;
+  }
+
+  await this.changeEdgeTypeForEdges(edges, typeGlobalId);
+
+  }
+
+  async changeEdgeTypeForEdges(edges, typeGlobalId) {
+  if (!edges?.length || !typeGlobalId) {
+    this.setStatus("Выберите типизированные связи и тип связи");
+    return;
+  }
+
+  const relationIds = [...new Set(edges.map(edge => this.edgeEditableNodeId(edge)).filter(Boolean))];
+  this.setBusy(true);
+  try {
+    for (const relationId of relationIds) {
+      await this.changeGraphEdgeType(relationId, typeGlobalId);
+      const subgraph = await this.loadSubgraphForRoots([relationId, typeGlobalId], 2);
+      this.replaceLoadedRelationSubgraph(subgraph, relationId);
+      this.mergeSubgraphIntoViewer(subgraph, { select: false });
+    }
+    this.render();
+    this.renderTypeControls();
+    this.setStatus(`Тип ${this.displayName(typeGlobalId)} назначен связям: ${relationIds.length}`);
+  } catch (error) {
+    this.setStatus(error.message);
+  } finally {
+    this.setBusy(false);
+  }
+
+  }
+
+  async changeGraphEdgeType(relationGlobalId, typeGlobalId) {
+  await this.apiJson("/api/graph/edges/type", {
+    method: "PUT",
+    body: JSON.stringify({
+      relationGlobalId: this.parseGlobalId(relationGlobalId),
+      typeGlobalId: this.parseGlobalId(typeGlobalId)
+    }),
+    expectJson: false
+  });
+
+  }
+
   async createTypedEdgeRelation(source, target, typeGlobalId, relationLocalId = "") {
   this.readBasisInputs();
   await this.ensurePath(this.getBasis().relationRoot);
@@ -1139,6 +1191,40 @@ export class GraphViewer {
 
   }
 
+  replaceLoadedRelationSubgraph(response, relationId) {
+  const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
+  const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
+  const edgesByNode = new Map();
+
+  edges.forEach(edge => {
+    [edge.sourceGlobalId, edge.targetGlobalId].forEach(name => {
+      if (!edgesByNode.has(name)) {
+        edgesByNode.set(name, []);
+      }
+      edgesByNode.get(name).push(edge);
+    });
+  });
+
+  nodes
+    .filter(node => node.name === relationId || GraphId.isChildOf(node.name, relationId))
+    .forEach(node => {
+      const existing = this.graph.loaded.get(node.name);
+      if (!existing) {
+        return;
+      }
+
+      const replacement = GraphNode.from({
+        ...node,
+        edges: this.mergeEdges(node.edges, edgesByNode.get(node.name) ?? [])
+      });
+      replacement.showed = existing.showed !== false;
+      replacement.position = existing.position ?? replacement.position;
+      this.graph.loaded.set(node.name, replacement);
+    });
+  this.refreshEdgeAngles();
+
+  }
+
   async loadSubgraphForRoots(roots, maxDepth = 1) {
   return this.apiJson("/api/graph/subgraph", {
     method: "POST",
@@ -1316,59 +1402,11 @@ export class GraphViewer {
   renderInspector(graph) {
   this.renderSelectionOverlay(graph);
   this.renderOperationPanel(graph);
-  this.renderNeighborOperations(graph);
 
   }
 
   renderOperationPanel(graph) {
-  const nodeCount = this.selectedNodeObjects(graph).length;
-  const edgeCount = this.selectedEdgeObjects(graph).length;
-  const total = nodeCount + edgeCount;
-  this.operationSelectionSummary.textContent = total === 0
-    ? "Выберите узлы или связи"
-    : `Выбрано: ${this.formatSelectionCount(nodeCount, edgeCount)}`;
   this.updateEditorState(graph);
-
-  }
-
-  renderNeighborOperations(graph) {
-  const selected = this.singleSelectedNode(graph);
-  const edges: any[] = graph.edges ?? [];
-  this.neighborList.replaceChildren();
-
-  if (!selected) {
-    const summary = this.document.createElement("div");
-    summary.className = "result-summary";
-    summary.textContent = "Доступно, когда выбран ровно один узел";
-    this.neighborList.append(summary);
-    return;
-  }
-
-  const neighbors = edges
-    .filter(edge => edge.sourceGlobalId === selected.name || edge.targetGlobalId === selected.name)
-    .map(edge => edge.sourceGlobalId === selected.name ? edge.targetGlobalId : edge.sourceGlobalId)
-    .sort((a, b) => this.displayName(a).localeCompare(this.displayName(b), "ru"));
-
-  neighbors.forEach(name => {
-    const edge = edges.find(candidate =>
-      (candidate.sourceGlobalId === selected.name && candidate.targetGlobalId === name) ||
-      (candidate.sourceGlobalId === name && candidate.targetGlobalId === selected.name));
-    const row = this.document.createElement("button");
-    row.type = "button";
-    row.className = `neighbor-row${this.graph.isNodeVisible(name) ? " loaded" : ""}`;
-    const dot = this.document.createElement("span");
-    dot.className = "neighbor-dot";
-    const text = this.document.createElement("span");
-    text.textContent = edge ? this.edgeEndpointDisplayName(edge, name) : this.displayName(name);
-    row.title = name;
-    row.append(dot, text);
-    row.addEventListener("click", () => {
-      if (edge) {
-        this.handleEndpointClick(edge, selected.name);
-      }
-    });
-    this.neighborList.append(row);
-  });
 
   }
 
@@ -1673,9 +1711,8 @@ export class GraphViewer {
 
   }
 
-  singleSelectedNode(graph): any {
-  const nodes = this.selectedNodeObjects(graph);
-  return nodes.length === 1 ? nodes[0] : null;
+  selectedTypedEdgeObjects(graph = null): any[] {
+  return this.selectedEdgeObjects(graph).filter(edge => Boolean(this.edgeEditableNodeId(edge)));
 
   }
 
@@ -1865,6 +1902,7 @@ export class GraphViewer {
   renderTypeControls() {
   this.renderTypeSelect(this.createNodeType, this.graph.schema.nodeTypes, "Без типа");
   this.renderTypeSelect(this.assignNodeType, this.graph.schema.nodeTypes, "Не менять тип");
+  this.renderTypeSelect(this.assignEdgeType, this.graph.schema.edgeTypes, "Не менять тип");
   this.renderTypeSelect(this.connectEdgeType, this.graph.schema.edgeTypes, "Физическая связь");
   this.renderTypeList(this.nodeTypeList, "Типы узлов", this.graph.schema.nodeTypes, "node");
   this.renderTypeList(this.edgeTypeList, "Типы связей", this.graph.schema.edgeTypes, "edge");
@@ -2211,10 +2249,12 @@ export class GraphViewer {
   updateEditorState(graph = null) {
   const nodeCount = this.selectedNodeObjects(graph).length;
   const edgeCount = this.selectedEdgeObjects(graph).length;
+  const typedEdgeCount = this.selectedTypedEdgeObjects(graph).length;
   const total = nodeCount + edgeCount;
   this.clearSelectionButton.disabled = this.graph.busy || total === 0;
   this.deleteSelectedNodesButton.disabled = this.graph.busy || nodeCount === 0;
   this.assignNodeTypeButton.disabled = this.graph.busy || nodeCount === 0 || !this.assignNodeType.value;
+  this.assignEdgeTypeButton.disabled = this.graph.busy || typedEdgeCount === 0 || !this.assignEdgeType.value;
   this.connectForm.querySelector("button").disabled = this.graph.busy
     || nodeCount !== 1
     || !this.connectTargetName.value.trim();
