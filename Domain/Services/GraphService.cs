@@ -56,14 +56,13 @@ public sealed class GraphService {
         IReadOnlyCollection<string> typeGlobalId) {
         var nodeId = new NodeGlobalId(nodeGlobalId);
         var typeId = new NodeGlobalId(typeGlobalId);
-        var materializer = new NodeTypeSchemaMaterializer(storage);
-        var schemaResult = await materializer.LoadAsync().ConfigureAwait(false);
-        if (schemaResult.Status != ServiceResultStatus.Ok || schemaResult.Value is null)
-            return ServiceResult<Subgraph>.From(schemaResult);
+        if (!TypeNode.IsTypeNodeId(typeId))
+            return ServiceResult<Subgraph>.BadRequest($"Node '{typeId}' is not under node type root '{GraphSystemNodeIds.NodeTypeRoot}'.");
 
-        var schema = schemaResult.Value;
-        if (!schema.Contains(new NodeTypeId(typeId)))
-            return ServiceResult<Subgraph>.BadRequest($"Node '{typeId}' is not a registered node type.");
+        var typeResult = await storage.Get(typeId).ConfigureAwait(false);
+        if (typeResult.Status != ServiceResultStatus.Ok || typeResult.Value is null)
+            return ServiceResult<Subgraph>.From(typeResult);
+        var typeNode = new TypeNode(typeResult.Value);
 
         var nodeResult = await storage.Get(nodeId).ConfigureAwait(false);
         if (nodeResult.Status != ServiceResultStatus.Ok || nodeResult.Value is null)
@@ -79,11 +78,11 @@ public sealed class GraphService {
                 return ToSubgraphResult(connect);
         }
 
-        var instanceResult = await materializer.MaterializeAsync(nodeId, schema).ConfigureAwait(false);
-        if (instanceResult.Status != ServiceResultStatus.Ok || instanceResult.Value is null)
-            return ServiceResult<Subgraph>.From(instanceResult);
+        var reloadedNode = await storage.Get(nodeId).ConfigureAwait(false);
+        if (reloadedNode.Status != ServiceResultStatus.Ok || reloadedNode.Value is null)
+            return ServiceResult<Subgraph>.From(reloadedNode);
 
-        var validation = NodeTypeValidator.Validate(schema, instanceResult.Value);
+        var validation = NodeTypeValidator.Validate(typeNode.Define(), new InstanceNode(reloadedNode.Value));
         if (!validation.IsValid) {
             if (!alreadyAssigned.Value)
                 await storage.Disconnect(nodeId, typeId).ConfigureAwait(false);

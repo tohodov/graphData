@@ -12,6 +12,24 @@ public class InstanceNode : Node, IGraphNodeType
 
     public virtual NodeGlobalId TypeId => StaticTypeId;
 
-    public Edge EdgeToType => field ??= new Edge(State.Edges.First(x => x.Node2.GlobalId == GraphBaseTypeIds.NodeType));
-    public TypeNode Type => field ??= new TypeNode(EdgeToType.Node2.State);
+    public IReadOnlyCollection<TypeNode> AssignedTypes => field ??= State.Edges
+        .Select(OtherEndpoint)
+        .Where(static node => TypeNode.IsTypeNodeId(node.GlobalId))
+        .GroupBy(static node => node.GlobalId)
+        .Select(static group => new TypeNode(group.First()))
+        .ToArray();
+
+    public TypeNode? SingleAssignedType => AssignedTypes.Count == 1
+        ? AssignedTypes.Single()
+        : null;
+
+    public IReadOnlyCollection<InstanceNode> NeighborInstances => field ??= State.Edges
+        .Select(OtherEndpoint)
+        .Where(static node => !TypeNode.IsTypeNodeId(node.GlobalId))
+        .GroupBy(static node => node.GlobalId)
+        .Select(static group => new InstanceNode(group.First()))
+        .ToArray();
+
+    private NodeState OtherEndpoint(EdgeState edge) =>
+        edge.Node1.GlobalId == GlobalId ? edge.Node2 : edge.Node1;
 }

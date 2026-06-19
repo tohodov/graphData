@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Threading.Tasks;
 using Abstractions;
 using GraphData.Core.Models;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -9,29 +10,29 @@ namespace GraphData.Tests.GraphService;
 public sealed class NodeTypeDslTests
 {
     [TestMethod]
-    public void NodeTypeValidator_EnforcesRequiredTypedSlot()
+    public async Task NodeTypeValidator_EnforcesRequiredTypedSlot()
     {
-        var weaponType = new NodeGlobalId("graphdata", "types", "nodes", "Weapon");
-        var manufacturerType = new NodeGlobalId("graphdata", "types", "nodes", "Manufacturer");
-        var schema = NodeTypeSchema.Create([
-            NodeTypeDefinition.Define(weaponType, type => type.RequiresSlot("manufacturer", manufacturerType)),
-            NodeTypeDefinition.Define(manufacturerType)
-        ]);
-        var invalid = new TypedNodeInstance(
-            new NodeGlobalId("ak-47"),
-            [new NodeTypeId(weaponType)],
-            []);
-        var valid = new TypedNodeInstance(
-            new NodeGlobalId("ak-47"),
-            [new NodeTypeId(weaponType)],
-            [
-                new TypedNodeNeighbor(
-                    new NodeGlobalId("kalashnikov"),
-                    [new NodeTypeId(manufacturerType)])
-            ]);
+        await using var scope = TestGraphStorageScope.Create();
+        var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
+        var typeRoot = (await scope.Storage.Create(new("types"), graphData.GlobalId)).Value!;
+        var nodeTypeRoot = (await scope.Storage.Create(new("nodes"), typeRoot.GlobalId)).Value!;
+        var weaponTypeState = (await scope.Storage.Create(new("Weapon"), nodeTypeRoot.GlobalId)).Value!;
+        var manufacturerTypeState = (await scope.Storage.Create(new("Manufacturer"), nodeTypeRoot.GlobalId)).Value!;
+        var weaponType = new TypeNode(weaponTypeState);
+        var manufacturerType = new TypeNode(manufacturerTypeState);
+        var definition = weaponType.Define(type => type.RequiresSlot("manufacturer", manufacturerType));
+        var ak47 = (await scope.Storage.Create(new("ak-47"))).Value!;
+        await scope.Storage.Connect(ak47.GlobalId, weaponType.GlobalId);
 
-        var invalidResult = NodeTypeValidator.Validate(schema, invalid);
-        var validResult = NodeTypeValidator.Validate(schema, valid);
+        var invalid = new InstanceNode((await scope.Storage.Get(ak47.GlobalId)).Value!);
+        var invalidResult = NodeTypeValidator.Validate(definition, invalid);
+
+        var manufacturer = (await scope.Storage.Create(new("kalashnikov"))).Value!;
+        await scope.Storage.Connect(manufacturer.GlobalId, manufacturerType.GlobalId);
+        await scope.Storage.Connect(ak47.GlobalId, manufacturer.GlobalId);
+        var valid = new InstanceNode((await scope.Storage.Get(ak47.GlobalId)).Value!);
+
+        var validResult = NodeTypeValidator.Validate(definition, valid);
 
         Assert.IsFalse(invalidResult.IsValid);
         Assert.IsTrue(invalidResult.Diagnostics.Any(static diagnostic => diagnostic.Code == "node-type.slot-cardinality"));
