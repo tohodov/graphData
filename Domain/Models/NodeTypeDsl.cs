@@ -1,5 +1,3 @@
-using Abstractions;
-
 namespace GraphData.Core.Models;
 
 public readonly record struct NodeSlotCardinality(int Min, int? Max)
@@ -18,12 +16,41 @@ public readonly record struct NodeSlotCardinality(int Min, int? Max)
 public sealed record NodeSlotDefinition(
     string Name,
     IReadOnlyCollection<TypeNode> AllowedTypes,
-    NodeSlotCardinality Cardinality);
+    NodeSlotCardinality Cardinality)
+{
+    public void EnsureSatisfiedBy(InstanceNode instance)
+    {
+        var allowedTypeIds = AllowedTypes.Select(static type => type.GlobalId).ToHashSet();
+        var count = instance.NeighborInstances.Count(neighbor =>
+            neighbor.AssignedTypes.Any(type => allowedTypeIds.Contains(type.GlobalId)));
+
+        if (!Cardinality.Contains(count))
+            throw new InvalidOperationException(
+                $"Slot '{Name}' expects {Cardinality} linked nodes, but found {count}.");
+    }
+}
 
 public sealed record NodeTypeDefinition(
     TypeNode Type,
     bool IsAbstract,
-    IReadOnlyCollection<NodeSlotDefinition> Slots);
+    IReadOnlyCollection<NodeSlotDefinition> Slots)
+{
+    public void EnsureSatisfiedBy(InstanceNode instance)
+    {
+        if (IsAbstract)
+            throw new InvalidOperationException($"Node type '{Type.GlobalId}' is abstract.");
+
+        if (instance.AssignedTypes.Count != 1)
+            throw new InvalidOperationException($"Node '{instance.GlobalId}' must have exactly one node type.");
+
+        var assignedType = instance.AssignedTypes.Single();
+        if (assignedType.GlobalId != Type.GlobalId)
+            throw new InvalidOperationException($"Node '{instance.GlobalId}' has another node type.");
+
+        foreach (var slot in Slots)
+            slot.EnsureSatisfiedBy(instance);
+    }
+}
 
 public sealed class NodeTypeBuilder
 {
@@ -82,71 +109,4 @@ public sealed class NodeTypeBuilder
 
         return value.Trim();
     }
-}
-
-public enum NodeTypeDiagnosticSeverity
-{
-    Error,
-    Warning
-}
-
-public sealed record NodeTypeDiagnostic(
-    NodeTypeDiagnosticSeverity Severity,
-    string Code,
-    string Message,
-    NodeGlobalId NodeId,
-    string? SlotName = null);
-
-public sealed record NodeTypeValidationResult(IReadOnlyCollection<NodeTypeDiagnostic> Diagnostics)
-{
-    public bool IsValid => Diagnostics.All(static diagnostic => diagnostic.Severity != NodeTypeDiagnosticSeverity.Error);
-
-    public static NodeTypeValidationResult Ok { get; } = new([]);
-
-    public string ToUserMessage() => string.Join(Environment.NewLine, Diagnostics.Select(static diagnostic => diagnostic.Message));
-}
-
-public static class NodeTypeValidator
-{
-    public static NodeTypeValidationResult Validate(NodeTypeDefinition definition, InstanceNode instance)
-    {
-        var diagnostics = new List<NodeTypeDiagnostic>();
-        var assignedTypes = instance.AssignedTypes;
-        if (assignedTypes.Count == 0) {
-            diagnostics.Add(Error("node-type.missing", $"Node '{instance.GlobalId}' has no assigned node type.", instance.GlobalId));
-            return new NodeTypeValidationResult(diagnostics);
-        }
-
-        if (assignedTypes.Count > 1)
-            diagnostics.Add(Error("node-type.multiple", $"Node '{instance.GlobalId}' has multiple assigned node types.", instance.GlobalId));
-
-        if (assignedTypes.All(type => type.GlobalId != definition.Type.GlobalId))
-            diagnostics.Add(Error(
-                "node-type.not-assigned",
-                $"Node '{instance.GlobalId}' is not assigned to node type '{definition.Type.GlobalId}'.",
-                instance.GlobalId));
-
-        if (definition.IsAbstract)
-            diagnostics.Add(Error("node-type.abstract", $"Node '{instance.GlobalId}' cannot use abstract node type '{definition.Type.GlobalId}'.", instance.GlobalId));
-
-        foreach (var slot in definition.Slots) {
-            var allowed = slot.AllowedTypes.Select(static type => type.GlobalId).ToHashSet();
-            var count = instance.NeighborInstances.Count(neighbor => neighbor.AssignedTypes.Any(type => allowed.Contains(type.GlobalId)));
-            if (slot.Cardinality.Contains(count))
-                continue;
-
-            diagnostics.Add(Error(
-                "node-type.slot-cardinality",
-                $"Node '{instance.GlobalId}' slot '{slot.Name}' expects {slot.Cardinality} nodes of types {string.Join(", ", slot.AllowedTypes.Select(static type => type.GlobalId))}, but found {count}.",
-                instance.GlobalId,
-                slot.Name));
-        }
-
-        return diagnostics.Count == 0
-            ? NodeTypeValidationResult.Ok
-            : new NodeTypeValidationResult(diagnostics);
-    }
-
-    private static NodeTypeDiagnostic Error(string code, string message, NodeGlobalId nodeId, string? slotName = null) =>
-        new(NodeTypeDiagnosticSeverity.Error, code, message, nodeId, slotName);
 }

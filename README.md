@@ -49,10 +49,7 @@ DSL-описанием типа и проверкой инвариантов в 
 - Граф условно бесконечен, поэтому в домене не должно быть snapshot-схемы всего графа. `GraphService` читает
   через `IGraphStorage` только тот фрагмент, который нужен конкретной операции.
 - `NodeTypeDefinition`, `NodeTypeBuilder`, `NodeSlotDefinition` и `NodeSlotCardinality` описывают локальное
-  DSL-определение одного `TypeNode` и его инварианты.
-- `NodeTypeValidator` проверяет `NodeTypeDefinition` против `InstanceNode` и возвращает диагностируемые ошибки
-  (`node-type.missing`, `node-type.multiple`, `node-type.not-assigned`, `node-type.abstract`,
-  `node-type.slot-cardinality`).
+  DSL-определение одного `TypeNode`, его слоты и минимальные проверки инвариантов через исключения.
 - `GraphService.AssignNodeTypeAsync` назначает тип связью `InstanceNode -> TypeNode`, перечитывает инстанс из
   storage и валидирует операцию перед возвратом `Subgraph` через `PUT /api/graph/nodes/type`.
 

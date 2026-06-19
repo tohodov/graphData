@@ -82,11 +82,12 @@ public sealed class GraphService {
         if (reloadedNode.Status != ServiceResultStatus.Ok || reloadedNode.Value is null)
             return ServiceResult<Subgraph>.From(reloadedNode);
 
-        var validation = NodeTypeValidator.Validate(typeNode.Define(), new InstanceNode(reloadedNode.Value));
-        if (!validation.IsValid) {
+        try {
+            typeNode.Define().EnsureSatisfiedBy(new InstanceNode(reloadedNode.Value));
+        } catch {
             if (!alreadyAssigned.Value)
                 await storage.Disconnect(nodeId, typeId).ConfigureAwait(false);
-            return ServiceResult<Subgraph>.Conflict(validation.ToUserMessage());
+            throw;
         }
 
         return await storage.GetSubgraphAsync(new SubgraphQuery {

@@ -1,4 +1,4 @@
-using System.Linq;
+using System;
 using System.Threading.Tasks;
 using Abstractions;
 using GraphData.Core.Models;
@@ -10,7 +10,7 @@ namespace GraphData.Tests.GraphService;
 public sealed class NodeTypeDslTests
 {
     [TestMethod]
-    public async Task NodeTypeValidator_EnforcesRequiredTypedSlot()
+    public async Task NodeTypeDefinition_EnforcesRequiredTypedSlot()
     {
         await using var scope = TestGraphStorageScope.Create();
         var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
@@ -25,17 +25,14 @@ public sealed class NodeTypeDslTests
         await scope.Storage.Connect(ak47.GlobalId, weaponType.GlobalId);
 
         var invalid = new InstanceNode((await scope.Storage.Get(ak47.GlobalId)).Value!);
-        var invalidResult = NodeTypeValidator.Validate(definition, invalid);
+
+        Assert.ThrowsException<InvalidOperationException>(() => definition.EnsureSatisfiedBy(invalid));
 
         var manufacturer = (await scope.Storage.Create(new("kalashnikov"))).Value!;
         await scope.Storage.Connect(manufacturer.GlobalId, manufacturerType.GlobalId);
         await scope.Storage.Connect(ak47.GlobalId, manufacturer.GlobalId);
         var valid = new InstanceNode((await scope.Storage.Get(ak47.GlobalId)).Value!);
 
-        var validResult = NodeTypeValidator.Validate(definition, valid);
-
-        Assert.IsFalse(invalidResult.IsValid);
-        Assert.IsTrue(invalidResult.Diagnostics.Any(static diagnostic => diagnostic.Code == "node-type.slot-cardinality"));
-        Assert.IsTrue(validResult.IsValid);
+        definition.EnsureSatisfiedBy(valid);
     }
 }

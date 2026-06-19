@@ -25,11 +25,13 @@
 - `TypeNode.Define(...)` открывает DSL-описание конкретного типа узла.
 - `NodeTypeBuilder` задает свойства типа и его слоты.
 - `NodeTypeDefinition` описывает один `TypeNode`, а не всю схему графа.
-- `NodeSlotDefinition` описывает слот через имя, допустимые `TypeNode` и cardinality.
+- `NodeSlotDefinition` описывает слот через имя, допустимые `TypeNode` и cardinality, а также умеет проверить
+  этот слот на конкретном `InstanceNode`.
 - `NodeSlotCardinality` задает ограничения количества связанных инстансов.
 - `InstanceNode.AssignedTypes` читает назначенные типы из связей с узлами под `GraphSystemNodeIds.NodeTypeRoot`.
 - `InstanceNode.NeighborInstances` читает соседние обычные инстансы, которые участвуют в проверке слотов.
-- `NodeTypeValidator` проверяет `NodeTypeDefinition` против `InstanceNode` и возвращает диагностируемые ошибки.
+- `NodeTypeDefinition.EnsureSatisfiedBy(...)` проверяет минимальные инварианты типа против `InstanceNode` и
+  бросает исключение при нарушении.
 
 ### Граница мутаций
 
