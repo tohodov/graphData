@@ -51,6 +51,51 @@ public sealed class GraphService {
         return storage.Connect(new NodeGlobalId(sourceGlobalId), new NodeGlobalId(targetGlobalId));
     }
 
+    public async Task<ServiceResult<Subgraph>> AssignNodeTypeAsync(
+        IReadOnlyCollection<string> nodeGlobalId,
+        IReadOnlyCollection<string> typeGlobalId) {
+        var nodeId = new NodeGlobalId(nodeGlobalId);
+        var typeId = new NodeGlobalId(typeGlobalId);
+        var materializer = new NodeTypeSchemaMaterializer(storage);
+        var schemaResult = await materializer.LoadAsync().ConfigureAwait(false);
+        if (schemaResult.Status != ServiceResultStatus.Ok || schemaResult.Value is null)
+            return ServiceResult<Subgraph>.From(schemaResult);
+
+        var schema = schemaResult.Value;
+        if (!schema.Contains(new NodeTypeId(typeId)))
+            return ServiceResult<Subgraph>.BadRequest($"Node '{typeId}' is not a registered node type.");
+
+        var nodeResult = await storage.Get(nodeId).ConfigureAwait(false);
+        if (nodeResult.Status != ServiceResultStatus.Ok || nodeResult.Value is null)
+            return ServiceResult<Subgraph>.From(nodeResult);
+
+        var alreadyAssigned = await IsConnectedAsync(nodeResult.Value, typeId).ConfigureAwait(false);
+        if (alreadyAssigned.Status != ServiceResultStatus.Ok)
+            return ServiceResult<Subgraph>.From(alreadyAssigned);
+
+        if (!alreadyAssigned.Value) {
+            var connect = await storage.Connect(nodeId, typeId).ConfigureAwait(false);
+            if (connect.Status != ServiceResultStatus.Ok)
+                return ToSubgraphResult(connect);
+        }
+
+        var instanceResult = await materializer.MaterializeAsync(nodeId, schema).ConfigureAwait(false);
+        if (instanceResult.Status != ServiceResultStatus.Ok || instanceResult.Value is null)
+            return ServiceResult<Subgraph>.From(instanceResult);
+
+        var validation = NodeTypeValidator.Validate(schema, instanceResult.Value);
+        if (!validation.IsValid) {
+            if (!alreadyAssigned.Value)
+                await storage.Disconnect(nodeId, typeId).ConfigureAwait(false);
+            return ServiceResult<Subgraph>.Conflict(validation.ToUserMessage());
+        }
+
+        return await storage.GetSubgraphAsync(new SubgraphQuery {
+            Nodes = [nodeId, typeId],
+            MaxDepth = 1
+        }).ConfigureAwait(false);
+    }
+
     public async Task<ServiceResult<Subgraph>> ChangeEdgeTypeAsync(
         IReadOnlyCollection<string>? sourceGlobalId,
         IReadOnlyCollection<string>? targetGlobalId,
@@ -245,6 +290,14 @@ public sealed class GraphService {
         return connectedResult.Value.Any(node => node.GlobalId == targetId)
             ? await storage.Disconnect(sourceId, targetId)
             : ServiceResult.Ok();
+    }
+
+    private async Task<ServiceResult<bool>> IsConnectedAsync(NodeState node, NodeGlobalId targetId) {
+        var connectedResult = await storage.GetConnectedNodesAsync(node).ConfigureAwait(false);
+        if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null)
+            return ServiceResult<bool>.From(connectedResult);
+
+        return ServiceResult<bool>.Ok(connectedResult.Value.Any(neighbor => neighbor.GlobalId == targetId));
     }
 
     private async Task<ServiceResult<Subgraph>> CreateTypedEdgeRelationSubgraphAsync(

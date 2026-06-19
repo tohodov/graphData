@@ -1,7 +1,6 @@
 import {
   graphElementAttribute,
   graphKindAttribute,
-  graphTypeNameAttribute,
   projectionColorAttribute,
   projectionDirectedAttribute,
   projectionInfoAttribute,
@@ -455,16 +454,9 @@ export class GraphViewer {
   const typeGlobalId = options.typeGlobalId || "";
   this.setBusy(true);
   try {
-    const attributes = typeGlobalId
-      ? {
-          [graphKindAttribute]: "instance",
-          [graphElementAttribute]: "node",
-          [graphTypeNameAttribute]: typeGlobalId
-        }
-      : null;
-    const created = await this.createGraphNode(name, parentGlobalId, attributes);
+    const created = await this.createGraphNode(name, parentGlobalId);
     if (typeGlobalId) {
-      await this.connectGraphNodes(created.globalId, typeGlobalId);
+      await this.assignGraphNodeType(created.globalId, typeGlobalId);
     }
     this.createNodeName.value = "";
     this.createNodeParent.value = "";
@@ -758,8 +750,8 @@ export class GraphViewer {
   this.setBusy(true);
   try {
     for (const nodeName of nodeNames) {
-      await this.connectGraphNodes(nodeName, typeGlobalId);
-      await this.refreshLoadedNodeForEditing(nodeName);
+      const subgraph = await this.assignGraphNodeType(nodeName, typeGlobalId);
+      this.mergeSubgraphIntoViewer(subgraph, { select: false });
     }
     this.render();
     this.renderTypeControls();
@@ -769,6 +761,17 @@ export class GraphViewer {
   } finally {
     this.setBusy(false);
   }
+
+  }
+
+  async assignGraphNodeType(nodeGlobalId, typeGlobalId) {
+  return this.apiJson("/api/graph/nodes/type", {
+    method: "PUT",
+    body: JSON.stringify({
+      nodeGlobalId: this.parseGlobalId(nodeGlobalId),
+      typeGlobalId: this.parseGlobalId(typeGlobalId)
+    })
+  });
 
   }
 

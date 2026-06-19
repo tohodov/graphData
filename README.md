@@ -61,6 +61,21 @@ DSL-описанием типа и проверкой инвариантов в 
 - UI-метаданных от домена: интерфейс должен получать применимость операций, обязательные поля и ошибки валидации
   из DSL/валидатора, а не повторять правила на клиенте.
 
+Первый реализованный слой DSL относится к типам узлов:
+
+- `NodeTypeDefinition.Define(...)` и `NodeTypeBuilder` задают тип узла и его слоты без строковых runtime-атрибутов.
+- `NodeSlotDefinition` и `NodeSlotCardinality` описывают допустимые типы связанных узлов и cardinality слота.
+- `NodeTypeSchema` хранит типизированные определения типов узлов.
+- `NodeTypeSchemaMaterializer` собирает схему и typed-инстанс из storage-графа: типы узлов определяются положением
+  под `GraphSystemNodeIds.NodeTypeRoot`, а назначение типа - связью узла с типовым узлом.
+- `NodeTypeValidator` возвращает диагностируемые ошибки инвариантов (`node-type.missing`,
+  `node-type.multiple`, `node-type.unknown`, `node-type.abstract`, `node-type.slot-cardinality`).
+- `GraphService.AssignNodeTypeAsync` использует materializer и validator перед подтверждением операции назначения
+  типа и возвращает `Subgraph` результата через `PUT /api/graph/nodes/type`.
+
+Оставшийся долг: DSL пока не материализует slot-правила из пользовательского графа схемы, а задает их через
+доменные определения; DSL связей/relation-подграфов еще не перенесен с `graph.role`/`graph.kind` convention-атрибутов.
+
 ## Web UI lazy navigation
 
 Web UI открывается сразу с обзором корневых узлов: клиент вызывает `POST /api/graph/subgraph`

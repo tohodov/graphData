@@ -324,6 +324,35 @@ public sealed class GraphControllerTests {
     }
 
     [TestMethod]
+    public async Task AssignNodeTypeAsync_ConnectsNodeToTypeThroughDslValidator() {
+        await using var scope = TestGraphStorageScope.Create();
+        var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
+        var typeRoot = (await scope.Storage.Create(new("types"), graphData.GlobalId)).Value!;
+        var nodeTypeRoot = (await scope.Storage.Create(new("nodes"), typeRoot.GlobalId)).Value!;
+        var weaponType = (await scope.Storage.Create(new("Weapon"), nodeTypeRoot.GlobalId)).Value!;
+        var ak47 = (await scope.Storage.Create(new("ak-47"))).Value!;
+        var controller = CreateController(scope.Storage);
+
+        var result = await controller.AssignNodeTypeAsync(new AssignNodeTypeRequest {
+            NodeGlobalId = ak47.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            TypeGlobalId = weaponType.GlobalId.Select(static segment => segment.ToString()).ToArray()
+        });
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+        var response = ok.Value as SubgraphResponse;
+        Assert.IsNotNull(response);
+        Assert.IsTrue(response.Nodes.Any(node => node.GlobalId == ak47.GlobalId.ToString()));
+        Assert.IsTrue(response.Nodes.Any(node => node.GlobalId == weaponType.GlobalId.ToString()));
+
+        var storedNode = (await scope.Storage.Get(ak47.GlobalId)).Value!;
+        Assert.IsFalse(storedNode.Attributes.ContainsKey(GraphRuntimeAttributeNames.GraphTypeName));
+
+        var connected = (await scope.Storage.GetConnectedNodesAsync(storedNode)).Value!;
+        Assert.IsTrue(connected.Any(node => node.GlobalId == weaponType.GlobalId));
+    }
+
+    [TestMethod]
     public async Task ChangeEdgeTypeAsync_CreatesRelationSubgraphForBasicEdgeAndReturnsIt() {
         await using var scope = TestGraphStorageScope.Create();
         var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
