@@ -295,7 +295,6 @@ export class GraphViewer {
   this.graph.parentByNode.clear();
   this.graph.positions.clear();
   this.graph.velocities.clear();
-  this.seedPosition(name, null, 0);
   await this.loadNode(name, null);
   const url = new URL(this.window.location.href);
   url.searchParams.set("globalId", this.graph.rootName ?? name);
@@ -435,12 +434,13 @@ export class GraphViewer {
     this.createNodeParent.value = "";
     this.graph.rootName = this.graph.rootName ?? created.name;
     this.graph.selectedName = created.name;
-    this.seedPosition(created.name, this.graph.rootName === created.name ? null : this.graph.rootName, this.graph.visibleNodeCount());
+    const seedFromName = this.graph.rootName === created.name ? null : this.graph.rootName;
+    const seedIndex = this.graph.visibleNodeCount();
+    this.graph.loaded.set(created.name, created);
+    this.seedPosition(created.name, seedFromName, seedIndex);
     if (typeGlobalId) {
       const expanded = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(created.globalId)}`));
       this.storeNodeExpansion(expanded, null, { select: true });
-    } else {
-      this.graph.loaded.set(created.name, created);
     }
     this.render();
     this.renderTypeControls();

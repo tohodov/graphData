@@ -5,11 +5,9 @@ import { GraphProjection } from "./GraphProjection.js";
 
 class GraphNodePositionMap {
   private readonly nodes: Map<string, GraphNode>;
-  private readonly pending: Map<string, GraphPoint>;
 
   constructor(nodes: Map<string, GraphNode>) {
     this.nodes = nodes;
-    this.pending = new Map();
   }
 
   get size(): number {
@@ -28,9 +26,6 @@ class GraphNodePositionMap {
     const node = this.nodes.get(name);
     if (node) {
       this.setNodePosition(node, position);
-      this.pending.delete(name);
-    } else {
-      this.pending.set(name, { x: position.x, y: position.y });
     }
 
     return this;
@@ -38,11 +33,10 @@ class GraphNodePositionMap {
 
   delete(name: string): boolean {
     const node = this.nodes.get(name);
-    const hadPosition = Boolean((node && this.nodeHasPosition(node)) || this.pending.has(name));
+    const hadPosition = Boolean(node && this.nodeHasPosition(node));
     if (node) {
       this.clearNodePosition(node);
     }
-    this.pending.delete(name);
     return hadPosition;
   }
 
@@ -50,19 +44,11 @@ class GraphNodePositionMap {
     for (const node of this.nodes.values()) {
       this.clearNodePosition(node);
     }
-    this.pending.clear();
   }
 
   *keys(): IterableIterator<string> {
-    const emitted = new Set<string>();
     for (const [name, node] of this.nodes.entries()) {
       if (this.nodeHasPosition(node)) {
-        emitted.add(name);
-        yield name;
-      }
-    }
-    for (const name of this.pending.keys()) {
-      if (!emitted.has(name)) {
         yield name;
       }
     }
@@ -81,12 +67,6 @@ class GraphNodePositionMap {
         yield [name, position];
       }
     }
-
-    for (const [name, position] of this.pending.entries()) {
-      if (!this.nodes.has(name)) {
-        yield [name, position];
-      }
-    }
   }
 
   forEach(callback: (value: GraphPoint, key: string, map: GraphNodePositionMap) => void, thisArg?: unknown): void {
@@ -101,17 +81,7 @@ class GraphNodePositionMap {
 
   private attach(name: string): GraphPoint | null {
     const node = this.nodes.get(name);
-    if (!node) {
-      return this.pending.get(name) ?? null;
-    }
-
-    const pendingPosition = this.pending.get(name);
-    if (!this.nodeHasPosition(node) && pendingPosition) {
-      this.setNodePosition(node, pendingPosition);
-    }
-    this.pending.delete(name);
-
-    return this.nodePosition(node);
+    return node ? this.nodePosition(node) : null;
   }
 
   private nodePosition(node: GraphNode): GraphPoint | null {

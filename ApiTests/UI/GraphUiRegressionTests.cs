@@ -128,8 +128,11 @@ public sealed class GraphUiRegressionTests {
 
             model.positions.set("b", { x: -5, y: 7 });
             model.loaded.set("b", new GraphNode({ globalId: "b" }));
-            const pendingPosition = model.positions.get("b");
-            const pendingAttachedToNode = pendingPosition === model.loaded.get("b").position;
+            const unknownPositionIgnored = model.positions.get("b") === undefined
+              && model.loaded.get("b").position === null;
+            model.positions.set("b", { x: -5, y: 7 });
+            const attachedPosition = model.positions.get("b");
+            const positionAttachedToNode = attachedPosition === model.loaded.get("b").position;
 
             const deleted = model.positions.delete("a");
             model.positions.set("a", { x: 1, y: 2 });
@@ -137,9 +140,10 @@ public sealed class GraphUiRegressionTests {
 
             globalThis.__result = model.loaded.get("a").position === null
               && deleted === true
-              && pendingAttachedToNode
-              && pendingPosition.x === -5
-              && pendingPosition.y === 7
+              && unknownPositionIgnored
+              && positionAttachedToNode
+              && attachedPosition.x === -5
+              && attachedPosition.y === 7
               && !model.positions.has("a")
               && !model.positions.has("b");
             """);
