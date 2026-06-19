@@ -1,11 +1,12 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Collections;
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Abstractions;
 using static System.IO.Path;
 
 namespace Storage;
 
-internal sealed class NodeFileSystem {
+internal sealed class NodeFileSystem : NodeState {
     const string MetadataFileName = "node.json";
 
     readonly string parentPath;
@@ -17,20 +18,19 @@ internal sealed class NodeFileSystem {
     IDictionary<string, string>? attributes;
     Dictionary<string, string>? attributesSnapshot;
 
-    public NodeState AsState => new NodeFileSystemState(this);
     public string FolderPath => folderPath; //TODO encapsulate
     public string MetadataPath => Combine(FolderPath, MetadataFileName);
     internal string StorageRootPath => storageRootPath;
 
-    public NodeLocalId LocalId { get; }
-    public NodeGlobalId GlobalId => new NodeGlobalId(
+    public override NodeLocalId LocalId { get; }
+    public override NodeGlobalId GlobalId => new NodeGlobalId(
         GetRelativePath(storageRootPath, FolderPath)
             .Split(DirectorySeparatorChar, AltDirectorySeparatorChar)
             .Where(static part => part is not "." and not "")
             .Select(SymLinkGraphStorage.NormalizeNodeName));
-    public ICollection<EdgeState> Edges { get; }
-    public ICollection<NodeState> Nodes { get; }
-    public IDictionary<string, string> Attributes {
+    public override ICollection<EdgeState> Edges { get; }
+    public override ILazyCollection<NodeState> Nodes { get; }
+    public override IDictionary<string, string> Attributes {
         get => attributes ??= new LiveAttributeDictionary(this);
         set {
             ReplaceAttributes(value);
@@ -111,8 +111,8 @@ internal sealed class NodeFileSystem {
     internal void ConnectTo(NodeState target) {
         ThrowIfFailed(storage.Connect(GlobalId, target.GlobalId).GetAwaiter().GetResult());
         InvalidateGraphCache();
-        if (target is NodeFileSystemState fileSystemState)
-            fileSystemState.Handle.InvalidateGraphCache();
+        if (target is NodeFileSystem fileSystemState)
+            fileSystemState.InvalidateGraphCache();
     }
 
     internal bool DisconnectFrom(NodeState target) {
@@ -121,8 +121,8 @@ internal sealed class NodeFileSystem {
 
         ThrowIfFailed(storage.Disconnect(GlobalId, target.GlobalId).GetAwaiter().GetResult());
         InvalidateGraphCache();
-        if (target is NodeFileSystemState fileSystemState)
-            fileSystemState.Handle.InvalidateGraphCache();
+        if (target is NodeFileSystem fileSystemState)
+            fileSystemState.InvalidateGraphCache();
         return true;
     }
 
@@ -269,7 +269,7 @@ internal sealed class NodeFileSystem {
         JsonSerializer.Serialize(stream, data, SymLinkGraphStorage.SerializerOptions);
     }
 
-    sealed class LiveNodeCollection(NodeFileSystem owner) : ICollection<NodeState> {
+    sealed class LiveNodeCollection(NodeFileSystem owner) : ILazyCollection<NodeState> {
         public int Count => owner.ReadNodes().Count;
         public bool IsReadOnly => false;
 
@@ -282,7 +282,23 @@ internal sealed class NodeFileSystem {
         public bool Contains(NodeState item) => owner.ReadNodes().Any(node => node.GlobalId == item.GlobalId);
         public void CopyTo(NodeState[] array, int arrayIndex) => owner.ReadNodes().ToArray().CopyTo(array, arrayIndex);
         public IEnumerator<NodeState> GetEnumerator() => owner.ReadNodes().GetEnumerator();
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+
+        public async IAsyncEnumerable<NodeState> Traverse() {
+            var visited = new HashSet<NodeState>();
+            var stack = new Stack<NodeState>();
+            stack.Push(owner);
+            while (stack.Count > 0) {
+                var node = stack.Pop();
+                if (!visited.Add(node))
+                    continue;
+                yield return node;
+                foreach (var neighbor in node.Nodes)
+                    if (!visited.Contains(neighbor))
+                        stack.Push(neighbor);
+                await Task.Yield();
+            }
+        }
     }
 
     sealed class LiveEdgeCollection(NodeFileSystem owner) : ICollection<EdgeState> {
@@ -355,26 +371,12 @@ internal sealed class NodeFileSystem {
     }
 }
 
-internal sealed class NodeFileSystemState(NodeFileSystem handle) : NodeState {
-    public NodeFileSystem Handle { get; } = handle;
-
-    public override NodeLocalId LocalId => Handle.LocalId;
-    public override NodeGlobalId GlobalId => Handle.GlobalId;
-    public override ICollection<EdgeState> Edges => Handle.Edges;
-    public override ICollection<NodeState> Nodes => Handle.Nodes;
-
-    public override IDictionary<string, string> Attributes {
-        get => Handle.Attributes;
-        set => Handle.Attributes = value;
-    }
-}
-
 internal sealed class DirectoryEdgeFileSystemState(NodeFileSystem node1, NodeFileSystem node2) : EdgeState {
     public NodeFileSystem Node1FileSystem { get; } = node1;
     public NodeFileSystem Node2FileSystem { get; } = node2;
 
-    public override NodeState Node1 => Node1FileSystem.AsState;
-    public override NodeState Node2 => Node2FileSystem.AsState;
+    public override NodeState Node1 => Node1FileSystem;
+    public override NodeState Node2 => Node2FileSystem;
 }
 
 internal sealed class LinkEdgeFileSystemState(NodeFileSystem node1, SymLink link) : EdgeState {
@@ -384,6 +386,6 @@ internal sealed class LinkEdgeFileSystemState(NodeFileSystem node1, SymLink link
     public NodeFileSystem Parent { get; } = node1;
     public NodeFileSystem Child => child ??= new NodeFileSystem(new DirectoryInfo(Link.TargetPath), Parent.storage);
 
-    public override NodeState Node1 => Parent.AsState;
-    public override NodeState Node2 => Child.AsState;
+    public override NodeState Node1 => Parent;
+    public override NodeState Node2 => Child;
 }

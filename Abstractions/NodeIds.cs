@@ -18,7 +18,6 @@ public readonly struct NodeLocalId : IEquatable<NodeLocalId>, IComparable<NodeLo
     public static bool operator ==(NodeLocalId left, NodeLocalId right) => left.Equals(right);
     public static bool operator !=(NodeLocalId left, NodeLocalId right) => !left.Equals(right);
     public static implicit operator string(NodeLocalId id) => id.ToString();
-    [Obsolete("удалить", false)]
     public static implicit operator NodeLocalId(string id) => new(id);
 
     public int CompareTo(NodeLocalId other) => string.Compare(value, other.value, StringComparison.Ordinal);

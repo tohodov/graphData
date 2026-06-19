@@ -58,6 +58,6 @@ partial class GraphStorageContractTests {
 
         CollectionAssert.AreEquivalent(
             new[] { first.GlobalId, second.GlobalId, third.GlobalId, fourth.GlobalId },
-            first.Traverse().Select(static node => node.GlobalId).ToArray());
+            await first.Nodes.Traverse().Select(static node => node.GlobalId).ToArrayAsync());
     }
 }

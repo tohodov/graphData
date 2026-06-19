@@ -39,12 +39,12 @@ public abstract partial class GraphStorageContractTests {
 
     protected abstract Task<object> CreateStorageAsync();
 
-    protected async Task<Node> CreateNode(string? name = null) {
+    internal async Task<NodeState> CreateNode(string? name = null) {
         var result = await Storage.Create(new(name ?? Guid.NewGuid().ToString()), null, new Dictionary<string, string>() {
             { "type", "test" },
             { "created", DateTime.UtcNow.ToString("O") }
         });
-        return new Node(result.Value!);
+        return result.Value!;
     }
 }
 [TestCategory(nameof(IGraphStorage.Create))]

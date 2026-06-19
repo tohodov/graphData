@@ -12,25 +12,25 @@ namespace GraphData.Api.Controllers;
 [ApiController]
 [Route("api/graph")]
 public sealed class GraphController(GraphService graph) : ControllerBase {
-    private static readonly JsonSerializerOptions StreamJsonOptions = GraphJsonSerializerOptions.Create();
+    static readonly JsonSerializerOptions StreamJsonOptions = GraphJsonSerializerOptions.Create();
 
-    private readonly GraphService _graph = graph;
+    readonly GraphService graph = graph;
 
     [HttpGet("nodes")]
     public async Task<ActionResult<NodeResponse>> GetNodeAsync([FromQuery] string[] globalId) {
-        var result = await _graph.GetNodeAsync(globalId);
+        var result = await graph.GetNodeAsync(globalId);
         return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
     [HttpGet("nodes/{globalId}/neighbor/{localId}")]
     public async Task<ActionResult<NodeResponse>> GetNeighborNodeAsync([FromRoute] string globalId, [FromRoute] string localId) {
-        var result = await _graph.GetNeighborNodeAsync(globalId, localId);
+        var result = await graph.GetNeighborNodeAsync(globalId, localId);
         return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
     [HttpPost("nodes")]
     public async Task<ActionResult<NodeResponse>> CreateNodeAsync([FromBody] CreateNodeRequest request) {
-        var result = await _graph.CreateNodeAsync(request.LocalId, request.ParentGlobalId, request.Attributes);
+        var result = await graph.CreateNode((NodeLocalId)request.LocalId, (NodePath?)request.ParentPath, attributes: request.Attributes);
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             var globalId = result.Value.GlobalId;
             var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { globalId }) ?? $"/api/graph/nodes?{string.Join('&', globalId.Select(static segment => $"globalId={Uri.EscapeDataString(segment)}"))}";
@@ -41,25 +41,25 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
 
     [HttpPut("nodes")]
     public async Task<ActionResult<OperationResponse>> UpdateNodeAsync([FromQuery] string[] globalId, [FromBody] UpdateNodeRequest request) {
-        var result = await _graph.UpdateNodeAsync(globalId, request.Attributes);
+        var result = await graph.UpdateNodeAsync(globalId, request.Attributes);
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result.Status, result.Error);
     }
 
     [HttpDelete("nodes")]
     public async Task<ActionResult<OperationResponse>> DeleteNodeAsync([FromQuery] string[] globalId) {
-        var result = await _graph.DeleteNodeAsync(globalId);
+        var result = await graph.DeleteNodeAsync(globalId);
         return ToActionResult<OperationResponse>(result);
     }
 
     [HttpPost("connections")]
     public async Task<ActionResult<OperationResponse>> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
-        var result = await _graph.ConnectNodesAsync(request.SourceGlobalId, request.TargetGlobalId);
+        var result = await graph.ConnectNodesAsync(request.SourceGlobalId, request.TargetGlobalId);
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
     }
 
     [HttpPost("subgraph")]
     public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request) {
-        var result = await _graph.GetSubgraphAsync(request.GlobalIds, request.MaxDepth);
+        var result = await graph.GetSubgraphAsync(request.GlobalIds, request.MaxDepth);
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
@@ -71,7 +71,7 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
             return BadRequest();
         try {
             var query = GraphRequestMapper.ToNodeSearchQuery(request);
-            await using var matches = _graph
+            await using var matches = graph
                 .SearchNodesStreamAsync(query, cancellationToken)
                 .GetAsyncEnumerator(cancellationToken);
             var hasMatch = await matches.MoveNextAsync();

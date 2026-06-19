@@ -9,6 +9,4 @@ public class TypeNode : Node, IGraphNodeType
     }
 
     public static NodeGlobalId StaticTypeId => GraphBaseTypeIds.NodeType;
-
-    public override NodeGlobalId? TypeId => StaticTypeId;
 }

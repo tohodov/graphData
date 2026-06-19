@@ -4,13 +4,6 @@ using GraphData.Core.Models;
 namespace GraphData.Core.Services;
 
 internal static class GraphStorageDomainExtensions {
-    public static async Task<ServiceResult<IReadOnlyCollection<Node>>> GetConnectedNodesAsync(this IGraphStorage storage, Node node) {
-        var result = await storage.GetConnectedNodesAsync(node.RequireState());
-        return result.Status == ServiceResultStatus.Ok && result.Value is not null
-            ? ServiceResult<IReadOnlyCollection<Node>>.Ok(result.Value.Select(static state => new Node(state)).ToArray())
-            : ServiceResult<IReadOnlyCollection<Node>>.From(result);
-    }
-
     public static async Task<ServiceResult<Subgraph>> GetSubgraphAsync(this IGraphStorage storage, SubgraphQuery query) { //TODO переосмыслить
         var rootsResult = await ResolveSubgraphRootsAsync(storage, query.Nodes);
         if (rootsResult.Status != ServiceResultStatus.Ok || rootsResult.Value is null)

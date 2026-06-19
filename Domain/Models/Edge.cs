@@ -3,7 +3,7 @@ using Abstractions;
 namespace GraphData.Core.Models;
 
 public class Edge {
-    private readonly EdgeState State;
+    internal readonly EdgeState State;
 
     internal Edge(EdgeState state) {
         State = state;
@@ -13,6 +13,4 @@ public class Edge {
     public virtual Node Node2 => new(State.Node2);
 
     public virtual NodeGlobalId? TypeId => State.TypeId;
-
-    internal EdgeState RequireState() => State;
 }

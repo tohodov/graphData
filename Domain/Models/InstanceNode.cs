@@ -10,5 +10,8 @@ public class InstanceNode : Node, IGraphNodeType
 
     public static NodeGlobalId StaticTypeId => GraphBaseTypeIds.NodeInstance;
 
-    public override NodeGlobalId? TypeId => StaticTypeId;
+    public virtual NodeGlobalId TypeId => StaticTypeId;
+
+    public Edge EdgeToType => field ??= new Edge(State.Edges.First(x => x.Node2.GlobalId == GraphBaseTypeIds.NodeType));
+    public TypeNode Type => field ??= new TypeNode(EdgeToType.Node2.State);
 }

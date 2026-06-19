@@ -407,7 +407,6 @@ public sealed class GraphSearchServiceTests
             var next = segment switch
             {
                 NodeState node => node,
-                Node node when node.TryGetState<NodeState>(out var state) => state,
                 string name => (await storage.Create(new(name))).Value!,
                 _ => throw new ArgumentException("Path segment must be a node or a node name.", nameof(path))
             };
@@ -462,7 +461,7 @@ public sealed class GraphSearchServiceTests
 
         public override ICollection<EdgeState> Edges { get; } = Array.Empty<EdgeState>();
 
-        public override ICollection<NodeState> Nodes { get; } = Array.Empty<NodeState>();
+        public override ILazyCollection<NodeState> Nodes => throw new NotSupportedException();
 
         public override IDictionary<string, string> Attributes
         {

@@ -43,18 +43,18 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         if (attributes != null)
             node.WriteMetadata(attributes);
 
-        return Task.FromResult(ServiceResult<NodeState>.Ok(node.AsState));
+        return Task.FromResult(ServiceResult<NodeState>.Ok(node));
     }
 
     public Task<ServiceResult<NodeState>> Get(NodePath path) {
         if (!TryValidatePath(path, "Node path", out var validationError))
             return Task.FromResult(ServiceResult<NodeState>.BadRequest(validationError));
         if (Root.Equals(new NodeGlobalId(path)))
-            return Task.FromResult(ServiceResult<NodeState>.Ok(new NodeFileSystem(root, this).AsState));
+            return Task.FromResult(ServiceResult<NodeState>.Ok(new NodeFileSystem(root, this)));
         var node = FindNode(path);
         return Task.FromResult(node is null
             ? ServiceResult<NodeState>.NotFound()
-            : ServiceResult<NodeState>.Ok(node.AsState));
+            : ServiceResult<NodeState>.Ok(node));
     }
 
     public Task<ServiceResult> Delete(NodePath path) {
@@ -65,7 +65,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         if (node is null)
             return Task.FromResult(ServiceResult.NotFound());
 
-        var connections = GetConnectedNodes(node.AsState);
+        var connections = GetConnectedNodes(node);
         foreach (var connection in connections)
             DeleteLinkIfExists(Path.Combine(GetNodePath(connection), GetLinkName(node.LocalId)));
         DeleteDirectoryWithoutFollowingLinks(node.GetInfo());
@@ -147,7 +147,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
                 var relativePath = Path.GetRelativePath(root.FullName, directory.FullName);
                 if (!string.IsNullOrWhiteSpace(relativePath) && relativePath != ".")
-                    nodes.Add(new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), this).AsState);
+                    nodes.Add(new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), this));
 
                 stack.Push(directory);
             }
@@ -217,8 +217,8 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
     }
 
     private string GetNodePath(NodeState node) {
-        return node is NodeFileSystemState fileSystemState
-            ? fileSystemState.Handle.FolderPath
+        return node is NodeFileSystem fileSystemState
+            ? fileSystemState.FolderPath
             : GetNodePath(node.LocalId);
     }
 

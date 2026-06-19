@@ -12,7 +12,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GraphService>(static provider =>
             new GraphService(
                 provider.GetRequiredService<IGraphStorage>(),
-                provider.GetRequiredService<GraphSearchService>()));
+                provider.GetRequiredService<GraphSearchService>(),
+                provider.GetRequiredService<ICancellationTokenAccessor>()
+            ));
         services.AddTransient<GraphStorageInitializer>(static provider =>
             new GraphStorageInitializer(provider.GetRequiredService<IGraphStorage>()));
         return services;

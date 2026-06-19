@@ -949,7 +949,7 @@ public sealed class GraphSearchService {
             var connections = new Dictionary<string, Node[]>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var node in nodes) {
-                var connectedResult = await storage.GetConnectedNodesAsync(node.RequireState()).ConfigureAwait(false);
+                var connectedResult = await storage.GetConnectedNodesAsync(node.State).ConfigureAwait(false);
                 if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null) {
                     throw new InvalidOperationException(connectedResult.Error ?? $"Failed to read connections for node '{node.LocalId}'.");
                 }

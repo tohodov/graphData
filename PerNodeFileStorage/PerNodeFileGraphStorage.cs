@@ -474,7 +474,7 @@ internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
 
         public override ICollection<EdgeState> Edges => _edges ??= _nodes.Select(x => new EdgeState(this, x)).ToArray();
 
-        public override ICollection<NodeState> Nodes => _nodes;
+        public override ILazyCollection<NodeState> Nodes => throw new NotImplementedException(); //TODO
 
         public override IDictionary<string, string> Attributes { get => AttributesSnapshot; set => throw new NotImplementedException(); } //TODO
 

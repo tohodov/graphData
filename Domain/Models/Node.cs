@@ -3,45 +3,28 @@ using Abstractions;
 namespace GraphData.Core.Models;
 
 public class Node {
-    internal Node(NodeState state) {
-        State = state ?? throw new ArgumentNullException(nameof(state));
-    }
+    internal NodeState State { get; }
 
-    private NodeState? State { get; }
+    public virtual NodeLocalId LocalId => State.LocalId;
+    public virtual NodeGlobalId GlobalId => State.GlobalId;
 
-    public virtual NodeLocalId LocalId => RequireState().LocalId;
-    public virtual NodeGlobalId GlobalId => RequireState().GlobalId;
-     
-    public virtual ICollection<Edge> Edges => new EdgeCollection(RequireState().Edges);
-    public virtual ICollection<Node> Nodes => new NodeCollection(RequireState().Nodes);
+    public virtual ICollection<Edge> Edges => new EdgeCollection(State.Edges);
+    public virtual ICollection<Node> Nodes => new NodeCollection(State.Nodes);
 
     public virtual IDictionary<string, string> Attributes {
-        get => RequireState().Attributes;
-        set => RequireState().Attributes = value;
+        get => State.Attributes;
+        set => State.Attributes = value;
     }
 
-    public virtual NodeGlobalId? TypeId => State?.TypeId;
-
-    internal bool TryGetState<TState>(out TState state) where TState : NodeState {
-        if (State is TState typed) {
-            state = typed;
-            return true;
-        }
-
-        state = null!;
-        return false;
-    }
-
-    internal NodeState RequireState() {
-        return State ?? throw new InvalidOperationException(
-            $"Node type '{GetType().Name}' must either pass a NodeState to the base constructor or override the requested member.");
+    internal Node(NodeState state) {
+        State = state;
     }
 
     private sealed class NodeCollection(ICollection<NodeState> states) : ICollection<Node> {
         public int Count => states.Count;
         public bool IsReadOnly => states.IsReadOnly;
 
-        public void Add(Node item) => states.Add(item.RequireState());
+        public void Add(Node item) => states.Add(item.State);
 
         public void Clear() => states.Clear();
 
@@ -55,7 +38,7 @@ public class Node {
             states.Select(static state => new Node(state)).GetEnumerator();
 
         public bool Remove(Node item) {
-            if (states.Remove(item.RequireState()))
+            if (states.Remove(item.State))
                 return true;
 
             var state = states.FirstOrDefault(state => state.GlobalId == item.GlobalId);
@@ -69,12 +52,12 @@ public class Node {
         public int Count => states.Count;
         public bool IsReadOnly => states.IsReadOnly;
 
-        public void Add(Edge item) => states.Add(item.RequireState());
+        public void Add(Edge item) => states.Add(item.State);
 
         public void Clear() => states.Clear();
 
         public bool Contains(Edge item) {
-            var state = item.RequireState();
+            var state = item.State;
             return states.Any(candidate =>
                 candidate.Node1.GlobalId == state.Node1.GlobalId
                 && candidate.Node2.GlobalId == state.Node2.GlobalId);
@@ -87,7 +70,7 @@ public class Node {
             states.Select(static state => new Edge(state)).GetEnumerator();
 
         public bool Remove(Edge item) {
-            var state = item.RequireState();
+            var state = item.State;
             if (states.Remove(state))
                 return true;
 

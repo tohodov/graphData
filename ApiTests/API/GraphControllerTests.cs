@@ -163,7 +163,7 @@ public sealed class GraphControllerTests {
 
         var result = await controller.CreateNodeAsync(new CreateNodeRequest {
             LocalId = "child",
-            ParentGlobalId = [parent.LocalId]
+            ParentPath = [parent.LocalId]
         });
 
         var created = result.Result as CreatedResult;
@@ -533,7 +533,7 @@ public sealed class GraphControllerTests {
     }
 
     private static GraphController CreateController(IGraphStorage storage) {
-        var controller = new GraphController(new GraphService(storage, new GraphSearchService(storage)));
+        var controller = new GraphController(new GraphService(storage, new GraphSearchService(storage), new CancellationTokensAccessorMock()));
         controller.ControllerContext = new ControllerContext {
             HttpContext = new DefaultHttpContext()
         };
@@ -684,10 +684,10 @@ public sealed class GraphControllerTests {
 
         public override ICollection<EdgeState> Edges => EdgeSnapshot;
 
-        public override ICollection<NodeState> Nodes => Edges
+        public override ILazyCollection<NodeState> Nodes => new LazyList<NodeState>(Edges
             .SelectMany(static edge => new[] { edge.Node1, edge.Node2 })
             .Where(node => node.GlobalId != GlobalId)
-            .ToArray();
+            .ToArray());
 
         public override IDictionary<string, string> Attributes { get; set; } =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
