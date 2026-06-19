@@ -1,3 +1,5 @@
+using Abstractions;
+
 namespace GraphData.Core.Models;
 
 public readonly record struct NodeSlotCardinality(int Min, int? Max)
@@ -15,12 +17,25 @@ public readonly record struct NodeSlotCardinality(int Min, int? Max)
 
 public sealed record NodeSlotDefinition(
     string Name,
-    IReadOnlyCollection<TypeNode> AllowedTypes,
+    IReadOnlyCollection<NodeGlobalId> AllowedTypeIds,
     NodeSlotCardinality Cardinality)
 {
+    public IReadOnlyCollection<TypeNode> AllowedTypes { get; init; } = [];
+
+    public NodeSlotDefinition(
+        string name,
+        IReadOnlyCollection<TypeNode> allowedTypes,
+        NodeSlotCardinality cardinality)
+        : this(
+            name,
+            allowedTypes.Select(static type => type.GlobalId).ToArray(),
+            cardinality) {
+        AllowedTypes = allowedTypes;
+    }
+
     public void EnsureSatisfiedBy(InstanceNode instance)
     {
-        var allowedTypeIds = AllowedTypes.Select(static type => type.GlobalId).ToHashSet();
+        var allowedTypeIds = AllowedTypeIds.ToHashSet();
         var count = instance.NeighborInstances.Count(neighbor =>
             neighbor.AssignedTypes.Any(type => allowedTypeIds.Contains(type.GlobalId)));
 
@@ -74,9 +89,25 @@ public sealed class NodeTypeBuilder
         TypeNode allowedType,
         NodeSlotCardinality? cardinality = null)
     {
+        return RequiresSlot(name, allowedType.GlobalId, cardinality);
+    }
+
+    public NodeTypeBuilder RequiresSlot<TNodeType>(
+        string name,
+        NodeSlotCardinality? cardinality = null)
+        where TNodeType : NodeType
+    {
+        return RequiresSlot(name, NodeType.GetStaticTypeId<TNodeType>(), cardinality);
+    }
+
+    public NodeTypeBuilder RequiresSlot(
+        string name,
+        NodeGlobalId allowedTypeId,
+        NodeSlotCardinality? cardinality = null)
+    {
         _slots.Add(new NodeSlotDefinition(
             RequireName(name),
-            [allowedType],
+            [allowedTypeId],
             cardinality ?? NodeSlotCardinality.Required()));
         return this;
     }
@@ -86,14 +117,24 @@ public sealed class NodeTypeBuilder
         IEnumerable<TypeNode> allowedTypes,
         NodeSlotCardinality cardinality)
     {
-        var types = allowedTypes
-            .GroupBy(static type => type.GlobalId)
-            .Select(static group => group.First())
-            .ToArray();
-        if (types.Length == 0)
-            throw new ArgumentException("At least one allowed node type is required.", nameof(allowedTypes));
+        return SlotByTypeIds(
+            name,
+            allowedTypes.Select(static type => type.GlobalId),
+            cardinality);
+    }
 
-        _slots.Add(new NodeSlotDefinition(RequireName(name), types, cardinality));
+    public NodeTypeBuilder SlotByTypeIds(
+        string name,
+        IEnumerable<NodeGlobalId> allowedTypeIds,
+        NodeSlotCardinality cardinality)
+    {
+        var typeIds = allowedTypeIds
+            .Distinct()
+            .ToArray();
+        if (typeIds.Length == 0)
+            throw new ArgumentException("At least one allowed node type is required.", nameof(allowedTypeIds));
+
+        _slots.Add(new NodeSlotDefinition(RequireName(name), typeIds, cardinality));
         return this;
     }
 

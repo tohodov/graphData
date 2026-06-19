@@ -86,6 +86,34 @@ public sealed class GraphStorageInitializerTests
     }
 
     [TestMethod]
+    public async Task InitializeAsync_RegistersNodeTypeDescriptorsFromAdditionalAssemblies()
+    {
+        await using var scope = TestGraphStorageScope.Create();
+        var initializer = new GraphStorageInitializer(scope.Storage, typeof(CatalogWeaponNodeType).Assembly);
+
+        await initializer.InitializeAsync();
+
+        var weapon = await GetRequiredAsync(scope.Storage, CatalogWeaponNodeType.StaticTypeId);
+        Assert.AreEqual("type", weapon.Attributes[GraphRuntimeAttributeNames.GraphKind]);
+        Assert.AreEqual("node", weapon.Attributes[GraphRuntimeAttributeNames.GraphElement]);
+        Assert.AreEqual("CatalogWeapon", weapon.Attributes["label"]);
+        Assert.AreEqual("#475569", weapon.Attributes["color"]);
+        Assert.AreEqual("50", weapon.Attributes[GraphRuntimeAttributeNames.ProjectionRank]);
+    }
+
+    [TestMethod]
+    public async Task InitializeAsync_ReplaysWhenRuntimeTypeCatalogChanges()
+    {
+        await using var scope = TestGraphStorageScope.Create();
+        await new GraphStorageInitializer(scope.Storage).InitializeAsync();
+
+        await new GraphStorageInitializer(scope.Storage, typeof(CatalogWeaponNodeType).Assembly).InitializeAsync();
+
+        var weapon = await GetRequiredAsync(scope.Storage, CatalogWeaponNodeType.StaticTypeId);
+        Assert.AreEqual("CatalogWeapon", weapon.Attributes["label"]);
+    }
+
+    [TestMethod]
     public async Task InitializeAsync_PreservesExistingTypeAttributesBeforeCompletion()
     {
         await using var scope = TestGraphStorageScope.Create();
@@ -191,5 +219,10 @@ public sealed class GraphStorageInitializerTests
         Assert.AreEqual(rank, node.Attributes[GraphRuntimeAttributeNames.ProjectionRank]);
         if (directed is not null)
             Assert.AreEqual(directed, node.Attributes["directed"]);
+    }
+
+    private sealed class CatalogWeaponNodeType : NodeType
+    {
+        public static NodeGlobalId StaticTypeId { get; } = new("graphdata", "types", "nodes", "CatalogWeapon");
     }
 }

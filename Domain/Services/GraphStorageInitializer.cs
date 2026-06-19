@@ -11,6 +11,7 @@ public sealed class GraphStorageInitializer
     private const string CompletedAttribute = "completed";
     private const string InitializerAttribute = "storage.initializer";
     private const string VersionAttribute = "storage.initializer.version";
+    private const string RuntimeTypesFingerprintAttribute = "storage.initializer.runtimeTypes";
 
     private static readonly IReadOnlyCollection<SystemNodeDefinition> SystemNodes = [
         new(GraphSystemNodeIds.GraphDataRoot, new Dictionary<string, string> {
@@ -40,10 +41,20 @@ public sealed class GraphStorageInitializer
     ];
 
     private readonly IGraphStorage _storage;
+    private readonly GraphRuntimeTypeCatalog _runtimeTypes;
 
     internal GraphStorageInitializer(IGraphStorage storage)
+        : this(storage, GraphRuntimeTypeCatalog.Create()) {
+    }
+
+    internal GraphStorageInitializer(IGraphStorage storage, params Assembly[] runtimeTypeAssemblies)
+        : this(storage, GraphRuntimeTypeCatalog.Create(runtimeTypeAssemblies)) {
+    }
+
+    internal GraphStorageInitializer(IGraphStorage storage, GraphRuntimeTypeCatalog runtimeTypes)
     {
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
+        _runtimeTypes = runtimeTypes ?? throw new ArgumentNullException(nameof(runtimeTypes));
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -76,7 +87,9 @@ public sealed class GraphStorageInitializer
         return node.Attributes.TryGetValue(CompletedAttribute, out var completed)
             && string.Equals(completed, bool.TrueString, StringComparison.OrdinalIgnoreCase)
             && node.Attributes.TryGetValue(VersionAttribute, out var version)
-            && string.Equals(version, RuntimeTypesVersion, StringComparison.Ordinal);
+            && string.Equals(version, RuntimeTypesVersion, StringComparison.Ordinal)
+            && node.Attributes.TryGetValue(RuntimeTypesFingerprintAttribute, out var fingerprint)
+            && string.Equals(fingerprint, _runtimeTypes.Fingerprint, StringComparison.Ordinal);
     }
 
     private async Task MarkRuntimeTypesInitializerCompletedAsync()
@@ -86,6 +99,7 @@ public sealed class GraphStorageInitializer
             [InitializerAttribute] = "runtime-types",
             [CompletedAttribute] = bool.TrueString,
             [VersionAttribute] = RuntimeTypesVersion,
+            [RuntimeTypesFingerprintAttribute] = _runtimeTypes.Fingerprint,
             ["completedAtUtc"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
         };
 
@@ -156,40 +170,10 @@ public sealed class GraphStorageInitializer
     private static IReadOnlyDictionary<string, string>? GetSystemAttributes(NodeGlobalId id) =>
         SystemNodes.FirstOrDefault(node => node.Id == id)?.Attributes;
 
-    private static IReadOnlyCollection<RuntimeTypeDefinition> DiscoverRuntimeTypeDefinitions()
-    {
-        var assembly = typeof(Node).Assembly;
-        return assembly
-            .GetTypes()
-            .Where(static type => !type.IsAbstract)
-            .Select(static type => CreateRuntimeTypeDefinition(type))
-            .Where(static type => type is not null)
-            .Cast<RuntimeTypeDefinition>()
-            .OrderBy(static type => type.TypeId.ToString(), StringComparer.Ordinal)
-            .ToArray();
-    }
+    private IReadOnlyCollection<RuntimeGraphTypeDefinition> DiscoverRuntimeTypeDefinitions() =>
+        _runtimeTypes.Types;
 
-    private static RuntimeTypeDefinition? CreateRuntimeTypeDefinition(Type type)
-    {
-        if (typeof(Node).IsAssignableFrom(type) && typeof(IGraphNodeType).IsAssignableFrom(type))
-            return new RuntimeTypeDefinition(type, GetStaticTypeId(type), "node", GraphSystemNodeIds.NodeTypeRoot);
-
-        if (typeof(Edge).IsAssignableFrom(type) && typeof(IGraphEdgeType).IsAssignableFrom(type))
-            return new RuntimeTypeDefinition(type, GetStaticTypeId(type), "edge", GraphSystemNodeIds.EdgeTypeRoot);
-
-        return null;
-    }
-
-    private static NodeGlobalId GetStaticTypeId(Type type)
-    {
-        var property = type.GetProperty("StaticTypeId", BindingFlags.Public | BindingFlags.Static);
-        if (property?.GetValue(null) is NodeGlobalId id)
-            return id;
-
-        throw new InvalidOperationException($"Runtime graph type '{type.FullName}' must expose a public static StaticTypeId property.");
-    }
-
-    private static Dictionary<string, string> CreateRuntimeTypeAttributes(RuntimeTypeDefinition type)
+    private static Dictionary<string, string> CreateRuntimeTypeAttributes(RuntimeGraphTypeDefinition type)
     {
         if (!IsChildOf(type.TypeId, type.RootId))
             throw new InvalidOperationException(
@@ -210,7 +194,7 @@ public sealed class GraphStorageInitializer
         return attributes;
     }
 
-    private static RuntimeTypeDefaults GetRuntimeTypeDefaults(RuntimeTypeDefinition type)
+    private static RuntimeTypeDefaults GetRuntimeTypeDefaults(RuntimeGraphTypeDefinition type)
     {
         if (type.TypeId == GraphBaseTypeIds.NodeType)
             return new RuntimeTypeDefaults("Type", "#334155", 90, false);
@@ -224,9 +208,11 @@ public sealed class GraphStorageInitializer
         return new RuntimeTypeDefaults(CreateLabel(type), type.Element == "edge" ? "#92400e" : "#475569", type.Element == "edge" ? 30 : 50, type.Element == "edge");
     }
 
-    private static string CreateLabel(RuntimeTypeDefinition type)
+    private static string CreateLabel(RuntimeGraphTypeDefinition type)
     {
         var name = type.ClrType.Name;
+        if (type.Element == "node" && name.EndsWith(nameof(NodeType), StringComparison.Ordinal))
+            return name[..^nameof(NodeType).Length];
         if (type.Element == "node" && name.EndsWith(nameof(Node), StringComparison.Ordinal))
             return name[..^nameof(Node).Length];
         if (type.Element == "edge" && name.EndsWith(nameof(Edge), StringComparison.Ordinal))
@@ -265,8 +251,6 @@ public sealed class GraphStorageInitializer
     }
 
     private sealed record SystemNodeDefinition(NodeGlobalId Id, IReadOnlyDictionary<string, string> Attributes);
-
-    private sealed record RuntimeTypeDefinition(Type ClrType, NodeGlobalId TypeId, string Element, NodeGlobalId RootId);
 
     private sealed record RuntimeTypeDefaults(string Label, string Color, int Rank, bool Directed);
 }

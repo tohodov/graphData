@@ -1,3 +1,4 @@
+using System.Reflection;
 using Abstractions;
 using GraphData.Core.Models;
 
@@ -15,16 +16,64 @@ public sealed class GraphService {
     readonly IGraphStorage storage;
     readonly GraphSearchService searchService;
     readonly ICancellationTokenAccessor cancellationTokens;
+    readonly GraphRuntimeTypeCatalog runtimeTypes;
 
-    internal GraphService(IGraphStorage storage, GraphSearchService searchService, ICancellationTokenAccessor cancellationTokens) {
+    internal GraphService(IGraphStorage storage, GraphSearchService searchService, ICancellationTokenAccessor cancellationTokens)
+        : this(storage, searchService, cancellationTokens, GraphRuntimeTypeCatalog.Create()) {
+    }
+
+    internal GraphService(
+        IGraphStorage storage,
+        GraphSearchService searchService,
+        ICancellationTokenAccessor cancellationTokens,
+        params Assembly[] runtimeTypeAssemblies)
+        : this(storage, searchService, cancellationTokens, GraphRuntimeTypeCatalog.Create(runtimeTypeAssemblies)) {
+    }
+
+    internal GraphService(
+        IGraphStorage storage,
+        GraphSearchService searchService,
+        ICancellationTokenAccessor cancellationTokens,
+        GraphRuntimeTypeCatalog runtimeTypes) {
         this.storage = storage;
         this.searchService = searchService;
         this.cancellationTokens = cancellationTokens;
+        this.runtimeTypes = runtimeTypes;
     }
 
     public async Task<ServiceResult<Node>> CreateNode(NodeLocalId localId, NodePath? path = null, TypeNode? type = null, IDictionary<string, string>? attributes = null) {
+        return await CreateNode(localId, path, type?.GlobalId, attributes).ConfigureAwait(false);
+    }
+
+    public Task<ServiceResult<Node>> CreateNode<TNodeType>(
+        NodeLocalId localId,
+        NodePath? path = null,
+        IDictionary<string, string>? attributes = null)
+        where TNodeType : NodeType
+    {
+        return CreateNode(localId, path, NodeType.GetStaticTypeId<TNodeType>(), attributes);
+    }
+
+    private async Task<ServiceResult<Node>> CreateNode(
+        NodeLocalId localId,
+        NodePath? path,
+        NodeGlobalId? typeId,
+        IDictionary<string, string>? attributes) {
         var result = await storage.Create(localId, path, attributes);
-        return ToNodeResult(result);
+        if (result.Status != ServiceResultStatus.Ok || result.Value is null)
+            return ToNodeResult(result);
+
+        if (typeId is null)
+            return ToNodeResult(result);
+
+        var assign = await AssignNodeTypeAsync(result.Value.GlobalId, typeId.Value).ConfigureAwait(false);
+        if (assign.Status != ServiceResultStatus.Ok) {
+            await storage.Delete(result.Value.GlobalId).ConfigureAwait(false);
+            return ServiceResult<Node>.From(assign);
+        }
+
+        var reloaded = await storage.Get(result.Value.GlobalId).ConfigureAwait(false);
+        return ToNodeResult(reloaded);
     }
 
     public async Task<ServiceResult<Node>> GetNodeAsync(IReadOnlyCollection<string> globalId) {
@@ -56,6 +105,12 @@ public sealed class GraphService {
         IReadOnlyCollection<string> typeGlobalId) {
         var nodeId = new NodeGlobalId(nodeGlobalId);
         var typeId = new NodeGlobalId(typeGlobalId);
+        return await AssignNodeTypeAsync(nodeId, typeId).ConfigureAwait(false);
+    }
+
+    private async Task<ServiceResult<Subgraph>> AssignNodeTypeAsync(
+        NodeGlobalId nodeId,
+        NodeGlobalId typeId) {
         if (!TypeNode.IsTypeNodeId(typeId))
             return ServiceResult<Subgraph>.BadRequest($"Node '{typeId}' is not under node type root '{GraphSystemNodeIds.NodeTypeRoot}'.");
 
@@ -83,11 +138,14 @@ public sealed class GraphService {
             return ServiceResult<Subgraph>.From(reloadedNode);
 
         try {
-            typeNode.Define().EnsureSatisfiedBy(new InstanceNode(reloadedNode.Value));
-        } catch {
+            var definition = runtimeTypes.TryCreateNodeTypeDefinition(typeId, typeNode, out var registeredDefinition)
+                ? registeredDefinition
+                : typeNode.Define();
+            definition.EnsureSatisfiedBy(new InstanceNode(reloadedNode.Value));
+        } catch (InvalidOperationException ex) {
             if (!alreadyAssigned.Value)
                 await storage.Disconnect(nodeId, typeId).ConfigureAwait(false);
-            throw;
+            return ServiceResult<Subgraph>.BadRequest(ex.Message);
         }
 
         return await storage.GetSubgraphAsync(new SubgraphQuery {
