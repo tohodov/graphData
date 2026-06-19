@@ -36,6 +36,7 @@ public sealed class GraphRuntimeTypeOptions
 internal sealed class GraphRuntimeTypeCatalog
 {
     private readonly IReadOnlyDictionary<NodeGlobalId, RuntimeGraphTypeDefinition> _nodeTypeDescriptors;
+    private readonly IReadOnlyDictionary<Type, RuntimeGraphTypeDefinition> _nodeTypeDescriptorsByClrType;
 
     private GraphRuntimeTypeCatalog(IReadOnlyCollection<RuntimeGraphTypeDefinition> types)
     {
@@ -43,6 +44,9 @@ internal sealed class GraphRuntimeTypeCatalog
         _nodeTypeDescriptors = Types
             .Where(static type => type.NodeTypeDescriptor is not null)
             .ToDictionary(static type => type.TypeId);
+        _nodeTypeDescriptorsByClrType = Types
+            .Where(static type => type.NodeTypeDescriptor is not null)
+            .ToDictionary(static type => type.ClrType);
         Fingerprint = CreateFingerprint(Types);
     }
 
@@ -88,12 +92,12 @@ internal sealed class GraphRuntimeTypeCatalog
 
     public bool TryCreateNodeTypeDefinition(
         NodeGlobalId typeId,
-        TypeNode typeNode,
+        NodeType typeNode,
         out NodeTypeDefinition definition)
     {
         if (_nodeTypeDescriptors.TryGetValue(typeId, out var runtimeType)
             && runtimeType.NodeTypeDescriptor is { } descriptor) {
-            definition = descriptor.Define(typeNode);
+            definition = descriptor.DefineRegistered(typeNode, GetNodeTypeId);
             return true;
         }
 
@@ -101,15 +105,18 @@ internal sealed class GraphRuntimeTypeCatalog
         return false;
     }
 
+    public NodeGlobalId GetNodeTypeId(Type type)
+    {
+        if (_nodeTypeDescriptorsByClrType.TryGetValue(type, out var runtimeType))
+            return runtimeType.TypeId;
+
+        throw new InvalidOperationException($"CLR type '{type.FullName}' is not a registered node type.");
+    }
+
     private static RuntimeGraphTypeDefinition? CreateRuntimeTypeDefinition(Type type)
     {
-        if (typeof(NodeType).IsAssignableFrom(type))
-            return new RuntimeGraphTypeDefinition(
-                type,
-                NodeType.GetStaticTypeId(type),
-                "node",
-                GraphSystemNodeIds.NodeTypeRoot,
-                CreateNodeTypeDescriptor(type));
+        if (type.DeclaringType == typeof(NodeType))
+            return null;
 
         if (typeof(Node).IsAssignableFrom(type) && typeof(IGraphNodeType).IsAssignableFrom(type))
             return new RuntimeGraphTypeDefinition(
@@ -118,6 +125,14 @@ internal sealed class GraphRuntimeTypeCatalog
                 "node",
                 GraphSystemNodeIds.NodeTypeRoot,
                 null);
+
+        if (typeof(NodeType).IsAssignableFrom(type))
+            return new RuntimeGraphTypeDefinition(
+                type,
+                NodeType.CreateDefaultTypeId(type),
+                "node",
+                GraphSystemNodeIds.NodeTypeRoot,
+                CreateNodeTypeDescriptor(type));
 
         if (typeof(Edge).IsAssignableFrom(type) && typeof(IGraphEdgeType).IsAssignableFrom(type))
             return new RuntimeGraphTypeDefinition(

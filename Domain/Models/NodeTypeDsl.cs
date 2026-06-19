@@ -2,6 +2,12 @@ using Abstractions;
 
 namespace GraphData.Core.Models;
 
+public enum NodeFieldValueKind
+{
+    Node,
+    Primitive
+}
+
 public readonly record struct NodeSlotCardinality(int Min, int? Max)
 {
     public static NodeSlotCardinality Optional() => new(0, 1);
@@ -20,11 +26,11 @@ public sealed record NodeSlotDefinition(
     IReadOnlyCollection<NodeGlobalId> AllowedTypeIds,
     NodeSlotCardinality Cardinality)
 {
-    public IReadOnlyCollection<TypeNode> AllowedTypes { get; init; } = [];
+    public IReadOnlyCollection<NodeType> AllowedTypes { get; init; } = [];
 
     public NodeSlotDefinition(
         string name,
-        IReadOnlyCollection<TypeNode> allowedTypes,
+        IReadOnlyCollection<NodeType> allowedTypes,
         NodeSlotCardinality cardinality)
         : this(
             name,
@@ -45,10 +51,25 @@ public sealed record NodeSlotDefinition(
     }
 }
 
+public sealed record NodeFieldDefinition(
+    string Name,
+    NodeFieldValueKind ValueKind,
+    Type ClrType,
+    NodeSlotCardinality Cardinality,
+    bool IsCollection,
+    NodeGlobalId? NodeTypeId = null)
+{
+    internal NodeSlotDefinition? ToSlotDefinition() =>
+        ValueKind == NodeFieldValueKind.Node && NodeTypeId is { } nodeTypeId
+            ? new NodeSlotDefinition(Name, [nodeTypeId], Cardinality)
+            : null;
+}
+
 public sealed record NodeTypeDefinition(
-    TypeNode Type,
+    NodeType Type,
     bool IsAbstract,
-    IReadOnlyCollection<NodeSlotDefinition> Slots)
+    IReadOnlyCollection<NodeSlotDefinition> Slots,
+    IReadOnlyCollection<NodeFieldDefinition> Fields)
 {
     public void EnsureSatisfiedBy(InstanceNode instance)
     {
@@ -69,13 +90,16 @@ public sealed record NodeTypeDefinition(
 
 public sealed class NodeTypeBuilder
 {
-    private readonly TypeNode _type;
+    private readonly NodeType _type;
+    private readonly Func<Type, NodeGlobalId> _resolveTypeId;
     private readonly List<NodeSlotDefinition> _slots = [];
+    private readonly List<NodeFieldDefinition> _fields = [];
     private bool _isAbstract;
 
-    internal NodeTypeBuilder(TypeNode type)
+    internal NodeTypeBuilder(NodeType type, Func<Type, NodeGlobalId> resolveTypeId)
     {
         _type = type;
+        _resolveTypeId = resolveTypeId;
     }
 
     public NodeTypeBuilder Abstract(bool value = true)
@@ -86,7 +110,7 @@ public sealed class NodeTypeBuilder
 
     public NodeTypeBuilder RequiresSlot(
         string name,
-        TypeNode allowedType,
+        NodeType allowedType,
         NodeSlotCardinality? cardinality = null)
     {
         return RequiresSlot(name, allowedType.GlobalId, cardinality);
@@ -97,7 +121,7 @@ public sealed class NodeTypeBuilder
         NodeSlotCardinality? cardinality = null)
         where TNodeType : NodeType
     {
-        return RequiresSlot(name, NodeType.GetStaticTypeId<TNodeType>(), cardinality);
+        return RequiresSlot(name, _resolveTypeId(typeof(TNodeType)), cardinality);
     }
 
     public NodeTypeBuilder RequiresSlot(
@@ -114,7 +138,7 @@ public sealed class NodeTypeBuilder
 
     public NodeTypeBuilder Slot(
         string name,
-        IEnumerable<TypeNode> allowedTypes,
+        IEnumerable<NodeType> allowedTypes,
         NodeSlotCardinality cardinality)
     {
         return SlotByTypeIds(
@@ -138,10 +162,20 @@ public sealed class NodeTypeBuilder
         return this;
     }
 
+    internal NodeTypeBuilder Field(NodeFieldDefinition field)
+    {
+        _fields.Add(field);
+        var slot = field.ToSlotDefinition();
+        if (slot is not null)
+            _slots.Add(slot);
+        return this;
+    }
+
     public NodeTypeDefinition Build() => new(
         _type,
         _isAbstract,
-        _slots.ToArray());
+        _slots.ToArray(),
+        _fields.ToArray());
 
     private static string RequireName(string value)
     {

@@ -3,7 +3,10 @@ using Abstractions;
 namespace GraphData.Core.Models;
 
 public class Node {
-    internal NodeState State { get; }
+    private readonly NodeState? _state;
+
+    internal NodeState State => _state ?? throw new InvalidOperationException(
+        $"Node '{GetType().Name}' is a type descriptor and is not bound to a graph node.");
 
     public virtual NodeLocalId LocalId => State.LocalId;
     public virtual NodeGlobalId GlobalId => State.GlobalId;
@@ -16,8 +19,11 @@ public class Node {
         set => State.Attributes = value;
     }
 
+    protected Node() {
+    }
+
     internal Node(NodeState state) {
-        State = state;
+        _state = state;
     }
 
     private sealed class NodeCollection(ICollection<NodeState> states) : ICollection<Node> {

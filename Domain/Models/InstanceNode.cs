@@ -12,20 +12,20 @@ public class InstanceNode : Node, IGraphNodeType
 
     public virtual NodeGlobalId TypeId => StaticTypeId;
 
-    public IReadOnlyCollection<TypeNode> AssignedTypes => field ??= State.Edges
+    public IReadOnlyCollection<NodeType> AssignedTypes => field ??= State.Edges
         .Select(OtherEndpoint)
-        .Where(static node => TypeNode.IsTypeNodeId(node.GlobalId))
+        .Where(static node => NodeType.IsNodeTypeId(node.GlobalId))
         .GroupBy(static node => node.GlobalId)
-        .Select(static group => new TypeNode(group.First()))
+        .Select(static group => NodeType.FromState(group.First()))
         .ToArray();
 
-    public TypeNode? SingleAssignedType => AssignedTypes.Count == 1
+    public NodeType? SingleAssignedType => AssignedTypes.Count == 1
         ? AssignedTypes.Single()
         : null;
 
     public IReadOnlyCollection<InstanceNode> NeighborInstances => field ??= State.Edges
         .Select(OtherEndpoint)
-        .Where(static node => !TypeNode.IsTypeNodeId(node.GlobalId))
+        .Where(static node => !NodeType.IsNodeTypeId(node.GlobalId))
         .GroupBy(static node => node.GlobalId)
         .Select(static group => new InstanceNode(group.First()))
         .ToArray();

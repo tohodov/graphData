@@ -1,20 +1,22 @@
-using System.Reflection;
 using Abstractions;
 
 namespace GraphData.Core.Models;
 
-public abstract class NodeType
+public abstract class NodeType : Node
 {
     protected NodeType()
     {
     }
 
-    public NodeGlobalId TypeId => GetStaticTypeId(GetType());
+    internal NodeType(NodeState state)
+        : base(state) {
+    }
 
-    public NodeTypeDefinition Define(TypeNode type)
+    public NodeTypeDefinition Define(Action<NodeTypeBuilder>? configure = null)
     {
-        var builder = new NodeTypeBuilder(type);
+        var builder = new NodeTypeBuilder(this, CreateDefaultTypeId);
         Define(builder);
+        configure?.Invoke(builder);
         return builder.Build();
     }
 
@@ -22,19 +24,43 @@ public abstract class NodeType
     {
     }
 
-    public static NodeGlobalId GetStaticTypeId<TNodeType>()
-        where TNodeType : NodeType =>
-        GetStaticTypeId(typeof(TNodeType));
-
-    internal static NodeGlobalId GetStaticTypeId(Type type)
+    internal NodeTypeDefinition DefineRegistered(NodeType graphType, Func<Type, NodeGlobalId> resolveTypeId)
     {
-        var property = type.GetProperty(
-            "StaticTypeId",
-            BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-        if (property?.GetValue(null) is NodeGlobalId id)
-            return id;
-
-        throw new InvalidOperationException(
-            $"Runtime node type descriptor '{type.FullName}' must expose a public static StaticTypeId property.");
+        var builder = new NodeTypeBuilder(graphType, resolveTypeId);
+        NodeTypeFieldDiscovery.AddDiscoveredFields(GetType(), builder, resolveTypeId);
+        Define(builder);
+        return builder.Build();
     }
+
+    internal static NodeType FromState(NodeState state) => new RuntimeNodeType(state);
+
+    internal static NodeGlobalId CreateDefaultTypeId(Type type) =>
+        new(GraphSystemNodeIds.NodeTypeRoot.Concat([new NodeLocalId(CreateDefaultLocalId(type))]));
+
+    internal static bool IsNodeTypeId(NodeGlobalId id)
+    {
+        var idSegments = id.ToArray();
+        var rootSegments = GraphSystemNodeIds.NodeTypeRoot.ToArray();
+        if (idSegments.Length <= rootSegments.Length)
+            return false;
+
+        for (var index = 0; index < rootSegments.Length; index++)
+            if (idSegments[index] != rootSegments[index])
+                return false;
+
+        return true;
+    }
+
+    private static string CreateDefaultLocalId(Type type)
+    {
+        var name = type.Name;
+        if (name.EndsWith(nameof(NodeType), StringComparison.Ordinal))
+            name = name[..^nameof(NodeType).Length];
+        else if (name.EndsWith(nameof(Node), StringComparison.Ordinal))
+            name = name[..^nameof(Node).Length];
+
+        return string.IsNullOrWhiteSpace(name) ? type.Name : name;
+    }
+
+    private sealed class RuntimeNodeType(NodeState state) : NodeType(state);
 }

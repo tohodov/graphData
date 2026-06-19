@@ -28,17 +28,15 @@ public sealed class GraphElementDslTests
     {
         var typeState = new InMemoryNodeState("type-node");
         var instanceState = new InMemoryNodeState("instance-node");
-        var typeNode = new TypeNode(typeState);
+        var typeNode = NodeType.FromState(typeState);
         var instanceNode = new InstanceNode(instanceState);
         var edgeState = new InMemoryEdgeState(typeState, instanceState);
         var typeEdge = new TypeEdge(edgeState);
         var instanceEdge = new InstanceEdge(edgeState);
 
-        Assert.AreEqual(GraphBaseTypeIds.NodeType, TypeNode.StaticTypeId);
         Assert.AreEqual(GraphBaseTypeIds.NodeInstance, InstanceNode.StaticTypeId);
         Assert.AreEqual(GraphBaseTypeIds.EdgeType, TypeEdge.StaticTypeId);
         Assert.AreEqual(GraphBaseTypeIds.EdgeInstance, InstanceEdge.StaticTypeId);
-        //Assert.AreEqual(GraphBaseTypeIds.NodeType, typeNode.TypeId); //TODO подумать
         Assert.AreEqual(GraphBaseTypeIds.EdgeType, typeEdge.TypeId);
         Assert.AreEqual(GraphBaseTypeIds.EdgeInstance, instanceEdge.TypeId);
         Assert.AreEqual(typeNode.GlobalId, typeEdge.Node1.GlobalId);

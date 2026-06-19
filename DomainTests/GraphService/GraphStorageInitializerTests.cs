@@ -93,7 +93,7 @@ public sealed class GraphStorageInitializerTests
 
         await initializer.InitializeAsync();
 
-        var weapon = await GetRequiredAsync(scope.Storage, CatalogWeaponNodeType.StaticTypeId);
+        var weapon = await GetRequiredAsync(scope.Storage, TypeId<CatalogWeaponNodeType>());
         Assert.AreEqual("type", weapon.Attributes[GraphRuntimeAttributeNames.GraphKind]);
         Assert.AreEqual("node", weapon.Attributes[GraphRuntimeAttributeNames.GraphElement]);
         Assert.AreEqual("CatalogWeapon", weapon.Attributes["label"]);
@@ -109,7 +109,7 @@ public sealed class GraphStorageInitializerTests
 
         await new GraphStorageInitializer(scope.Storage, typeof(CatalogWeaponNodeType).Assembly).InitializeAsync();
 
-        var weapon = await GetRequiredAsync(scope.Storage, CatalogWeaponNodeType.StaticTypeId);
+        var weapon = await GetRequiredAsync(scope.Storage, TypeId<CatalogWeaponNodeType>());
         Assert.AreEqual("CatalogWeapon", weapon.Attributes["label"]);
     }
 
@@ -221,8 +221,15 @@ public sealed class GraphStorageInitializerTests
             Assert.AreEqual(directed, node.Attributes["directed"]);
     }
 
+    private static NodeGlobalId TypeId<TNodeType>()
+    {
+        var name = typeof(TNodeType).Name;
+        if (name.EndsWith(nameof(NodeType), StringComparison.Ordinal))
+            name = name[..^nameof(NodeType).Length];
+        return new NodeGlobalId("graphdata", "types", "nodes", name);
+    }
+
     private sealed class CatalogWeaponNodeType : NodeType
     {
-        public static NodeGlobalId StaticTypeId { get; } = new("graphdata", "types", "nodes", "CatalogWeapon");
     }
 }
