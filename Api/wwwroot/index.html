@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GraphData</title>
-  <link rel="stylesheet" href="./styles.css?v=20260619-menu-overlay">
+  <link rel="stylesheet" href="./styles.css?v=20260619-selection-overlay">
 </head>
 <body>
   <main class="app-shell">
@@ -21,6 +21,12 @@
           </label>
           <button id="fit-button" type="button" title="Подогнать граф">Подогнать</button>
           <button id="reset-button" type="button" title="Сбросить граф">Сброс</button>
+        </div>
+        <div id="selection-overlay" class="selection-overlay" hidden aria-label="Выбранные элементы графа">
+          <div class="selection-overlay-header">
+            <span id="selection-summary">Выбрано: 0</span>
+          </div>
+          <div id="selection-list" class="selection-list"></div>
         </div>
         <div id="graph" role="img" aria-label="Редактор графа GraphData"></div>
         <div id="graph-label-layer" class="graph-label-layer" aria-hidden="true"></div>
@@ -192,6 +198,6 @@
     </section>
   </main>
 
-  <script type="module" src="./js/app.js?v=20260619-menu-overlay"></script>
+  <script type="module" src="./js/app.js?v=20260619-selection-overlay"></script>
 </body>
 </html>

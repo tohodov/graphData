@@ -118,6 +118,7 @@ export class GraphModel {
   rootName: string | null;
   _selectedName: string | null;
   selectedNames: Set<string>;
+  selectedEdgeKeys: Set<string>;
   loaded: Map<string, GraphNode>;
   parentByNode: Map<string, string>;
   positions: GraphNodePositionMap;
@@ -133,6 +134,7 @@ export class GraphModel {
     this.rootName = null;
     this._selectedName = null;
     this.selectedNames = new Set();
+    this.selectedEdgeKeys = new Set();
     this.loaded = new Map();
     this.parentByNode = new Map();
     this.positions = new GraphNodePositionMap(this.loaded);
@@ -184,10 +186,17 @@ export class GraphModel {
 
   set selectedName(value: string | null) {
     this.selectedNames.clear();
+    this.selectedEdgeKeys.clear();
     if (value) {
       this.selectedNames.add(value);
     }
     this._selectedName = value;
+  }
+
+  clearSelection(): void {
+    this.selectedNames.clear();
+    this.selectedEdgeKeys.clear();
+    this._selectedName = null;
   }
 
   resetGraph() {
@@ -206,6 +215,36 @@ export class GraphModel {
 
     this.selectedNames.add(name);
     this._selectedName = name;
+  }
+
+  selectOnlyEdge(edge: GraphEdge | string | any): void {
+    const key = this.edgeKey(edge);
+    this.clearSelection();
+    if (key) {
+      this.selectedEdgeKeys.add(key);
+    }
+  }
+
+  addSelectedEdge(edge: GraphEdge | string | any): void {
+    const key = this.edgeKey(edge);
+    if (key) {
+      this.selectedEdgeKeys.add(key);
+    }
+  }
+
+  toggleSelectedEdge(edge: GraphEdge | string | any): boolean {
+    const key = this.edgeKey(edge);
+    if (!key) {
+      return false;
+    }
+
+    if (this.selectedEdgeKeys.has(key)) {
+      this.selectedEdgeKeys.delete(key);
+      return false;
+    }
+
+    this.selectedEdgeKeys.add(key);
+    return true;
   }
 
   toggleSelectedName(name: string): boolean {
@@ -236,6 +275,51 @@ export class GraphModel {
 
   isSelectedName(name: string): boolean {
     return this.selectedNames.has(name);
+  }
+
+  removeSelectedEdge(edge: GraphEdge | string | any): void {
+    const key = this.edgeKey(edge);
+    if (key) {
+      this.selectedEdgeKeys.delete(key);
+    }
+  }
+
+  removeSelectedEdgesConnectedTo(name: string): void {
+    for (const key of [...this.selectedEdgeKeys]) {
+      const edge = this.findEdgeObjects(key)[0];
+      if (!edge || edge.sourceGlobalId === name || edge.targetGlobalId === name) {
+        this.selectedEdgeKeys.delete(key);
+      }
+    }
+  }
+
+  isSelectedEdge(edge: GraphEdge | string | any): boolean {
+    const key = this.edgeKey(edge);
+    return Boolean(key && this.selectedEdgeKeys.has(key));
+  }
+
+  selectElements(nodeNames: Iterable<string> = [], edgeKeys: Iterable<string> = [], options: any = {}): void {
+    if (options.append !== true) {
+      this.clearSelection();
+    }
+
+    let lastNode: string | null = null;
+    for (const name of nodeNames) {
+      if (!name) {
+        continue;
+      }
+
+      this.selectedNames.add(name);
+      lastNode = name;
+    }
+
+    for (const key of edgeKeys) {
+      if (key) {
+        this.selectedEdgeKeys.add(key);
+      }
+    }
+
+    this._selectedName = lastNode ?? this._selectedName ?? this.selectedNames.values().next().value ?? null;
   }
 
   hasNode(globalId: string): boolean {
@@ -389,7 +473,16 @@ export class GraphModel {
   }
 
   edgeKey(edge: GraphEdge | string | any): string {
-    return typeof edge === "string" ? edge : edge?.key ?? GraphEdge.from(edge).key;
+    if (typeof edge === "string") {
+      return edge;
+    }
+
+    if (edge?.key) {
+      return edge.key;
+    }
+
+    const normalized = GraphEdge.from(edge);
+    return normalized.sourceGlobalId && normalized.targetGlobalId ? normalized.key : "";
   }
 
   findEdgeObjects(key: string): GraphEdge[] {

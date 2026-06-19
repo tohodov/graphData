@@ -6,9 +6,11 @@ import type { GraphRenderer } from "./GraphRenderer.js";
 
 const tapMoveThreshold = 8;
 const defaultEdgeColor = [0.20, 0.27, 0.30, 0.62];
+const selectedEdgeColor = [0.96, 0.77, 0.28, 1];
 const defaultNodeStrokeColor = [0.09, 0.13, 0.14, 1];
 const maxLabels = 280;
 const endpointControlPadding = 9;
+const edgePickThreshold = 9;
 const rendererModes = ["webgpu", "svg", "html-canvas"];
 
 export class WebGpuGraphCanvas {
@@ -27,9 +29,14 @@ export class WebGpuGraphCanvas {
     velocities,
     view,
     isNodeSelected,
+    isEdgeSelected,
     selectOnlyNode,
     addNodeToSelection,
     toggleNodeSelection,
+    selectOnlyEdge,
+    addEdgeToSelection,
+    toggleEdgeSelection,
+    selectGraphElements,
     activateEdgeControl,
     syncEdgeAngles,
     renderInspector,
@@ -48,9 +55,14 @@ export class WebGpuGraphCanvas {
     this.view = view;
     this.callbacks = {
       isNodeSelected,
+      isEdgeSelected,
       selectOnlyNode,
       addNodeToSelection,
       toggleNodeSelection,
+      selectOnlyEdge,
+      addEdgeToSelection,
+      toggleEdgeSelection,
+      selectGraphElements,
       activateEdgeControl,
       syncEdgeAngles,
       renderInspector,
@@ -67,6 +79,8 @@ export class WebGpuGraphCanvas {
     this.currentGraph = null;
     this.dragging = null;
     this.pointer = null;
+    this.selectionBox = null;
+    this.selectionBoxElement = this.createSelectionBoxElement();
     this.simulationHandle = null;
     this.resizeObserver = null;
     this.resizePending = false;
@@ -317,6 +331,14 @@ export class WebGpuGraphCanvas {
     this.window.history.replaceState({}, "", url);
   }
 
+  createSelectionBoxElement() {
+    const element = this.document.createElement("div");
+    element.className = "graph-selection-box";
+    element.hidden = true;
+    (this.document.body ?? this.canvas).append(element);
+    return element;
+  }
+
   bindGraphSurface() {
     this.bindCanvasResizeObserver();
 
@@ -326,6 +348,20 @@ export class WebGpuGraphCanvas {
       }
 
       this.canvas.setPointerCapture(event.pointerId);
+      if (event.shiftKey) {
+        event.preventDefault();
+        this.selectionBox = {
+          startX: event.clientX,
+          startY: event.clientY,
+          x: event.clientX,
+          y: event.clientY,
+          append: event.ctrlKey || event.metaKey
+        };
+        this.updateSelectionBoxElement();
+        this.canvas.classList.add("selecting");
+        return;
+      }
+
       const hit = this.pickNearest(event.clientX, event.clientY);
       if (hit) {
         this.dragging = {
@@ -348,6 +384,14 @@ export class WebGpuGraphCanvas {
     });
 
     this.canvas.addEventListener("pointermove", event => {
+      if (this.selectionBox) {
+        event.preventDefault();
+        this.selectionBox.x = event.clientX;
+        this.selectionBox.y = event.clientY;
+        this.updateSelectionBoxElement();
+        return;
+      }
+
       if (this.dragging) {
         const position = this.positions.get(this.dragging.name);
         if (!position) {
@@ -386,9 +430,21 @@ export class WebGpuGraphCanvas {
 
       const dragging = this.dragging;
       const pointer = this.pointer;
+      const selectionBox = this.selectionBox;
       this.dragging = null;
       this.pointer = null;
+      this.selectionBox = null;
       this.canvas.classList.remove("dragging");
+      this.canvas.classList.remove("selecting");
+      this.hideSelectionBoxElement();
+
+      if (selectionBox) {
+        const moved = Math.hypot(event.clientX - selectionBox.startX, event.clientY - selectionBox.startY);
+        if (moved > tapMoveThreshold) {
+          this.selectElementsInBox(selectionBox);
+        }
+        return;
+      }
 
       if (dragging) {
         const moved = Math.hypot(event.clientX - dragging.startX, event.clientY - dragging.startY);
@@ -404,6 +460,11 @@ export class WebGpuGraphCanvas {
           const hit = this.pickNearest(event.clientX, event.clientY);
           if (hit) {
             this.selectNode(hit.name, event, event.pointerType ?? "mouse");
+          } else {
+            const edgeHit = this.pickNearestEdge(event.clientX, event.clientY);
+            if (edgeHit) {
+              this.selectEdge(edgeHit, event, event.pointerType ?? "mouse");
+            }
           }
         }
       }
@@ -417,7 +478,10 @@ export class WebGpuGraphCanvas {
       }
       this.dragging = null;
       this.pointer = null;
+      this.selectionBox = null;
+      this.hideSelectionBoxElement();
       this.canvas.classList.remove("dragging");
+      this.canvas.classList.remove("selecting");
     });
 
     this.canvas.addEventListener("wheel", event => {
@@ -651,7 +715,9 @@ export class WebGpuGraphCanvas {
     memory.edges.forEach((edge, index) => {
       const source = this.positions.get(edge.sourceGlobalId) ?? { x: 0, y: 0 };
       const target = this.positions.get(edge.targetGlobalId) ?? { x: 0, y: 0 };
-      const color = parseColor(edge.color, defaultEdgeColor);
+      const selected = this.callbacks.isEdgeSelected?.(edge.key) === true;
+      edge.selected = selected;
+      const color = selected ? selectedEdgeColor : parseColor(edge.color, defaultEdgeColor);
       const base = index * 12;
       memory.edgeVertexData[base + 0] = source.x;
       memory.edgeVertexData[base + 1] = source.y;
@@ -839,6 +905,71 @@ export class WebGpuGraphCanvas {
     };
   }
 
+  updateSelectionBoxElement() {
+    const box = this.selectionBox;
+    const element = this.selectionBoxElement;
+    if (!box || !element) {
+      return;
+    }
+
+    const rect = normalizeClientRect(box);
+    element.hidden = false;
+    element.style.left = `${rect.left}px`;
+    element.style.top = `${rect.top}px`;
+    element.style.width = `${rect.right - rect.left}px`;
+    element.style.height = `${rect.bottom - rect.top}px`;
+  }
+
+  hideSelectionBoxElement() {
+    if (this.selectionBoxElement) {
+      this.selectionBoxElement.hidden = true;
+    }
+  }
+
+  selectElementsInBox(box) {
+    if (!this.memory) {
+      return;
+    }
+
+    const clientRect = normalizeClientRect(box);
+    const canvasRect = this.canvas.getBoundingClientRect();
+    const rect = {
+      left: clientRect.left - canvasRect.left,
+      top: clientRect.top - canvasRect.top,
+      right: clientRect.right - canvasRect.left,
+      bottom: clientRect.bottom - canvasRect.top
+    };
+    const nodeNames: string[] = [];
+    const edgeKeys: string[] = [];
+
+    this.memory.nodes.forEach(node => {
+      const position = this.positions.get(node.name);
+      if (!position) {
+        return;
+      }
+
+      const center = this.graphToScreen(position);
+      const radius = Math.max(4, screenNodeRadius(node, this.view.scale));
+      if (circleIntersectsRect(center, radius, rect)) {
+        nodeNames.push(node.name);
+      }
+    });
+
+    this.memory.edges.forEach(edge => {
+      const source = this.positions.get(edge.sourceGlobalId);
+      const target = this.positions.get(edge.targetGlobalId);
+      if (!source || !target) {
+        return;
+      }
+
+      if (segmentIntersectsRect(this.graphToScreen(source), this.graphToScreen(target), rect)) {
+        edgeKeys.push(edge.key);
+      }
+    });
+
+    this.callbacks.selectGraphElements?.(nodeNames, edgeKeys, { append: box.append });
+  }
+
   pickNearest(clientX, clientY) {
     if (!this.memory || this.memory.nodeCount === 0) {
       return null;
@@ -870,6 +1001,36 @@ export class WebGpuGraphCanvas {
     return best;
   }
 
+  pickNearestEdge(clientX, clientY) {
+    if (!this.memory || this.memory.edgeCount === 0) {
+      return null;
+    }
+
+    const rect = this.canvas.getBoundingClientRect();
+    const point = {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    };
+    let best = null;
+    let bestDistance = Infinity;
+
+    for (const edge of this.memory.edges) {
+      const source = this.positions.get(edge.sourceGlobalId);
+      const target = this.positions.get(edge.targetGlobalId);
+      if (!source || !target) {
+        continue;
+      }
+
+      const distance = pointToSegmentDistance(point, this.graphToScreen(source), this.graphToScreen(target));
+      if (distance <= edgePickThreshold && distance < bestDistance) {
+        bestDistance = distance;
+        best = edge;
+      }
+    }
+
+    return best;
+  }
+
   selectNode(name, event, pointerType) {
     if (pointerType !== "mouse") {
       this.callbacks.toggleNodeSelection(name);
@@ -882,6 +1043,20 @@ export class WebGpuGraphCanvas {
     }
 
     this.callbacks.selectOnlyNode(name);
+  }
+
+  selectEdge(edge, event, pointerType) {
+    if (pointerType !== "mouse") {
+      this.callbacks.toggleEdgeSelection?.(edge);
+      return;
+    }
+
+    if (event.ctrlKey || event.metaKey) {
+      this.callbacks.addEdgeToSelection?.(edge);
+      return;
+    }
+
+    this.callbacks.selectOnlyEdge?.(edge);
   }
 
   setGpuWarning(error) {
@@ -971,6 +1146,84 @@ function pointAtAngle(anchor, angle, radius) {
 function screenNodeRadius(node, scale) {
   const radius = Number.isFinite(node?.viewRadius) ? node.viewRadius : nodeRadius;
   return radius * scale;
+}
+
+function normalizeClientRect(box) {
+  return {
+    left: Math.min(box.startX, box.x),
+    top: Math.min(box.startY, box.y),
+    right: Math.max(box.startX, box.x),
+    bottom: Math.max(box.startY, box.y)
+  };
+}
+
+function circleIntersectsRect(center, radius, rect) {
+  const closestX = clamp(center.x, rect.left, rect.right);
+  const closestY = clamp(center.y, rect.top, rect.bottom);
+  return (center.x - closestX) ** 2 + (center.y - closestY) ** 2 <= radius ** 2;
+}
+
+function segmentIntersectsRect(a, b, rect) {
+  if (pointInRect(a, rect) || pointInRect(b, rect)) {
+    return true;
+  }
+
+  const topLeft = { x: rect.left, y: rect.top };
+  const topRight = { x: rect.right, y: rect.top };
+  const bottomRight = { x: rect.right, y: rect.bottom };
+  const bottomLeft = { x: rect.left, y: rect.bottom };
+  return segmentsIntersect(a, b, topLeft, topRight)
+    || segmentsIntersect(a, b, topRight, bottomRight)
+    || segmentsIntersect(a, b, bottomRight, bottomLeft)
+    || segmentsIntersect(a, b, bottomLeft, topLeft);
+}
+
+function pointInRect(point, rect) {
+  return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
+}
+
+function pointToSegmentDistance(point, a, b) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 0.000001) {
+    return Math.hypot(point.x - a.x, point.y - a.y);
+  }
+
+  const t = clamp(((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared, 0, 1);
+  const x = a.x + t * dx;
+  const y = a.y + t * dy;
+  return Math.hypot(point.x - x, point.y - y);
+}
+
+function segmentsIntersect(a, b, c, d) {
+  const abC = cross(a, b, c);
+  const abD = cross(a, b, d);
+  const cdA = cross(c, d, a);
+  const cdB = cross(c, d, b);
+  const epsilon = 0.000001;
+
+  if (((abC > epsilon && abD < -epsilon) || (abC < -epsilon && abD > epsilon))
+    && ((cdA > epsilon && cdB < -epsilon) || (cdA < -epsilon && cdB > epsilon))) {
+    return true;
+  }
+
+  return Math.abs(abC) <= epsilon && pointOnSegment(c, a, b)
+    || Math.abs(abD) <= epsilon && pointOnSegment(d, a, b)
+    || Math.abs(cdA) <= epsilon && pointOnSegment(a, c, d)
+    || Math.abs(cdB) <= epsilon && pointOnSegment(b, c, d);
+}
+
+function pointOnSegment(point, a, b) {
+  const epsilon = 0.000001;
+  return point.x >= Math.min(a.x, b.x) - epsilon
+    && point.x <= Math.max(a.x, b.x) + epsilon
+    && point.y >= Math.min(a.y, b.y) - epsilon
+    && point.y <= Math.max(a.y, b.y) + epsilon;
+}
+
+function cross(a, b, c) {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
 
 function clamp(value, min, max) {

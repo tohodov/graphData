@@ -184,6 +184,100 @@ textarea:focus {
   width: 100%;
 }
 
+.selection-overlay {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 4;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(320px, calc(100% - var(--side-panel-width) - 44px));
+  max-height: calc(100% - 20px);
+  overflow: hidden;
+  border: 1px solid rgba(157, 170, 178, 0.58);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8px 22px rgba(21, 31, 36, 0.12);
+  backdrop-filter: blur(8px);
+}
+
+.selection-overlay[hidden] {
+  display: none;
+}
+
+.selection-overlay-header {
+  padding: 8px 10px 6px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.selection-list {
+  display: grid;
+  gap: 4px;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 8px 8px;
+}
+
+.selection-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 6px;
+  border: 1px solid rgba(216, 224, 228, 0.74);
+  border-radius: 6px;
+  background: rgba(249, 251, 251, 0.86);
+}
+
+.selection-kind {
+  min-width: 44px;
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.selection-row-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.selection-row-text strong,
+.selection-row-text span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selection-row-text strong {
+  color: #172124;
+  font-size: 13px;
+  line-height: 1.1;
+}
+
+.selection-row-text span {
+  color: var(--text-soft);
+  font-size: 11px;
+}
+
+.selection-remove-button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  color: var(--text-soft);
+  font-size: 20px;
+  line-height: 1;
+}
+
 .mobile-menu-toggle,
 .mobile-menu-header {
   display: none;
@@ -215,6 +309,24 @@ textarea:focus {
   cursor: grabbing;
 }
 
+#graph.selecting {
+  cursor: crosshair;
+}
+
+.graph-selection-box {
+  position: fixed;
+  z-index: 4;
+  border: 1px solid rgba(15, 118, 110, 0.86);
+  border-radius: 4px;
+  background: rgba(15, 118, 110, 0.14);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.38) inset;
+  pointer-events: none;
+}
+
+.graph-selection-box[hidden] {
+  display: none;
+}
+
 .graph-render-layer {
   position: absolute;
   inset: 0;
@@ -240,6 +352,11 @@ textarea:focus {
   background: var(--edge-color, rgba(51, 69, 77, 0.62));
 }
 
+.graph-html-canvas-layer > .html-canvas-edge.selected {
+  height: 3.5px;
+  box-shadow: 0 0 7px rgba(246, 196, 71, 0.52);
+}
+
 .graph-html-canvas-layer > .html-canvas-node {
   display: block;
   width: 68px;
@@ -259,6 +376,10 @@ textarea:focus {
   stroke-width: 1.5;
   stroke-linecap: round;
   vector-effect: non-scaling-stroke;
+}
+
+.graph-svg-edge.selected {
+  stroke-width: 3.4;
 }
 
 .graph-svg-node-shell {
@@ -684,6 +805,18 @@ textarea:focus {
     max-width: calc(100% - 16px);
     flex-wrap: wrap;
     justify-content: end;
+  }
+
+  .selection-overlay {
+    top: 8px;
+    right: 8px;
+    left: 8px;
+    width: auto;
+    max-height: min(42dvh, 360px);
+  }
+
+  body.menu-open .selection-overlay {
+    display: none;
   }
 
   .renderer-picker {

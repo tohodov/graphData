@@ -145,10 +145,12 @@ export class HtmlCanvasRenderer implements GraphRenderer {
         continue;
       }
 
+      const selected = Boolean(memory.edges[index / 12]?.selected);
+      const thickness = selected ? 3.5 : 1.5;
       context.save();
       context.translate(x1, y1);
       context.rotate(Math.atan2(y2 - y1, x2 - x1));
-      const transform = context.drawElementImage(element, 0, -0.75, length, 1.5);
+      const transform = context.drawElementImage(element, 0, -thickness / 2, length, thickness);
       element.style.transform = transform?.toString?.() ?? "";
       context.restore();
     }
@@ -225,6 +227,7 @@ export class HtmlCanvasRenderer implements GraphRenderer {
     }
 
     const base = index * 12;
+    element.classList.toggle("selected", Boolean(memory.edges[index]?.selected));
     element.style.setProperty("--edge-color", rgba(
       memory.edgeVertexData[base + 2],
       memory.edgeVertexData[base + 3],

@@ -115,6 +115,76 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphModel_TracksNodeAndEdgeSelectionTogether() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const edge = new GraphEdge({
+              sourceGlobalId: "a",
+              targetGlobalId: "b",
+              sourceLocalId: "a",
+              targetLocalId: "b"
+            });
+            const otherEdge = new GraphEdge({
+              sourceGlobalId: "b",
+              targetGlobalId: "c",
+              sourceLocalId: "b",
+              targetLocalId: "c"
+            });
+            const model = new GraphModel();
+            model.loaded.set("a", { name: "a", edges: [edge] });
+            model.loaded.set("b", { name: "b", edges: [edge, otherEdge] });
+            model.loaded.set("c", { name: "c", edges: [otherEdge] });
+
+            model.selectedName = "a";
+            const singleNodeClearsEdges = model.isSelectedName("a")
+              && model.selectedEdgeKeys.size === 0
+              && model.edgeKey({}) === "";
+
+            model.addSelectedName("b");
+            model.addSelectedEdge(edge);
+            const mixedSelection = model.selectedName === "b"
+              && model.isSelectedName("a")
+              && model.isSelectedName("b")
+              && model.isSelectedEdge(edge);
+
+            model.selectOnlyEdge(otherEdge);
+            const onlyEdge = model.selectedName === null
+              && model.selectedNames.size === 0
+              && model.isSelectedEdge(otherEdge)
+              && !model.isSelectedEdge(edge);
+
+            model.selectElements(["a"], [edge.key]);
+            const boxedSelection = model.selectedName === "a"
+              && model.isSelectedName("a")
+              && model.isSelectedEdge(edge)
+              && !model.isSelectedEdge(otherEdge);
+
+            model.selectElements(["b"], [otherEdge.key], { append: true });
+            const appendedSelection = model.selectedName === "b"
+              && model.isSelectedName("a")
+              && model.isSelectedName("b")
+              && model.isSelectedEdge(edge)
+              && model.isSelectedEdge(otherEdge);
+
+            model.removeSelectedEdgesConnectedTo("b");
+            const prunedEdges = model.selectedEdgeKeys.size === 0;
+
+            globalThis.__result = singleNodeClearsEdges
+              && mixedSelection
+              && onlyEdge
+              && boxedSelection
+              && appendedSelection
+              && prunedEdges;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphModel_PositionMapStoresCoordinatesOnNodes() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
@@ -953,6 +1023,73 @@ public sealed class GraphUiRegressionTests {
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void WebGpuCanvas_SelectsNodesAndEdgesWithShiftBoxAndEdgeHitTest() {
+        var engine = CreateUiEngine(("Api/wwwroot/src/ui/WebGpuGraphCanvas.js", "WebGpuGraphCanvas"));
+
+        engine.Execute(
+            """
+            const canvas = Object.create(WebGpuGraphCanvas.prototype);
+            canvas.view = { x: 0, y: 0, scale: 1 };
+            canvas.canvas = {
+              getBoundingClientRect() {
+                return { left: 100, top: 50, width: 400, height: 300 };
+              }
+            };
+            canvas.positions = new Map([
+              ["a", { x: 0, y: 0 }],
+              ["b", { x: 100, y: 0 }],
+              ["c", { x: 240, y: 120 }],
+              ["d", { x: 300, y: 120 }]
+            ]);
+            canvas.memory = {
+              nodeCount: 4,
+              edgeCount: 2,
+              nodes: [
+                { name: "a", viewRadius: 10 },
+                { name: "b", viewRadius: 10 },
+                { name: "c", viewRadius: 10 },
+                { name: "d", viewRadius: 10 }
+              ],
+              edges: [
+                { key: "ab", sourceGlobalId: "a", targetGlobalId: "b" },
+                { key: "cd", sourceGlobalId: "c", targetGlobalId: "d" }
+              ]
+            };
+
+            let selected = null;
+            canvas.callbacks = {
+              selectGraphElements(nodeNames, edgeKeys, options) {
+                selected = {
+                  nodeNames: [...nodeNames],
+                  edgeKeys: [...edgeKeys],
+                  append: options.append
+                };
+              }
+            };
+
+            canvas.selectElementsInBox({
+              startX: 92,
+              startY: 42,
+              x: 212,
+              y: 72,
+              append: true
+            });
+
+            const hit = canvas.pickNearestEdge(160, 53);
+            const miss = canvas.pickNearestEdge(160, 90);
+
+            globalThis.__debug = { selected, hitKey: hit?.key ?? null, miss };
+            globalThis.__result = selected.nodeNames.join(",") === "a,b"
+              && selected.edgeKeys.join(",") === "ab"
+              && selected.append === true
+              && hit?.key === "ab"
+              && miss === null;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean(), engine.Evaluate("JSON.stringify(__debug)").AsString());
     }
 
     [TestMethod]

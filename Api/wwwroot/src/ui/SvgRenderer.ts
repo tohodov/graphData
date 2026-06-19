@@ -60,8 +60,10 @@ export class SvgRenderer implements GraphRenderer {
     const data = memory.edgeVertexData;
 
     for (let index = 0; index < data.length; index += 12) {
+      const edge = memory.edges[index / 12];
+      const selected = Boolean(edge?.selected);
       const line = this.createSvg("line", {
-        class: "graph-svg-edge",
+        class: `graph-svg-edge${selected ? " selected" : ""}`,
         x1: data[index + 0] * view.scale + view.x,
         y1: data[index + 1] * view.scale + view.y,
         x2: data[index + 6] * view.scale + view.x,

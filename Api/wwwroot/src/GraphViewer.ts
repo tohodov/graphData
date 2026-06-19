@@ -42,6 +42,9 @@ export class GraphViewer {
 
     this.graphSurface = this.requireElement("#graph");
     this.labelLayer = this.requireElement("#graph-label-layer");
+    this.selectionOverlay = this.requireElement("#selection-overlay");
+    this.selectionSummary = this.requireElement("#selection-summary");
+    this.selectionList = this.requireElement("#selection-list");
     this.gpuWarning = this.document.querySelector("#gpu-warning");
     this.fitButton = this.requireElement("#fit-button");
     this.resetButton = this.requireElement("#reset-button");
@@ -101,6 +104,7 @@ export class GraphViewer {
       velocities: this.graph.velocities,
       view: this.graph.view,
       isNodeSelected: name => this.graph.isSelectedName(name),
+      isEdgeSelected: edge => this.graph.isSelectedEdge(edge),
       selectOnlyNode: name => {
         this.graph.selectedName = name;
         this.render();
@@ -111,6 +115,22 @@ export class GraphViewer {
       },
       toggleNodeSelection: name => {
         this.graph.toggleSelectedName(name);
+        this.render();
+      },
+      selectOnlyEdge: edge => {
+        this.graph.selectOnlyEdge(edge);
+        this.render();
+      },
+      addEdgeToSelection: edge => {
+        this.graph.addSelectedEdge(edge);
+        this.render();
+      },
+      toggleEdgeSelection: edge => {
+        this.graph.toggleSelectedEdge(edge);
+        this.render();
+      },
+      selectGraphElements: (nodeNames, edgeKeys, options) => {
+        this.graph.selectElements(nodeNames, edgeKeys, options);
         this.render();
       },
       activateEdgeControl: (edge, control) => this.handleEdgeControl(edge, control),
@@ -1136,6 +1156,7 @@ export class GraphViewer {
     node.showed = false;
   }
   this.graph.removeSelectedName?.(name);
+  this.graph.removeSelectedEdgesConnectedTo?.(name);
   if (pruneEdges) {
     this.graph.positions.delete(name);
     this.graph.velocities.delete(name);
@@ -1265,6 +1286,7 @@ export class GraphViewer {
   }
 
   renderInspector(graph) {
+  this.renderSelectionOverlay(graph);
   const selected = graph.nodes.find(node => node.name === this.graph.selectedName);
   this.selectedName.textContent = selected?.displayName ?? "-";
   this.selectedName.title = selected?.globalId ?? "";
@@ -1303,6 +1325,148 @@ export class GraphViewer {
     });
     this.neighborList.append(row);
   });
+
+  }
+
+  renderSelectionOverlay(graph) {
+  const graphNodes: any[] = graph.nodes ?? [];
+  const graphEdges: any[] = graph.edges ?? [];
+  const nodesByName = new Map(graphNodes.map(node => [node.name, node]));
+  const edgesByKey = new Map(graphEdges.map(edge => [edge.key, edge]));
+
+  for (const name of [...this.graph.selectedNames]) {
+    if (!nodesByName.has(name)) {
+      this.graph.removeSelectedName(name);
+    }
+  }
+
+  for (const key of [...this.graph.selectedEdgeKeys]) {
+    if (!edgesByKey.has(key)) {
+      this.graph.removeSelectedEdge(key);
+    }
+  }
+
+  const selectedNodes: any[] = [...this.graph.selectedNames]
+    .map(name => nodesByName.get(name))
+    .filter(Boolean)
+    .sort((left, right) => this.displayName(left.name).localeCompare(this.displayName(right.name), "ru"));
+  const selectedEdges: any[] = [...this.graph.selectedEdgeKeys]
+    .map(key => edgesByKey.get(key))
+    .filter(Boolean)
+    .sort((left, right) => this.edgeSelectionTitle(left).localeCompare(this.edgeSelectionTitle(right), "ru"));
+  const total = selectedNodes.length + selectedEdges.length;
+
+  this.selectionOverlay.hidden = total === 0;
+  this.selectionList.replaceChildren();
+  this.selectionSummary.textContent = total === 0
+    ? "Выбрано: 0"
+    : `Выбрано: ${this.formatSelectionCount(selectedNodes.length, selectedEdges.length)}`;
+
+  selectedNodes.forEach(node => {
+    this.selectionList.append(this.createSelectionRow({
+      kind: "Узел",
+      title: node.displayName ?? node.name,
+      subtitle: node.globalId ?? node.name,
+      remove: () => {
+        this.graph.removeSelectedName(node.name);
+        this.render();
+      }
+    }));
+  });
+
+  selectedEdges.forEach(edge => {
+    this.selectionList.append(this.createSelectionRow({
+      kind: "Связь",
+      title: this.edgeSelectionTitle(edge),
+      subtitle: this.edgeSelectionSubtitle(edge),
+      remove: () => {
+        this.graph.removeSelectedEdge(edge.key);
+        this.render();
+      }
+    }));
+  });
+
+  }
+
+  createSelectionRow({ kind, title, subtitle, remove }) {
+  const row = this.document.createElement("div");
+  row.className = "selection-row";
+
+  const badge = this.document.createElement("span");
+  badge.className = "selection-kind";
+  badge.textContent = kind;
+
+  const text = this.document.createElement("div");
+  text.className = "selection-row-text";
+  const titleElement = this.document.createElement("strong");
+  titleElement.textContent = title;
+  const subtitleElement = this.document.createElement("span");
+  subtitleElement.textContent = subtitle;
+  text.append(titleElement, subtitleElement);
+
+  const removeButton = this.document.createElement("button");
+  removeButton.type = "button";
+  removeButton.className = "selection-remove-button";
+  removeButton.textContent = "×";
+  removeButton.title = "Снять выделение";
+  removeButton.setAttribute("aria-label", `Снять выделение: ${title}`);
+  removeButton.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    remove();
+  });
+
+  row.append(badge, text, removeButton);
+  return row;
+
+  }
+
+  edgeSelectionTitle(edge) {
+  const source = this.edgeEndpointDisplayName(edge, edge.sourceGlobalId);
+  const target = this.edgeEndpointDisplayName(edge, edge.targetGlobalId);
+  return edge.directed ? `${source} -> ${target}` : `${source} - ${target}`;
+
+  }
+
+  edgeSelectionSubtitle(edge) {
+  if (edge.label) {
+    return edge.label;
+  }
+
+  if (edge.relationGlobalId) {
+    return this.displayName(edge.relationGlobalId);
+  }
+
+  if (edge.typeGlobalId) {
+    return this.displayName(edge.typeGlobalId);
+  }
+
+  return edge.projected ? "проекция связи" : "физическая связь";
+
+  }
+
+  formatSelectionCount(nodeCount, edgeCount) {
+  const parts: string[] = [];
+  if (nodeCount > 0) {
+    parts.push(`${nodeCount} ${this.pluralRu(nodeCount, "узел", "узла", "узлов")}`);
+  }
+  if (edgeCount > 0) {
+    parts.push(`${edgeCount} ${this.pluralRu(edgeCount, "связь", "связи", "связей")}`);
+  }
+  return parts.join(", ");
+
+  }
+
+  pluralRu(count, one, few, many) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod10 === 1 && mod100 !== 11) {
+    return one;
+  }
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return few;
+  }
+  return many;
 
   }
 
