@@ -16,8 +16,8 @@ public sealed class NodeTypeDslTests
     public async Task NodeTypeDefinition_EnforcesRequiredTypedSlot()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var weaponTypeState = (await scope.Storage.Create(new("weapon-type"), attributes: NodeTypeAttributes())).Value!;
-        var manufacturerTypeState = (await scope.Storage.Create(new("manufacturer-type"), attributes: NodeTypeAttributes())).Value!;
+        var weaponTypeState = await CreateNodeTypeAsync(scope, "weapon-type");
+        var manufacturerTypeState = await CreateNodeTypeAsync(scope, "manufacturer-type");
         var weaponType = NodeType.FromState(weaponTypeState);
         var manufacturerType = NodeType.FromState(manufacturerTypeState);
         var definition = weaponType.Define(type => type.RequiresSlot("manufacturer", manufacturerType));
@@ -76,27 +76,29 @@ public sealed class NodeTypeDslTests
     }
 
     [TestMethod]
-    public async Task GraphService_AssignNodeTypeAsync_UsesTypeMetadataInsteadOfInternalIdShape()
+    public async Task GraphService_AssignNodeTypeAsync_UsesGraphTypeTopologyInsteadOfInternalIdShape()
     {
         await using var scope = TestGraphStorageScope.Create();
         var graph = new GraphData.Core.Services.GraphService(
             scope.Storage,
             new GraphData.Core.Services.GraphSearchService(scope.Storage),
             new CancellationTokensAccessorMock());
-        var arbitraryType = (await scope.Storage.Create(new("weapon-type"), attributes: NodeTypeAttributes())).Value!;
-        var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
-        var typeRoot = (await scope.Storage.Create(new("types"), graphData.GlobalId)).Value!;
-        var nodeTypeRoot = (await scope.Storage.Create(new("nodes"), typeRoot.GlobalId)).Value!;
-        var pathShapedNonType = (await scope.Storage.Create(new("Fake"), nodeTypeRoot.GlobalId)).Value!;
+        var arbitraryType = await CreateNodeTypeAsync(scope, "weapon-type");
+        await CreatePathAsync(scope.Storage, GraphBaseTypeIds.NodeType);
+        var pathShapedNonType = (await scope.Storage.Create(new("Fake"), GraphSystemNodeIds.NodeTypeRoot)).Value!;
         var ak47 = (await scope.Storage.Create(new("ak-47"))).Value!;
         var m16 = (await scope.Storage.Create(new("m16"))).Value!;
+        var fnFal = (await scope.Storage.Create(new("fn-fal"))).Value!;
 
         var arbitraryResult = await graph.AssignNodeTypeAsync(ak47.GlobalId, arbitraryType.GlobalId);
         var pathShapedResult = await graph.AssignNodeTypeAsync(m16.GlobalId, pathShapedNonType.GlobalId);
+        var rootResult = await graph.AssignNodeTypeAsync(fnFal.GlobalId, GraphSystemNodeIds.NodeTypeRoot);
 
         Assert.AreEqual(ServiceResultStatus.Ok, arbitraryResult.Status, arbitraryResult.Error);
         Assert.AreEqual(ServiceResultStatus.BadRequest, pathShapedResult.Status);
         StringAssert.Contains(pathShapedResult.Error, "not a node type");
+        Assert.AreEqual(ServiceResultStatus.BadRequest, rootResult.Status);
+        StringAssert.Contains(rootResult.Error, "not a node type");
     }
 
     [TestMethod]
@@ -156,11 +158,30 @@ public sealed class NodeTypeDslTests
         Assert.AreEqual(isCollection, field.IsCollection);
     }
 
-    private static Dictionary<string, string> NodeTypeAttributes() =>
-        new(StringComparer.OrdinalIgnoreCase) {
-            [GraphRuntimeAttributeNames.GraphKind] = "type",
-            [GraphRuntimeAttributeNames.GraphElement] = "node"
-        };
+    private static async Task<NodeState> CreateNodeTypeAsync(TestGraphStorageScope scope, string localId)
+    {
+        await CreatePathAsync(scope.Storage, GraphBaseTypeIds.NodeType);
+        var type = (await scope.Storage.Create(new(localId))).Value!;
+        var connect = await scope.Storage.Connect(type.GlobalId, GraphBaseTypeIds.NodeType);
+        Assert.AreEqual(ServiceResultStatus.Ok, connect.Status, connect.Error);
+        return type;
+    }
+
+    private static async Task CreatePathAsync(IGraphStorage storage, InternalId id)
+    {
+        var segments = id.ToArray();
+        NodePath? parent = null;
+        for (var index = 0; index < segments.Length; index++) {
+            var current = new InternalId(segments.Take(index + 1));
+            var existing = await storage.Get(current);
+            if (existing.Status == ServiceResultStatus.NotFound) {
+                var create = await storage.Create(segments[index], parent);
+                Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
+            }
+
+            parent = current;
+        }
+    }
 
     private static async Task<InternalId> GetNodeTypeIdAsync<TNodeType>(GraphData.Core.Services.GraphService graph)
         where TNodeType : NodeType

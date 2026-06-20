@@ -326,13 +326,9 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task AssignNodeTypeAsync_ConnectsNodeToTypeThroughDslValidator() {
         await using var scope = TestGraphStorageScope.Create();
-        var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
-        var typeRoot = (await scope.Storage.Create(new("types"), graphData.GlobalId)).Value!;
-        var nodeTypeRoot = (await scope.Storage.Create(new("nodes"), typeRoot.GlobalId)).Value!;
-        var weaponType = (await scope.Storage.Create(new("Weapon"), nodeTypeRoot.GlobalId, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "type",
-            [GraphRuntimeAttributeNames.GraphElement] = "node"
-        })).Value!;
+        await CreatePathAsync(scope.Storage, GraphBaseTypeIds.NodeType);
+        var weaponType = (await scope.Storage.Create(new("Weapon"), GraphSystemNodeIds.NodeTypeRoot)).Value!;
+        await scope.Storage.Connect(weaponType.GlobalId, GraphBaseTypeIds.NodeType);
         var ak47 = (await scope.Storage.Create(new("ak-47"))).Value!;
         var controller = CreateController(scope.Storage);
 
@@ -358,17 +354,11 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task ChangeEdgeTypeAsync_CreatesRelationSubgraphForBasicEdgeAndReturnsIt() {
         await using var scope = TestGraphStorageScope.Create();
-        var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
-        var typeRoot = (await scope.Storage.Create(new("types"), graphData.GlobalId)).Value!;
-        var edgeTypeRoot = (await scope.Storage.Create(new("edges"), typeRoot.GlobalId, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "type-root",
-            [GraphRuntimeAttributeNames.GraphElement] = "edge"
-        })).Value!;
-        var newType = (await scope.Storage.Create(new("new-type"), edgeTypeRoot.GlobalId, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "type",
-            [GraphRuntimeAttributeNames.GraphElement] = "edge"
-        })).Value!;
-        var relationRoot = (await scope.Storage.Create(new("relations"), graphData.GlobalId)).Value!;
+        await CreatePathAsync(scope.Storage, GraphBaseTypeIds.EdgeType);
+        await CreatePathAsync(scope.Storage, GraphSystemNodeIds.RelationRoot);
+        var newType = (await scope.Storage.Create(new("new-type"), GraphSystemNodeIds.EdgeTypeRoot)).Value!;
+        await scope.Storage.Connect(newType.GlobalId, GraphBaseTypeIds.EdgeType);
+        var relationRoot = (await scope.Storage.Get(GraphSystemNodeIds.RelationRoot)).Value!;
         var source = (await scope.Storage.Create(new("source"))).Value!;
         var target = (await scope.Storage.Create(new("target"))).Value!;
         await scope.Storage.Connect(source.GlobalId, target.GlobalId);
@@ -409,6 +399,15 @@ public sealed class GraphControllerTests {
 
         var storedRelation = (await scope.Storage.Get(new NodePath("graphdata", "relations", "relation-1"))).Value!;
         Assert.AreEqual(newType.GlobalId.ToString(), storedRelation.Attributes[GraphRuntimeAttributeNames.GraphTypeName]);
+
+        var replacementType = (await scope.Storage.Create(new("replacement-type"), GraphSystemNodeIds.EdgeTypeRoot)).Value!;
+        await scope.Storage.Connect(replacementType.GlobalId, GraphBaseTypeIds.EdgeType);
+        await scope.Storage.Update(storedRelation.GlobalId, new Dictionary<string, string>());
+        var retyped = await controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
+            RelationGlobalId = storedRelation.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            TypeGlobalId = replacementType.GlobalId.Select(static segment => segment.ToString()).ToArray()
+        });
+        Assert.IsInstanceOfType(retyped.Result, typeof(OkObjectResult));
 
         var sourceConnections = (await scope.Storage.GetConnectedNodesAsync(source)).Value!;
         Assert.IsFalse(sourceConnections.Any(node => node.GlobalId == target.GlobalId));
@@ -631,6 +630,22 @@ public sealed class GraphControllerTests {
         };
         controller.ControllerContext.HttpContext.Response.Body = new MemoryStream();
         return controller;
+    }
+
+    private static async Task CreatePathAsync(IGraphStorage storage, InternalId id)
+    {
+        var segments = id.ToArray();
+        NodePath? parent = null;
+        for (var index = 0; index < segments.Length; index++) {
+            var current = new InternalId(segments.Take(index + 1));
+            var existing = await storage.Get(current);
+            if (existing.Status == ServiceResultStatus.NotFound) {
+                var create = await storage.Create(segments[index], parent);
+                Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
+            }
+
+            parent = current;
+        }
     }
 
     private static async Task<IReadOnlyCollection<NodeSearchMatchResponse>> SearchNodesAsync(

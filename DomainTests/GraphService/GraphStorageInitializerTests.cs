@@ -62,12 +62,14 @@ public sealed class GraphStorageInitializerTests
             "#b45309",
             "50",
             directed: "true");
+        await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.NodeInstance, GraphBaseTypeIds.NodeType);
+        await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.EdgeInstance, GraphBaseTypeIds.EdgeType);
 
         var marker = await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.RuntimeTypesInitializer);
         Assert.AreEqual("storage-initializer", marker.Attributes[GraphRuntimeAttributeNames.GraphKind]);
         Assert.AreEqual("runtime-types", marker.Attributes["storage.initializer"]);
         Assert.AreEqual(bool.TrueString, marker.Attributes["completed"]);
-        Assert.AreEqual("1", marker.Attributes["storage.initializer.version"]);
+        Assert.AreEqual("2", marker.Attributes["storage.initializer.version"]);
 
         var subgraph = (await scope.Storage.GetSubgraphAsync(new SubgraphQuery {
             Nodes = [GraphSystemNodeIds.NodeTypeRoot, GraphSystemNodeIds.EdgeTypeRoot],
@@ -99,6 +101,7 @@ public sealed class GraphStorageInitializerTests
         Assert.AreEqual("CatalogWeapon", weapon.Attributes["label"]);
         Assert.AreEqual("#475569", weapon.Attributes["color"]);
         Assert.AreEqual("50", weapon.Attributes[GraphRuntimeAttributeNames.ProjectionRank]);
+        await AssertConnectedAsync(scope.Storage, weapon.GlobalId, GraphBaseTypeIds.NodeType);
     }
 
     [TestMethod]
@@ -202,6 +205,15 @@ public sealed class GraphStorageInitializerTests
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
         Assert.IsNotNull(result.Value);
         return result.Value;
+    }
+
+    private static async Task AssertConnectedAsync(IGraphStorage storage, InternalId sourceId, InternalId targetId)
+    {
+        var source = await GetRequiredAsync(storage, sourceId);
+        var connected = (await storage.GetConnectedNodesAsync(source)).Value!;
+        Assert.IsTrue(
+            connected.Any(node => node.GlobalId == targetId),
+            $"Expected '{sourceId}' to be connected to '{targetId}'.");
     }
 
     private static void AssertBaseType(

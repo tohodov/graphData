@@ -12,9 +12,8 @@ public class InstanceNode : Node, IGraphNodeType
 
     public virtual InternalId TypeId => StaticTypeId;
 
-    public IReadOnlyCollection<NodeType> AssignedTypes => field ??= State.Edges
-        .Select(OtherEndpoint)
-        .Where(GraphRuntimeMetadata.IsNodeType)
+    public IReadOnlyCollection<NodeType> AssignedTypes => field ??= GraphTypeTopology.NeighborStates(State)
+        .Where(GraphTypeTopology.IsNodeType)
         .GroupBy(static node => node.GlobalId)
         .Select(static group => NodeType.FromState(group.First()))
         .ToArray();
@@ -23,13 +22,9 @@ public class InstanceNode : Node, IGraphNodeType
         ? AssignedTypes.Single()
         : null;
 
-    public IReadOnlyCollection<InstanceNode> NeighborInstances => field ??= State.Edges
-        .Select(OtherEndpoint)
-        .Where(static node => !GraphRuntimeMetadata.IsGraphType(node))
+    public IReadOnlyCollection<InstanceNode> NeighborInstances => field ??= GraphTypeTopology.NeighborStates(State)
+        .Where(static node => !GraphTypeTopology.IsGraphType(node))
         .GroupBy(static node => node.GlobalId)
         .Select(static group => new InstanceNode(group.First()))
         .ToArray();
-
-    private NodeState OtherEndpoint(EdgeState edge) =>
-        edge.Node1.GlobalId == GlobalId ? edge.Node2 : edge.Node1;
 }

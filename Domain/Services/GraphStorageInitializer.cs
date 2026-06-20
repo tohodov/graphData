@@ -7,7 +7,7 @@ namespace GraphData.Core.Services;
 
 public sealed class GraphStorageInitializer
 {
-    private const string RuntimeTypesVersion = "1";
+    private const string RuntimeTypesVersion = "2";
     private const string CompletedAttribute = "completed";
     private const string InitializerAttribute = "storage.initializer";
     private const string VersionAttribute = "storage.initializer.version";
@@ -72,6 +72,7 @@ public sealed class GraphStorageInitializer
         foreach (var type in DiscoverRuntimeTypeDefinitions()) {
             cancellationToken.ThrowIfCancellationRequested();
             await EnsureNodeAsync(type.TypeId, CreateRuntimeTypeAttributes(type)).ConfigureAwait(false);
+            await EnsureRuntimeTypeMembershipAsync(type).ConfigureAwait(false);
             await EnsureEdgeTypeDefinitionAsync(type).ConfigureAwait(false);
         }
 
@@ -173,6 +174,19 @@ public sealed class GraphStorageInitializer
 
     private IReadOnlyCollection<RuntimeGraphTypeDefinition> DiscoverRuntimeTypeDefinitions() =>
         _runtimeTypes.Types;
+
+    private async Task EnsureRuntimeTypeMembershipAsync(RuntimeGraphTypeDefinition type)
+    {
+        var baseTypeId = type.Element == "edge"
+            ? GraphBaseTypeIds.EdgeType
+            : GraphBaseTypeIds.NodeType;
+        if (type.TypeId == baseTypeId)
+            return;
+
+        await EnsureNodeAsync(baseTypeId).ConfigureAwait(false);
+        var connect = await _storage.Connect(type.TypeId, baseTypeId).ConfigureAwait(false);
+        RequireOk(connect, $"connect runtime type '{type.TypeId}' to base type '{baseTypeId}'");
+    }
 
     private async Task EnsureEdgeTypeDefinitionAsync(RuntimeGraphTypeDefinition type)
     {

@@ -668,22 +668,22 @@ export class GraphViewer {
       this.searchGraphTypes("node"),
       this.searchGraphTypes("edge")
     ]);
-    const nodes = [...nodeTypeMatches, ...edgeTypeMatches]
-      .map(match => this.normalizeNodeResponse(match.node));
     this.graph.schema.nodeTypes = new Map();
     this.graph.schema.edgeTypes = new Map();
 
-    nodes.forEach(node => {
+    nodeTypeMatches
+      .map(match => this.normalizeNodeResponse(match.node))
+      .filter(node => this.isTypeCandidate(node.globalId, "node"))
+      .forEach(node => {
       this.graph.loaded.set(node.name, node);
-      if (node.attributes?.[graphKindAttribute] !== "type") {
-        return;
-      }
-
-      if (node.attributes?.[graphElementAttribute] === "node") {
-        this.graph.schema.nodeTypes.set(node.globalId, GraphType.fromNode(node, "node"));
-      } else if (node.attributes?.[graphElementAttribute] === "edge") {
-        this.graph.schema.edgeTypes.set(node.globalId, GraphType.fromNode(node, "edge"));
-      }
+      this.graph.schema.nodeTypes.set(node.globalId, GraphType.fromNode(node, "node"));
+    });
+    edgeTypeMatches
+      .map(match => this.normalizeNodeResponse(match.node))
+      .filter(node => this.isTypeCandidate(node.globalId, "edge"))
+      .forEach(node => {
+      this.graph.loaded.set(node.name, node);
+      this.graph.schema.edgeTypes.set(node.globalId, GraphType.fromNode(node, "edge"));
     });
 
     this.renderTypeControls();
@@ -700,29 +700,55 @@ export class GraphViewer {
   }
 
   searchGraphTypes(element) {
+  const baseTypeId = this.baseTypeIdForElement(element);
+  if (!baseTypeId) {
+    return Promise.resolve([]);
+  }
+
   return this.searchNodeMatches({
     return: ["n"],
     where: {
-      kind: "all",
+      kind: "any",
       expressions: [
         {
-          kind: "attribute",
-          node: this.variableSelector("n"),
-          key: graphKindAttribute,
-          operator: "equals",
-          value: "type"
+          kind: "same",
+          left: this.variableSelector("n"),
+          right: this.literalSelector(baseTypeId)
         },
         {
-          kind: "attribute",
-          node: this.variableSelector("n"),
-          key: graphElementAttribute,
-          operator: "equals",
-          value: element
+          kind: "connected",
+          left: this.variableSelector("n"),
+          right: this.literalSelector(baseTypeId)
         }
       ]
     },
     limit: 500
   });
+
+  }
+
+  baseTypeIdForElement(element) {
+  return element === "edge"
+    ? this.graph.schema.baseTypeIds.edgeType
+    : this.graph.schema.baseTypeIds.nodeType;
+
+  }
+
+  isTypeCandidate(globalId, element) {
+  if (!globalId || this.graph.isSchemaRoot(globalId)) {
+    return false;
+  }
+
+  const systemIds = this.graph.schema.systemNodeIds ?? {};
+  if (globalId === systemIds.typeRoot
+      || globalId === systemIds.graphDataRoot
+      || globalId === systemIds.nodeTypeRoot
+      || globalId === systemIds.edgeTypeRoot
+      || globalId === systemIds.relationRoot) {
+    return false;
+  }
+
+  return Boolean(this.baseTypeIdForElement(element));
 
   }
 
