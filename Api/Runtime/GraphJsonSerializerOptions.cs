@@ -15,11 +15,7 @@ public static class GraphJsonSerializerOptions
     public static void Configure(JsonSerializerOptions options)
     {
         options.AllowOutOfOrderMetadataProperties = true;
-        options.Converters.Add(new InternalIdJsonConverter());
-
         if (options.TypeInfoResolver is null)
-        {
             options.TypeInfoResolver = new DefaultJsonTypeInfoResolver();
-        }
     }
 }
