@@ -363,3 +363,55 @@ partial class GraphStorageContractTests {
             subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
     }
 }
+[TestCategory(nameof(GraphService.AddSubgraph))]
+partial class GraphStorageContractTests {
+    [TestMethod]
+    public async Task AddSubgraph_ShouldPersistVirtualNodesAndConnections() {
+        var catalog = new Node(new InternalId("catalog"));
+        var weapon = new Node(
+            new InternalId("catalog", "ak-47"),
+            new Dictionary<string, string> {
+                ["displayName"] = "AK-47"
+            });
+        var weaponType = new Node(new InternalId("graphdata", "types", "nodes", "Weapon"));
+
+        catalog.Nodes.Add(weapon);
+        weapon.Nodes.Add(weaponType);
+
+        var result = await Service.AddSubgraph(catalog);
+
+        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
+        CollectionAssert.IsSubsetOf(
+            new[] { catalog.GlobalId, weapon.GlobalId, weaponType.GlobalId },
+            result.Value!.Nodes.Select(static node => node.GlobalId).ToArray());
+
+        var persistedWeapon = (await Storage.Get(weapon.GlobalId)).Value!;
+        Assert.AreEqual("AK-47", persistedWeapon.Attributes["displayName"]);
+        Assert.AreEqual(ServiceResultStatus.Ok, (await Storage.Get(GraphSystemNodeIds.NodeTypeRoot)).Status);
+
+        var connected = (await Storage.GetConnectedNodesAsync(persistedWeapon)).Value!;
+        Assert.IsTrue(connected.Any(node => node.GlobalId == weaponType.GlobalId));
+    }
+
+    [TestMethod]
+    public async Task AddSubgraph_ShouldPreserveExistingNodeAttributes() {
+        await Storage.Create(
+            new("catalog"),
+            attributes: new Dictionary<string, string> {
+                ["color"] = "#123456"
+            });
+        var catalog = new Node(
+            new InternalId("catalog"),
+            new Dictionary<string, string> {
+                ["color"] = "#abcdef",
+                ["generated"] = "true"
+            });
+
+        var result = await Service.AddSubgraph(catalog);
+
+        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
+        var persisted = (await Storage.Get(catalog.GlobalId)).Value!;
+        Assert.AreEqual("#123456", persisted.Attributes["color"]);
+        Assert.IsFalse(persisted.Attributes.ContainsKey("generated"));
+    }
+}

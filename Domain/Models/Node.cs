@@ -22,6 +22,14 @@ public class Node {
     protected Node() {
     }
 
+    public Node(NodeLocalId localId, IDictionary<string, string>? attributes = null)
+        : this(new VirtualNodeState(new InternalId(localId.ToString()), attributes)) {
+    }
+
+    public Node(InternalId globalId, IDictionary<string, string>? attributes = null)
+        : this(new VirtualNodeState(globalId, attributes)) {
+    }
+
     internal Node(NodeState state) {
         _state = state;
     }

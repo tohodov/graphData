@@ -255,18 +255,17 @@ public sealed class GraphService {
                     roots.AddRange(node.Nodes);
             }
 
-        var visitedRequests = new HashSet<InternalId>();//TODO хэш тут надо проверить
-        var visitedNodes = new HashSet<InternalId>();//TODO хэш тут надо проверить
-        var discovered = new HashSet<InternalId>(roots.Select(x => x.GlobalId));//TODO хэш тут надо проверить
+        var visitedRequests = new HashSet<InternalId>();
+        var visitedNodes = new HashSet<InternalId>();
+        var discovered = new HashSet<InternalId>(roots.Select(x => x.GlobalId));
         var queue = new Queue<(InternalId NodeId, int Depth)>();
 
         foreach (var root in roots)
             queue.Enqueue((root.GlobalId, 0));
 
-        var nodes = new Dictionary<InternalId, Node>();//TODO хэш тут надо проверить
+        var nodes = new Dictionary<InternalId, Node>();
 
         while (queue.Count > 0) {
-            //cancellationTokens.Token.ThrowIfCancellationRequested(); //TODO перенести внутрь GraphService
             var (path, depth) = queue.Dequeue();
             if (!visitedRequests.Add(path))
                 continue;
@@ -299,6 +298,43 @@ public sealed class GraphService {
             : new Subgraph {
                 Nodes = nodes.Values
             });
+    }
+
+    public async Task<ServiceResult<Subgraph>> AddSubgraph(Node root) {
+        NodeState rootState;
+        try {
+            rootState = root.State;
+        } catch (InvalidOperationException ex) {
+            return ServiceResult<Subgraph>.BadRequest(ex.Message);
+        }
+
+        var definition = CollectSubgraph(rootState);
+        var persistedNodes = new Dictionary<InternalId, NodeState>();
+
+        foreach (var node in definition.Nodes.Values.OrderBy(static node => node.GlobalId.Count())) {
+            cancellationTokens.Token.ThrowIfCancellationRequested();
+
+            var result = await EnsureSubgraphNodeAsync(node).ConfigureAwait(false);
+            if (result.Status != ServiceResultStatus.Ok || result.Value is null)
+                return ServiceResult<Subgraph>.From(result);
+
+            persistedNodes[result.Value.GlobalId] = result.Value;
+        }
+
+        foreach (var edge in definition.Edges) {
+            cancellationTokens.Token.ThrowIfCancellationRequested();
+
+            if (IsDirectHierarchyEdge(edge.SourceId, edge.TargetId))
+                continue;
+
+            var connect = await storage.Connect(edge.SourceId, edge.TargetId).ConfigureAwait(false);
+            if (connect.Status != ServiceResultStatus.Ok)
+                return ToSubgraphResult(connect);
+        }
+
+        return ServiceResult<Subgraph>.Ok(new Subgraph {
+            Nodes = persistedNodes.Values.Select(static node => new Node(node)).ToArray()
+        });
     }
 
     public IAsyncEnumerable<NodeSearchMatch> SearchNodesStreamAsync(
@@ -647,6 +683,80 @@ public sealed class GraphService {
         return ServiceResult.Ok();
     }
 
+    private async Task<ServiceResult<NodeState>> EnsureSubgraphNodeAsync(NodeState node) =>
+        await EnsureSubgraphNodeAsync(
+            node.GlobalId,
+            node is VirtualNodeState virtualNode ? virtualNode.AttributeSnapshot() : null).ConfigureAwait(false);
+
+    private async Task<ServiceResult<NodeState>> EnsureSubgraphNodeAsync(
+        InternalId id,
+        IDictionary<string, string>? attributes)
+    {
+        var existing = await storage.Get(id).ConfigureAwait(false);
+        if (existing.Status == ServiceResultStatus.Ok && existing.Value is not null)
+            return existing;
+        if (existing.Status != ServiceResultStatus.NotFound)
+            return existing;
+
+        var segments = id.ToArray();
+        if (segments.Length == 0)
+            return await storage.Get(storage.Root).ConfigureAwait(false);
+
+        InternalId? parentId = null;
+        if (segments.Length > 1) {
+            parentId = new InternalId(segments.Take(segments.Length - 1));
+            var parent = await EnsureSubgraphNodeAsync(parentId, null).ConfigureAwait(false);
+            if (parent.Status != ServiceResultStatus.Ok || parent.Value is null)
+                return ServiceResult<NodeState>.From(parent);
+        }
+
+        var create = await storage.Create(
+            segments[^1],
+            parentId,
+            attributes is null
+                ? null
+                : new Dictionary<string, string>(attributes, StringComparer.OrdinalIgnoreCase)).ConfigureAwait(false);
+
+        return create;
+    }
+
+    private static SubgraphDefinition CollectSubgraph(NodeState root)
+    {
+        var nodes = new Dictionary<InternalId, NodeState>();
+        var edges = new HashSet<SubgraphEdge>();
+        var queue = new Queue<NodeState>();
+        queue.Enqueue(root);
+
+        while (queue.Count > 0) {
+            var node = queue.Dequeue();
+            if (!nodes.TryAdd(node.GlobalId, node))
+                continue;
+
+            if (node is not VirtualNodeState)
+                continue;
+
+            foreach (var neighbor in node.Nodes) {
+                if (neighbor.GlobalId != node.GlobalId)
+                    edges.Add(SubgraphEdge.Create(node.GlobalId, neighbor.GlobalId));
+                if (!nodes.ContainsKey(neighbor.GlobalId))
+                    queue.Enqueue(neighbor);
+            }
+
+            foreach (var edge in node.Edges) {
+                if (edge.Node1.GlobalId == edge.Node2.GlobalId)
+                    continue;
+
+                edges.Add(SubgraphEdge.Create(edge.Node1.GlobalId, edge.Node2.GlobalId));
+                if (!nodes.ContainsKey(edge.Node1.GlobalId))
+                    queue.Enqueue(edge.Node1);
+                if (!nodes.ContainsKey(edge.Node2.GlobalId))
+                    queue.Enqueue(edge.Node2);
+            }
+        }
+
+        return new SubgraphDefinition(nodes, edges);
+    }
+
     private static InternalId? ParentOf(NodePath id) {
         var segments = id.ToArray();
         return segments.Length <= 1
@@ -688,10 +798,33 @@ public sealed class GraphService {
         return parentSegments.SequenceEqual(segments.Take(parentSegments.Length));
     }
 
+    private static bool IsDirectHierarchyEdge(InternalId first, InternalId second) =>
+        IsDirectParent(first, second) || IsDirectParent(second, first);
+
+    private static bool IsDirectParent(InternalId parent, InternalId child)
+    {
+        var parentSegments = parent.ToArray();
+        var childSegments = child.ToArray();
+        return childSegments.Length == parentSegments.Length + 1
+            && parentSegments.SequenceEqual(childSegments.Take(parentSegments.Length));
+    }
+
     private static ServiceResult<Subgraph> ToSubgraphResult(ServiceResult result) =>
         new(result.Status, Error: result.Error);
 
     private sealed record EdgeEndpoints(InternalId SourceId, InternalId TargetId);
 
     private sealed record RelationShape(InternalId EdgeTypeId, IReadOnlyCollection<NodeState> EndpointPorts);
+
+    private sealed record SubgraphDefinition(
+        IReadOnlyDictionary<InternalId, NodeState> Nodes,
+        IReadOnlyCollection<SubgraphEdge> Edges);
+
+    private readonly record struct SubgraphEdge(InternalId SourceId, InternalId TargetId)
+    {
+        public static SubgraphEdge Create(InternalId first, InternalId second) =>
+            string.CompareOrdinal(first.ToString(), second.ToString()) <= 0
+                ? new SubgraphEdge(first, second)
+                : new SubgraphEdge(second, first);
+    }
 }

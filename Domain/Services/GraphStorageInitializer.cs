@@ -8,14 +8,6 @@ public sealed class GraphStorageInitializer
 {
     private const string RuntimeTypesVersion = "5";
 
-    private static readonly IReadOnlyCollection<InternalId> SystemNodes = [
-        GraphSystemNodeIds.GraphDataRoot,
-        GraphSystemNodeIds.TypeRoot,
-        GraphSystemNodeIds.NodeTypeRoot,
-        GraphSystemNodeIds.StorageRoot,
-        GraphSystemNodeIds.InitializerRoot
-    ];
-
     private readonly IGraphStorage _storage;
     private readonly GraphRuntimeTypeCatalog _runtimeTypes;
 
@@ -40,19 +32,13 @@ public sealed class GraphStorageInitializer
         if (await IsRuntimeTypesInitializerCompletedAsync().ConfigureAwait(false))
             return;
 
-        foreach (var systemNodeId in SystemNodes) {
-            cancellationToken.ThrowIfCancellationRequested();
-            await EnsureNodeAsync(systemNodeId).ConfigureAwait(false);
-        }
-
-        foreach (var type in DiscoverRuntimeTypeDefinitions()) {
-            cancellationToken.ThrowIfCancellationRequested();
-            await EnsureNodeAsync(type.TypeId).ConfigureAwait(false);
-            await EnsureRuntimeTypeMembershipAsync(type).ConfigureAwait(false);
-            await EnsureEdgeTypeDefinitionAsync(type).ConfigureAwait(false);
-        }
-
-        await MarkRuntimeTypesInitializerCompletedAsync().ConfigureAwait(false);
+        var graph = new GraphService(
+            _storage,
+            new GraphSearchService(_storage),
+            new InitializerCancellationTokenAccessor(cancellationToken),
+            _runtimeTypes);
+        var result = await graph.AddSubgraph(CreateRuntimeTypesSubgraph()).ConfigureAwait(false);
+        RequireOk(result, "add runtime type subgraph");
     }
 
     private async Task<bool> IsRuntimeTypesInitializerCompletedAsync()
@@ -65,80 +51,37 @@ public sealed class GraphStorageInitializer
         return true;
     }
 
-    private async Task MarkRuntimeTypesInitializerCompletedAsync()
-    {
-        await EnsureNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer).ConfigureAwait(false);
-        await EnsureNodeAsync(RuntimeTypesCompletionMarkerId()).ConfigureAwait(false);
-    }
-
     private InternalId RuntimeTypesCompletionMarkerId() =>
         new(GraphSystemNodeIds.RuntimeTypesInitializer.Concat([
             new NodeLocalId(RuntimeTypesVersion),
             new NodeLocalId(_runtimeTypes.Fingerprint)
         ]));
 
-    private async Task<NodeState> EnsureNodeAsync(InternalId id)
+    private Node CreateRuntimeTypesSubgraph()
     {
-        var result = await _storage.Get(id).ConfigureAwait(false);
-        if (result.Status == ServiceResultStatus.Ok && result.Value is not null)
-            return result.Value;
+        var subgraph = new RuntimeTypesSubgraphBuilder();
 
-        if (result.Status != ServiceResultStatus.NotFound)
-            return RequireOk(result, $"read node '{id}'");
+        foreach (var type in _runtimeTypes.Types) {
+            subgraph.GetNode(type.TypeId);
+            if (type.TypeId != GraphBaseTypeIds.NodeType)
+                subgraph.Connect(type.TypeId, GraphBaseTypeIds.NodeType);
+            if (type.EdgeTypeDescriptor is not null && type.TypeId != GraphBaseTypeIds.Relation)
+                subgraph.Connect(type.TypeId, GraphBaseTypeIds.Relation);
 
-        var segments = id.ToArray();
-        if (segments.Length == 0)
-            return RequireOk(await _storage.Get(_storage.Root).ConfigureAwait(false), "read storage root");
+            if (type.EdgeTypeDescriptor is null
+                || !_runtimeTypes.TryCreateEdgeTypeDefinition(type.TypeId, out var edgeDefinition))
+                continue;
 
-        NodePath? parentId = null;
-        if (segments.Length > 1) {
-            parentId = new NodePath(segments.Take(segments.Length - 1)); //TODO переделать этот бред с NodePath/InternalId
-            await EnsureNodeAsync(new InternalId(parentId)).ConfigureAwait(false);
-        }
-
-        NodePath? parentPath = parentId is null ? null : parentId;
-        var createResult = await _storage.Create(
-            segments[^1],
-            parentPath).ConfigureAwait(false);
-
-        return RequireOk(createResult, $"create node '{id}'");
-    }
-
-    private IReadOnlyCollection<RuntimeGraphTypeDefinition> DiscoverRuntimeTypeDefinitions() =>
-        _runtimeTypes.Types;
-
-    private async Task EnsureRuntimeTypeMembershipAsync(RuntimeGraphTypeDefinition type)
-    {
-        if (type.TypeId != GraphBaseTypeIds.NodeType) {
-            await EnsureNodeAsync(GraphBaseTypeIds.NodeType).ConfigureAwait(false);
-            var connect = await _storage.Connect(type.TypeId, GraphBaseTypeIds.NodeType).ConfigureAwait(false);
-            RequireOk(connect, $"connect runtime type '{type.TypeId}' to base type '{GraphBaseTypeIds.NodeType}'");
-        }
-
-        if (type.EdgeTypeDescriptor is not null && type.TypeId != GraphBaseTypeIds.Relation) {
-            await EnsureNodeAsync(GraphBaseTypeIds.Relation).ConfigureAwait(false);
-            var connectRelation = await _storage.Connect(type.TypeId, GraphBaseTypeIds.Relation).ConfigureAwait(false);
-            RequireOk(connectRelation, $"connect relation type '{type.TypeId}' to base relation type '{GraphBaseTypeIds.Relation}'");
-        }
-    }
-
-    private async Task EnsureEdgeTypeDefinitionAsync(RuntimeGraphTypeDefinition type)
-    {
-        if (type.EdgeTypeDescriptor is null)
-            return;
-
-        if (!_runtimeTypes.TryCreateEdgeTypeDefinition(type.TypeId, out var definition))
-            return;
-
-        foreach (var endpoint in definition.Endpoints) {
-            var endpointId = new InternalId(type.TypeId.Concat([new NodeLocalId(endpoint.Name)]));
-            await EnsureNodeAsync(endpointId).ConfigureAwait(false);
-            if (endpoint.NodeTypeId is { } nodeTypeId) {
-                await EnsureNodeAsync(nodeTypeId).ConfigureAwait(false);
-                var connect = await _storage.Connect(endpointId, nodeTypeId).ConfigureAwait(false);
-                RequireOk(connect, $"connect edge endpoint '{endpointId}' to node type '{nodeTypeId}'");
+            foreach (var endpoint in edgeDefinition.Endpoints) {
+                var endpointId = new InternalId(type.TypeId.Concat([new NodeLocalId(endpoint.Name)]));
+                subgraph.GetNode(endpointId);
+                if (endpoint.NodeTypeId is { } nodeTypeId)
+                    subgraph.Connect(endpointId, nodeTypeId);
             }
         }
+
+        subgraph.GetNode(RuntimeTypesCompletionMarkerId());
+        return subgraph.Root;
     }
 
     private static T RequireOk<T>(ServiceResult<T> result, string operation) where T : class
@@ -155,6 +98,45 @@ public sealed class GraphStorageInitializer
             return;
 
         throw new InvalidOperationException($"Failed to {operation}: {result.Status}. {result.Error}");
+    }
+
+    private sealed class InitializerCancellationTokenAccessor(CancellationToken cancellationToken) : ICancellationTokenAccessor
+    {
+        public IEnumerable<CancellationToken> Tokens => [cancellationToken];
+        public CancellationToken Token => cancellationToken;
+    }
+
+    private sealed class RuntimeTypesSubgraphBuilder
+    {
+        private readonly Dictionary<InternalId, Node> _nodes = [];
+
+        public Node Root => GetNode(GraphSystemNodeIds.GraphDataRoot);
+
+        public Node GetNode(InternalId id)
+        {
+            if (_nodes.TryGetValue(id, out var existing))
+                return existing;
+
+            var node = new Node(id);
+            _nodes.Add(id, node);
+
+            var parentId = ParentOf(id);
+            if (parentId is not null)
+                GetNode(parentId).Nodes.Add(node);
+
+            return node;
+        }
+
+        public void Connect(InternalId first, InternalId second) =>
+            GetNode(first).Nodes.Add(GetNode(second));
+
+        private static InternalId? ParentOf(InternalId id)
+        {
+            var segments = id.ToArray();
+            return segments.Length <= 1
+                ? null
+                : new InternalId(segments.Take(segments.Length - 1));
+        }
     }
 
 }

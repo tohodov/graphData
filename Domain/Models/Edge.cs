@@ -13,6 +13,10 @@ public class Edge {
     protected Edge() {
     }
 
+    public Edge(Node node1, Node node2, InternalId? typeId = null)
+        : this(new EdgeState(node1.State, node2.State, typeId)) {
+    }
+
     internal Edge(EdgeState state) {
         _state = state;
     }
