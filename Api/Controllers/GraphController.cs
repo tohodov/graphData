@@ -1,3 +1,5 @@
+global using InternalId = Abstractions.NodeRef.InternalId;
+global using NodePath = Abstractions.NodeRef.NodePath;
 using System.Text.Json;
 using Abstractions;
 using GraphData.Api.Models;
@@ -18,7 +20,7 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
 
     [HttpGet("nodes")]
     public async Task<ActionResult<NodeResponse>> GetNodeAsync([FromQuery] string[] globalId) {
-        var result = await graph.GetNodeAsync(globalId);
+        var result = await graph.GetNodeAsync(new NodePath(globalId));
         return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
@@ -40,44 +42,44 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
     }
 
     [HttpPut("nodes")]
-    public async Task<ActionResult<OperationResponse>> UpdateNodeAsync([FromQuery] string[] globalId, [FromBody] UpdateNodeRequest request) {
-        var result = await graph.UpdateNodeAsync(globalId, request.Attributes);
+    public async Task<ActionResult<OperationResponse>> UpdateNodeAsync([FromQuery] string[] path, [FromBody] UpdateNodeRequest request) {
+        var result = await graph.UpdateNodeAsync(new NodePath(path), request.Attributes);
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result.Status, result.Error);
     }
 
     [HttpDelete("nodes")]
-    public async Task<ActionResult<OperationResponse>> DeleteNodeAsync([FromQuery] string[] globalId) {
-        var result = await graph.DeleteNodeAsync(globalId);
+    public async Task<ActionResult<OperationResponse>> DeleteNodeAsync([FromQuery] string[] path) {
+        var result = await graph.DeleteNodeAsync(new NodePath(path));
         return ToActionResult<OperationResponse>(result);
     }
 
     [HttpPost("connections")]
     public async Task<ActionResult<OperationResponse>> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
-        var result = await graph.ConnectNodesAsync(request.SourceGlobalId, request.TargetGlobalId);
+        var result = await graph.ConnectNodesAsync(new NodePath(request.SourceGlobalId), new NodePath(request.TargetGlobalId));
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
     }
 
     [HttpPut("nodes/type")]
     public async Task<ActionResult<SubgraphResponse>> AssignNodeTypeAsync([FromBody] AssignNodeTypeRequest request) {
-        var result = await graph.AssignNodeTypeAsync(request.NodeGlobalId, request.TypeGlobalId);
+        var result = await graph.AssignNodeTypeAsync(new NodePath(request.InternalId), new NodePath(request.TypeGlobalId));
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
     [HttpPut("edges/type")]
     public async Task<ActionResult<SubgraphResponse>> ChangeEdgeTypeAsync([FromBody] ChangeEdgeTypeRequest request) {
         var result = await graph.ChangeEdgeTypeAsync(
-            request.SourceGlobalId,
-            request.TargetGlobalId,
-            request.TypeGlobalId,
-            request.RelationGlobalId,
-            request.RelationRootGlobalId,
-            request.RelationLocalId);
+            (NodePath?)request.SourceGlobalId,
+            (NodePath?)request.TargetGlobalId,
+            new NodePath(request.TypeGlobalId),
+            (NodePath?)request.RelationGlobalId,
+            (NodePath?)request.RelationRootGlobalId,
+            (NodeLocalId?)request.RelationLocalId);
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
     [HttpPost("subgraph")]
     public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request) {
-        var result = await graph.GetSubgraphAsync(request.GlobalIds, request.MaxDepth);
+        var result = await graph.GetSubgraphAsync(request.GlobalIds.Select(x => new NodePath(x)), request.MaxDepth);
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 

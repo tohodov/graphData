@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <Import Project="..\TestImpactOnCoverage\src\RelevantTests.MSTest\build\RelevantTests.MSTest.props" />
 
   <PropertyGroup>
@@ -8,6 +8,7 @@
     <IsTestProject>true</IsTestProject>
     <AssemblyName>ApiTests</AssemblyName>
     <RelevantTestsCurrentRoot>$(MSBuildProjectDirectory)\..</RelevantTestsCurrentRoot>
+    <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
   <ItemGroup>
@@ -22,6 +23,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Using Include="Abstractions.NodeRef.InternalId">
+      <Alias>InternalId</Alias>
+    </Using>
+    <Using Include="Abstractions.NodeRef.NodePath">
+      <Alias>NodePath</Alias>
+    </Using>
     <Using Include="RelevantTests.MSTest" />
   </ItemGroup>
 

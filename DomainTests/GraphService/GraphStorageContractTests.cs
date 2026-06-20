@@ -199,7 +199,7 @@ partial class GraphStorageContractTests {
 partial class GraphStorageContractTests {
     [TestMethod]
     public async Task NodeMissing() {
-        var result = await Storage.Get(new NodeGlobalId(Guid.NewGuid().ToString()));
+        var result = await Storage.Get(new InternalId(Guid.NewGuid().ToString()));
         Assert.AreEqual(ServiceResultStatus.NotFound, result.Status);
         Assert.IsNull(result.Value);
     }
@@ -368,7 +368,7 @@ partial class GraphStorageContractTests {
         await Storage.Create(new("child"), firstRoot.GlobalId);
 
         var subgraph = (await Storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = [new NodeGlobalId(Array.Empty<string>())],
+            Nodes = [new InternalId(Array.Empty<string>())],
             MaxDepth = 0
         })).Value!;
 

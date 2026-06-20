@@ -175,16 +175,16 @@ public sealed class GraphStorageInitializerTests
 
     private static async Task CreatePathAsync(
         IGraphStorage storage,
-        NodeGlobalId id,
+        InternalId id,
         IDictionary<string, string>? attributes = null)
     {
         var segments = id.ToArray();
-        NodeGlobalId? parent = null;
+        NodePath? parent = null;
         for (var index = 0; index < segments.Length; index++) {
-            var current = new NodeGlobalId(segments.Take(index + 1));
+            var current = new InternalId(segments.Take(index + 1));
             var existing = await storage.Get(current);
             if (existing.Status == ServiceResultStatus.NotFound) {
-                NodePath? parentPath = parent is null ? null : parent.Value;
+                NodePath? parentPath = parent is null ? null : parent;
                 var create = await storage.Create(
                     segments[index],
                     parentPath,
@@ -196,7 +196,7 @@ public sealed class GraphStorageInitializerTests
         }
     }
 
-    private static async Task<NodeState> GetRequiredAsync(IGraphStorage storage, NodeGlobalId id)
+    private static async Task<NodeState> GetRequiredAsync(IGraphStorage storage, InternalId id)
     {
         var result = await storage.Get(id);
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
@@ -221,12 +221,12 @@ public sealed class GraphStorageInitializerTests
             Assert.AreEqual(directed, node.Attributes["directed"]);
     }
 
-    private static NodeGlobalId TypeId<TNodeType>()
+    private static InternalId TypeId<TNodeType>()
     {
         var name = typeof(TNodeType).Name;
         if (name.EndsWith(nameof(NodeType), StringComparison.Ordinal))
             name = name[..^nameof(NodeType).Length];
-        return new NodeGlobalId("graphdata", "types", "nodes", name);
+        return new InternalId("graphdata", "types", "nodes", name);
     }
 
     private sealed class CatalogWeaponNodeType : NodeType

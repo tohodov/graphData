@@ -4,12 +4,12 @@ namespace GraphData.Core.Models;
 
 public static class GraphSystemNodeIds
 {
-    public static NodeGlobalId GraphDataRoot { get; } = new("graphdata");
-    public static NodeGlobalId TypeRoot { get; } = new("graphdata", "types");
-    public static NodeGlobalId NodeTypeRoot { get; } = new("graphdata", "types", "nodes");
-    public static NodeGlobalId EdgeTypeRoot { get; } = new("graphdata", "types", "edges");
-    public static NodeGlobalId RelationRoot { get; } = new("graphdata", "relations");
-    public static NodeGlobalId StorageRoot { get; } = new("graphdata", "storage");
-    public static NodeGlobalId InitializerRoot { get; } = new("graphdata", "storage", "initializers");
-    public static NodeGlobalId RuntimeTypesInitializer { get; } = new("graphdata", "storage", "initializers", "runtime-types");
+    public static InternalId GraphDataRoot { get; } = new("graphdata");
+    public static InternalId TypeRoot { get; } = new("graphdata", "types");
+    public static InternalId NodeTypeRoot { get; } = new("graphdata", "types", "nodes");
+    public static InternalId EdgeTypeRoot { get; } = new("graphdata", "types", "edges");
+    public static InternalId RelationRoot { get; } = new("graphdata", "relations");
+    public static InternalId StorageRoot { get; } = new("graphdata", "storage");
+    public static InternalId InitializerRoot { get; } = new("graphdata", "storage", "initializers");
+    public static InternalId RuntimeTypesInitializer { get; } = new("graphdata", "storage", "initializers", "runtime-types");
 }

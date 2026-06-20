@@ -23,7 +23,7 @@ internal sealed class NodeFileSystem : NodeState {
     internal string StorageRootPath => storageRootPath;
 
     public override NodeLocalId LocalId { get; }
-    public override NodeGlobalId GlobalId => new NodeGlobalId(
+    public override NodeRef.InternalId GlobalId => new NodeRef.InternalId(
         GetRelativePath(storageRootPath, FolderPath)
             .Split(DirectorySeparatorChar, AltDirectorySeparatorChar)
             .Where(static part => part is not "." and not "")

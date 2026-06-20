@@ -8,7 +8,7 @@ public class InstanceEdge : Edge, IGraphEdgeType
         : base(state) {
     }
 
-    public static NodeGlobalId StaticTypeId => GraphBaseTypeIds.EdgeInstance;
+    public static InternalId StaticTypeId => GraphBaseTypeIds.EdgeInstance;
 
-    public override NodeGlobalId? TypeId => StaticTypeId;
+    public override InternalId? TypeId => StaticTypeId;
 }

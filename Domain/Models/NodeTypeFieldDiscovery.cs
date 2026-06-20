@@ -10,7 +10,7 @@ internal static class NodeTypeFieldDiscovery
     public static void AddDiscoveredFields(
         Type nodeType,
         NodeTypeBuilder builder,
-        Func<Type, NodeGlobalId> resolveTypeId)
+        Func<Type, InternalId> resolveTypeId)
     {
         foreach (var member in GetDslMembers(nodeType)) {
             var memberType = GetMemberType(member);

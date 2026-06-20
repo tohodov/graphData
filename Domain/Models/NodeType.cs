@@ -24,7 +24,7 @@ public abstract class NodeType : Node
     {
     }
 
-    internal NodeTypeDefinition DefineRegistered(NodeType graphType, Func<Type, NodeGlobalId> resolveTypeId)
+    internal NodeTypeDefinition DefineRegistered(NodeType graphType, Func<Type, InternalId> resolveTypeId)
     {
         var builder = new NodeTypeBuilder(graphType, resolveTypeId);
         NodeTypeFieldDiscovery.AddDiscoveredFields(GetType(), builder, resolveTypeId);
@@ -34,22 +34,8 @@ public abstract class NodeType : Node
 
     internal static NodeType FromState(NodeState state) => new RuntimeNodeType(state);
 
-    internal static NodeGlobalId CreateDefaultTypeId(Type type) =>
+    internal static InternalId CreateDefaultTypeId(Type type) =>
         new(GraphSystemNodeIds.NodeTypeRoot.Concat([new NodeLocalId(CreateDefaultLocalId(type))]));
-
-    internal static bool IsNodeTypeId(NodeGlobalId id)
-    {
-        var idSegments = id.ToArray();
-        var rootSegments = GraphSystemNodeIds.NodeTypeRoot.ToArray();
-        if (idSegments.Length <= rootSegments.Length)
-            return false;
-
-        for (var index = 0; index < rootSegments.Length; index++)
-            if (idSegments[index] != rootSegments[index])
-                return false;
-
-        return true;
-    }
 
     private static string CreateDefaultLocalId(Type type)
     {

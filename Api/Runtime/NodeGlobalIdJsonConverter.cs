@@ -4,9 +4,9 @@ using Abstractions;
 
 namespace GraphData.Api.Runtime;
 
-public sealed class NodeGlobalIdJsonConverter : JsonConverter<NodeGlobalId>
+public sealed class NodeGlobalIdJsonConverter : JsonConverter<InternalId>
 {
-    public override NodeGlobalId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    public override InternalId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType != JsonTokenType.StartArray)
             throw new JsonException("GlobalId must be a JSON array of id segments.");
@@ -15,7 +15,7 @@ public sealed class NodeGlobalIdJsonConverter : JsonConverter<NodeGlobalId>
         while (reader.Read())
         {
             if (reader.TokenType == JsonTokenType.EndArray)
-                return new NodeGlobalId(segments);
+                return new InternalId(segments);
 
             if (reader.TokenType != JsonTokenType.String)
                 throw new JsonException("GlobalId segment must be a string.");
@@ -30,7 +30,7 @@ public sealed class NodeGlobalIdJsonConverter : JsonConverter<NodeGlobalId>
         throw new JsonException("GlobalId array is incomplete.");
     }
 
-    public override void Write(Utf8JsonWriter writer, NodeGlobalId value, JsonSerializerOptions options)
+    public override void Write(Utf8JsonWriter writer, InternalId value, JsonSerializerOptions options)
     {
         writer.WriteStartArray();
         foreach (var segment in value)

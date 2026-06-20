@@ -8,5 +8,5 @@ internal sealed class TypeNode : NodeType, IGraphNodeType
         : base(state) {
     }
 
-    public static NodeGlobalId StaticTypeId => GraphBaseTypeIds.NodeType;
+    public static InternalId StaticTypeId => GraphBaseTypeIds.NodeType;
 }

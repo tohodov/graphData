@@ -1,3 +1,5 @@
+global using InternalId = Abstractions.NodeRef.InternalId;
+global using NodePath = Abstractions.NodeRef.NodePath;
 using Abstractions;
 
 namespace GraphData.Core.Models;
@@ -18,5 +20,5 @@ public class Edge {
     public virtual Node Node1 => new(State.Node1);
     public virtual Node Node2 => new(State.Node2);
 
-    public virtual NodeGlobalId? TypeId => State.TypeId;
+    public virtual InternalId? TypeId => State.TypeId; //TODO удалить
 }

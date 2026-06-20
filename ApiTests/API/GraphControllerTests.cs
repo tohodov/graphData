@@ -175,7 +175,7 @@ public sealed class GraphControllerTests {
         Assert.AreEqual("child", response.LocalId);
         Assert.AreEqual("parent/child", response.GlobalId);
 
-        var stored = await scope.Storage.Get(new("parent","child"));
+        var stored = await scope.Storage.Get(new NodePath("parent","child"));
         Assert.IsNotNull(stored);
     }
 
@@ -284,8 +284,8 @@ public sealed class GraphControllerTests {
 
         Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
 
-        weapons = (await scope.Storage.Get(new("small_arms_test_graph", "weapons"))).Value!;
-        categories = (await scope.Storage.Get(new("small_arms_test_graph", "categories"))).Value!;
+        weapons = (await scope.Storage.Get(new NodePath("small_arms_test_graph", "weapons"))).Value!;
+        categories = (await scope.Storage.Get(new NodePath("small_arms_test_graph", "categories"))).Value!;
 
         var weaponLinkPath = Path.Combine(scope.RootPath, "small_arms_test_graph", "weapons", "categories");
         var categoryLinkPath = Path.Combine(scope.RootPath, "small_arms_test_graph", "categories", "weapons");
@@ -334,7 +334,7 @@ public sealed class GraphControllerTests {
         var controller = CreateController(scope.Storage);
 
         var result = await controller.AssignNodeTypeAsync(new AssignNodeTypeRequest {
-            NodeGlobalId = ak47.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            InternalId = ak47.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = weaponType.GlobalId.Select(static segment => segment.ToString()).ToArray()
         });
 
@@ -404,7 +404,7 @@ public sealed class GraphControllerTests {
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, targetPort.GlobalId, target.GlobalId.ToString())));
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, typePort.GlobalId, newType.GlobalId.ToString())));
 
-        var storedRelation = (await scope.Storage.Get(new("graphdata", "relations", "relation-1"))).Value!;
+        var storedRelation = (await scope.Storage.Get(new NodePath("graphdata", "relations", "relation-1"))).Value!;
         Assert.AreEqual(newType.GlobalId.ToString(), storedRelation.Attributes[GraphRuntimeAttributeNames.GraphTypeName]);
 
         var sourceConnections = (await scope.Storage.GetConnectedNodesAsync(source)).Value!;
@@ -710,17 +710,17 @@ public sealed class GraphControllerTests {
     }
 
     private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage {
-        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodePath? parent = null, IDictionary<string, string>? attributes = null) =>
+        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null) =>
             inner.Create(name, parent, attributes);
 
-        public Task<ServiceResult<NodeState>> Get(NodePath query) => inner.Get(query);
+        public Task<ServiceResult<NodeState>> Get(NodeRef query) => inner.Get(query);
 
-        public Task<ServiceResult> Delete(NodePath query) => inner.Delete(query);
+        public Task<ServiceResult> Delete(NodeRef query) => inner.Delete(query);
 
-        public Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath) =>
+        public Task<ServiceResult> Connect(NodeRef sourcePath, NodeRef targetPath) =>
             Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
 
-        public Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath) =>
+        public Task<ServiceResult> Disconnect(NodeRef sourcePath, NodeRef targetPath) =>
             Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
 
         public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node) =>
@@ -746,31 +746,31 @@ public sealed class GraphControllerTests {
             return new AmbiguousNeighborGraphStorage(root);
         }
 
-        public Task<ServiceResult<NodeState>> Get(NodePath path) =>
+        public Task<ServiceResult<NodeState>> Get(NodeRef path) =>
             Task.FromResult(path == _root.GlobalId
                 ? ServiceResult<NodeState>.Ok(_root)
                 : ServiceResult<NodeState>.NotFound());
 
-        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodePath? NodePath = null, IDictionary<string, string>? attributes = null) =>
+        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeRef? NodePath = null, IDictionary<string, string>? attributes = null) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Delete(NodePath path) =>
+        public Task<ServiceResult> Delete(NodeRef path) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath) =>
+        public Task<ServiceResult> Connect(NodeRef sourcePath, NodeRef targetPath) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath) =>
+        public Task<ServiceResult> Disconnect(NodeRef sourcePath, NodeRef targetPath) =>
             throw new NotSupportedException();
 
         public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node) =>
             throw new NotSupportedException();
     }
 
-    private sealed class StaticNode(NodeLocalId localId, NodeGlobalId globalId) : NodeState {
+    private sealed class StaticNode(NodeLocalId localId, InternalId globalId) : NodeState {
         public override NodeLocalId LocalId { get; } = localId;
 
-        public override NodeGlobalId GlobalId { get; } = globalId;
+        public override InternalId GlobalId { get; } = globalId;
 
         public ICollection<EdgeState> EdgeSnapshot { get; set; } = Array.Empty<EdgeState>();
 

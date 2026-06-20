@@ -47,10 +47,10 @@ internal sealed record GeneratedGraph(
         return new GeneratedGraph(nodeCount, connectionsPerNode, seed, containsCycle, nodes, edges);
     }
 
-    public IReadOnlyList<NodeGlobalId> GetSampleNodeNames(int count, int seedOffset)
+    public IReadOnlyList<NodeRef.InternalId> GetSampleNodeNames(int count, int seedOffset)
     {
         if (count <= 0)
-            return Array.Empty<NodeGlobalId>();
+            return Array.Empty<NodeRef.InternalId>();
         var random = new Random(Seed + seedOffset);
         return Enumerable.Range(0, count)
             .Select(_ => Nodes[random.Next(Nodes.Count)].Path)
@@ -152,7 +152,7 @@ internal sealed record GeneratedGraph(
 
 internal sealed record GeneratedGraphNode(
     int Index,
-    NodeGlobalId Path,
+    NodeRef.InternalId Path,
     Dictionary<string, string> Attributes);
 
 internal sealed record GeneratedGraphEdge(int SourceIndex, int TargetIndex)

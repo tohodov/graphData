@@ -5,26 +5,33 @@ namespace GraphData.Core.Services;
 
 internal static class GraphStorageDomainExtensions {
     public static async Task<ServiceResult<Subgraph>> GetSubgraphAsync(this IGraphStorage storage, SubgraphQuery query) { //TODO переосмыслить
-        var rootsResult = await ResolveSubgraphRootsAsync(storage, query.Nodes);
-        if (rootsResult.Status != ServiceResultStatus.Ok || rootsResult.Value is null)
-            return ServiceResult<Subgraph>.From(rootsResult);
+        var roots = new List<NodeState>();
+        if (!query.Nodes.Any())
+            roots.AddRange((await storage.Get(storage.Root)).Value!.Nodes);
+        else
+            foreach (var rootRef in query.Nodes) {
+                var rootsResult = await storage.Get(rootRef);
+                if (rootsResult.Status != ServiceResultStatus.Ok || rootsResult.Value is null)
+                    return ServiceResult<Subgraph>.From(rootsResult);
+                var node = rootsResult.Value;
+                if (node.GlobalId != storage.Root)
+                    roots.Add(node);
+                else
+                    roots.AddRange(node.Nodes);
+            }
 
-        var roots = rootsResult.Value;
-        if (roots.Count == 0)
-            return ServiceResult<Subgraph>.Ok(new Subgraph { Nodes = [] });
-
-        var visitedRequests = new HashSet<NodeGlobalId>();//TODO хэш тут надо проверить
-        var visitedNodes = new HashSet<NodeGlobalId>();//TODO хэш тут надо проверить
-        var discovered = new HashSet<NodeGlobalId>(roots);//TODO хэш тут надо проверить
-        var queue = new Queue<(NodeGlobalId NodeId, int Depth)>();
+        var visitedRequests = new HashSet<InternalId>();//TODO хэш тут надо проверить
+        var visitedNodes = new HashSet<InternalId>();//TODO хэш тут надо проверить
+        var discovered = new HashSet<InternalId>(roots.Select(x => x.GlobalId));//TODO хэш тут надо проверить
+        var queue = new Queue<(InternalId NodeId, int Depth)>();
 
         foreach (var root in roots)
-            queue.Enqueue((root, 0));
+            queue.Enqueue((root.GlobalId, 0));
 
-        var nodes = new Dictionary<NodeGlobalId, Node>();//TODO хэш тут надо проверить
+        var nodes = new Dictionary<InternalId, Node>();//TODO хэш тут надо проверить
 
         while (queue.Count > 0) {
-            //cancellationTokens.Token.ThrowIfCancellationRequested();
+            //cancellationTokens.Token.ThrowIfCancellationRequested(); //TODO перенести внутрь GraphService
             var (path, depth) = queue.Dequeue();
             if (!visitedRequests.Add(path))
                 continue;
@@ -57,25 +64,5 @@ internal static class GraphStorageDomainExtensions {
             : new Subgraph {
                 Nodes = nodes.Values
             });
-    }
-
-    private static async Task<ServiceResult<IReadOnlyCollection<NodeGlobalId>>> ResolveSubgraphRootsAsync(
-        IGraphStorage storage,
-        IReadOnlyCollection<NodeGlobalId> requestedNodes) {
-        if (requestedNodes.Count > 0 && requestedNodes.All(static node => node.Any()))
-            return ServiceResult<IReadOnlyCollection<NodeGlobalId>>.Ok(requestedNodes);
-
-        var explicitRoots = requestedNodes
-            .Where(static node => node.Any())
-            .ToList();
-
-        var result = await storage.GetNeighbors(storage.Root);
-        if (result.Status != ServiceResultStatus.Ok || result.Value == null)
-            return ServiceResult<IReadOnlyCollection<NodeGlobalId>>.From(result);
-        var catalogRoots = await result.Value
-            .Select(static node => node.GlobalId)
-            .ToArrayAsync();
-        explicitRoots.AddRange(catalogRoots);
-        return ServiceResult<IReadOnlyCollection<NodeGlobalId>>.Ok(explicitRoots.Distinct().ToArray());
     }
 }

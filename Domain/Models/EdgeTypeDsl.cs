@@ -7,10 +7,10 @@ public sealed record EdgeEndpointDefinition(
     Type ClrType,
     NodeSlotCardinality Cardinality,
     bool IsCollection,
-    NodeGlobalId? NodeTypeId = null);
+    InternalId? NodeTypeId = null);
 
 public sealed record EdgeTypeDefinition(
-    NodeGlobalId TypeId,
+    InternalId TypeId,
     IReadOnlyCollection<EdgeEndpointDefinition> Endpoints)
 {
     public void EnsureSatisfiedBy(IReadOnlyCollection<InstanceNode> endpoints)
@@ -39,11 +39,11 @@ public sealed record EdgeTypeDefinition(
 
 public sealed class EdgeTypeBuilder
 {
-    private readonly NodeGlobalId _typeId;
-    private readonly Func<Type, NodeGlobalId> _resolveNodeTypeId;
+    private readonly InternalId _typeId;
+    private readonly Func<Type, InternalId> _resolveNodeTypeId;
     private readonly List<EdgeEndpointDefinition> _endpoints = [];
 
-    internal EdgeTypeBuilder(NodeGlobalId typeId, Func<Type, NodeGlobalId> resolveNodeTypeId)
+    internal EdgeTypeBuilder(InternalId typeId, Func<Type, InternalId> resolveNodeTypeId)
     {
         _typeId = typeId;
         _resolveNodeTypeId = resolveNodeTypeId;
@@ -60,7 +60,7 @@ public sealed class EdgeTypeBuilder
         Type nodeType,
         NodeSlotCardinality cardinality,
         bool isCollection = false,
-        NodeGlobalId? nodeTypeId = null)
+        InternalId? nodeTypeId = null)
     {
         if (!typeof(Node).IsAssignableFrom(nodeType))
             throw new ArgumentException("Endpoint CLR type must inherit from Node.", nameof(nodeType));

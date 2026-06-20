@@ -8,7 +8,7 @@ namespace Storage;
 internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public NodeGlobalId Root => new NodeGlobalId(new string[0]);
+    public NodeRef.InternalId Root => new NodeRef.InternalId(new string[0]);
 
     internal readonly DirectoryInfo root;
     readonly NtfsGraphStorageOptions options;
@@ -24,12 +24,12 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
             root.Create();
     }
 
-    public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodePath? path = null, IDictionary<string, string>? attributes = null) {
+    public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeRef? path = null, IDictionary<string, string>? attributes = null) {
         if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
             return Task.FromResult(ServiceResult<NodeState>.BadRequest(validationError));
 
         var parentNode = path != null
-            ? FindNode(path.Value)
+            ? FindNode(path)
             : null;
         if (path != null && parentNode is null)
             return Task.FromResult(ServiceResult<NodeState>.NotFound($"Parent node '{path}' was not found."));
@@ -46,25 +46,17 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
         return Task.FromResult(ServiceResult<NodeState>.Ok(node));
     }
 
-    public Task<ServiceResult<NodeState>> Get(NodePath path) {
-        if (!TryValidatePath(path, "Node path", out var validationError))
-            return Task.FromResult(ServiceResult<NodeState>.BadRequest(validationError));
-        if (Root.Equals(new NodeGlobalId(path)))
-            return Task.FromResult(ServiceResult<NodeState>.Ok(new NodeFileSystem(root, this)));
+    public Task<ServiceResult<NodeState>> Get(NodeRef path) {
         var node = FindNode(path);
         return Task.FromResult(node is null
             ? ServiceResult<NodeState>.NotFound()
             : ServiceResult<NodeState>.Ok(node));
     }
 
-    public Task<ServiceResult> Delete(NodePath path) {
-        if (!TryValidatePath(path, "Node path", out var validationError))
-            return Task.FromResult(ServiceResult.BadRequest(validationError));
-
+    public Task<ServiceResult> Delete(NodeRef path) {
         var node = FindNode(path);
         if (node is null)
             return Task.FromResult(ServiceResult.NotFound());
-
         var connections = GetConnectedNodes(node);
         foreach (var connection in connections)
             DeleteLinkIfExists(Path.Combine(GetNodePath(connection), GetLinkName(node.LocalId)));
@@ -73,13 +65,8 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
         return Task.FromResult(ServiceResult.Ok());
     }
 
-    public Task<ServiceResult> Connect(NodePath leftPath, NodePath rightPath) {
-        if (!TryValidatePath(leftPath, "Source node path", out var validationError))
-            return Task.FromResult(ServiceResult.BadRequest(validationError));
-        if (!TryValidatePath(rightPath, "Target node path", out validationError))
-            return Task.FromResult(ServiceResult.BadRequest(validationError));
-
-        if (leftPath.SequenceEqual(rightPath))
+    public Task<ServiceResult> Connect(NodeRef leftPath, NodeRef rightPath) {
+        if (leftPath.Equals(rightPath))
             return Task.FromResult(ServiceResult.BadRequest("SourcePath and TargetPath must be different."));
 
         var left = FindNode(leftPath);
@@ -96,13 +83,8 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
         return Task.FromResult(ServiceResult.Ok());
     }
 
-    public Task<ServiceResult> Disconnect(NodePath leftPath, NodePath rightPath) {
-        if (!TryValidatePath(leftPath, "Source node path", out var validationError))
-            return Task.FromResult(ServiceResult.BadRequest(validationError));
-        if (!TryValidatePath(rightPath, "Target node path", out validationError))
-            return Task.FromResult(ServiceResult.BadRequest(validationError));
-
-        if (leftPath.SequenceEqual(rightPath))
+    public Task<ServiceResult> Disconnect(NodeRef leftPath, NodeRef rightPath) {
+        if (leftPath.Equals(rightPath))
             return Task.FromResult(ServiceResult.BadRequest("SourcePath and TargetPath must be different."));
 
         var left = FindNode(leftPath);
@@ -168,7 +150,16 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
             : new NodeFileSystem(nodeId, parent);
     }
 
-    private NodeFileSystem? FindNode(NodePath path) {
+    private NodeFileSystem? FindNode(NodeRef nodeRef) => nodeRef switch {
+        NodeRef.NodePath path => FindNode(path),
+        NodeRef.InternalId id => FindNode((NodeRef.NodePath)id),//TODO пересмотреть поиск папки
+        _ => throw new Exception(),
+    };
+    private NodeFileSystem? FindNode(NodeRef.NodePath path) {
+        if (!TryValidatePath(path, "Node path", out var validationError))
+            return null;
+        if (Root.Equals(new NodeRef.InternalId(path)))
+            return new NodeFileSystem(root, this);
         NodeFileSystem? node = null;
         foreach (var part in path) {
             if (GetInternal(node, part) is not NodeFileSystem child)
@@ -178,13 +169,10 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
         return node;
     }
 
-    private static bool TryValidatePath(NodePath path, string subject, out string error) {
-        foreach (var segment in path) {
-            if (!NodeNameValidator.TryValidateSegment(segment, $"{subject} segment", out error)) {
+    private static bool TryValidatePath(NodeRef.NodePath path, string subject, out string error) {
+        foreach (var segment in path)
+            if (!NodeNameValidator.TryValidateSegment(segment, $"{subject} segment", out error))
                 return false;
-            }
-        }
-
         error = string.Empty;
         return true;
     }

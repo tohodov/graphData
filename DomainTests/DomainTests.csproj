@@ -8,6 +8,7 @@
     <IsTestProject>true</IsTestProject>
     <AssemblyName>DomainTests</AssemblyName>
     <RelevantTestsCurrentRoot>$(MSBuildProjectDirectory)\..</RelevantTestsCurrentRoot>
+    <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,6 +22,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Using Include="Abstractions.NodeRef.InternalId">
+      <Alias>InternalId</Alias>
+    </Using>
+    <Using Include="Abstractions.NodeRef.NodePath">
+      <Alias>NodePath</Alias>
+    </Using>
     <Using Include="RelevantTests.MSTest" />
   </ItemGroup>
 

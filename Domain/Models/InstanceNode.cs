@@ -8,13 +8,13 @@ public class InstanceNode : Node, IGraphNodeType
         : base(state) {
     }
 
-    public static NodeGlobalId StaticTypeId => GraphBaseTypeIds.NodeInstance;
+    public static InternalId StaticTypeId => GraphBaseTypeIds.NodeInstance;
 
-    public virtual NodeGlobalId TypeId => StaticTypeId;
+    public virtual InternalId TypeId => StaticTypeId;
 
     public IReadOnlyCollection<NodeType> AssignedTypes => field ??= State.Edges
         .Select(OtherEndpoint)
-        .Where(static node => NodeType.IsNodeTypeId(node.GlobalId))
+        .Where(static node => throw new Exception())//TODO 
         .GroupBy(static node => node.GlobalId)
         .Select(static group => NodeType.FromState(group.First()))
         .ToArray();
@@ -25,7 +25,7 @@ public class InstanceNode : Node, IGraphNodeType
 
     public IReadOnlyCollection<InstanceNode> NeighborInstances => field ??= State.Edges
         .Select(OtherEndpoint)
-        .Where(static node => !NodeType.IsNodeTypeId(node.GlobalId))
+        .Where(static node => throw new Exception())//TODO 
         .GroupBy(static node => node.GlobalId)
         .Select(static group => new InstanceNode(group.First()))
         .ToArray();

@@ -25,8 +25,8 @@ public abstract class EdgeType : Edge
     }
 
     internal EdgeTypeDefinition DefineRegistered(
-        NodeGlobalId graphTypeId,
-        Func<Type, NodeGlobalId> resolveNodeTypeId)
+        InternalId graphTypeId,
+        Func<Type, InternalId> resolveNodeTypeId)
     {
         var builder = new EdgeTypeBuilder(graphTypeId, resolveNodeTypeId);
         EdgeTypeEndpointDiscovery.AddDiscoveredEndpoints(GetType(), builder, resolveNodeTypeId);
@@ -34,10 +34,10 @@ public abstract class EdgeType : Edge
         return builder.Build();
     }
 
-    internal static NodeGlobalId CreateDefaultTypeId(Type type) =>
+    internal static InternalId CreateDefaultTypeId(Type type) =>
         new(GraphSystemNodeIds.EdgeTypeRoot.Concat([new NodeLocalId(CreateDefaultLocalId(type))]));
 
-    internal static bool IsEdgeTypeId(NodeGlobalId id)
+    internal static bool IsEdgeTypeId(InternalId id)
     {
         var idSegments = id.ToArray();
         var rootSegments = GraphSystemNodeIds.EdgeTypeRoot.ToArray();

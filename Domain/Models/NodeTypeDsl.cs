@@ -23,7 +23,7 @@ public readonly record struct NodeSlotCardinality(int Min, int? Max)
 
 public sealed record NodeSlotDefinition(
     string Name,
-    IReadOnlyCollection<NodeGlobalId> AllowedTypeIds,
+    IReadOnlyCollection<InternalId> AllowedTypeIds,
     NodeSlotCardinality Cardinality)
 {
     public IReadOnlyCollection<NodeType> AllowedTypes { get; init; } = [];
@@ -57,7 +57,7 @@ public sealed record NodeFieldDefinition(
     Type ClrType,
     NodeSlotCardinality Cardinality,
     bool IsCollection,
-    NodeGlobalId? NodeTypeId = null)
+    InternalId? NodeTypeId = null) //TODO переписать на узел-тип
 {
     internal NodeSlotDefinition? ToSlotDefinition() =>
         ValueKind == NodeFieldValueKind.Node && NodeTypeId is { } nodeTypeId
@@ -91,12 +91,12 @@ public sealed record NodeTypeDefinition(
 public sealed class NodeTypeBuilder
 {
     private readonly NodeType _type;
-    private readonly Func<Type, NodeGlobalId> _resolveTypeId;
+    private readonly Func<Type, InternalId> _resolveTypeId;
     private readonly List<NodeSlotDefinition> _slots = [];
     private readonly List<NodeFieldDefinition> _fields = [];
     private bool _isAbstract;
 
-    internal NodeTypeBuilder(NodeType type, Func<Type, NodeGlobalId> resolveTypeId)
+    internal NodeTypeBuilder(NodeType type, Func<Type, InternalId> resolveTypeId)
     {
         _type = type;
         _resolveTypeId = resolveTypeId;
@@ -126,7 +126,7 @@ public sealed class NodeTypeBuilder
 
     public NodeTypeBuilder RequiresSlot(
         string name,
-        NodeGlobalId allowedTypeId,
+        InternalId allowedTypeId,
         NodeSlotCardinality? cardinality = null)
     {
         _slots.Add(new NodeSlotDefinition(
@@ -149,7 +149,7 @@ public sealed class NodeTypeBuilder
 
     public NodeTypeBuilder SlotByTypeIds(
         string name,
-        IEnumerable<NodeGlobalId> allowedTypeIds,
+        IEnumerable<InternalId> allowedTypeIds,
         NodeSlotCardinality cardinality)
     {
         var typeIds = allowedTypeIds

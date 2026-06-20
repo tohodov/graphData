@@ -10,7 +10,7 @@ internal static class EdgeTypeEndpointDiscovery
     public static void AddDiscoveredEndpoints(
         Type edgeType,
         EdgeTypeBuilder builder,
-        Func<Type, NodeGlobalId> resolveNodeTypeId)
+        Func<Type, InternalId> resolveNodeTypeId)
     {
         foreach (var member in GetDslMembers(edgeType)) {
             var memberType = GetMemberType(member);

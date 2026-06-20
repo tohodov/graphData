@@ -35,9 +35,9 @@ public sealed class GraphRuntimeTypeOptions
 
 internal sealed class GraphRuntimeTypeCatalog
 {
-    private readonly IReadOnlyDictionary<NodeGlobalId, RuntimeGraphTypeDefinition> _nodeTypeDescriptors;
+    private readonly IReadOnlyDictionary<InternalId, RuntimeGraphTypeDefinition> _nodeTypeDescriptors;
     private readonly IReadOnlyDictionary<Type, RuntimeGraphTypeDefinition> _nodeTypeDescriptorsByClrType;
-    private readonly IReadOnlyDictionary<NodeGlobalId, RuntimeGraphTypeDefinition> _edgeTypeDescriptors;
+    private readonly IReadOnlyDictionary<InternalId, RuntimeGraphTypeDefinition> _edgeTypeDescriptors;//TODO удалить
     private readonly IReadOnlyDictionary<Type, RuntimeGraphTypeDefinition> _edgeTypeDescriptorsByClrType;
 
     private GraphRuntimeTypeCatalog(IReadOnlyCollection<RuntimeGraphTypeDefinition> types)
@@ -99,7 +99,7 @@ internal sealed class GraphRuntimeTypeCatalog
     }
 
     public bool TryCreateNodeTypeDefinition(
-        NodeGlobalId typeId,
+        InternalId typeId,
         NodeType typeNode,
         out NodeTypeDefinition definition)
     {
@@ -113,7 +113,7 @@ internal sealed class GraphRuntimeTypeCatalog
         return false;
     }
 
-    public NodeGlobalId GetNodeTypeId(Type type)
+    public InternalId GetNodeTypeId(Type type)
     {
         if (_nodeTypeDescriptorsByClrType.TryGetValue(type, out var runtimeType))
             return runtimeType.TypeId;
@@ -122,7 +122,7 @@ internal sealed class GraphRuntimeTypeCatalog
     }
 
     public bool TryCreateEdgeTypeDefinition(
-        NodeGlobalId typeId,
+        InternalId typeId,
         out EdgeTypeDefinition definition)
     {
         if (_edgeTypeDescriptors.TryGetValue(typeId, out var runtimeType)
@@ -135,7 +135,7 @@ internal sealed class GraphRuntimeTypeCatalog
         return false;
     }
 
-    public NodeGlobalId GetEdgeTypeId(Type type)
+    public InternalId GetEdgeTypeId(Type type)
     {
         if (_edgeTypeDescriptorsByClrType.TryGetValue(type, out var runtimeType))
             return runtimeType.TypeId;
@@ -213,12 +213,12 @@ internal sealed class GraphRuntimeTypeCatalog
         }
     }
 
-    private static NodeGlobalId GetStaticTypeId(Type type)
+    private static InternalId GetStaticTypeId(Type type)
     {
         var property = type.GetProperty(
             "StaticTypeId",
             BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-        if (property?.GetValue(null) is NodeGlobalId id)
+        if (property?.GetValue(null) is InternalId id)
             return id;
 
         throw new InvalidOperationException($"Runtime graph type '{type.FullName}' must expose a public static StaticTypeId property.");
@@ -257,8 +257,8 @@ internal sealed class GraphRuntimeTypeCatalog
 
 internal sealed record RuntimeGraphTypeDefinition(
     Type ClrType,
-    NodeGlobalId TypeId,
+    InternalId TypeId,
     string Element,
-    NodeGlobalId RootId,
+    InternalId RootId,
     NodeType? NodeTypeDescriptor,
     EdgeType? EdgeTypeDescriptor);

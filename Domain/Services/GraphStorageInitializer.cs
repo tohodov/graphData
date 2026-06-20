@@ -110,7 +110,7 @@ public sealed class GraphStorageInitializer
     }
 
     private async Task<NodeState> EnsureNodeAsync(
-        NodeGlobalId id,
+        InternalId id,
         IReadOnlyDictionary<string, string>? requiredAttributes = null)
     {
         var result = await _storage.Get(id).ConfigureAwait(false);
@@ -126,13 +126,13 @@ public sealed class GraphStorageInitializer
         if (segments.Length == 0)
             return RequireOk(await _storage.Get(_storage.Root).ConfigureAwait(false), "read storage root");
 
-        NodeGlobalId? parentId = null;
+        NodePath? parentId = null;
         if (segments.Length > 1) {
-            parentId = new NodeGlobalId(segments.Take(segments.Length - 1));
-            await EnsureNodeAsync(parentId.Value, GetSystemAttributes(parentId.Value)).ConfigureAwait(false);
+            parentId = new NodePath(segments.Take(segments.Length - 1)); //TODO переделать этот бред с NodePath/InternalId
+            await EnsureNodeAsync(new InternalId(parentId), GetSystemAttributes(new InternalId(parentId))).ConfigureAwait(false);
         }
 
-        NodePath? parentPath = parentId is null ? null : parentId.Value;
+        NodePath? parentPath = parentId is null ? null : parentId;
         var createResult = await _storage.Create(
             segments[^1],
             parentPath,
@@ -144,7 +144,7 @@ public sealed class GraphStorageInitializer
     }
 
     private async Task MergeMissingAttributesAsync(
-        NodeGlobalId id,
+        InternalId id,
         NodeState node,
         IReadOnlyDictionary<string, string>? requiredAttributes)
     {
@@ -168,7 +168,7 @@ public sealed class GraphStorageInitializer
         RequireOk(result, $"update node '{id}'");
     }
 
-    private static IReadOnlyDictionary<string, string>? GetSystemAttributes(NodeGlobalId id) =>
+    private static IReadOnlyDictionary<string, string>? GetSystemAttributes(InternalId id) =>
         SystemNodes.FirstOrDefault(node => node.Id == id)?.Attributes;
 
     private IReadOnlyCollection<RuntimeGraphTypeDefinition> DiscoverRuntimeTypeDefinitions() =>
@@ -183,7 +183,7 @@ public sealed class GraphStorageInitializer
             return;
 
         foreach (var endpoint in definition.Endpoints) {
-            var endpointId = new NodeGlobalId(type.TypeId.Concat([new NodeLocalId(endpoint.Name)]));
+            var endpointId = new InternalId(type.TypeId.Concat([new NodeLocalId(endpoint.Name)]));
             await EnsureNodeAsync(endpointId).ConfigureAwait(false);
             if (endpoint.NodeTypeId is { } nodeTypeId) {
                 await EnsureNodeAsync(nodeTypeId).ConfigureAwait(false);
@@ -242,7 +242,7 @@ public sealed class GraphStorageInitializer
         return name;
     }
 
-    private static bool IsChildOf(NodeGlobalId id, NodeGlobalId root)
+    private static bool IsChildOf(InternalId id, InternalId root)
     {
         var idSegments = id.ToArray();
         var rootSegments = root.ToArray();
@@ -272,7 +272,7 @@ public sealed class GraphStorageInitializer
         throw new InvalidOperationException($"Failed to {operation}: {result.Status}. {result.Error}");
     }
 
-    private sealed record SystemNodeDefinition(NodeGlobalId Id, IReadOnlyDictionary<string, string> Attributes);
+    private sealed record SystemNodeDefinition(InternalId Id, IReadOnlyDictionary<string, string> Attributes);
 
     private sealed record RuntimeTypeDefaults(string Label, string Color, int Rank, bool Directed);
 }

@@ -435,19 +435,19 @@ public sealed class GraphSearchServiceTests
             return Task.FromResult(ServiceResult<IReadOnlyCollection<NodeState>>.Ok(Array.Empty<NodeState>()));
         }
 
-        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodePath? parent = null, IDictionary<string, string>? attributes = null) =>
+        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult<NodeState>> Get(NodePath path) =>
+        public Task<ServiceResult<NodeState>> Get(NodeRef path) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Delete(NodePath path) =>
+        public Task<ServiceResult> Delete(NodeRef path) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Connect(NodePath sourcePath, NodePath targetPath) =>
+        public Task<ServiceResult> Connect(NodeRef sourcePath, NodeRef targetPath) =>
             throw new NotSupportedException();
 
-        public Task<ServiceResult> Disconnect(NodePath sourcePath, NodePath targetPath) =>
+        public Task<ServiceResult> Disconnect(NodeRef sourcePath, NodeRef targetPath) =>
             throw new NotSupportedException();
     }
 
@@ -464,7 +464,7 @@ public sealed class GraphSearchServiceTests
 
         public override NodeLocalId LocalId { get; }
 
-        public override NodeGlobalId GlobalId { get; }
+        public override InternalId GlobalId { get; }
 
         public override ICollection<EdgeState> Edges { get; } = Array.Empty<EdgeState>();
 

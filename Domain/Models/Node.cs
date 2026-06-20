@@ -9,7 +9,7 @@ public class Node {
         $"Node '{GetType().Name}' is a type descriptor and is not bound to a graph node.");
 
     public virtual NodeLocalId LocalId => State.LocalId;
-    public virtual NodeGlobalId GlobalId => State.GlobalId;
+    public virtual InternalId GlobalId => State.GlobalId;
 
     public virtual ICollection<Edge> Edges => new EdgeCollection(State.Edges);
     public virtual ICollection<Node> Nodes => new NodeCollection(State.Nodes);

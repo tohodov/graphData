@@ -3,7 +3,7 @@ namespace Abstractions;
 internal abstract class NodeState : IEquatable<NodeState>
 {
     public abstract NodeLocalId LocalId { get; }
-    public abstract NodeGlobalId GlobalId { get; }
+    public abstract InternalId GlobalId { get; }
     public abstract ICollection<EdgeState> Edges { get; }
     public abstract ILazyCollection<NodeState> Nodes { get; }
     public abstract IDictionary<string, string> Attributes { get; set; }

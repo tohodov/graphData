@@ -18,7 +18,7 @@ public sealed class GraphElementDslTests
         node.Attributes["name"] = "demo";
 
         Assert.AreEqual(new NodeLocalId("node"), node.LocalId);
-        Assert.AreEqual(new NodeGlobalId("node"), node.GlobalId);
+        Assert.AreEqual(new InternalId("node"), node.GlobalId);
         Assert.AreEqual("demo", state.Attributes["name"]);
         Assert.AreEqual(GraphBaseTypeIds.NodeInstance, node.TypeId);
     }
@@ -46,9 +46,9 @@ public sealed class GraphElementDslTests
     [TestMethod]
     public void SystemNodeIds_ShouldExposeRuntimeTypeRoots()
     {
-        Assert.AreEqual(new NodeGlobalId("graphdata", "types", "nodes"), GraphSystemNodeIds.NodeTypeRoot);
-        Assert.AreEqual(new NodeGlobalId("graphdata", "types", "edges"), GraphSystemNodeIds.EdgeTypeRoot);
-        Assert.AreEqual(new NodeGlobalId("graphdata", "relations"), GraphSystemNodeIds.RelationRoot);
+        Assert.AreEqual(new InternalId("graphdata", "types", "nodes"), GraphSystemNodeIds.NodeTypeRoot);
+        Assert.AreEqual(new InternalId("graphdata", "types", "edges"), GraphSystemNodeIds.EdgeTypeRoot);
+        Assert.AreEqual(new InternalId("graphdata", "relations"), GraphSystemNodeIds.RelationRoot);
         Assert.AreEqual(GraphSystemNodeIds.NodeTypeRoot, GraphBaseTypeIds.NodeTypeRoot);
         Assert.AreEqual(GraphSystemNodeIds.EdgeTypeRoot, GraphBaseTypeIds.EdgeTypeRoot);
     }
@@ -56,7 +56,7 @@ public sealed class GraphElementDslTests
     private sealed class InMemoryNodeState(string name) : NodeState
     {
         public override NodeLocalId LocalId { get; } = new(name);
-        public override NodeGlobalId GlobalId { get; } = new(name);
+        public override InternalId GlobalId { get; } = new(name);
         public override ICollection<EdgeState> Edges { get; } = Array.Empty<EdgeState>();
         public override ILazyCollection<NodeState> Nodes => throw new NotSupportedException();
         public override IDictionary<string, string> Attributes { get; set; } =

@@ -19,8 +19,8 @@ public sealed class GraphDataTools(GraphService graph) {
     [McpServerTool]
     [Description("Gets a graph node by GlobalId and returns the same node shape as the HTTP API: LocalId, GlobalId, attributes, and edges.")]
     public async Task<string> GetNode(
-        [Description("GlobalId segments to look up.")] string[] globalId) {
-        var result = await graph.GetNodeAsync(globalId);
+        [Description("NodePath segments to look up.")] string[] path) {
+        var result = await graph.GetNodeAsync(new NodePath(path));
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             return ToJson(new {
                 found = true,
@@ -29,7 +29,7 @@ public sealed class GraphDataTools(GraphService graph) {
         }
 
         if (result.Status is ServiceResultStatus.NotFound)
-            return ToJson(new { found = false, globalId });
+            return ToJson(new { found = false, path });
 
         return ToJson(new {
             found = false,
@@ -51,9 +51,9 @@ public sealed class GraphDataTools(GraphService graph) {
     [McpServerTool]
     [Description("Replaces all attributes for an existing graph node.")]
     public async Task<string> UpdateNodeAttributes(
-        [Description("GlobalId segments of the node to update.")] string[] globalId,
+        [Description("NodePath segments of the node to update.")] string[] path,
         [Description("Complete replacement set of string attributes.")] Dictionary<string, string> attributes) {
-        var result = await graph.UpdateNodeAsync(globalId, attributes);
+        var result = await graph.UpdateNodeAsync(new NodePath(path), attributes);
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new { success = true })
             : ToJson(ToErrorResponse(result.Status, result.Error));
@@ -62,8 +62,8 @@ public sealed class GraphDataTools(GraphService graph) {
     [McpServerTool]
     [Description("Deletes an existing graph node by GlobalId.")]
     public async Task<string> DeleteNode(
-        [Description("GlobalId segments of the node to delete.")] string[] globalId) {
-        var result = await graph.DeleteNodeAsync(globalId);
+        [Description("NodePath segments of the node to delete.")] string[] path) {
+        var result = await graph.DeleteNodeAsync(new NodePath(path));
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new { success = true })
             : ToJson(ToErrorResponse(result.Status, result.Error));
@@ -72,9 +72,9 @@ public sealed class GraphDataTools(GraphService graph) {
     [McpServerTool]
     [Description("Creates an undirected connection between two existing graph nodes.")]
     public async Task<string> ConnectNodes(
-        [Description("GlobalId segments of the first node.")] string[] sourceGlobalId,
-        [Description("GlobalId segments of the second node.")] string[] targetGlobalId) {
-        var result = await graph.ConnectNodesAsync(sourceGlobalId, targetGlobalId);
+        [Description("NodePath segments of the first node.")] string[] sourceGlobalId,
+        [Description("NodePath segments of the second node.")] string[] targetGlobalId) {
+        var result = await graph.ConnectNodesAsync(new NodePath(sourceGlobalId), new NodePath(targetGlobalId));
 
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new {
@@ -88,9 +88,9 @@ public sealed class GraphDataTools(GraphService graph) {
     [McpServerTool]
     [Description("Returns the same subgraph shape as the HTTP API: nodes plus top-level edges.")]
     public async Task<string> GetSubgraph(
-        [Description("Root node GlobalId segments for graph traversal.")] string[][] rootGlobalIds,
+        [Description("Root nodes NodePath segments for graph traversal.")] string[][] rootPaths,
         [Description("Maximum traversal depth. Use 0 to return only roots.")] int maxDepth = 1) {
-        var result = await graph.GetSubgraphAsync(rootGlobalIds, maxDepth);
+        var result = await graph.GetSubgraphAsync(rootPaths.Select(x => new NodePath(x)), maxDepth);
 
         if (result.Status != ServiceResultStatus.Ok || result.Value is null)
             return ToJson(ToErrorResponse(result.Status, result.Error));

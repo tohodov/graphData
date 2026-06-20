@@ -8,7 +8,7 @@ internal sealed class TypeEdge : EdgeType, IGraphEdgeType
         : base(state) {
     }
 
-    public static NodeGlobalId StaticTypeId => GraphBaseTypeIds.EdgeType;
+    public static InternalId StaticTypeId => GraphBaseTypeIds.EdgeType;
 
-    public override NodeGlobalId? TypeId => StaticTypeId;
+    public override InternalId? TypeId => StaticTypeId;
 }
