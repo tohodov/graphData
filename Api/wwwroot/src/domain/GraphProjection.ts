@@ -54,8 +54,13 @@ export class GraphProjection {
     }
 
     const physicalEdges = physical.edges.filter(edge => {
-      return visibleNodeIds.has(edge.sourceGlobalId)
-        && visibleNodeIds.has(edge.targetGlobalId)
+      const sourceVisible = visibleNodeIds.has(edge.sourceGlobalId);
+      const targetVisible = visibleNodeIds.has(edge.targetGlobalId);
+      return (sourceVisible || targetVisible)
+        && !hidden.has(edge.sourceGlobalId)
+        && !hidden.has(edge.targetGlobalId)
+        && !this.model.isSchemaRoot(edge.sourceGlobalId)
+        && !this.model.isSchemaRoot(edge.targetGlobalId)
         && !hiddenPhysicalEdges.has(edge.key ?? GraphEdge.keyFor(edge.sourceGlobalId, edge.targetGlobalId));
     });
 

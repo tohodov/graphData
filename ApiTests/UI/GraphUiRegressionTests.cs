@@ -379,6 +379,49 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphProjection_KeepsFrontierEdgesForLazyLoading() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            const edge = new GraphEdge({
+              sourceGlobalId: "root",
+              targetGlobalId: "root/child",
+              sourceLocalId: "root",
+              targetLocalId: "child",
+              neighborLocalId: "child"
+            });
+            model.rootName = "root";
+            model.putNode(new GraphNode({
+              globalId: "root",
+              displayName: "Root",
+              showed: true,
+              edges: [edge]
+            }));
+            model.positions.set("root", { x: 10, y: 20 });
+
+            const graph = model.visibleGraph();
+            const control = graph.edges[0]?.controls?.[0];
+
+            globalThis.__result = graph.nodes.length === 1
+              && graph.nodes[0].name === "root"
+              && graph.edges.length === 1
+              && graph.edges[0].sourceGlobalId === "root"
+              && graph.edges[0].targetGlobalId === "root/child"
+              && control?.action === "load-neighbor"
+              && control?.anchorName === "root"
+              && control?.neighborLocalId === "child";
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphModel_ProjectedEdgeStateIsStoredOnRelationObject() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
@@ -649,6 +692,41 @@ public sealed class GraphUiRegressionTests {
               && events[0].intermediateGraph === graph
               && model.primitiveGraphCache.edges.length === 1
               && model.intermediateGraph === graph;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void GraphModel_PrimitiveCacheKeepsHiddenLoadedNodes() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            model.putNode(new GraphNode({
+              globalId: "root",
+              displayName: "Root",
+              showed: true,
+              edges: []
+            }));
+            model.putNode(new GraphNode({
+              globalId: "graphdata/types/nodes/HiddenType",
+              displayName: "HiddenType",
+              showed: false,
+              edges: []
+            }));
+
+            const graph = model.rebuildProjection({ emit: true, reason: "cache" });
+
+            globalThis.__result = model.primitiveGraphCache.nodes.length === 2
+              && model.primitiveGraphCache.nodes.some(node => node.name === "graphdata/types/nodes/HiddenType")
+              && graph.nodes.length === 1
+              && graph.nodes[0].name === "root";
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());

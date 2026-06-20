@@ -159,10 +159,11 @@ export class GraphViewer {
     const params = new URLSearchParams(this.window.location.search);
     const initialGlobalId = params.get("globalId");
     if (initialGlobalId) {
-      void this.loadRoot(initialGlobalId);
+      await this.loadRoot(initialGlobalId);
     } else {
-      void this.loadGraphRoots();
+      await this.loadGraphRoots();
     }
+    await this.refreshTypes();
   }
 
   async loadUiSettings() {
@@ -319,10 +320,12 @@ export class GraphViewer {
 
   this.graph.rootName = name;
   this.graph.selectedName = name;
+  const basisNodes = this.cachedBasisNodes();
   this.graph.loaded.clear();
   this.graph.parentByNode.clear();
   this.graph.positions.clear();
   this.graph.velocities.clear();
+  this.restoreBasisNodes(basisNodes);
   await this.loadNode(name, null);
   const url = new URL(this.window.location.href);
   url.searchParams.set("globalId", this.graph.rootName ?? name);
@@ -732,10 +735,11 @@ export class GraphViewer {
   for (const node of basisGraph.nodes.values()) {
     const existing = this.graph.loaded.get(node.name);
     const stored = existing ? this.mergeNodeResponses(existing, node) : GraphNode.from(node);
-    this.graph.loaded.set(stored.name, stored);
-    if (stored.showed !== false && !this.graph.positions.has(stored.name) && !this.graph.isSchemaRoot(stored.name)) {
-      this.seedPosition(stored.name, this.graph.rootName, this.graph.visibleNodeCount());
+    if (!existing) {
+      stored.showed = false;
+      stored.clearPosition();
     }
+    this.graph.loaded.set(stored.name, stored);
   }
 
   this.refreshEdgeAngles();
@@ -1242,10 +1246,12 @@ export class GraphViewer {
   }
 
   loadSubgraphIntoViewer(response, roots, options: any = {}) {
+  const basisNodes = this.cachedBasisNodes();
   this.graph.loaded.clear();
   this.graph.parentByNode.clear();
   this.graph.positions.clear();
   this.graph.velocities.clear();
+  this.restoreBasisNodes(basisNodes);
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
   const edgesByNode = new Map();
@@ -1302,6 +1308,31 @@ export class GraphViewer {
     });
   });
   this.renderTypeControls();
+
+  }
+
+  cachedBasisNodes() {
+  const ids = new Set([
+    ...this.graph.schema.nodeTypes.keys(),
+    ...this.graph.schema.edgeTypes.keys(),
+    ...this.basisTypeRoots()
+  ].filter(Boolean));
+  return [...ids]
+    .map(id => this.graph.loaded.get(id))
+    .filter(Boolean)
+    .map(node => {
+      const cached = GraphNode.from(node);
+      cached.showed = false;
+      cached.clearPosition();
+      return cached;
+    });
+
+  }
+
+  restoreBasisNodes(nodes) {
+  nodes.forEach(node => {
+    this.graph.loaded.set(node.name, node);
+  });
 
   }
 
@@ -2315,12 +2346,13 @@ export class GraphViewer {
   const physical = this.graph.physicalGraph();
   const relations = this.graph.discoverRelationInstances(physical);
   const graph = this.graph.visibleGraph();
+  const primitive = this.graph.primitiveGraphCache;
   const projectedRelations = graph.edges.filter(edge => edge.projected).length;
   const rankedNodes = graph.nodes.filter(node => Number.isFinite(node.viewRank));
   const topRank = rankedNodes.length === 0
     ? ""
     : ` Топ rank: ${GraphType.formatRank(Math.max(...rankedNodes.map(node => node.viewRank)))}.`;
-  this.projectionSummary.textContent = `Проекция по типам: ${graph.nodes.length} узлов, ${graph.edges.length} связей. Кэш: ${physical.nodes.length} узлов, ${physical.edges.length} исходных связей, ${relations.length} типизированных конструкций, ${projectedRelations} свернутых.${topRank}`;
+  this.projectionSummary.textContent = `Проекция по типам: ${graph.nodes.length} узлов, ${graph.edges.length} связей. Кэш примитивов: ${primitive.nodes.length} узлов, ${primitive.edges.length} связей. Видимых типизированных конструкций: ${relations.length}, свернутых: ${projectedRelations}.${topRank}`;
 
   }
 

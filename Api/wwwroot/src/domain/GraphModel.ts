@@ -214,6 +214,8 @@ export class GraphModel {
     this.parentByNode.clear();
     this.positions.clear();
     this.velocities.clear();
+    this.primitiveGraphCache = { nodes: [], edges: [] };
+    this.intermediateGraph = { nodes: [], edges: [] };
     this.rebuildProjection({ reason: "reset" });
   }
 
@@ -373,6 +375,23 @@ export class GraphModel {
     return this.loaded.get(globalId)?.displayName ?? globalId;
   }
 
+  primitiveGraph(): any {
+    const nodes = new Map();
+    const edges = new Map();
+
+    for (const node of this.loaded.values()) {
+      nodes.set(node.name, node.toViewNode());
+      node.edges.forEach(edge => {
+        if (!edges.has(edge.key)) {
+          edges.set(edge.key, edge.toViewEdge(this.edgeEndpointNodes(edge)));
+        }
+      });
+    }
+
+    this.primitiveGraphCache = { nodes: [...nodes.values()], edges: [...edges.values()] };
+    return this.primitiveGraphCache;
+  }
+
   physicalGraph(): any {
     const nodes = new Map();
     const edges = new Map();
@@ -390,8 +409,7 @@ export class GraphModel {
       });
     }
 
-    this.primitiveGraphCache = { nodes: [...nodes.values()], edges: [...edges.values()] };
-    return this.primitiveGraphCache;
+    return { nodes: [...nodes.values()], edges: [...edges.values()] };
   }
 
   visibleGraph(): any {
@@ -403,6 +421,7 @@ export class GraphModel {
   }
 
   rebuildProjection(options: any = {}): any {
+    this.primitiveGraph();
     const physical = this.physicalGraph();
     this.intermediateGraph = this.projectedGraph(physical);
     this.projectionRevision += 1;
