@@ -345,7 +345,7 @@ public sealed class GraphControllerTests {
         Assert.IsTrue(response.Nodes.Any(node => node.GlobalId == weaponType.GlobalId.ToString()));
 
         var storedNode = (await scope.Storage.Get(ak47.GlobalId)).Value!;
-        Assert.IsFalse(storedNode.Attributes.ContainsKey(GraphRuntimeAttributeNames.GraphTypeName));
+        Assert.IsFalse(storedNode.Attributes.ContainsKey("graph.typeName"));
 
         var connected = (await scope.Storage.GetConnectedNodesAsync(storedNode)).Value!;
         Assert.IsTrue(connected.Any(node => node.GlobalId == weaponType.GlobalId));

@@ -14,10 +14,8 @@ public sealed class AttributePolicyTests
     {
         var root = RepoRoot();
         var allowedFiles = new HashSet<string> {
-            "Domain/Models/GraphRuntimeAttributeNames.cs",
             "Domain/Models/Node.cs",
-            "Domain/Services/GraphSearchService.cs",
-            "Domain/Services/GraphStorageInitializer.cs"
+            "Domain/Services/GraphSearchService.cs"
         };
 
         var violations = Directory
@@ -30,12 +28,24 @@ public sealed class AttributePolicyTests
             .Where(file => !allowedFiles.Contains(file.RelativePath))
             .Where(file =>
                 file.Text.Contains(".Attributes", StringComparison.Ordinal) ||
-                file.Text.Contains("GraphRuntimeAttributeNames", StringComparison.Ordinal))
+                file.Text.Contains("AttributeNames", StringComparison.Ordinal))
             .Select(file => file.RelativePath)
             .ToArray();
 
         if (violations.Length > 0)
             Assert.Fail("Domain logic must not use node attributes: " + string.Join(", ", violations));
+    }
+
+    [TestMethod]
+    public void Domain_DoesNotExposeInternalAttributeNameConstants()
+    {
+        var files = Directory
+            .EnumerateFiles(Path.Combine(RepoRoot(), "Domain"), "*AttributeNames*.cs", SearchOption.AllDirectories)
+            .Select(file => Path.GetRelativePath(RepoRoot(), file).Replace('\\', '/'))
+            .ToArray();
+
+        if (files.Length > 0)
+            Assert.Fail("Domain must not expose internal attribute name constants: " + string.Join(", ", files));
     }
 
     [TestMethod]

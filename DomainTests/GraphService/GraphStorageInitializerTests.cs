@@ -24,52 +24,18 @@ public sealed class GraphStorageInitializerTests
 
         await initializer.InitializeAsync();
 
-        var nodeTypeRoot = await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.NodeTypeRoot);
-        Assert.AreEqual("type-root", nodeTypeRoot.Attributes[GraphRuntimeAttributeNames.GraphKind]);
-        Assert.AreEqual("node", nodeTypeRoot.Attributes[GraphRuntimeAttributeNames.GraphElement]);
-
-        var edgeTypeRoot = await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.EdgeTypeRoot);
-        Assert.AreEqual("type-root", edgeTypeRoot.Attributes[GraphRuntimeAttributeNames.GraphKind]);
-        Assert.AreEqual("edge", edgeTypeRoot.Attributes[GraphRuntimeAttributeNames.GraphElement]);
-
-        var relationRoot = await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.RelationRoot);
-        Assert.AreEqual("relation-root", relationRoot.Attributes[GraphRuntimeAttributeNames.GraphKind]);
-        Assert.AreEqual("edge", relationRoot.Attributes[GraphRuntimeAttributeNames.GraphElement]);
-
-        AssertBaseType(
-            await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.NodeType),
-            "node",
-            "Type",
-            "#334155",
-            "90");
-        AssertBaseType(
-            await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.NodeInstance),
-            "node",
-            "Instance",
-            "#0f766e",
-            "70");
-        AssertBaseType(
-            await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.EdgeType),
-            "edge",
-            "Type",
-            "#7c2d12",
-            "60",
-            directed: "true");
-        AssertBaseType(
-            await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.EdgeInstance),
-            "edge",
-            "Instance",
-            "#b45309",
-            "50",
-            directed: "true");
+        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.NodeTypeRoot));
+        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.EdgeTypeRoot));
+        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.RelationRoot));
+        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.NodeType));
+        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.NodeInstance));
+        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.EdgeType));
+        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.EdgeInstance));
         await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.NodeInstance, GraphBaseTypeIds.NodeType);
         await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.EdgeInstance, GraphBaseTypeIds.EdgeType);
 
         var marker = await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.RuntimeTypesInitializer);
-        Assert.AreEqual("storage-initializer", marker.Attributes[GraphRuntimeAttributeNames.GraphKind]);
-        Assert.AreEqual("Runtime types initializer", marker.Attributes["label"]);
-        Assert.IsFalse(marker.Attributes.ContainsKey("completed"));
-        Assert.IsFalse(marker.Attributes.ContainsKey("storage.initializer.version"));
+        AssertNoAttributes(marker);
         await AssertHasCompletionMarkerAsync(scope.Storage);
 
         var subgraph = (await scope.Storage.GetSubgraphAsync(new SubgraphQuery {
@@ -97,11 +63,7 @@ public sealed class GraphStorageInitializerTests
         await initializer.InitializeAsync();
 
         var weapon = await GetRequiredAsync(scope.Storage, TypeId<CatalogWeaponNodeType>());
-        Assert.AreEqual("type", weapon.Attributes[GraphRuntimeAttributeNames.GraphKind]);
-        Assert.AreEqual("node", weapon.Attributes[GraphRuntimeAttributeNames.GraphElement]);
-        Assert.AreEqual("CatalogWeapon", weapon.Attributes["label"]);
-        Assert.AreEqual("#475569", weapon.Attributes["color"]);
-        Assert.AreEqual("50", weapon.Attributes[GraphRuntimeAttributeNames.ProjectionRank]);
+        AssertNoAttributes(weapon);
         await AssertConnectedAsync(scope.Storage, weapon.GlobalId, GraphBaseTypeIds.NodeType);
     }
 
@@ -114,11 +76,12 @@ public sealed class GraphStorageInitializerTests
         await new GraphStorageInitializer(scope.Storage, typeof(CatalogWeaponNodeType).Assembly).InitializeAsync();
 
         var weapon = await GetRequiredAsync(scope.Storage, TypeId<CatalogWeaponNodeType>());
-        Assert.AreEqual("CatalogWeapon", weapon.Attributes["label"]);
+        AssertNoAttributes(weapon);
+        await AssertConnectedAsync(scope.Storage, weapon.GlobalId, GraphBaseTypeIds.NodeType);
     }
 
     [TestMethod]
-    public async Task InitializeAsync_PreservesExistingTypeAttributesBeforeCompletion()
+    public async Task InitializeAsync_PreservesExistingUserAttributesBeforeCompletion()
     {
         await using var scope = TestGraphStorageScope.Create();
         await CreatePathAsync(
@@ -133,10 +96,7 @@ public sealed class GraphStorageInitializerTests
 
         var node = await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.NodeInstance);
         Assert.AreEqual("#123456", node.Attributes["color"]);
-        Assert.AreEqual("type", node.Attributes[GraphRuntimeAttributeNames.GraphKind]);
-        Assert.AreEqual("node", node.Attributes[GraphRuntimeAttributeNames.GraphElement]);
-        Assert.AreEqual("Instance", node.Attributes["label"]);
-        Assert.AreEqual("70", node.Attributes[GraphRuntimeAttributeNames.ProjectionRank]);
+        Assert.AreEqual(1, node.Attributes.Count);
     }
 
     [TestMethod]
@@ -223,26 +183,12 @@ public sealed class GraphStorageInitializerTests
             MaxDepth = 2
         })).Value!;
         Assert.IsTrue(
-            subgraph.Nodes.Any(node => node.GlobalId.ToString().StartsWith($"{GraphSystemNodeIds.RuntimeTypesInitializer}/3/", StringComparison.Ordinal)),
+            subgraph.Nodes.Any(node => node.GlobalId.ToString().StartsWith($"{GraphSystemNodeIds.RuntimeTypesInitializer}/4/", StringComparison.Ordinal)),
             "Expected runtime type initializer completion marker node.");
     }
 
-    private static void AssertBaseType(
-        NodeState node,
-        string element,
-        string label,
-        string color,
-        string rank,
-        string? directed = null)
-    {
-        Assert.AreEqual("type", node.Attributes[GraphRuntimeAttributeNames.GraphKind]);
-        Assert.AreEqual(element, node.Attributes[GraphRuntimeAttributeNames.GraphElement]);
-        Assert.AreEqual(label, node.Attributes["label"]);
-        Assert.AreEqual(color, node.Attributes["color"]);
-        Assert.AreEqual(rank, node.Attributes[GraphRuntimeAttributeNames.ProjectionRank]);
-        if (directed is not null)
-            Assert.AreEqual(directed, node.Attributes["directed"]);
-    }
+    private static void AssertNoAttributes(NodeState node) =>
+        Assert.AreEqual(0, node.Attributes.Count, $"Expected '{node.GlobalId}' to have no generated attributes.");
 
     private static InternalId TypeId<TNodeType>()
     {

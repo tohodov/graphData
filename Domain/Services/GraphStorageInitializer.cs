@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Reflection;
 using Abstractions;
 using GraphData.Core.Models;
@@ -7,33 +6,16 @@ namespace GraphData.Core.Services;
 
 public sealed class GraphStorageInitializer
 {
-    private const string RuntimeTypesVersion = "3";
+    private const string RuntimeTypesVersion = "4";
 
-    private static readonly IReadOnlyCollection<SystemNodeDefinition> SystemNodes = [
-        new(GraphSystemNodeIds.GraphDataRoot, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "system-root"
-        }),
-        new(GraphSystemNodeIds.TypeRoot, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "type-root"
-        }),
-        new(GraphSystemNodeIds.NodeTypeRoot, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "type-root",
-            [GraphRuntimeAttributeNames.GraphElement] = "node"
-        }),
-        new(GraphSystemNodeIds.EdgeTypeRoot, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "type-root",
-            [GraphRuntimeAttributeNames.GraphElement] = "edge"
-        }),
-        new(GraphSystemNodeIds.RelationRoot, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "relation-root",
-            [GraphRuntimeAttributeNames.GraphElement] = "edge"
-        }),
-        new(GraphSystemNodeIds.StorageRoot, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "storage-root"
-        }),
-        new(GraphSystemNodeIds.InitializerRoot, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = "initializer-root"
-        })
+    private static readonly IReadOnlyCollection<InternalId> SystemNodes = [
+        GraphSystemNodeIds.GraphDataRoot,
+        GraphSystemNodeIds.TypeRoot,
+        GraphSystemNodeIds.NodeTypeRoot,
+        GraphSystemNodeIds.EdgeTypeRoot,
+        GraphSystemNodeIds.RelationRoot,
+        GraphSystemNodeIds.StorageRoot,
+        GraphSystemNodeIds.InitializerRoot
     ];
 
     private readonly IGraphStorage _storage;
@@ -60,14 +42,14 @@ public sealed class GraphStorageInitializer
         if (await IsRuntimeTypesInitializerCompletedAsync().ConfigureAwait(false))
             return;
 
-        foreach (var systemNode in SystemNodes) {
+        foreach (var systemNodeId in SystemNodes) {
             cancellationToken.ThrowIfCancellationRequested();
-            await EnsureNodeAsync(systemNode.Id, systemNode.Attributes).ConfigureAwait(false);
+            await EnsureNodeAsync(systemNodeId).ConfigureAwait(false);
         }
 
         foreach (var type in DiscoverRuntimeTypeDefinitions()) {
             cancellationToken.ThrowIfCancellationRequested();
-            await EnsureNodeAsync(type.TypeId, CreateRuntimeTypeAttributes(type)).ConfigureAwait(false);
+            await EnsureNodeAsync(type.TypeId).ConfigureAwait(false);
             await EnsureRuntimeTypeMembershipAsync(type).ConfigureAwait(false);
             await EnsureEdgeTypeDefinitionAsync(type).ConfigureAwait(false);
         }
@@ -87,17 +69,8 @@ public sealed class GraphStorageInitializer
 
     private async Task MarkRuntimeTypesInitializerCompletedAsync()
     {
-        var markerAttributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-            [GraphRuntimeAttributeNames.GraphKind] = "storage-initializer",
-            ["label"] = "Runtime types initializer"
-        };
-        var completionAttributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-            ["label"] = $"Runtime types {RuntimeTypesVersion}",
-            ["completedAtUtc"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
-        };
-
-        await EnsureNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer, markerAttributes).ConfigureAwait(false);
-        await EnsureNodeAsync(RuntimeTypesCompletionMarkerId(), completionAttributes).ConfigureAwait(false);
+        await EnsureNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer).ConfigureAwait(false);
+        await EnsureNodeAsync(RuntimeTypesCompletionMarkerId()).ConfigureAwait(false);
     }
 
     private InternalId RuntimeTypesCompletionMarkerId() =>
@@ -106,15 +79,11 @@ public sealed class GraphStorageInitializer
             new NodeLocalId(_runtimeTypes.Fingerprint)
         ]));
 
-    private async Task<NodeState> EnsureNodeAsync(
-        InternalId id,
-        IReadOnlyDictionary<string, string>? requiredAttributes = null)
+    private async Task<NodeState> EnsureNodeAsync(InternalId id)
     {
         var result = await _storage.Get(id).ConfigureAwait(false);
-        if (result.Status == ServiceResultStatus.Ok && result.Value is not null) {
-            await MergeMissingAttributesAsync(id, result.Value, requiredAttributes).ConfigureAwait(false);
+        if (result.Status == ServiceResultStatus.Ok && result.Value is not null)
             return result.Value;
-        }
 
         if (result.Status != ServiceResultStatus.NotFound)
             return RequireOk(result, $"read node '{id}'");
@@ -126,47 +95,16 @@ public sealed class GraphStorageInitializer
         NodePath? parentId = null;
         if (segments.Length > 1) {
             parentId = new NodePath(segments.Take(segments.Length - 1)); //TODO переделать этот бред с NodePath/InternalId
-            await EnsureNodeAsync(new InternalId(parentId), GetSystemAttributes(new InternalId(parentId))).ConfigureAwait(false);
+            await EnsureNodeAsync(new InternalId(parentId)).ConfigureAwait(false);
         }
 
         NodePath? parentPath = parentId is null ? null : parentId;
         var createResult = await _storage.Create(
             segments[^1],
-            parentPath,
-            requiredAttributes is null
-                ? null
-                : new Dictionary<string, string>(requiredAttributes, StringComparer.OrdinalIgnoreCase)).ConfigureAwait(false);
+            parentPath).ConfigureAwait(false);
 
         return RequireOk(createResult, $"create node '{id}'");
     }
-
-    private async Task MergeMissingAttributesAsync(
-        InternalId id,
-        NodeState node,
-        IReadOnlyDictionary<string, string>? requiredAttributes)
-    {
-        if (requiredAttributes is null || requiredAttributes.Count == 0)
-            return;
-
-        var attributes = new Dictionary<string, string>(node.Attributes, StringComparer.OrdinalIgnoreCase);
-        var changed = false;
-        foreach (var (key, value) in requiredAttributes) {
-            if (attributes.ContainsKey(key))
-                continue;
-
-            attributes[key] = value;
-            changed = true;
-        }
-
-        if (!changed)
-            return;
-
-        var result = await _storage.Update(id, attributes).ConfigureAwait(false);
-        RequireOk(result, $"update node '{id}'");
-    }
-
-    private static IReadOnlyDictionary<string, string>? GetSystemAttributes(InternalId id) =>
-        SystemNodes.FirstOrDefault(node => node.Id == id)?.Attributes;
 
     private IReadOnlyCollection<RuntimeGraphTypeDefinition> DiscoverRuntimeTypeDefinitions() =>
         _runtimeTypes.Types;
@@ -203,51 +141,6 @@ public sealed class GraphStorageInitializer
         }
     }
 
-    private static Dictionary<string, string> CreateRuntimeTypeAttributes(RuntimeGraphTypeDefinition type)
-    {
-        var defaults = GetRuntimeTypeDefaults(type);
-        var attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-            [GraphRuntimeAttributeNames.GraphKind] = "type",
-            [GraphRuntimeAttributeNames.GraphElement] = type.Element,
-            ["label"] = defaults.Label,
-            ["color"] = defaults.Color,
-            [GraphRuntimeAttributeNames.ProjectionRank] = defaults.Rank.ToString(CultureInfo.InvariantCulture)
-        };
-
-        if (type.Element == "edge")
-            attributes["directed"] = defaults.Directed ? "true" : "false";
-
-        return attributes;
-    }
-
-    private static RuntimeTypeDefaults GetRuntimeTypeDefaults(RuntimeGraphTypeDefinition type)
-    {
-        if (type.TypeId == GraphBaseTypeIds.NodeType)
-            return new RuntimeTypeDefaults("Type", "#334155", 90, false);
-        if (type.TypeId == GraphBaseTypeIds.NodeInstance)
-            return new RuntimeTypeDefaults("Instance", "#0f766e", 70, false);
-        if (type.TypeId == GraphBaseTypeIds.EdgeType)
-            return new RuntimeTypeDefaults("Type", "#7c2d12", 60, true);
-        if (type.TypeId == GraphBaseTypeIds.EdgeInstance)
-            return new RuntimeTypeDefaults("Instance", "#b45309", 50, true);
-
-        return new RuntimeTypeDefaults(CreateLabel(type), type.Element == "edge" ? "#92400e" : "#475569", type.Element == "edge" ? 30 : 50, type.Element == "edge");
-    }
-
-    private static string CreateLabel(RuntimeGraphTypeDefinition type)
-    {
-        var name = type.ClrType.Name;
-        if (type.Element == "node" && name.EndsWith(nameof(NodeType), StringComparison.Ordinal))
-            return name[..^nameof(NodeType).Length];
-        if (type.Element == "node" && name.EndsWith(nameof(Node), StringComparison.Ordinal))
-            return name[..^nameof(Node).Length];
-        if (type.Element == "edge" && name.EndsWith(nameof(EdgeType), StringComparison.Ordinal))
-            return name[..^nameof(EdgeType).Length];
-        if (type.Element == "edge" && name.EndsWith(nameof(Edge), StringComparison.Ordinal))
-            return name[..^nameof(Edge).Length];
-        return name;
-    }
-
     private static T RequireOk<T>(ServiceResult<T> result, string operation) where T : class
     {
         if (result.Status == ServiceResultStatus.Ok && result.Value is not null)
@@ -264,7 +157,4 @@ public sealed class GraphStorageInitializer
         throw new InvalidOperationException($"Failed to {operation}: {result.Status}. {result.Error}");
     }
 
-    private sealed record SystemNodeDefinition(InternalId Id, IReadOnlyDictionary<string, string> Attributes);
-
-    private sealed record RuntimeTypeDefaults(string Label, string Color, int Rank, bool Directed);
 }

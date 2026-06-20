@@ -93,8 +93,7 @@ public sealed class EdgeTypeDslTests
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
         var definition = result.Value!;
         var typeState = await GetRequiredAsync(scope, definition.TypeId);
-        Assert.AreEqual("type", typeState.Attributes[GraphRuntimeAttributeNames.GraphKind]);
-        Assert.AreEqual("edge", typeState.Attributes[GraphRuntimeAttributeNames.GraphElement]);
+        AssertMetadataFree(typeState);
         var weaponNodeTypeId = await GetNodeTypeIdAsync<EdgeWeaponNodeType>(graph);
         var manufacturerNodeTypeId = await GetNodeTypeIdAsync<EdgeManufacturerNodeType>(graph);
 
@@ -136,9 +135,9 @@ public sealed class EdgeTypeDslTests
     private static void AssertMetadataFree(NodeState node)
     {
         Assert.AreEqual(0, node.Attributes.Count);
-        Assert.IsFalse(node.Attributes.ContainsKey(GraphRuntimeAttributeNames.GraphKind));
-        Assert.IsFalse(node.Attributes.ContainsKey(GraphRuntimeAttributeNames.GraphRole));
-        Assert.IsFalse(node.Attributes.ContainsKey(GraphRuntimeAttributeNames.GraphTypeName));
+        Assert.IsFalse(node.Attributes.ContainsKey("graph.kind"));
+        Assert.IsFalse(node.Attributes.ContainsKey("graph.role"));
+        Assert.IsFalse(node.Attributes.ContainsKey("graph.typeName"));
     }
 
     private static async Task AssertConnectedAsync(TestGraphStorageScope scope, InternalId sourceId, InternalId targetId)
