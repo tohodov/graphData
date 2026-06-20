@@ -377,32 +377,29 @@ public sealed class GraphControllerTests {
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
 
-        var relation = response.Nodes.Single(node => node.Attributes.TryGetValue(GraphRuntimeAttributeNames.GraphKind, out var kind) && kind == "edge-instance");
+        var relation = response.Nodes.Single(node => node.GlobalId == "graphdata/relations/relation-1");
         Assert.AreEqual("graphdata/relations/relation-1", relation.GlobalId);
-        Assert.AreEqual(newType.GlobalId.ToString(), relation.Attributes[GraphRuntimeAttributeNames.GraphTypeName]);
+        Assert.AreEqual(0, relation.Attributes.Count);
 
         var returnedIds = response.Nodes.Select(static node => node.GlobalId).ToHashSet(StringComparer.Ordinal);
         Assert.IsTrue(returnedIds.Contains(source.GlobalId.ToString()));
         Assert.IsTrue(returnedIds.Contains(target.GlobalId.ToString()));
         Assert.IsTrue(returnedIds.Contains(newType.GlobalId.ToString()));
 
-        var sourcePort = response.Nodes.Single(node => node.Attributes.TryGetValue(GraphRuntimeAttributeNames.GraphRole, out var role) && role == "source");
-        var targetPort = response.Nodes.Single(node => node.Attributes.TryGetValue(GraphRuntimeAttributeNames.GraphRole, out var role) && role == "target");
-        var typePort = response.Nodes.Single(node => node.Attributes.TryGetValue(GraphRuntimeAttributeNames.GraphRole, out var role) && role == "type");
-
-        Assert.IsTrue(GraphIdIsChildOf(sourcePort.GlobalId, relation.GlobalId));
-        Assert.IsTrue(GraphIdIsChildOf(targetPort.GlobalId, relation.GlobalId));
-        Assert.IsTrue(GraphIdIsChildOf(typePort.GlobalId, relation.GlobalId));
-        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, sourcePort.GlobalId, source.GlobalId.ToString())));
-        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, targetPort.GlobalId, target.GlobalId.ToString())));
-        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, typePort.GlobalId, newType.GlobalId.ToString())));
+        var endpointPorts = response.Nodes
+            .Where(node => GraphIdIsChildOf(node.GlobalId, relation.GlobalId) && node.GlobalId != relation.GlobalId)
+            .ToArray();
+        Assert.AreEqual(2, endpointPorts.Length);
+        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, relation.GlobalId, newType.GlobalId.ToString())));
+        Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.GlobalId, source.GlobalId.ToString()))));
+        Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.GlobalId, target.GlobalId.ToString()))));
 
         var storedRelation = (await scope.Storage.Get(new NodePath("graphdata", "relations", "relation-1"))).Value!;
-        Assert.AreEqual(newType.GlobalId.ToString(), storedRelation.Attributes[GraphRuntimeAttributeNames.GraphTypeName]);
+        Assert.AreEqual(0, storedRelation.Attributes.Count);
 
         var replacementType = (await scope.Storage.Create(new("replacement-type"), GraphSystemNodeIds.EdgeTypeRoot)).Value!;
         await scope.Storage.Connect(replacementType.GlobalId, GraphBaseTypeIds.EdgeType);
-        await scope.Storage.Update(storedRelation.GlobalId, new Dictionary<string, string>());
+        await scope.Storage.Update(storedRelation.GlobalId, new Dictionary<string, string> { ["note"] = "user note" });
         var retyped = await controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
             RelationGlobalId = storedRelation.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = replacementType.GlobalId.Select(static segment => segment.ToString()).ToArray()

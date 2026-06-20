@@ -1267,10 +1267,24 @@ export class GraphViewer {
   }
 
   relationIdsFromSubgraph(response): string[] {
-  return (response.nodes ?? [])
+  const relationIds = new Set<string>();
+  const edgeTypeIds = new Set(this.graph.schema.edgeTypes.keys());
+  for (const edge of response.edges ?? []) {
+    if (edgeTypeIds.has(edge.sourceGlobalId) && !this.graph.isSchemaRoot(edge.targetGlobalId)) {
+      relationIds.add(edge.targetGlobalId);
+    } else if (edgeTypeIds.has(edge.targetGlobalId) && !this.graph.isSchemaRoot(edge.sourceGlobalId)) {
+      relationIds.add(edge.sourceGlobalId);
+    }
+  }
+
+  for (const relationId of (response.nodes ?? [])
     .map(node => this.normalizeNodeResponse(node))
     .filter(node => node.attributes?.[graphKindAttribute] === "edge-instance")
-    .map(node => node.globalId);
+    .map(node => node.globalId)) {
+    relationIds.add(relationId);
+  }
+
+  return [...relationIds];
 
   }
 

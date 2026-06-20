@@ -7,11 +7,7 @@ namespace GraphData.Core.Services;
 
 public sealed class GraphStorageInitializer
 {
-    private const string RuntimeTypesVersion = "2";
-    private const string CompletedAttribute = "completed";
-    private const string InitializerAttribute = "storage.initializer";
-    private const string VersionAttribute = "storage.initializer.version";
-    private const string RuntimeTypesFingerprintAttribute = "storage.initializer.runtimeTypes";
+    private const string RuntimeTypesVersion = "3";
 
     private static readonly IReadOnlyCollection<SystemNodeDefinition> SystemNodes = [
         new(GraphSystemNodeIds.GraphDataRoot, new Dictionary<string, string> {
@@ -81,34 +77,34 @@ public sealed class GraphStorageInitializer
 
     private async Task<bool> IsRuntimeTypesInitializerCompletedAsync()
     {
-        var result = await _storage.Get(GraphSystemNodeIds.RuntimeTypesInitializer).ConfigureAwait(false);
+        var result = await _storage.Get(RuntimeTypesCompletionMarkerId()).ConfigureAwait(false);
         if (result.Status == ServiceResultStatus.NotFound)
             return false;
 
-        var node = RequireOk(result, $"read initializer marker '{GraphSystemNodeIds.RuntimeTypesInitializer}'");
-        return node.Attributes.TryGetValue(CompletedAttribute, out var completed)
-            && string.Equals(completed, bool.TrueString, StringComparison.OrdinalIgnoreCase)
-            && node.Attributes.TryGetValue(VersionAttribute, out var version)
-            && string.Equals(version, RuntimeTypesVersion, StringComparison.Ordinal)
-            && node.Attributes.TryGetValue(RuntimeTypesFingerprintAttribute, out var fingerprint)
-            && string.Equals(fingerprint, _runtimeTypes.Fingerprint, StringComparison.Ordinal);
+        RequireOk(result, $"read initializer marker '{RuntimeTypesCompletionMarkerId()}'");
+        return true;
     }
 
     private async Task MarkRuntimeTypesInitializerCompletedAsync()
     {
-        var attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+        var markerAttributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
             [GraphRuntimeAttributeNames.GraphKind] = "storage-initializer",
-            [InitializerAttribute] = "runtime-types",
-            [CompletedAttribute] = bool.TrueString,
-            [VersionAttribute] = RuntimeTypesVersion,
-            [RuntimeTypesFingerprintAttribute] = _runtimeTypes.Fingerprint,
+            ["label"] = "Runtime types initializer"
+        };
+        var completionAttributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+            ["label"] = $"Runtime types {RuntimeTypesVersion}",
             ["completedAtUtc"] = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
         };
 
-        await EnsureNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer, attributes).ConfigureAwait(false);
-        var result = await _storage.Update(GraphSystemNodeIds.RuntimeTypesInitializer, attributes).ConfigureAwait(false);
-        RequireOk(result, $"write initializer marker '{GraphSystemNodeIds.RuntimeTypesInitializer}'");
+        await EnsureNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer, markerAttributes).ConfigureAwait(false);
+        await EnsureNodeAsync(RuntimeTypesCompletionMarkerId(), completionAttributes).ConfigureAwait(false);
     }
+
+    private InternalId RuntimeTypesCompletionMarkerId() =>
+        new(GraphSystemNodeIds.RuntimeTypesInitializer.Concat([
+            new NodeLocalId(RuntimeTypesVersion),
+            new NodeLocalId(_runtimeTypes.Fingerprint)
+        ]));
 
     private async Task<NodeState> EnsureNodeAsync(
         InternalId id,

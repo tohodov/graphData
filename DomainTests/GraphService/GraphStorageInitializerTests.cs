@@ -67,9 +67,10 @@ public sealed class GraphStorageInitializerTests
 
         var marker = await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.RuntimeTypesInitializer);
         Assert.AreEqual("storage-initializer", marker.Attributes[GraphRuntimeAttributeNames.GraphKind]);
-        Assert.AreEqual("runtime-types", marker.Attributes["storage.initializer"]);
-        Assert.AreEqual(bool.TrueString, marker.Attributes["completed"]);
-        Assert.AreEqual("2", marker.Attributes["storage.initializer.version"]);
+        Assert.AreEqual("Runtime types initializer", marker.Attributes["label"]);
+        Assert.IsFalse(marker.Attributes.ContainsKey("completed"));
+        Assert.IsFalse(marker.Attributes.ContainsKey("storage.initializer.version"));
+        await AssertHasCompletionMarkerAsync(scope.Storage);
 
         var subgraph = (await scope.Storage.GetSubgraphAsync(new SubgraphQuery {
             Nodes = [GraphSystemNodeIds.NodeTypeRoot, GraphSystemNodeIds.EdgeTypeRoot],
@@ -139,7 +140,7 @@ public sealed class GraphStorageInitializerTests
     }
 
     [TestMethod]
-    public async Task InitializeAsync_SkipsAfterCompletionFlagFromPreviousStorageInstance()
+    public async Task InitializeAsync_SkipsAfterCompletionMarkerFromPreviousStorageInstance()
     {
         var rootPath = Path.Combine(
             Path.GetTempPath(),
@@ -162,8 +163,7 @@ public sealed class GraphStorageInitializerTests
             var secondInstance = await GetRequiredAsync(secondStorage, GraphBaseTypeIds.NodeInstance);
             Assert.AreEqual("#abcdef", secondInstance.Attributes["color"]);
 
-            var marker = await GetRequiredAsync(secondStorage, GraphSystemNodeIds.RuntimeTypesInitializer);
-            Assert.AreEqual(bool.TrueString, marker.Attributes["completed"]);
+            await AssertHasCompletionMarkerAsync(secondStorage);
         } finally {
             if (Directory.Exists(rootPath))
                 Directory.Delete(rootPath, recursive: true);
@@ -214,6 +214,17 @@ public sealed class GraphStorageInitializerTests
         Assert.IsTrue(
             connected.Any(node => node.GlobalId == targetId),
             $"Expected '{sourceId}' to be connected to '{targetId}'.");
+    }
+
+    private static async Task AssertHasCompletionMarkerAsync(IGraphStorage storage)
+    {
+        var subgraph = (await storage.GetSubgraphAsync(new SubgraphQuery {
+            Nodes = [GraphSystemNodeIds.RuntimeTypesInitializer],
+            MaxDepth = 2
+        })).Value!;
+        Assert.IsTrue(
+            subgraph.Nodes.Any(node => node.GlobalId.ToString().StartsWith($"{GraphSystemNodeIds.RuntimeTypesInitializer}/3/", StringComparison.Ordinal)),
+            "Expected runtime type initializer completion marker node.");
     }
 
     private static void AssertBaseType(

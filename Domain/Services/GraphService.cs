@@ -5,13 +5,8 @@ using GraphData.Core.Models;
 namespace GraphData.Core.Services;
 
 public sealed class GraphService {
-    const string EdgeElement = "edge";
-    const string EdgeInstanceKind = "edge-instance";
-    const string RelationRootKind = "relation-root";
-    const string EdgePortKind = "edge-port";
     const string SourcePortRole = "source";
     const string TargetPortRole = "target";
-    const string TypePortRole = "type";
 
     readonly IGraphStorage storage;
     readonly GraphSearchService searchService;
@@ -204,10 +199,7 @@ public sealed class GraphService {
                 ? LocalIdOf(existingRelationIdForLocalId)
                 : CreateRelationLocalId(type.GlobalId);
 
-        var ensureRoot = await EnsurePathAsync(relationRoot.GlobalId, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = RelationRootKind,
-            [GraphRuntimeAttributeNames.GraphElement] = EdgeElement
-        });
+        var ensureRoot = await EnsurePathAsync(relationRoot.GlobalId);
         if (ensureRoot.Status != ServiceResultStatus.Ok)
             return ToSubgraphResult(ensureRoot);
 
@@ -470,11 +462,7 @@ public sealed class GraphService {
             ? relationLocalId.Trim()
             : CreateRelationLocalId(typeId);
 
-        var rootAttributes = new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = RelationRootKind,
-            [GraphRuntimeAttributeNames.GraphElement] = EdgeElement
-        };
-        var ensureRoot = await EnsurePathAsync(resolvedRelationRoot.GlobalId, rootAttributes).ConfigureAwait(false);
+        var ensureRoot = await EnsurePathAsync(resolvedRelationRoot.GlobalId).ConfigureAwait(false);
         if (ensureRoot.Status != ServiceResultStatus.Ok)
             return ToSubgraphResult(ensureRoot);
 
@@ -536,32 +524,26 @@ public sealed class GraphService {
         InternalId typeId,
         InternalId relationRootId,
         string relationLocalId) {
-        var relationResult = await storage.Create(new NodeLocalId(relationLocalId), relationRootId, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = EdgeInstanceKind,
-            [GraphRuntimeAttributeNames.GraphElement] = EdgeElement,
-            [GraphRuntimeAttributeNames.GraphTypeName] = typeId.ToString()
-        });
+        var relationResult = await storage.Create(new NodeLocalId(relationLocalId), relationRootId);
         if (relationResult.Status != ServiceResultStatus.Ok || relationResult.Value is null)
             return ServiceResult<Subgraph>.From(relationResult);
 
         var relation = relationResult.Value;
+        var connectType = await storage.Connect(relation.GlobalId, typeId);
+        if (connectType.Status != ServiceResultStatus.Ok)
+            return ToSubgraphResult(connectType);
+
         var sourcePort = await CreatePortAsync(relation.GlobalId, SourcePortRole);
         if (sourcePort.Status != ServiceResultStatus.Ok || sourcePort.Value is null)
             return ServiceResult<Subgraph>.From(sourcePort);
         var targetPort = await CreatePortAsync(relation.GlobalId, TargetPortRole);
         if (targetPort.Status != ServiceResultStatus.Ok || targetPort.Value is null)
             return ServiceResult<Subgraph>.From(targetPort);
-        var typePort = await CreatePortAsync(relation.GlobalId, TypePortRole);
-        if (typePort.Status != ServiceResultStatus.Ok || typePort.Value is null)
-            return ServiceResult<Subgraph>.From(typePort);
 
         var connect = await storage.Connect(sourcePort.Value.GlobalId, sourceId);
         if (connect.Status != ServiceResultStatus.Ok)
             return ToSubgraphResult(connect);
         connect = await storage.Connect(targetPort.Value.GlobalId, targetId);
-        if (connect.Status != ServiceResultStatus.Ok)
-            return ToSubgraphResult(connect);
-        connect = await storage.Connect(typePort.Value.GlobalId, typeId);
         if (connect.Status != ServiceResultStatus.Ok)
             return ToSubgraphResult(connect);
 
@@ -572,10 +554,7 @@ public sealed class GraphService {
     }
 
     private Task<ServiceResult<NodeState>> CreatePortAsync(InternalId relationId, string role) =>
-        storage.Create(new NodeLocalId(CreatePortLocalId(role)), relationId, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = EdgePortKind,
-            [GraphRuntimeAttributeNames.GraphRole] = role
-        });
+        storage.Create(new NodeLocalId(CreatePortLocalId(role)), relationId);
 
     private async Task<ServiceResult> EnsurePathAsync(InternalId id, IDictionary<string, string>? leafAttributes = null) {//TODO revisit path creation
         var segments = id.ToArray();
