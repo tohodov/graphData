@@ -1,10 +1,6 @@
-using System.Linq;
-using System.Threading.Tasks;
 using Abstractions;
 using GraphData.Core.Models;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-
-namespace GraphData.Tests.Storage;
 
 partial class GraphStorageContractTests {
     [TestMethod]

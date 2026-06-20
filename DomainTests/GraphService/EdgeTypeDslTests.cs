@@ -5,9 +5,8 @@ using System.Threading.Tasks;
 using Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
+using GraphData.Tests;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-
-namespace GraphData.Tests.GraphService;
 
 [RelevantTestClass]
 public sealed class EdgeTypeDslTests

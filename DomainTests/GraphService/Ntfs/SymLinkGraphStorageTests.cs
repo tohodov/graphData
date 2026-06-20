@@ -9,8 +9,6 @@ using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Storage;
 
-namespace GraphData.Tests.Storage.Ntfs;
-
 [RelevantTestClass]
 public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
 {

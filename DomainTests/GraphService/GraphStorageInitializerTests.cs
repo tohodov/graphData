@@ -20,6 +20,7 @@ public sealed class GraphStorageInitializerTests
     public async Task InitializeAsync_CreatesRuntimeTypeSubgraphsAndCompletionMarker()
     {
         await using var scope = TestGraphStorageScope.Create();
+        var service = new GraphData.Core.Services.GraphService(scope.Storage, new GraphSearchService(scope.Storage), new CancellationTokensAccessorMock());
         var initializer = new GraphStorageInitializer(scope.Storage);
 
         await initializer.InitializeAsync();
@@ -37,12 +38,9 @@ public sealed class GraphStorageInitializerTests
 
         var marker = await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.RuntimeTypesInitializer);
         AssertNoAttributes(marker);
-        await AssertHasCompletionMarkerAsync(scope.Storage);
+        await AssertHasCompletionMarkerAsync(service);
 
-        var subgraph = (await scope.Storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = [GraphSystemNodeIds.NodeTypeRoot],
-            MaxDepth = 4
-        })).Value!;
+        var subgraph = (await service.GetSubgraph([GraphSystemNodeIds.NodeTypeRoot], 4)).Value!;
         var subgraphIds = subgraph.Nodes.Select(static node => node.GlobalId).ToArray();
 
         CollectionAssert.IsSubsetOf(
@@ -125,7 +123,7 @@ public sealed class GraphStorageInitializerTests
             var secondInstance = await GetRequiredAsync(secondStorage, GraphBaseTypeIds.NodeInstance);
             Assert.AreEqual("#abcdef", secondInstance.Attributes["color"]);
 
-            await AssertHasCompletionMarkerAsync(secondStorage);
+            await AssertHasCompletionMarkerAsync(new (secondStorage, new GraphSearchService(secondStorage), new CancellationTokensAccessorMock()));
         } finally {
             if (Directory.Exists(rootPath))
                 Directory.Delete(rootPath, recursive: true);
@@ -178,12 +176,9 @@ public sealed class GraphStorageInitializerTests
             $"Expected '{sourceId}' to be connected to '{targetId}'.");
     }
 
-    private static async Task AssertHasCompletionMarkerAsync(IGraphStorage storage)
+    private static async Task AssertHasCompletionMarkerAsync(GraphData.Core.Services.GraphService service)
     {
-        var subgraph = (await storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = [GraphSystemNodeIds.RuntimeTypesInitializer],
-            MaxDepth = 2
-        })).Value!;
+        var subgraph = (await service.GetSubgraph([GraphSystemNodeIds.RuntimeTypesInitializer], 2)).Value!;
         Assert.IsTrue(
             subgraph.Nodes.Any(node => node.GlobalId.ToString().StartsWith($"{GraphSystemNodeIds.RuntimeTypesInitializer}/5/", StringComparison.Ordinal)),
             "Expected runtime type initializer completion marker node.");

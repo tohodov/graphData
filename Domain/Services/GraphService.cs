@@ -142,10 +142,7 @@ public sealed class GraphService {
             return ServiceResult<Subgraph>.BadRequest(ex.Message);
         }
 
-        return await storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = [nodeId, typeId],
-            MaxDepth = 1
-        }).ConfigureAwait(false);
+        return await GetSubgraph([nodeId, typeId], 1).ConfigureAwait(false);
     }
 
     public async Task<ServiceResult<Subgraph>> ChangeEdgeTypeAsync(
@@ -241,13 +238,67 @@ public sealed class GraphService {
             relationLocalId).ConfigureAwait(false);
     }
 
-    public Task<ServiceResult<Subgraph>> GetSubgraphAsync(
-        IEnumerable<NodeRef> globalIds,
-        int maxDepth) {
-        return storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = globalIds.ToArray(),
-            MaxDepth = maxDepth
-        });
+    public async Task<ServiceResult<Subgraph>> GetSubgraph(IEnumerable<NodeRef> globalIds, int maxDepth) {
+
+        var roots = new List<NodeState>();
+        if (!globalIds.Any())
+            roots.AddRange((await storage.Get(storage.Root)).Value!.Nodes);
+        else
+            foreach (var rootRef in globalIds) {
+                var rootsResult = await storage.Get(rootRef);
+                if (rootsResult.Status != ServiceResultStatus.Ok || rootsResult.Value is null)
+                    return ServiceResult<Subgraph>.From(rootsResult);
+                var node = rootsResult.Value;
+                if (node.GlobalId != storage.Root)
+                    roots.Add(node);
+                else
+                    roots.AddRange(node.Nodes);
+            }
+
+        var visitedRequests = new HashSet<InternalId>();//TODO хэш тут надо проверить
+        var visitedNodes = new HashSet<InternalId>();//TODO хэш тут надо проверить
+        var discovered = new HashSet<InternalId>(roots.Select(x => x.GlobalId));//TODO хэш тут надо проверить
+        var queue = new Queue<(InternalId NodeId, int Depth)>();
+
+        foreach (var root in roots)
+            queue.Enqueue((root.GlobalId, 0));
+
+        var nodes = new Dictionary<InternalId, Node>();//TODO хэш тут надо проверить
+
+        while (queue.Count > 0) {
+            //cancellationTokens.Token.ThrowIfCancellationRequested(); //TODO перенести внутрь GraphService
+            var (path, depth) = queue.Dequeue();
+            if (!visitedRequests.Add(path))
+                continue;
+
+            var result = await storage.Get(path);
+            if (result.Status == ServiceResultStatus.NotFound)
+                continue;
+            if (result.Status != ServiceResultStatus.Ok || result.Value is null)
+                return ServiceResult<Subgraph>.From(result);
+
+            var node = new Node(result.Value);
+            if (!visitedNodes.Add(node.GlobalId))
+                continue;
+
+            nodes[node.GlobalId] = node;
+            if (depth >= maxDepth)
+                continue;
+
+            var connections = await storage.GetConnectedNodesAsync(result.Value);
+            if (connections.Status != ServiceResultStatus.Ok || connections.Value is null)
+                return ServiceResult<Subgraph>.From(connections);
+
+            foreach (var neighborId in connections.Value.Select(static x => x.GlobalId))
+                if (neighborId != node.GlobalId && discovered.Add(neighborId))
+                    queue.Enqueue((neighborId, depth + 1));
+        }
+
+        return ServiceResult<Subgraph>.Ok(nodes.Count == 0
+            ? Subgraph.Empty
+            : new Subgraph {
+                Nodes = nodes.Values
+            });
     }
 
     public IAsyncEnumerable<NodeSearchMatch> SearchNodesStreamAsync(
@@ -522,10 +573,7 @@ public sealed class GraphService {
                 return ToSubgraphResult(connectSpec);
         }
 
-        return await storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = [relation.GlobalId],
-            MaxDepth = 2
-        }).ConfigureAwait(false);
+        return await GetSubgraph([relation.GlobalId], 2).ConfigureAwait(false);
     }
 
     private async Task<ServiceResult<Subgraph>> CreateTypedEdgeRelationSubgraphAsync(
@@ -557,10 +605,7 @@ public sealed class GraphService {
         if (connect.Status != ServiceResultStatus.Ok)
             return ToSubgraphResult(connect);
 
-        return await storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = [relation.GlobalId],
-            MaxDepth = 2
-        });
+        return await GetSubgraph([relation.GlobalId], 2);
     }
 
     private async Task<ServiceResult<NodeState>> CreatePortAsync(InternalId relationId, string role)

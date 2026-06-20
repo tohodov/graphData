@@ -90,7 +90,7 @@ public sealed class GraphDataTools(GraphService graph) {
     public async Task<string> GetSubgraph(
         [Description("Root nodes NodePath segments for graph traversal.")] string[][] rootPaths,
         [Description("Maximum traversal depth. Use 0 to return only roots.")] int maxDepth = 1) {
-        var result = await graph.GetSubgraphAsync(rootPaths.Select(x => new NodePath(x)), maxDepth);
+        var result = await graph.GetSubgraph(rootPaths.Select(x => new NodePath(x)), maxDepth);
 
         if (result.Status != ServiceResultStatus.Ok || result.Value is null)
             return ToJson(ToErrorResponse(result.Status, result.Error));

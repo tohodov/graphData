@@ -79,7 +79,7 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
 
     [HttpPost("subgraph")]
     public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request) {
-        var result = await graph.GetSubgraphAsync(request.GlobalIds.Select(x => new NodePath(x)), request.MaxDepth);
+        var result = await graph.GetSubgraph(request.GlobalIds.Select(x => new NodePath(x)), request.MaxDepth);
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 

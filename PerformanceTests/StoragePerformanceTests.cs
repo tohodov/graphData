@@ -24,6 +24,7 @@ public sealed class StoragePerformanceTests {
 
         const string scenario = "storage-operations";
         await using var scope = PerformanceStorageScope.Create(storageKind, scenario);
+        var service = new GraphData.Core.Services.GraphService(scope.Storage, new GraphSearchService(scope.Storage), new CancellationTokensAccessorMock());
         AssertStorageRoot(scope, scenario);
 
         var run = new PerformanceRun(storageKind.ToString(), graph, scenario, scope.RootPath);
@@ -75,7 +76,7 @@ public sealed class StoragePerformanceTests {
         }
 
         await run.MeasureAsync("subgraph-depth-2", 1, async () => {
-            var subgraph = (await scope.Storage.GetSubgraphAsync(new SubgraphQuery { Nodes = [graph.Nodes[0].Path], MaxDepth = 2 }).ConfigureAwait(false)).Value!;
+            var subgraph = (await service.GetSubgraph([graph.Nodes[0].Path], 2).ConfigureAwait(false)).Value!;
             PerformanceAssert.IsTrue(subgraph.Nodes.Count > 0);
         }).ConfigureAwait(false);
 
@@ -181,6 +182,7 @@ public sealed class StoragePerformanceTests {
 
         const string scenario = "subgraph-random-reads";
         await using var scope = PerformanceStorageScope.Create(storageKind, scenario);
+        var service = new GraphData.Core.Services.GraphService(scope.Storage, new GraphSearchService(scope.Storage), new CancellationTokensAccessorMock());
         AssertStorageRoot(scope, scenario);
 
         var run = new PerformanceRun(storageKind.ToString(), graph, scenario, scope.RootPath);
@@ -198,13 +200,13 @@ public sealed class StoragePerformanceTests {
             await run.MeasureEachAsync(
                 $"subgraph-single-root-depth-{depth}",
                 singleRootQueries,
-                query => ReadSubgraphNodeCountAsync(scope.Storage, query, depth),
+                query => ReadSubgraphNodeCountAsync(service, query, depth),
                 valueName: "nodes").ConfigureAwait(false);
 
             await run.MeasureEachAsync(
                 $"subgraph-{multiRootCount}-roots-depth-{depth}",
                 multiRootQueries,
-                query => ReadSubgraphNodeCountAsync(scope.Storage, query, depth),
+                query => ReadSubgraphNodeCountAsync(service, query, depth),
                 valueName: "nodes").ConfigureAwait(false);
         }
 
@@ -227,10 +229,10 @@ public sealed class StoragePerformanceTests {
     }
 
     private static async Task<int> ReadSubgraphNodeCountAsync(
-        IGraphStorage storage,
+        GraphService service,
         SubgraphQueryInput input,
         int depth) {
-        var subgraph = (await storage.GetSubgraphAsync(new SubgraphQuery { Nodes = input.Roots, MaxDepth = depth } ).ConfigureAwait(false)).Value!;
+        var subgraph = (await service.GetSubgraph(input.Roots, depth).ConfigureAwait(false)).Value!;
         PerformanceAssert.IsTrue(subgraph.Nodes.Count > 0);
         return subgraph.Nodes.Count;
     }

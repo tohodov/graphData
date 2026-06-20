@@ -7,14 +7,14 @@ using GraphData.Core.Models;
 using GraphData.Core.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
-namespace GraphData.Tests.Storage;
-
 public abstract partial class GraphStorageContractTests {
     private IGraphStorage Storage { get; set; } = default!;
+    private GraphService Service { get; set; } = default!;
 
     [TestInitialize]
-    public async Task TestInitializeAsync() {
+    public async Task TestInitializeAsync() {//TODO переписать на конструктор
         Storage = (IGraphStorage)await CreateStorageAsync();
+        Service = new GraphService(Storage, new(Storage), new CancellationTokensAccessorMock());
     }
 
     [TestCleanup]
@@ -290,7 +290,7 @@ partial class GraphStorageContractTests {
         CollectionAssert.DoesNotContain(connections, node);
     }
 }
-[TestCategory(nameof(GraphStorageDomainExtensions.GetSubgraphAsync))]
+[TestCategory(nameof(GraphService.GetSubgraph))]
 partial class GraphStorageContractTests {
     [TestMethod]
     public async Task ShouldRespectDepth() {
@@ -303,12 +303,7 @@ partial class GraphStorageContractTests {
         await Storage.Connect(second.GlobalId, third.GlobalId);
         await Storage.Connect(third.GlobalId, fourth.GlobalId);
 
-        var query = new SubgraphQuery {
-            Nodes = [first.GlobalId],
-            MaxDepth = 2
-        };
-
-        var subgraph = (await Storage.GetSubgraphAsync(query)).Value!;
+        var subgraph = (await Service.GetSubgraph([first.GlobalId], 2)).Value!;
         var subgraphNodeIds = subgraph.Nodes.Select(static node => node.GlobalId).ToArray();
 
         Assert.AreEqual(3, subgraph.Nodes.Count);
@@ -334,10 +329,7 @@ partial class GraphStorageContractTests {
         var weapons = (await Storage.Create(new("weapons"), root.GlobalId)).Value!;
         var ak47 = (await Storage.Create(new("ak_47"), weapons.GlobalId)).Value!;
 
-        var subgraph = (await Storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = [root.GlobalId],
-            MaxDepth = 2
-        })).Value!;
+        var subgraph = (await Service.GetSubgraph([root.GlobalId], 2)).Value!;
 
         CollectionAssert.AreEquivalent(
             new[] { root.GlobalId, weapons.GlobalId, ak47.GlobalId },
@@ -350,10 +342,7 @@ partial class GraphStorageContractTests {
         var secondRoot = (await Storage.Create(new("second"))).Value!;
         var child = (await Storage.Create(new("child"), firstRoot.GlobalId)).Value!;
 
-        var subgraph = (await Storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = [],
-            MaxDepth = 0
-        })).Value!;
+        var subgraph = (await Service.GetSubgraph([], 0)).Value!;
 
         CollectionAssert.AreEquivalent(
             new[] { firstRoot.GlobalId, secondRoot.GlobalId },
@@ -367,10 +356,7 @@ partial class GraphStorageContractTests {
         var secondRoot = (await Storage.Create(new("second"))).Value!;
         await Storage.Create(new("child"), firstRoot.GlobalId);
 
-        var subgraph = (await Storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = [new InternalId(Array.Empty<string>())],
-            MaxDepth = 0
-        })).Value!;
+        var subgraph = (await Service.GetSubgraph([new InternalId(Array.Empty<string>())], 0)).Value!;
 
         CollectionAssert.AreEquivalent(
             new[] { firstRoot.GlobalId, secondRoot.GlobalId },
