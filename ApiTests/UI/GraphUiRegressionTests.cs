@@ -226,6 +226,7 @@ public sealed class GraphUiRegressionTests {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
             ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
             ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
             ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
 
@@ -773,6 +774,18 @@ public sealed class GraphUiRegressionTests {
         Assert.IsFalse(attributes.Contains("graphdata/relations", StringComparison.Ordinal));
         Assert.IsFalse(html.Contains("graphdata/types", StringComparison.Ordinal));
         Assert.IsFalse(html.Contains("graphdata/relations", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void BasisTab_DoesNotExposeLegacyProjectionPresetSelector()
+    {
+        var html = ReadUiFile("Api/wwwroot/index.html");
+        var viewer = ReadUiFile("Api/wwwroot/src/GraphViewer.ts");
+
+        Assert.IsFalse(html.Contains("projection-basis", StringComparison.Ordinal));
+        Assert.IsFalse(html.Contains("Пустой базис", StringComparison.Ordinal));
+        Assert.IsFalse(html.Contains("Типовой базис", StringComparison.Ordinal));
+        Assert.IsFalse(viewer.Contains("projectionBasis", StringComparison.Ordinal));
     }
 
     [TestMethod]
