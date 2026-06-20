@@ -34,12 +34,12 @@ public sealed class EdgeTypeDslTests
             relationLocalId: "manufactured-by-1");
 
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
-        var relationId = new InternalId("graphdata", "relations", "manufactured-by-1");
+        var relationId = new InternalId("manufactured-by-1");
         var relation = await GetRequiredAsync(scope, relationId);
         AssertMetadataFree(relation);
 
-        var weaponEndpointId = new InternalId("graphdata", "relations", "manufactured-by-1", EndpointInstanceLocalId(nameof(ManufacturedByEdgeType.Weapon)));
-        var manufacturerEndpointId = new InternalId("graphdata", "relations", "manufactured-by-1", EndpointInstanceLocalId(nameof(ManufacturedByEdgeType.Manufacturer)));
+        var weaponEndpointId = new InternalId("manufactured-by-1", EndpointInstanceLocalId(nameof(ManufacturedByEdgeType.Weapon)));
+        var manufacturerEndpointId = new InternalId("manufactured-by-1", EndpointInstanceLocalId(nameof(ManufacturedByEdgeType.Manufacturer)));
         var weaponEndpoint = await GetRequiredAsync(scope, weaponEndpointId);
         var manufacturerEndpoint = await GetRequiredAsync(scope, manufacturerEndpointId);
         AssertMetadataFree(weaponEndpoint);
@@ -52,6 +52,9 @@ public sealed class EdgeTypeDslTests
         var manufacturerEndpointSpec = await GetEndpointSpecAsync(scope, manufacturerEndpointId, relationId, manufacturer.Value.GlobalId);
 
         await AssertConnectedAsync(scope, relationId, edgeTypeId);
+        await AssertConnectedAsync(scope, edgeTypeId, GraphBaseTypeIds.Relation);
+        await AssertConnectedAsync(scope, weaponEndpointId, GraphBaseTypeIds.Endpoint);
+        await AssertConnectedAsync(scope, manufacturerEndpointId, GraphBaseTypeIds.Endpoint);
         await AssertConnectedAsync(scope, weaponEndpointId, weapon.Value.GlobalId);
         await AssertConnectedAsync(scope, weaponEndpointId, weaponEndpointSpec.GlobalId);
         await AssertConnectedAsync(scope, manufacturerEndpointId, manufacturer.Value.GlobalId);
@@ -67,6 +70,7 @@ public sealed class EdgeTypeDslTests
             new[] {
                 relationId,
                 edgeTypeId,
+                GraphBaseTypeIds.Endpoint,
                 weapon.Value.GlobalId,
                 manufacturer.Value.GlobalId,
                 weaponEndpointId,
@@ -159,7 +163,8 @@ public sealed class EdgeTypeDslTests
         var connected = (await scope.Storage.GetConnectedNodesAsync(endpoint)).Value!;
         var spec = connected.Single(node =>
             node.GlobalId != relationId
-            && node.GlobalId != endpointNodeId);
+            && node.GlobalId != endpointNodeId
+            && node.GlobalId != GraphBaseTypeIds.Endpoint);
         return spec;
     }
 

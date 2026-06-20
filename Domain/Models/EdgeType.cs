@@ -35,7 +35,7 @@ public abstract class EdgeType : Edge
     }
 
     internal static InternalId CreateDefaultTypeId(Type type) =>
-        new(GraphSystemNodeIds.EdgeTypeRoot.Concat([new NodeLocalId(CreateDefaultLocalId(type))]));
+        new(GraphSystemNodeIds.NodeTypeRoot.Concat([new NodeLocalId(CreateDefaultLocalId(type))]));
 
     private static string CreateDefaultLocalId(Type type)
     {

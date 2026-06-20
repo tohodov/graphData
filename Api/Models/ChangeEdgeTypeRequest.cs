@@ -10,7 +10,7 @@ public sealed class ChangeEdgeTypeRequest
 
     public required string[] TypeGlobalId { get; init; }
 
-    public string[]? RelationRootGlobalId { get; init; }
+    public string[]? RelationParentGlobalId { get; init; }
 
     public string? RelationLocalId { get; init; }
 }

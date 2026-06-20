@@ -17,13 +17,8 @@ internal static class GraphTypeTopology
         && (node.GlobalId == GraphBaseTypeIds.NodeType
             || IsConnectedTo(node, GraphBaseTypeIds.NodeType));
 
-    public static bool IsEdgeType(NodeState node) =>
-        !IsEdgeTypeRoot(node)
-        && (node.GlobalId == GraphBaseTypeIds.EdgeType
-            || IsConnectedTo(node, GraphBaseTypeIds.EdgeType));
-
     public static bool IsGraphType(NodeState node) =>
-        IsNodeType(node) || IsEdgeType(node);
+        IsNodeType(node);
 
     public static bool IsConnectedTo(NodeState node, InternalId targetId) =>
         NeighborStates(node).Any(neighbor => neighbor.GlobalId == targetId);
@@ -35,7 +30,4 @@ internal static class GraphTypeTopology
         node.GlobalId == GraphSystemNodeIds.NodeTypeRoot
         || node.GlobalId == GraphSystemNodeIds.TypeRoot;
 
-    private static bool IsEdgeTypeRoot(NodeState node) =>
-        node.GlobalId == GraphSystemNodeIds.EdgeTypeRoot
-        || node.GlobalId == GraphSystemNodeIds.TypeRoot;
 }

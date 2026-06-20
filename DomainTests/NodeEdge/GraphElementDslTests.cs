@@ -30,27 +30,21 @@ public sealed class GraphElementDslTests
         var instanceState = new InMemoryNodeState("instance-node");
         var typeNode = NodeType.FromState(typeState);
         var instanceNode = new InstanceNode(instanceState);
-        var edgeState = new InMemoryEdgeState(typeState, instanceState);
-        var typeEdge = new TypeEdge(edgeState);
-        var instanceEdge = new InstanceEdge(edgeState);
 
         Assert.AreEqual(GraphBaseTypeIds.NodeInstance, InstanceNode.StaticTypeId);
-        Assert.AreEqual(GraphBaseTypeIds.EdgeType, TypeEdge.StaticTypeId);
-        Assert.AreEqual(GraphBaseTypeIds.EdgeInstance, InstanceEdge.StaticTypeId);
-        Assert.AreEqual(GraphBaseTypeIds.EdgeType, typeEdge.TypeId);
-        Assert.AreEqual(GraphBaseTypeIds.EdgeInstance, instanceEdge.TypeId);
-        Assert.AreEqual(typeNode.GlobalId, typeEdge.Node1.GlobalId);
-        Assert.AreEqual(instanceNode.GlobalId, typeEdge.Node2.GlobalId);
+        Assert.AreEqual(GraphBaseTypeIds.NodeType, new InternalId("graphdata", "types", "nodes", "Type"));
+        Assert.AreEqual(GraphBaseTypeIds.Relation, new InternalId("graphdata", "types", "nodes", "Relation"));
+        Assert.AreEqual(GraphBaseTypeIds.Endpoint, new InternalId("graphdata", "types", "nodes", "Endpoint"));
+        Assert.AreEqual(GraphBaseTypeIds.Port, new InternalId("graphdata", "types", "nodes", "Port"));
+        Assert.AreEqual(typeNode.GlobalId, typeState.GlobalId);
+        Assert.AreEqual(instanceNode.GlobalId, instanceState.GlobalId);
     }
 
     [TestMethod]
     public void SystemNodeIds_ShouldExposeRuntimeTypeRoots()
     {
         Assert.AreEqual(new InternalId("graphdata", "types", "nodes"), GraphSystemNodeIds.NodeTypeRoot);
-        Assert.AreEqual(new InternalId("graphdata", "types", "edges"), GraphSystemNodeIds.EdgeTypeRoot);
-        Assert.AreEqual(new InternalId("graphdata", "relations"), GraphSystemNodeIds.RelationRoot);
         Assert.AreEqual(GraphSystemNodeIds.NodeTypeRoot, GraphBaseTypeIds.NodeTypeRoot);
-        Assert.AreEqual(GraphSystemNodeIds.EdgeTypeRoot, GraphBaseTypeIds.EdgeTypeRoot);
     }
 
     private sealed class InMemoryNodeState(string name) : NodeState
@@ -63,9 +57,4 @@ public sealed class GraphElementDslTests
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
-    private sealed class InMemoryEdgeState(NodeState node1, NodeState node2) : EdgeState
-    {
-        public override NodeState Node1 { get; } = node1;
-        public override NodeState Node2 { get; } = node2;
-    }
 }

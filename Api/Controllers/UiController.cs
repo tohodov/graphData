@@ -17,8 +17,6 @@ public sealed class UiController : ControllerBase
                 GraphDataRoot = GraphSystemNodeIds.GraphDataRoot.ToString(),
                 TypeRoot = GraphSystemNodeIds.TypeRoot.ToString(),
                 NodeTypeRoot = GraphSystemNodeIds.NodeTypeRoot.ToString(),
-                EdgeTypeRoot = GraphSystemNodeIds.EdgeTypeRoot.ToString(),
-                RelationRoot = GraphSystemNodeIds.RelationRoot.ToString(),
                 StorageRoot = GraphSystemNodeIds.StorageRoot.ToString(),
                 InitializerRoot = GraphSystemNodeIds.InitializerRoot.ToString(),
                 RuntimeTypesInitializer = GraphSystemNodeIds.RuntimeTypesInitializer.ToString()
@@ -27,14 +25,14 @@ public sealed class UiController : ControllerBase
             {
                 NodeType = GraphBaseTypeIds.NodeType.ToString(),
                 NodeInstance = GraphBaseTypeIds.NodeInstance.ToString(),
-                EdgeType = GraphBaseTypeIds.EdgeType.ToString(),
-                EdgeInstance = GraphBaseTypeIds.EdgeInstance.ToString()
+                EdgeType = GraphBaseTypeIds.Relation.ToString(),
+                Relation = GraphBaseTypeIds.Relation.ToString(),
+                Endpoint = GraphBaseTypeIds.Endpoint.ToString(),
+                Port = GraphBaseTypeIds.Port.ToString()
             },
             Basis = new UiBasisResponse
             {
-                NodeTypeRoot = GraphSystemNodeIds.NodeTypeRoot.ToString(),
-                EdgeTypeRoot = GraphSystemNodeIds.EdgeTypeRoot.ToString(),
-                RelationRoot = GraphSystemNodeIds.RelationRoot.ToString()
+                NodeTypeRoot = GraphSystemNodeIds.NodeTypeRoot.ToString()
             }
         };
 }

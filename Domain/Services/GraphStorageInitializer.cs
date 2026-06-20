@@ -6,14 +6,12 @@ namespace GraphData.Core.Services;
 
 public sealed class GraphStorageInitializer
 {
-    private const string RuntimeTypesVersion = "4";
+    private const string RuntimeTypesVersion = "5";
 
     private static readonly IReadOnlyCollection<InternalId> SystemNodes = [
         GraphSystemNodeIds.GraphDataRoot,
         GraphSystemNodeIds.TypeRoot,
         GraphSystemNodeIds.NodeTypeRoot,
-        GraphSystemNodeIds.EdgeTypeRoot,
-        GraphSystemNodeIds.RelationRoot,
         GraphSystemNodeIds.StorageRoot,
         GraphSystemNodeIds.InitializerRoot
     ];
@@ -111,15 +109,17 @@ public sealed class GraphStorageInitializer
 
     private async Task EnsureRuntimeTypeMembershipAsync(RuntimeGraphTypeDefinition type)
     {
-        var baseTypeId = type.Element == "edge"
-            ? GraphBaseTypeIds.EdgeType
-            : GraphBaseTypeIds.NodeType;
-        if (type.TypeId == baseTypeId)
-            return;
+        if (type.TypeId != GraphBaseTypeIds.NodeType) {
+            await EnsureNodeAsync(GraphBaseTypeIds.NodeType).ConfigureAwait(false);
+            var connect = await _storage.Connect(type.TypeId, GraphBaseTypeIds.NodeType).ConfigureAwait(false);
+            RequireOk(connect, $"connect runtime type '{type.TypeId}' to base type '{GraphBaseTypeIds.NodeType}'");
+        }
 
-        await EnsureNodeAsync(baseTypeId).ConfigureAwait(false);
-        var connect = await _storage.Connect(type.TypeId, baseTypeId).ConfigureAwait(false);
-        RequireOk(connect, $"connect runtime type '{type.TypeId}' to base type '{baseTypeId}'");
+        if (type.EdgeTypeDescriptor is not null && type.TypeId != GraphBaseTypeIds.Relation) {
+            await EnsureNodeAsync(GraphBaseTypeIds.Relation).ConfigureAwait(false);
+            var connectRelation = await _storage.Connect(type.TypeId, GraphBaseTypeIds.Relation).ConfigureAwait(false);
+            RequireOk(connectRelation, $"connect relation type '{type.TypeId}' to base relation type '{GraphBaseTypeIds.Relation}'");
+        }
     }
 
     private async Task EnsureEdgeTypeDefinitionAsync(RuntimeGraphTypeDefinition type)

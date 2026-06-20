@@ -168,21 +168,12 @@ internal sealed class GraphRuntimeTypeCatalog
                 CreateNodeTypeDescriptor(type),
                 null);
 
-        if (typeof(Edge).IsAssignableFrom(type) && typeof(IGraphEdgeType).IsAssignableFrom(type))
-            return new RuntimeGraphTypeDefinition(
-                type,
-                GetStaticTypeId(type),
-                "edge",
-                GraphSystemNodeIds.EdgeTypeRoot,
-                null,
-                null);
-
         if (typeof(EdgeType).IsAssignableFrom(type))
             return new RuntimeGraphTypeDefinition(
                 type,
                 EdgeType.CreateDefaultTypeId(type),
-                "edge",
-                GraphSystemNodeIds.EdgeTypeRoot,
+                "relation",
+                GraphSystemNodeIds.NodeTypeRoot,
                 null,
                 CreateEdgeTypeDescriptor(type));
 
@@ -236,14 +227,14 @@ internal sealed class GraphRuntimeTypeCatalog
     private static void ThrowForDuplicateTypeIds(IReadOnlyCollection<RuntimeGraphTypeDefinition> types)
     {
         var duplicate = types
-            .GroupBy(static type => (type.Element, type.TypeId))
+            .GroupBy(static type => type.TypeId)
             .FirstOrDefault(static group => group.Count() > 1);
         if (duplicate is null)
             return;
 
         var owners = string.Join(", ", duplicate.Select(static type => type.ClrType.FullName));
         throw new InvalidOperationException(
-            $"Runtime graph type id '{duplicate.Key.TypeId}' for element '{duplicate.Key.Element}' is declared more than once: {owners}.");
+            $"Runtime graph type id '{duplicate.Key}' is declared more than once: {owners}.");
     }
 
     private static string CreateFingerprint(IEnumerable<RuntimeGraphTypeDefinition> types)

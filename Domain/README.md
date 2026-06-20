@@ -39,21 +39,25 @@
 - `NodeTypeDefinition.EnsureSatisfiedBy(...)` проверяет минимальные инварианты типа против `InstanceNode` и
   бросает исключение при нарушении.
 
-### Текущий слой типов связей
+### Текущий слой типизированных связей
 
 - Внешний DSL типизации связей выражается обычной C#-иерархией `Edge -> EdgeType -> ...`.
-- Идентичность runtime-типа связи назначается каталогом регистрации. Пользовательский `EdgeType` не объявляет
-  `StaticTypeId` и не должен заранее знать свой graph id.
+- Идентичность runtime-типа связи назначается каталогом регистрации, но в графе этот runtime-тип является обычным
+  `NodeType` под `GraphSystemNodeIds.NodeTypeRoot`. Пользовательский `EdgeType` не объявляет `StaticTypeId` и не
+  должен заранее знать свой graph id.
+- Каждый зарегистрированный `EdgeType` дополнительно связывается с системным node type `GraphBaseTypeIds.Relation`.
 - Класс-наследник `EdgeType` описывает endpoints через публичные поля/свойства C#: кастомные `NodeType` и
   обычные `Node`. Примитивные поля не становятся частью relation-контракта, потому что типизированные связи не
   хранят метаинформацию.
 - `EdgeTypeDefinition` описывает один зарегистрированный `EdgeType` как набор endpoint-спеков. Минимум сейчас -
   два endpoint-узла.
 - `GraphService.ChangeEdgeTypeAsync<TEdgeType>` превращает связь между выбранными узлами в relation-подграф:
-  metadata-free relation-узел, metadata-free endpoint-узлы, связь relation с узлом типа связи и связи endpoint-узлов
-  с выбранными инстансами и endpoint-спеками в дереве типов.
-- Endpoint-спеки живут под `GraphSystemNodeIds.EdgeTypeRoot` рядом с зарегистрированным edge type и связываются с
-  node type-узлами, если endpoint объявлен через кастомный `NodeType`.
+  metadata-free relation-узел, назначение relation-узлу node type бывшего `EdgeType`, metadata-free endpoint-узлы,
+  назначение endpoint-узлам `GraphBaseTypeIds.Endpoint` и связи endpoint-узлов с выбранными инстансами и
+  endpoint-спеками в дереве типов.
+- Endpoint-спеки живут под node type зарегистрированного `EdgeType` и связываются с node type-узлами, если endpoint
+  объявлен через кастомный `NodeType`.
+- Низкоуровневые source/target port-узлы типизируются через `GraphBaseTypeIds.Port`.
 
 ### Граница мутаций
 

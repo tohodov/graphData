@@ -354,11 +354,10 @@ public sealed class GraphControllerTests {
     [TestMethod]
     public async Task ChangeEdgeTypeAsync_CreatesRelationSubgraphForBasicEdgeAndReturnsIt() {
         await using var scope = TestGraphStorageScope.Create();
-        await CreatePathAsync(scope.Storage, GraphBaseTypeIds.EdgeType);
-        await CreatePathAsync(scope.Storage, GraphSystemNodeIds.RelationRoot);
-        var newType = (await scope.Storage.Create(new("new-type"), GraphSystemNodeIds.EdgeTypeRoot)).Value!;
-        await scope.Storage.Connect(newType.GlobalId, GraphBaseTypeIds.EdgeType);
-        var relationRoot = (await scope.Storage.Get(GraphSystemNodeIds.RelationRoot)).Value!;
+        await new GraphStorageInitializer(scope.Storage).InitializeAsync();
+        var newType = (await scope.Storage.Create(new("new-type"), GraphSystemNodeIds.NodeTypeRoot)).Value!;
+        await scope.Storage.Connect(newType.GlobalId, GraphBaseTypeIds.NodeType);
+        await scope.Storage.Connect(newType.GlobalId, GraphBaseTypeIds.Relation);
         var source = (await scope.Storage.Create(new("source"))).Value!;
         var target = (await scope.Storage.Create(new("target"))).Value!;
         await scope.Storage.Connect(source.GlobalId, target.GlobalId);
@@ -368,7 +367,6 @@ public sealed class GraphControllerTests {
             SourceGlobalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TargetGlobalId = target.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = newType.GlobalId.Select(static segment => segment.ToString()).ToArray(),
-            RelationRootGlobalId = relationRoot.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             RelationLocalId = "relation-1"
         });
 
@@ -377,8 +375,8 @@ public sealed class GraphControllerTests {
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
 
-        var relation = response.Nodes.Single(node => node.GlobalId == "graphdata/relations/relation-1");
-        Assert.AreEqual("graphdata/relations/relation-1", relation.GlobalId);
+        var relation = response.Nodes.Single(node => node.GlobalId == "relation-1");
+        Assert.AreEqual("relation-1", relation.GlobalId);
         Assert.AreEqual(0, relation.Attributes.Count);
 
         var returnedIds = response.Nodes.Select(static node => node.GlobalId).ToHashSet(StringComparer.Ordinal);
@@ -391,14 +389,16 @@ public sealed class GraphControllerTests {
             .ToArray();
         Assert.AreEqual(2, endpointPorts.Length);
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, relation.GlobalId, newType.GlobalId.ToString())));
+        Assert.IsTrue(endpointPorts.All(port => response.Edges.Any(edge => HasEndpoints(edge, port.GlobalId, GraphBaseTypeIds.Port.ToString()))));
         Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.GlobalId, source.GlobalId.ToString()))));
         Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.GlobalId, target.GlobalId.ToString()))));
 
-        var storedRelation = (await scope.Storage.Get(new NodePath("graphdata", "relations", "relation-1"))).Value!;
+        var storedRelation = (await scope.Storage.Get(new NodePath("relation-1"))).Value!;
         Assert.AreEqual(0, storedRelation.Attributes.Count);
 
-        var replacementType = (await scope.Storage.Create(new("replacement-type"), GraphSystemNodeIds.EdgeTypeRoot)).Value!;
-        await scope.Storage.Connect(replacementType.GlobalId, GraphBaseTypeIds.EdgeType);
+        var replacementType = (await scope.Storage.Create(new("replacement-type"), GraphSystemNodeIds.NodeTypeRoot)).Value!;
+        await scope.Storage.Connect(replacementType.GlobalId, GraphBaseTypeIds.NodeType);
+        await scope.Storage.Connect(replacementType.GlobalId, GraphBaseTypeIds.Relation);
         await scope.Storage.Update(storedRelation.GlobalId, new Dictionary<string, string> { ["note"] = "user note" });
         var retyped = await controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
             RelationGlobalId = storedRelation.GlobalId.Select(static segment => segment.ToString()).ToArray(),

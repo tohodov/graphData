@@ -165,8 +165,8 @@ public sealed class GraphService {
             return ServiceResult<Subgraph>.From(typeResult);
 
         var type = typeResult.Value;
-        if (!IsEdgeType(type))
-            return ServiceResult<Subgraph>.BadRequest($"Node '{typeGlobalId}' is not an edge type.");
+        if (!IsRelationType(type))
+            return ServiceResult<Subgraph>.BadRequest($"Node '{typeGlobalId}' is not a relation node type.");
         if (relationGlobalId is null
             && runtimeTypes.TryCreateEdgeTypeDefinition(type.GlobalId, out var edgeTypeDefinition)) {
             return await ChangeRegisteredEdgeTypeAsync(
@@ -187,11 +187,8 @@ public sealed class GraphService {
                 return ToSubgraphResult(delete);
         }
 
-        var relationRootId = relationRootGlobalId ?? (relationGlobalId is NodePath existingRelationId ? ParentOf(existingRelationId) : throw new Exception("Relation root is required."));
-        var relationRootResult = await storage.Get(relationRootId);
-        if (relationRootResult.Status != ServiceResultStatus.Ok || relationRootResult.Value == null)
-            return ServiceResult<Subgraph>.NotFound(relationRootId.ToString());
-        var relationRoot = relationRootResult.Value;
+        var relationParentId = NormalizeParentId(relationRootGlobalId)
+            ?? (relationGlobalId is NodePath existingRelationId ? ParentOf(existingRelationId) : null);
 
         var localId = !string.IsNullOrWhiteSpace(relationLocalId)
             ? relationLocalId.Trim()
@@ -199,15 +196,17 @@ public sealed class GraphService {
                 ? LocalIdOf(existingRelationIdForLocalId)
                 : CreateRelationLocalId(type.GlobalId);
 
-        var ensureRoot = await EnsurePathAsync(relationRoot.GlobalId);
-        if (ensureRoot.Status != ServiceResultStatus.Ok)
-            return ToSubgraphResult(ensureRoot);
+        if (relationParentId is not null) {
+            var ensureRoot = await EnsurePathAsync(relationParentId).ConfigureAwait(false);
+            if (ensureRoot.Status != ServiceResultStatus.Ok)
+                return ToSubgraphResult(ensureRoot);
+        }
 
         return await CreateTypedEdgeRelationSubgraphAsync(
             endpointsResult.Value.SourceId,
             endpointsResult.Value.TargetId,
             type.GlobalId,
-            relationRoot.GlobalId,
+            relationParentId,
             localId);
     }
 
@@ -290,7 +289,11 @@ public sealed class GraphService {
             : ServiceResult<Node>.From(result);
     }
 
-    private static bool IsEdgeType(NodeState node) => GraphTypeTopology.IsEdgeType(node);
+    private bool IsRelationType(NodeState node) =>
+        GraphTypeTopology.IsNodeType(node)
+        && (node.GlobalId == GraphBaseTypeIds.Relation
+            || GraphTypeTopology.IsConnectedTo(node, GraphBaseTypeIds.Relation)
+            || runtimeTypes.TryCreateEdgeTypeDefinition(node.GlobalId, out _));
 
     private async Task<ServiceResult<EdgeEndpoints>> ResolveEdgeEndpointsAsync(
         NodeRef? sourceId,
@@ -354,13 +357,13 @@ public sealed class GraphService {
         NodeState relation,
         IReadOnlyCollection<NodeState> connected)
     {
-        var directEdgeType = connected.FirstOrDefault(IsEdgeType);
-        if (directEdgeType is not null) {
+        var directRelationType = connected.FirstOrDefault(IsRelationType);
+        if (directRelationType is not null) {
             var endpointPorts = connected
-                .Where(node => node.GlobalId != directEdgeType.GlobalId)
+                .Where(node => node.GlobalId != directRelationType.GlobalId)
                 .Where(static node => !GraphTypeTopology.IsGraphType(node))
                 .ToArray();
-            return ServiceResult<RelationShape>.Ok(new RelationShape(directEdgeType.GlobalId, endpointPorts));
+            return ServiceResult<RelationShape>.Ok(new RelationShape(directRelationType.GlobalId, endpointPorts));
         }
 
         foreach (var candidatePort in connected) {
@@ -368,15 +371,15 @@ public sealed class GraphService {
             if (candidateConnections.Status != ServiceResultStatus.Ok || candidateConnections.Value is null)
                 return ServiceResult<RelationShape>.From(candidateConnections);
 
-            var edgeType = candidateConnections.Value.FirstOrDefault(IsEdgeType);
-            if (edgeType is null)
+            var relationType = candidateConnections.Value.FirstOrDefault(IsRelationType);
+            if (relationType is null)
                 continue;
 
             var endpointPorts = connected
                 .Where(node => node.GlobalId != candidatePort.GlobalId)
                 .Where(static node => !GraphTypeTopology.IsGraphType(node))
                 .ToArray();
-            return ServiceResult<RelationShape>.Ok(new RelationShape(edgeType.GlobalId, endpointPorts));
+            return ServiceResult<RelationShape>.Ok(new RelationShape(relationType.GlobalId, endpointPorts));
         }
 
         return ServiceResult<RelationShape>.BadRequest($"Node '{relation.GlobalId}' is not a typed edge relation.");
@@ -394,6 +397,7 @@ public sealed class GraphService {
             .Where(node => node.GlobalId != relationId)
             .Where(node => node.GlobalId != edgeTypeId)
             .Where(static node => !GraphTypeTopology.IsGraphType(node))
+            .Where(node => !IsChildOf(node.GlobalId, edgeTypeId))
             .FirstOrDefault(node => !GraphTypeTopology.IsConnectedTo(node, edgeTypeId));
         return endpoint is null
             ? ServiceResult<InternalId>.BadRequest($"Relation port '{port.GlobalId}' does not have an endpoint.")
@@ -452,25 +456,23 @@ public sealed class GraphService {
                 return ToSubgraphResult(disconnect);
         }
 
-        var resolvedRelationRootId = relationRootId ?? GraphSystemNodeIds.RelationRoot;
-        var resolvedRelationRootResult = await storage.Get(resolvedRelationRootId);
-        if (resolvedRelationRootResult.Status != ServiceResultStatus.Ok || resolvedRelationRootResult.Value == null)
-            return ServiceResult<Subgraph>.NotFound(resolvedRelationRootId.ToString());
-        var resolvedRelationRoot = resolvedRelationRootResult.Value;
+        var relationParentId = NormalizeParentId(relationRootId);
 
         var localId = !string.IsNullOrWhiteSpace(relationLocalId)
             ? relationLocalId.Trim()
             : CreateRelationLocalId(typeId);
 
-        var ensureRoot = await EnsurePathAsync(resolvedRelationRoot.GlobalId).ConfigureAwait(false);
-        if (ensureRoot.Status != ServiceResultStatus.Ok)
-            return ToSubgraphResult(ensureRoot);
+        if (relationParentId is not null) {
+            var ensureRoot = await EnsurePathAsync(relationParentId).ConfigureAwait(false);
+            if (ensureRoot.Status != ServiceResultStatus.Ok)
+                return ToSubgraphResult(ensureRoot);
+        }
 
         return await CreateRegisteredEdgeRelationSubgraphAsync(
             endpointIds.ToArray(),
             typeId,
             definition,
-            resolvedRelationRoot.GlobalId,
+            relationParentId,
             localId).ConfigureAwait(false);
     }
 
@@ -478,10 +480,10 @@ public sealed class GraphService {
         IReadOnlyList<NodeRef> endpointIds,
         InternalId typeId,
         EdgeTypeDefinition definition,
-        InternalId relationRootId,
+        InternalId? relationParentId,
         string relationLocalId)
     {
-        var relationResult = await storage.Create(new NodeLocalId(relationLocalId), relationRootId).ConfigureAwait(false);
+        var relationResult = await storage.Create(new NodeLocalId(relationLocalId), relationParentId).ConfigureAwait(false);
         if (relationResult.Status != ServiceResultStatus.Ok || relationResult.Value is null)
             return ServiceResult<Subgraph>.From(relationResult);
 
@@ -489,6 +491,10 @@ public sealed class GraphService {
         var connectType = await storage.Connect(relation.GlobalId, typeId).ConfigureAwait(false);
         if (connectType.Status != ServiceResultStatus.Ok)
             return ToSubgraphResult(connectType);
+
+        var ensureEndpointType = await EnsurePathAsync(GraphBaseTypeIds.Endpoint).ConfigureAwait(false);
+        if (ensureEndpointType.Status != ServiceResultStatus.Ok)
+            return ToSubgraphResult(ensureEndpointType);
 
         var endpoints = definition.Endpoints.ToArray();
         for (var index = 0; index < endpoints.Length; index++) {
@@ -498,6 +504,10 @@ public sealed class GraphService {
                 return ServiceResult<Subgraph>.From(endpointInstanceResult);
 
             var endpointInstanceId = endpointInstanceResult.Value.GlobalId;
+            var connectEndpointType = await storage.Connect(endpointInstanceId, GraphBaseTypeIds.Endpoint).ConfigureAwait(false);
+            if (connectEndpointType.Status != ServiceResultStatus.Ok)
+                return ToSubgraphResult(connectEndpointType);
+
             var connectEndpoint = await storage.Connect(endpointInstanceId, endpointIds[index]).ConfigureAwait(false);
             if (connectEndpoint.Status != ServiceResultStatus.Ok)
                 return ToSubgraphResult(connectEndpoint);
@@ -522,9 +532,9 @@ public sealed class GraphService {
         InternalId sourceId,
         InternalId targetId,
         InternalId typeId,
-        InternalId relationRootId,
+        InternalId? relationParentId,
         string relationLocalId) {
-        var relationResult = await storage.Create(new NodeLocalId(relationLocalId), relationRootId);
+        var relationResult = await storage.Create(new NodeLocalId(relationLocalId), relationParentId);
         if (relationResult.Status != ServiceResultStatus.Ok || relationResult.Value is null)
             return ServiceResult<Subgraph>.From(relationResult);
 
@@ -553,8 +563,22 @@ public sealed class GraphService {
         });
     }
 
-    private Task<ServiceResult<NodeState>> CreatePortAsync(InternalId relationId, string role) =>
-        storage.Create(new NodeLocalId(CreatePortLocalId(role)), relationId);
+    private async Task<ServiceResult<NodeState>> CreatePortAsync(InternalId relationId, string role)
+    {
+        var ensurePortType = await EnsurePathAsync(GraphBaseTypeIds.Port).ConfigureAwait(false);
+        if (ensurePortType.Status != ServiceResultStatus.Ok)
+            return new ServiceResult<NodeState>(ensurePortType.Status, Error: ensurePortType.Error);
+
+        var port = await storage.Create(new NodeLocalId(CreatePortLocalId(role)), relationId).ConfigureAwait(false);
+        if (port.Status != ServiceResultStatus.Ok || port.Value is null)
+            return port;
+
+        var connectType = await storage.Connect(port.Value.GlobalId, GraphBaseTypeIds.Port).ConfigureAwait(false);
+        if (connectType.Status != ServiceResultStatus.Ok)
+            return new ServiceResult<NodeState>(connectType.Status, Error: connectType.Error);
+
+        return port;
+    }
 
     private async Task<ServiceResult> EnsurePathAsync(InternalId id, IDictionary<string, string>? leafAttributes = null) {//TODO revisit path creation
         var segments = id.ToArray();
@@ -578,9 +602,11 @@ public sealed class GraphService {
         return ServiceResult.Ok();
     }
 
-    private static InternalId ParentOf(NodePath id) {
+    private static InternalId? ParentOf(NodePath id) {
         var segments = id.ToArray();
-        return new InternalId(segments.Take(Math.Max(0, segments.Length - 1)));
+        return segments.Length <= 1
+            ? null
+            : new InternalId(segments.Take(segments.Length - 1));
     }
 
     private static string LocalIdOf(NodePath id) => id.ToArray().LastOrDefault().ToString() ?? CreateRelationLocalId(id);
@@ -594,6 +620,28 @@ public sealed class GraphService {
 
     private static string CreateEndpointInstanceLocalId(string endpointName) =>
         $"endpoint-{endpointName}";
+
+    private static InternalId? NormalizeParentId(NodeRef? id)
+    {
+        var segments = id switch {
+            null => Array.Empty<NodeLocalId>(),
+            InternalId internalId => internalId.ToArray(),
+            NodePath path => path.ToArray(),
+            _ => Array.Empty<NodeLocalId>()
+        };
+
+        return segments.Length == 0 ? null : new InternalId(segments);
+    }
+
+    private static bool IsChildOf(InternalId id, InternalId parentId)
+    {
+        var segments = id.ToArray();
+        var parentSegments = parentId.ToArray();
+        if (segments.Length <= parentSegments.Length)
+            return false;
+
+        return parentSegments.SequenceEqual(segments.Take(parentSegments.Length));
+    }
 
     private static ServiceResult<Subgraph> ToSubgraphResult(ServiceResult result) =>
         new(result.Status, Error: result.Error);

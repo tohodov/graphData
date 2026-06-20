@@ -391,14 +391,12 @@ public sealed class GraphUiRegressionTests {
             const model = new GraphModel();
             model.applyUiSettings({
               basis: {
-                nodeTypeRoot: "graphdata/types/nodes",
-                edgeTypeRoot: "graphdata/types/edges",
-                relationRoot: "graphdata/relations"
+                nodeTypeRoot: "graphdata/types/nodes"
               }
             });
             model.schema.projectionBasis = "relations";
 
-            const relationId = model.basis.relationRoot + "/r1";
+            const relationId = "r1";
             const sourcePortId = relationId + "/source";
             const targetPortId = relationId + "/target";
 
@@ -477,15 +475,13 @@ public sealed class GraphUiRegressionTests {
             const model = new GraphModel();
             model.applyUiSettings({
               basis: {
-                nodeTypeRoot: "graphdata/types/nodes",
-                edgeTypeRoot: "graphdata/types/edges",
-                relationRoot: "graphdata/relations"
+                nodeTypeRoot: "graphdata/types/nodes"
               }
             });
             model.schema.projectionBasis = "relations";
 
-            const typeId = "graphdata/types/edges/DependsOn";
-            const relationId = "graphdata/relations/r1";
+            const typeId = "graphdata/types/nodes/DependsOn";
+            const relationId = "r1";
             const sourcePortId = relationId + "/source";
             const targetPortId = relationId + "/target";
             const typePortId = relationId + "/type";
@@ -555,21 +551,21 @@ public sealed class GraphUiRegressionTests {
             model.applyUiSettings({
               systemNodeIds: {
                 graphDataRoot: "backend/root",
-                nodeTypeRoot: "backend/types/nodes",
-                edgeTypeRoot: "backend/types/edges",
-                relationRoot: "backend/relations"
+                nodeTypeRoot: "backend/types/nodes"
               },
               baseTypeIds: {
-                nodeInstance: "backend/types/nodes/Instance"
+                nodeInstance: "backend/types/nodes/Instance",
+                edgeType: "backend/types/nodes/Relation"
               }
             });
 
             globalThis.__result = model.basis.nodeTypeRoot === "backend/types/nodes"
-              && model.basis.edgeTypeRoot === "backend/types/edges"
-              && model.basis.relationRoot === "backend/relations"
-              && model.defaultBasis().relationRoot === "backend/relations"
+              && model.basis.edgeTypeRoot === ""
+              && model.basis.relationRoot === ""
+              && model.defaultBasis().relationRoot === ""
               && model.schema.systemNodeIds.graphDataRoot === "backend/root"
-              && model.schema.baseTypeIds.nodeInstance === "backend/types/nodes/Instance";
+              && model.schema.baseTypeIds.nodeInstance === "backend/types/nodes/Instance"
+              && model.schema.baseTypeIds.edgeType === "backend/types/nodes/Relation";
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());

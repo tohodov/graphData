@@ -18,9 +18,10 @@ public sealed class UiControllerTests
         var settings = result.Value as UiSettingsResponse;
         Assert.IsNotNull(settings);
         Assert.AreEqual(GraphSystemNodeIds.NodeTypeRoot.ToString(), settings.Basis.NodeTypeRoot);
-        Assert.AreEqual(GraphSystemNodeIds.EdgeTypeRoot.ToString(), settings.Basis.EdgeTypeRoot);
-        Assert.AreEqual(GraphSystemNodeIds.RelationRoot.ToString(), settings.Basis.RelationRoot);
         Assert.AreEqual(GraphSystemNodeIds.RuntimeTypesInitializer.ToString(), settings.SystemNodeIds.RuntimeTypesInitializer);
         Assert.AreEqual(GraphBaseTypeIds.NodeInstance.ToString(), settings.BaseTypeIds.NodeInstance);
+        Assert.AreEqual(GraphBaseTypeIds.Relation.ToString(), settings.BaseTypeIds.EdgeType);
+        Assert.AreEqual(GraphBaseTypeIds.Endpoint.ToString(), settings.BaseTypeIds.Endpoint);
+        Assert.AreEqual(GraphBaseTypeIds.Port.ToString(), settings.BaseTypeIds.Port);
     }
 }

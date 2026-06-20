@@ -622,13 +622,12 @@ export class GraphViewer {
     this.readBasisInputs();
     const basis = this.getBasis();
     await this.ensurePath(basis.nodeTypeRoot, { [graphKindAttribute]: "type-root", [graphElementAttribute]: "node" });
-    await this.ensurePath(basis.edgeTypeRoot, { [graphKindAttribute]: "type-root", [graphElementAttribute]: "edge" });
-    await this.ensurePath(basis.relationRoot, { [graphKindAttribute]: "relation-root", [graphElementAttribute]: "edge" });
 
     await this.upsertGraphType(basis.nodeTypeRoot, "Type", "Type", "#334155", "node", false, 90);
     await this.upsertGraphType(basis.nodeTypeRoot, "Instance", "Instance", "#0f766e", "node", false, 70);
-    await this.upsertGraphType(basis.edgeTypeRoot, "Type", "Type", "#7c2d12", "edge", true, 60);
-    await this.upsertGraphType(basis.edgeTypeRoot, "Instance", "Instance", "#b45309", "edge", true, 50);
+    await this.upsertGraphType(basis.nodeTypeRoot, "Relation", "Relation", "#7c2d12", "edge", true, 60);
+    await this.upsertGraphType(basis.nodeTypeRoot, "Endpoint", "Endpoint", "#0f766e", "node", false, 45);
+    await this.upsertGraphType(basis.nodeTypeRoot, "Port", "Port", "#0f766e", "node", false, 45);
 
     const basisName = this.basisNodeInput.value.trim();
     if (basisName) {
@@ -876,6 +875,7 @@ export class GraphViewer {
   }
 
   async changeGraphEdgeType(edge, typeGlobalId, options: any = {}) {
+  const relationRoot = this.getBasis().relationRoot?.trim();
   return this.apiJson("/api/graph/edges/type", {
     method: "PUT",
     body: JSON.stringify({
@@ -883,7 +883,7 @@ export class GraphViewer {
       sourceGlobalId: edge.sourceGlobalId ? this.parseGlobalId(edge.sourceGlobalId) : null,
       targetGlobalId: edge.targetGlobalId ? this.parseGlobalId(edge.targetGlobalId) : null,
       typeGlobalId: this.parseGlobalId(typeGlobalId),
-      relationRootGlobalId: this.parseGlobalId(this.getBasis().relationRoot),
+      relationParentGlobalId: relationRoot ? this.parseGlobalId(relationRoot) : null,
       relationLocalId: options.relationLocalId || null
     })
   });

@@ -17,10 +17,6 @@ public sealed record UiSystemNodeIdsResponse
 
     public required string NodeTypeRoot { get; init; }
 
-    public required string EdgeTypeRoot { get; init; }
-
-    public required string RelationRoot { get; init; }
-
     public required string StorageRoot { get; init; }
 
     public required string InitializerRoot { get; init; }
@@ -34,16 +30,17 @@ public sealed record UiBaseTypeIdsResponse
 
     public required string NodeInstance { get; init; }
 
+    // Compatibility name for UI code that still treats relation node types as edge projection types.
     public required string EdgeType { get; init; }
 
-    public required string EdgeInstance { get; init; }
+    public required string Relation { get; init; }
+
+    public required string Endpoint { get; init; }
+
+    public required string Port { get; init; }
 }
 
 public sealed record UiBasisResponse
 {
     public required string NodeTypeRoot { get; init; }
-
-    public required string EdgeTypeRoot { get; init; }
-
-    public required string RelationRoot { get; init; }
 }

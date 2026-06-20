@@ -72,7 +72,7 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
             (NodePath?)request.TargetGlobalId,
             new NodePath(request.TypeGlobalId),
             (NodePath?)request.RelationGlobalId,
-            (NodePath?)request.RelationRootGlobalId,
+            (NodePath?)request.RelationParentGlobalId,
             (NodeLocalId?)request.RelationLocalId);
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }

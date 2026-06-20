@@ -25,21 +25,22 @@ public sealed class GraphStorageInitializerTests
         await initializer.InitializeAsync();
 
         AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.NodeTypeRoot));
-        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.EdgeTypeRoot));
-        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.RelationRoot));
         AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.NodeType));
         AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.NodeInstance));
-        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.EdgeType));
-        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.EdgeInstance));
+        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.Relation));
+        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.Endpoint));
+        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.Port));
         await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.NodeInstance, GraphBaseTypeIds.NodeType);
-        await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.EdgeInstance, GraphBaseTypeIds.EdgeType);
+        await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.Relation, GraphBaseTypeIds.NodeType);
+        await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.Endpoint, GraphBaseTypeIds.NodeType);
+        await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.Port, GraphBaseTypeIds.NodeType);
 
         var marker = await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.RuntimeTypesInitializer);
         AssertNoAttributes(marker);
         await AssertHasCompletionMarkerAsync(scope.Storage);
 
         var subgraph = (await scope.Storage.GetSubgraphAsync(new SubgraphQuery {
-            Nodes = [GraphSystemNodeIds.NodeTypeRoot, GraphSystemNodeIds.EdgeTypeRoot],
+            Nodes = [GraphSystemNodeIds.NodeTypeRoot],
             MaxDepth = 4
         })).Value!;
         var subgraphIds = subgraph.Nodes.Select(static node => node.GlobalId).ToArray();
@@ -48,8 +49,9 @@ public sealed class GraphStorageInitializerTests
             new[] {
                 GraphBaseTypeIds.NodeType,
                 GraphBaseTypeIds.NodeInstance,
-                GraphBaseTypeIds.EdgeType,
-                GraphBaseTypeIds.EdgeInstance
+                GraphBaseTypeIds.Relation,
+                GraphBaseTypeIds.Endpoint,
+                GraphBaseTypeIds.Port
             },
             subgraphIds);
     }
@@ -183,7 +185,7 @@ public sealed class GraphStorageInitializerTests
             MaxDepth = 2
         })).Value!;
         Assert.IsTrue(
-            subgraph.Nodes.Any(node => node.GlobalId.ToString().StartsWith($"{GraphSystemNodeIds.RuntimeTypesInitializer}/4/", StringComparison.Ordinal)),
+            subgraph.Nodes.Any(node => node.GlobalId.ToString().StartsWith($"{GraphSystemNodeIds.RuntimeTypesInitializer}/5/", StringComparison.Ordinal)),
             "Expected runtime type initializer completion marker node.");
     }
 
