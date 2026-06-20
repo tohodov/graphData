@@ -14,4 +14,5 @@ export const projectionColorAttribute = "projection.color";
 export const projectionInfoAttribute = "projection.infoAttribute";
 export const projectionDirectedAttribute = "projection.directed";
 export const projectionLabelVisibleAttribute = "projection.labelVisible";
+export const projectionCollapsedAttribute = "projection.collapsed";
 export const projectionRankAttribute = "projection.rank";

@@ -130,6 +130,10 @@ export class GraphModel {
   searchAbort: AbortController | null;
   busy: boolean;
   schema: any;
+  primitiveGraphCache: any;
+  intermediateGraph: any;
+  projectionRevision: number;
+  projectionListeners: Set<(event: any) => void>;
   constructor() {
     this.rootName = null;
     this._selectedName = null;
@@ -145,8 +149,12 @@ export class GraphModel {
     this.simulationHandle = null;
     this.searchAbort = null;
     this.busy = false;
+    this.primitiveGraphCache = { nodes: [], edges: [] };
+    this.intermediateGraph = { nodes: [], edges: [] };
+    this.projectionRevision = 0;
+    this.projectionListeners = new Set();
     this.schema = {
-      projectionBasis: "empty",
+      projectionBasis: "typed",
       defaultBasis: { ...defaultBasis },
       basis: { ...defaultBasis },
       systemNodeIds: {},
@@ -206,6 +214,22 @@ export class GraphModel {
     this.parentByNode.clear();
     this.positions.clear();
     this.velocities.clear();
+    this.rebuildProjection({ reason: "reset" });
+  }
+
+  onProjectionRebuilt(listener: (event: any) => void): () => void {
+    this.projectionListeners.add(listener);
+    return () => this.projectionListeners.delete(listener);
+  }
+
+  emitProjectionRebuilt(reason: string): void {
+    const event = {
+      reason,
+      revision: this.projectionRevision,
+      primitiveGraph: this.primitiveGraphCache,
+      intermediateGraph: this.intermediateGraph
+    };
+    this.projectionListeners.forEach(listener => listener(event));
   }
 
   addSelectedName(name: string): void {
@@ -366,17 +390,26 @@ export class GraphModel {
       });
     }
 
-    return { nodes: [...nodes.values()], edges: [...edges.values()] };
+    this.primitiveGraphCache = { nodes: [...nodes.values()], edges: [...edges.values()] };
+    return this.primitiveGraphCache;
   }
 
   visibleGraph(): any {
-    const physical = this.physicalGraph();
-    const graph = this.schema.projectionBasis === "empty" ? physical : this.projectedGraph(physical);
-    return this.withEdgeControls(graph);
+    return this.withEdgeControls(this.rebuildProjection());
   }
 
   projectedGraph(physical: any = this.physicalGraph()): any {
     return new GraphProjection(this).project(physical);
+  }
+
+  rebuildProjection(options: any = {}): any {
+    const physical = this.physicalGraph();
+    this.intermediateGraph = this.projectedGraph(physical);
+    this.projectionRevision += 1;
+    if (options.emit === true) {
+      this.emitProjectionRebuilt(options.reason ?? "projection");
+    }
+    return this.intermediateGraph;
   }
 
   withEdgeControls(graph: any): any {

@@ -1,6 +1,7 @@
 import {
   graphElementAttribute,
   graphKindAttribute,
+  projectionCollapsedAttribute,
   projectionColorAttribute,
   projectionDirectedAttribute,
   projectionInfoAttribute,
@@ -46,6 +47,7 @@ export class GraphViewer {
     this.selectionList = this.requireElement("#selection-list");
     this.selectionOverlayCollapsed = false;
     this.expandedSelectionKeys = new Set();
+    this.expandedBasisRuleKeys = new Set();
     this.gpuWarning = this.document.querySelector("#gpu-warning");
     this.fitButton = this.requireElement("#fit-button");
     this.resetButton = this.requireElement("#reset-button");
@@ -72,7 +74,6 @@ export class GraphViewer {
     this.searchResults = this.requireElement("#search-results");
     this.subgraphForm = this.requireElement("#subgraph-form");
     this.subgraphResults = this.requireElement("#subgraph-results");
-    this.projectionBasis = this.requireElement("#projection-basis");
     this.basisNodeInput = this.requireElement("#basis-node");
     this.nodeTypeRootInput = this.requireElement("#node-type-root");
     this.edgeTypeRootInput = this.requireElement("#edge-type-root");
@@ -301,14 +302,6 @@ export class GraphViewer {
   }
 
   bindProjection() {
-    this.projectionBasis.addEventListener("change", async () => {
-      this.graph.schema.projectionBasis = this.projectionBasis.value;
-      if (this.graph.schema.projectionBasis === "typed") {
-        await this.refreshTypes();
-      }
-      this.render();
-    });
-
     this.loadBasisButton.addEventListener("click", () => void this.loadBasis());
     this.ensureBasisButton.addEventListener("click", () => void this.ensureDefaultBasis());
     this.refreshTypesButton.addEventListener("click", () => void this.refreshTypes());
@@ -663,31 +656,37 @@ export class GraphViewer {
 
   try {
     this.readBasisInputs();
-    const [nodeTypeMatches, edgeTypeMatches] = await Promise.all([
-      this.searchGraphTypes("node"),
-      this.searchGraphTypes("edge")
-    ]);
+    const roots = this.basisTypeRoots();
     this.graph.schema.nodeTypes = new Map();
     this.graph.schema.edgeTypes = new Map();
 
-    nodeTypeMatches
-      .map(match => this.normalizeNodeResponse(match.node))
-      .filter(node => this.isTypeCandidate(node.globalId, "node"))
-      .forEach(node => {
-      this.graph.loaded.set(node.name, node);
-      this.graph.schema.nodeTypes.set(node.globalId, GraphType.fromNode(node, "node"));
-    });
-    edgeTypeMatches
-      .map(match => this.normalizeNodeResponse(match.node))
-      .filter(node => this.isTypeCandidate(node.globalId, "edge"))
-      .forEach(node => {
-      this.graph.loaded.set(node.name, node);
-      this.graph.schema.edgeTypes.set(node.globalId, GraphType.fromNode(node, "edge"));
-    });
+    if (roots.length === 0) {
+      this.rebuildProjectionFromBasis("basis-types-cleared");
+      this.renderTypeControls();
+      this.setStatus("Корень типов не задан");
+      return;
+    }
 
+    const subgraphs = await Promise.all(roots.map(root => this.loadSubgraphForRoots([root], 2)));
+    const basisGraph = this.collectBasisGraph(subgraphs);
+    this.storeBasisGraphNodes(basisGraph);
+
+    for (const node of basisGraph.nodes.values()) {
+      const element = this.typeElementFromBasisNode(node, basisGraph.edgePairs);
+      if (!element) {
+        continue;
+      }
+
+      if (element === "edge") {
+        this.graph.schema.edgeTypes.set(node.globalId, GraphType.fromNode(node, "edge"));
+      } else {
+        this.graph.schema.nodeTypes.set(node.globalId, GraphType.fromNode(node, "node"));
+      }
+    }
+
+    this.rebuildProjectionFromBasis("basis-types-loaded");
     this.renderTypeControls();
-    this.render();
-    this.setStatus(`Типы: ${this.graph.schema.nodeTypes.size} узлов, ${this.graph.schema.edgeTypes.size} связей`);
+    this.setStatus(`Типы из корня: ${this.graph.schema.nodeTypes.size} узлов, ${this.graph.schema.edgeTypes.size} связей`);
   } catch (error) {
     this.setStatus(error.message);
   } finally {
@@ -698,56 +697,128 @@ export class GraphViewer {
 
   }
 
-  searchGraphTypes(element) {
-  const baseTypeId = this.baseTypeIdForElement(element);
-  if (!baseTypeId) {
-    return Promise.resolve([]);
+  basisTypeRoots(): string[] {
+  const basis = this.getBasis();
+  return [basis.nodeTypeRoot, basis.edgeTypeRoot]
+    .map(root => String(root ?? "").trim())
+    .filter((root, index, roots) => root && roots.indexOf(root) === index);
+
   }
 
-  return this.searchNodeMatches({
-    return: ["n"],
-    where: {
-      kind: "any",
-      expressions: [
-        {
-          kind: "same",
-          left: this.variableSelector("n"),
-          right: this.literalSelector(baseTypeId)
-        },
-        {
-          kind: "connected",
-          left: this.variableSelector("n"),
-          right: this.literalSelector(baseTypeId)
-        }
-      ]
-    },
-    limit: 500
+  collectBasisGraph(subgraphs) {
+  const nodes = new Map();
+  const edgePairs = new Set();
+  const addEdgePair = edge => {
+    const normalized = this.normalizeEdgeResponse(edge);
+    if (normalized.sourceGlobalId && normalized.targetGlobalId) {
+      edgePairs.add(GraphEdge.keyFor(normalized.sourceGlobalId, normalized.targetGlobalId));
+    }
+  };
+
+  subgraphs.forEach(subgraph => {
+    (subgraph.nodes ?? []).forEach(nodeResponse => {
+      const node = this.normalizeNodeResponse(nodeResponse);
+      nodes.set(node.globalId, node);
+      (node.edges ?? []).forEach(edge => addEdgePair(edge));
+    });
+    (subgraph.edges ?? []).forEach(edge => addEdgePair(edge));
+  });
+
+  return { nodes, edgePairs };
+
+  }
+
+  storeBasisGraphNodes(basisGraph) {
+  for (const node of basisGraph.nodes.values()) {
+    const existing = this.graph.loaded.get(node.name);
+    const stored = existing ? this.mergeNodeResponses(existing, node) : GraphNode.from(node);
+    this.graph.loaded.set(stored.name, stored);
+    if (stored.showed !== false && !this.graph.positions.has(stored.name) && !this.graph.isSchemaRoot(stored.name)) {
+      this.seedPosition(stored.name, this.graph.rootName, this.graph.visibleNodeCount());
+    }
+  }
+
+  this.refreshEdgeAngles();
+
+  }
+
+  typeElementFromBasisNode(node, edgePairs): "node" | "edge" | null {
+  const globalId = node.globalId;
+  if (!globalId || this.graph.isSchemaRoot(globalId) || this.isSystemTypeRoot(globalId)) {
+    return null;
+  }
+
+  const baseTypeIds = this.graph.schema.baseTypeIds ?? {};
+  const element = node.attributes?.[graphElementAttribute];
+  if (element === "edge" || element === "relation") {
+    return "edge";
+  }
+  if (element === "node") {
+    return "node";
+  }
+
+  if (globalId === baseTypeIds.edgeType || globalId === baseTypeIds.relation) {
+    return "edge";
+  }
+  if (this.hasBasisEdge(edgePairs, globalId, baseTypeIds.edgeType)
+      || this.hasBasisEdge(edgePairs, globalId, baseTypeIds.relation)) {
+    return "edge";
+  }
+  if (globalId === baseTypeIds.nodeType || this.hasBasisEdge(edgePairs, globalId, baseTypeIds.nodeType)) {
+    return "node";
+  }
+
+  return this.isDirectBasisType(globalId) ? "node" : null;
+
+  }
+
+  hasBasisEdge(edgePairs, left, right) {
+  return Boolean(left && right && edgePairs.has(GraphEdge.keyFor(left, right)));
+
+  }
+
+  isDirectBasisType(globalId) {
+  return this.basisTypeRoots().some(root => {
+    const rootSegments = root.split("/").filter(Boolean);
+    const segments = String(globalId).split("/").filter(Boolean);
+    return segments.length === rootSegments.length + 1
+      && rootSegments.every((segment, index) => segment === segments[index]);
   });
 
   }
 
-  baseTypeIdForElement(element) {
-  return element === "edge"
-    ? this.graph.schema.baseTypeIds.edgeType
-    : this.graph.schema.baseTypeIds.nodeType;
-
-  }
-
-  isTypeCandidate(globalId, element) {
-  if (!globalId || this.graph.isSchemaRoot(globalId)) {
-    return false;
-  }
-
+  isSystemTypeRoot(globalId) {
   const systemIds = this.graph.schema.systemNodeIds ?? {};
-  if (globalId === systemIds.typeRoot
-      || globalId === systemIds.graphDataRoot
-      || globalId === systemIds.nodeTypeRoot
-      || globalId === systemIds.edgeTypeRoot
-      || globalId === systemIds.relationRoot) {
-    return false;
+  return globalId === systemIds.typeRoot
+    || globalId === systemIds.graphDataRoot
+    || globalId === systemIds.nodeTypeRoot
+    || globalId === systemIds.edgeTypeRoot
+    || globalId === systemIds.relationRoot;
+
   }
 
-  return Boolean(this.baseTypeIdForElement(element));
+  rebuildProjectionFromBasis(reason) {
+  this.graph.rebuildProjection({ emit: true, reason });
+  this.dispatchProjectionRebuilt(reason);
+  this.render();
+  this.renderProjectionSummary();
+
+  }
+
+  dispatchProjectionRebuilt(reason) {
+  const CustomEventCtor = (this.window as any)?.CustomEvent;
+  if (typeof CustomEventCtor !== "function") {
+    return;
+  }
+
+  this.document.dispatchEvent(new CustomEventCtor("graph-projection-rebuilt", {
+    detail: {
+      reason,
+      revision: this.graph.projectionRevision,
+      primitiveGraph: this.graph.primitiveGraphCache,
+      intermediateGraph: this.graph.intermediateGraph
+    }
+  }));
 
   }
 
@@ -774,8 +845,8 @@ export class GraphViewer {
       this.mergeSubgraphIntoViewer(subgraph, { select: false });
     }
 
+    this.rebuildProjectionFromBasis("relation-instances-loaded");
     this.renderTypeControls();
-    this.render();
     this.setStatus(`Инстансы связей загружены: ${relationIds.length}`);
   } catch (error) {
     this.setStatus(error.message);
@@ -1996,11 +2067,18 @@ export class GraphViewer {
   summary.className = "result-summary";
   summary.textContent = `${title}: ${types.size}`;
   container.append(summary);
+  if (types.size === 0) {
+    return;
+  }
+
   [...types.values()]
     .sort((a, b) => a.label.localeCompare(b.label, "ru"))
     .forEach(type => {
+      const ruleKey = this.basisRuleKey(element, type.globalId);
+      const expanded = this.expandedBasisRuleKeys.has(ruleKey);
       const row = this.document.createElement("div");
       row.className = "basis-rule";
+      row.classList.toggle("expanded", expanded);
       row.title = type.globalId;
 
       const header = this.document.createElement("div");
@@ -2008,30 +2086,44 @@ export class GraphViewer {
       const swatch = this.document.createElement("span");
       swatch.className = "type-swatch";
       swatch.style.background = type.color || "#9daab2";
+      const toggle = this.document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "result-row type-open-button basis-rule-toggle";
+      toggle.textContent = `${expanded ? "[-]" : "[+]"} ${type.directed ? `${type.label} ->` : type.label}`;
+      toggle.title = expanded ? "Свернуть настройки" : "Раскрыть настройки";
+      toggle.setAttribute("aria-expanded", String(expanded));
+      toggle.addEventListener("click", () => {
+        if (expanded) {
+          this.expandedBasisRuleKeys.delete(ruleKey);
+        } else {
+          this.expandedBasisRuleKeys.add(ruleKey);
+        }
+        this.renderTypeControls();
+      });
       const open = this.document.createElement("button");
       open.type = "button";
-      open.className = "result-row type-open-button";
-      open.textContent = type.directed ? `${type.label} ->` : type.label;
+      open.className = "compact-button";
+      open.textContent = "Открыть";
       open.title = type.globalId;
-      open.addEventListener("click", async () => {
+      open.addEventListener("click", async event => {
+        event.preventDefault();
+        event.stopPropagation();
         await this.ensureNodeLoaded(type.globalId);
         this.revealLoadedNode(type.globalId, this.graph.rootName, { select: false });
         this.graph.selectedName = type.globalId;
         this.render();
         this.setActiveTab("operations");
       });
-      const save = this.document.createElement("button");
-      save.type = "button";
-      save.className = "compact-button";
-      save.textContent = "Сохранить";
-      header.append(swatch, open, save);
+      header.append(swatch, toggle, open);
 
       const rules = this.document.createElement("div");
       rules.className = "basis-rule-grid";
+      rules.hidden = !expanded;
       const visible = this.createCheckboxRule("Показывать", type.visible);
+      const collapsed = this.createCheckboxRule("Сворачивать", type.collapsed !== false);
       const color = this.createTextRule("Цвет", type.color || "", "#0f766e");
       const rank = this.createTextRule("Ранг", GraphType.formatRankInput(type.rank), element === "node" ? "50" : "30");
-      rules.append(visible.label, color.label, rank.label);
+      rules.append(visible.label, collapsed.label, color.label, rank.label);
 
       const extraControls: any = {};
       if (element === "node") {
@@ -2043,18 +2135,70 @@ export class GraphViewer {
         rules.append(extraControls.directed.label, extraControls.labelVisible.label);
       }
 
-      save.addEventListener("click", () => this.saveTypeProjectionRules(type.globalId, element, {
+      const readRules = () => ({
         visible: visible.input.checked,
+        collapsed: collapsed.input.checked,
         color: color.input.value.trim(),
         rank: rank.input.value.trim(),
         infoAttribute: extraControls.info?.input.value.trim() ?? "",
         directed: extraControls.directed?.input.checked ?? false,
         labelVisible: extraControls.labelVisible?.input.checked ?? true
-      }));
+      });
+
+      const applyRules = () => {
+        const rulesSnapshot = readRules();
+        swatch.style.background = GraphType.normalizeColor(rulesSnapshot.color) || "#9daab2";
+        this.applyTypeProjectionRules(type.globalId, element, rulesSnapshot);
+      };
+
+      [visible.input, collapsed.input, extraControls.directed?.input, extraControls.labelVisible?.input]
+        .filter(Boolean)
+        .forEach(input => input.addEventListener("change", applyRules));
+      [color.input, rank.input, extraControls.info?.input]
+        .filter(Boolean)
+        .forEach(input => input.addEventListener("change", applyRules));
+
+      const actions = this.document.createElement("div");
+      actions.className = "button-row basis-rule-actions";
+      const save = this.document.createElement("button");
+      save.type = "button";
+      save.className = "compact-button";
+      save.textContent = "Сохранить";
+      save.addEventListener("click", () => this.saveTypeProjectionRules(type.globalId, element, readRules()));
+      actions.append(save);
+      rules.append(actions);
 
       row.append(header, rules);
       container.append(row);
     });
+
+  }
+
+  basisRuleKey(element, globalId) {
+  return `${element}:${globalId}`;
+
+  }
+
+  applyTypeProjectionRules(globalId, element, rules) {
+  const typeMap = element === "node" ? this.graph.schema.nodeTypes : this.graph.schema.edgeTypes;
+  const current = typeMap.get(globalId);
+  if (!current) {
+    return;
+  }
+
+  typeMap.set(globalId, new GraphType({
+    ...current,
+    element,
+    visible: rules.visible,
+    collapsed: rules.collapsed,
+    color: rules.color,
+    rank: GraphType.readRank(rules.rank, element === "edge" ? 30 : 50),
+    infoAttribute: rules.infoAttribute,
+    directed: rules.directed,
+    labelVisible: rules.labelVisible,
+    attributes: current.attributes
+  }));
+  this.rebuildProjectionFromBasis("basis-rule-change");
 
   }
 
@@ -2092,6 +2236,7 @@ export class GraphViewer {
     attributes[graphKindAttribute] = attributes[graphKindAttribute] || "type";
     attributes[graphElementAttribute] = element;
     attributes[projectionVisibleAttribute] = rules.visible ? "true" : "false";
+    attributes[projectionCollapsedAttribute] = rules.collapsed ? "true" : "false";
     if (rules.color) {
       attributes[projectionColorAttribute] = rules.color;
       attributes.color = rules.color;
@@ -2126,7 +2271,7 @@ export class GraphViewer {
     } else {
       this.graph.schema.edgeTypes.set(globalId, GraphType.fromNode(loaded, "edge"));
     }
-    this.render();
+    this.rebuildProjectionFromBasis("basis-rule-saved");
     this.renderTypeControls();
     this.setStatus(`Правила сохранены: ${this.displayName(globalId)}`);
   } catch (error) {
@@ -2170,12 +2315,12 @@ export class GraphViewer {
   const physical = this.graph.physicalGraph();
   const relations = this.graph.discoverRelationInstances(physical);
   const graph = this.graph.visibleGraph();
+  const projectedRelations = graph.edges.filter(edge => edge.projected).length;
   const rankedNodes = graph.nodes.filter(node => Number.isFinite(node.viewRank));
   const topRank = rankedNodes.length === 0
     ? ""
     : ` Топ rank: ${GraphType.formatRank(Math.max(...rankedNodes.map(node => node.viewRank)))}.`;
-  const basisLabel = this.graph.schema.projectionBasis === "empty" ? "пустой базис" : "типовой базис";
-  this.projectionSummary.textContent = `Проекция: ${basisLabel}. Загружено: ${physical.nodes.length} узлов, ${physical.edges.length} исходных связей, ${relations.length} типизированных связей.${topRank}`;
+  this.projectionSummary.textContent = `Проекция по типам: ${graph.nodes.length} узлов, ${graph.edges.length} связей. Кэш: ${physical.nodes.length} узлов, ${physical.edges.length} исходных связей, ${relations.length} типизированных конструкций, ${projectedRelations} свернутых.${topRank}`;
 
   }
 
@@ -2198,7 +2343,6 @@ export class GraphViewer {
   this.nodeTypeRootInput.value = this.graph.schema.basis.nodeTypeRoot;
   this.edgeTypeRootInput.value = this.graph.schema.basis.edgeTypeRoot;
   this.relationRootInput.value = this.graph.schema.basis.relationRoot;
-  this.projectionBasis.value = this.graph.schema.projectionBasis;
 
   }
 

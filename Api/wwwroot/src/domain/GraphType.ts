@@ -1,6 +1,7 @@
 import {
   graphElementAttribute,
   nodeRadius,
+  projectionCollapsedAttribute,
   projectionColorAttribute,
   projectionDirectedAttribute,
   projectionInfoAttribute,
@@ -16,6 +17,7 @@ export class GraphType {
   color: string;
   element: string;
   visible: boolean;
+  collapsed: boolean;
   infoAttribute: string;
   labelVisible: boolean;
   directed: boolean;
@@ -28,6 +30,7 @@ export class GraphType {
     this.color = GraphType.normalizeColor(options.color);
     this.element = options.element ?? "node";
     this.visible = options.visible ?? true;
+    this.collapsed = options.collapsed ?? true;
     this.infoAttribute = options.infoAttribute ?? "";
     this.labelVisible = options.labelVisible ?? true;
     this.directed = options.directed ?? false;
@@ -44,6 +47,7 @@ export class GraphType {
       color: node.attributes?.[projectionColorAttribute] || node.attributes?.color,
       element: node.attributes?.[graphElementAttribute] || fallbackElement,
       visible: String(node.attributes?.[projectionVisibleAttribute] ?? "true").toLowerCase() !== "false",
+      collapsed: String(node.attributes?.[projectionCollapsedAttribute] ?? "true").toLowerCase() !== "false",
       infoAttribute: node.attributes?.[projectionInfoAttribute] || "",
       labelVisible: String(node.attributes?.[projectionLabelVisibleAttribute] ?? "true").toLowerCase() !== "false",
       directed: String(node.attributes?.[projectionDirectedAttribute] ?? node.attributes?.directed ?? "").toLowerCase() === "true",

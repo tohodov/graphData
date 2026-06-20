@@ -12,13 +12,17 @@ export class GraphProjection {
 
   project(physical: any): any {
     const relationInstances = this.relations(physical);
+    const collapsedRelations = relationInstances.filter(relation => this.shouldCollapseRelation(relation));
+    const hiddenRelations = relationInstances.filter(relation => this.shouldHideRelation(relation) || this.shouldCollapseRelation(relation));
     const hidden = new Set();
-    for (const relation of relationInstances) {
+    for (const relation of hiddenRelations) {
       hidden.add(relation.relationGlobalId);
       relation.portGlobalIds.forEach(name => hidden.add(name));
     }
     for (const type of [...this.model.schema.nodeTypes.values(), ...this.model.schema.edgeTypes.values()]) {
-      hidden.add(type.globalId);
+      if (type.collapsed !== false || type.visible === false) {
+        hidden.add(type.globalId);
+      }
     }
 
     const nodeTypeAssignments = this.nodeTypeAssignments(physical);
@@ -40,11 +44,13 @@ export class GraphProjection {
     });
 
     const hiddenPhysicalEdges = new Set();
-    for (const relation of relationInstances) {
+    for (const relation of hiddenRelations) {
       relation.physicalEdgeKeys.forEach(key => hiddenPhysicalEdges.add(key));
     }
     for (const [nodeId, nodeType] of nodeTypeAssignments) {
-      hiddenPhysicalEdges.add(GraphEdge.keyFor(nodeId, nodeType.globalId));
+      if (nodeType.collapsed !== false || nodeType.visible === false) {
+        hiddenPhysicalEdges.add(GraphEdge.keyFor(nodeId, nodeType.globalId));
+      }
     }
 
     const physicalEdges = physical.edges.filter(edge => {
@@ -53,7 +59,7 @@ export class GraphProjection {
         && !hiddenPhysicalEdges.has(edge.key ?? GraphEdge.keyFor(edge.sourceGlobalId, edge.targetGlobalId));
     });
 
-    const projectedEdges = relationInstances
+    const projectedEdges = collapsedRelations
       .filter(relation => visibleNodeIds.has(relation.sourceGlobalId) && visibleNodeIds.has(relation.targetGlobalId))
       .filter(relation => relation.type?.visible !== false)
       .map(relation => {
@@ -76,6 +82,14 @@ export class GraphProjection {
       });
 
     return this.rank({ nodes: typedNodes, edges: [...physicalEdges, ...projectedEdges] });
+  }
+
+  shouldCollapseRelation(relation: any): boolean {
+    return relation.collapsed === true || relation.type?.collapsed !== false;
+  }
+
+  shouldHideRelation(relation: any): boolean {
+    return relation.type?.visible === false;
   }
 
   rank(graph: any): any {

@@ -541,6 +541,120 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphProjection_LeavesRelationPrimitiveWhenEdgeTypeIsExpanded() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            model.applyUiSettings({
+              basis: {
+                nodeTypeRoot: "graphdata/types/nodes"
+              }
+            });
+
+            const typeId = "graphdata/types/nodes/DependsOn";
+            const relationId = "r1";
+            const sourcePortId = relationId + "/source";
+            const targetPortId = relationId + "/target";
+            const typePortId = relationId + "/type";
+            model.schema.edgeTypes.set(typeId, {
+              globalId: typeId,
+              label: "DependsOn",
+              collapsed: false,
+              visible: true
+            });
+
+            model.putNode(new GraphNode({
+              globalId: "a",
+              displayName: "A",
+              edges: [{ sourceGlobalId: "a", targetGlobalId: sourcePortId }]
+            }));
+            model.putNode(new GraphNode({
+              globalId: sourcePortId,
+              attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "source" },
+              edges: [{ sourceGlobalId: sourcePortId, targetGlobalId: relationId }]
+            }));
+            model.putNode(new GraphNode({
+              globalId: relationId,
+              attributes: { [graphKindAttribute]: "edge-instance", [graphElementAttribute]: "edge" },
+              edges: [
+                { sourceGlobalId: relationId, targetGlobalId: targetPortId },
+                { sourceGlobalId: relationId, targetGlobalId: typePortId }
+              ]
+            }));
+            model.putNode(new GraphNode({
+              globalId: targetPortId,
+              attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "target" },
+              edges: [{ sourceGlobalId: targetPortId, targetGlobalId: "b" }]
+            }));
+            model.putNode(new GraphNode({
+              globalId: typePortId,
+              attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "type" },
+              edges: [{ sourceGlobalId: typePortId, targetGlobalId: typeId }]
+            }));
+            model.putNode(new GraphNode({ globalId: "b", displayName: "B", edges: [] }));
+            model.putNode(new GraphNode({ globalId: typeId, displayName: "DependsOn", edges: [] }));
+
+            const graph = model.visibleGraph();
+            const names = new Set(graph.nodes.map(node => node.name));
+            globalThis.__result = !graph.edges.some(edge => edge.projected)
+              && names.has(relationId)
+              && names.has(sourcePortId)
+              && names.has(targetPortId)
+              && names.has(typePortId)
+              && names.has(typeId);
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void GraphModel_RebuildProjectionPublishesIntermediateGraph() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const edge = new GraphEdge({
+              sourceGlobalId: "a",
+              targetGlobalId: "b",
+              sourceLocalId: "a",
+              targetLocalId: "b"
+            });
+            const model = new GraphModel();
+            model.loaded.set("a", {
+              name: "a",
+              toViewNode() { return { name: "a", displayName: "A" }; },
+              edges: [edge]
+            });
+            model.loaded.set("b", {
+              name: "b",
+              toViewNode() { return { name: "b", displayName: "B" }; },
+              edges: []
+            });
+
+            const events = [];
+            model.onProjectionRebuilt(event => events.push(event));
+            const graph = model.rebuildProjection({ emit: true, reason: "basis-rule-change" });
+
+            globalThis.__result = events.length === 1
+              && events[0].reason === "basis-rule-change"
+              && events[0].primitiveGraph.nodes.length === 2
+              && events[0].intermediateGraph === graph
+              && model.primitiveGraphCache.edges.length === 1
+              && model.intermediateGraph === graph;
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphModel_AppliesUiSettingsBasis()
     {
         var engine = CreateUiEngine(("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
@@ -593,6 +707,7 @@ public sealed class GraphUiRegressionTests {
         engine.Execute(
             """
             const graphElementAttribute = "graphElement";
+            const projectionCollapsedAttribute = "projectionCollapsed";
             const projectionColorAttribute = "projectionColor";
             const projectionDirectedAttribute = "projectionDirected";
             const projectionInfoAttribute = "projectionInfo";
@@ -1356,6 +1471,7 @@ public sealed class GraphUiRegressionTests {
             const graphElementAttribute = "graphElement";
             const graphKindAttribute = "graphKind";
             const graphTypeNameAttribute = "graphTypeName";
+            const projectionCollapsedAttribute = "projectionCollapsed";
             const projectionColorAttribute = "projectionColor";
             const projectionDirectedAttribute = "projectionDirected";
             const projectionInfoAttribute = "projectionInfo";

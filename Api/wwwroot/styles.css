@@ -830,6 +830,10 @@ textarea:focus {
   min-width: 0;
 }
 
+.basis-rule-toggle {
+  font-weight: 650;
+}
+
 .basis-rule {
   display: grid;
   gap: 8px;
@@ -853,6 +857,10 @@ textarea:focus {
 
 .basis-rule-check {
   align-self: center;
+}
+
+.basis-rule-actions {
+  grid-column: 1 / -1;
 }
 
 .basis-relation-row {
