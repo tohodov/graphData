@@ -664,22 +664,27 @@ export class GraphViewer {
 
   try {
     this.readBasisInputs();
-    const basis = this.getBasis();
-    const response = await this.loadSubgraphForRoots([basis.nodeTypeRoot, basis.edgeTypeRoot], 4);
-    this.mergeSubgraphIntoViewer(response, { select: false, showed: false });
-    const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
+    const [nodeTypeMatches, edgeTypeMatches] = await Promise.all([
+      this.searchGraphTypes("node"),
+      this.searchGraphTypes("edge")
+    ]);
+    const nodes = [...nodeTypeMatches, ...edgeTypeMatches]
+      .map(match => this.normalizeNodeResponse(match.node));
     this.graph.schema.nodeTypes = new Map();
     this.graph.schema.edgeTypes = new Map();
 
-    nodes
-      .filter(node => node.globalId !== basis.nodeTypeRoot && node.globalId !== basis.edgeTypeRoot)
-      .forEach(node => {
-        if (GraphId.isChildOf(node.globalId, basis.nodeTypeRoot)) {
-          this.graph.schema.nodeTypes.set(node.globalId, GraphType.fromNode(node, "node"));
-        } else if (GraphId.isChildOf(node.globalId, basis.edgeTypeRoot)) {
-          this.graph.schema.edgeTypes.set(node.globalId, GraphType.fromNode(node, "edge"));
-        }
-      });
+    nodes.forEach(node => {
+      this.graph.loaded.set(node.name, node);
+      if (node.attributes?.[graphKindAttribute] !== "type") {
+        return;
+      }
+
+      if (node.attributes?.[graphElementAttribute] === "node") {
+        this.graph.schema.nodeTypes.set(node.globalId, GraphType.fromNode(node, "node"));
+      } else if (node.attributes?.[graphElementAttribute] === "edge") {
+        this.graph.schema.edgeTypes.set(node.globalId, GraphType.fromNode(node, "edge"));
+      }
+    });
 
     this.renderTypeControls();
     this.render();
@@ -691,6 +696,33 @@ export class GraphViewer {
       this.setBusy(false);
     }
   }
+
+  }
+
+  searchGraphTypes(element) {
+  return this.searchNodeMatches({
+    return: ["n"],
+    where: {
+      kind: "all",
+      expressions: [
+        {
+          kind: "attribute",
+          node: this.variableSelector("n"),
+          key: graphKindAttribute,
+          operator: "equals",
+          value: "type"
+        },
+        {
+          kind: "attribute",
+          node: this.variableSelector("n"),
+          key: graphElementAttribute,
+          operator: "equals",
+          value: element
+        }
+      ]
+    },
+    limit: 500
+  });
 
   }
 
@@ -710,8 +742,7 @@ export class GraphViewer {
       limit: 500
     });
     const relationIds = matches
-      .map(match => this.normalizeNodeResponse(match.node).globalId)
-      .filter(globalId => GraphId.isChildOf(globalId, this.getBasis().relationRoot));
+      .map(match => this.normalizeNodeResponse(match.node).globalId);
 
     for (const relationId of relationIds) {
       const subgraph = await this.loadSubgraphForRoots([relationId], 2);
@@ -764,11 +795,11 @@ export class GraphViewer {
 
   }
 
-  async assignGraphNodeType(nodeGlobalId, typeGlobalId) {
+  async assignGraphNodeType(internalId, typeGlobalId) {
   return this.apiJson("/api/graph/nodes/type", {
     method: "PUT",
     body: JSON.stringify({
-      nodeGlobalId: this.parseGlobalId(nodeGlobalId),
+      internalId: this.parseGlobalId(internalId),
       typeGlobalId: this.parseGlobalId(typeGlobalId)
     })
   });

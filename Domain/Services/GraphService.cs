@@ -5,10 +5,7 @@ using GraphData.Core.Models;
 namespace GraphData.Core.Services;
 
 public sealed class GraphService {
-    const string EdgeElement = "edge";
-    const string EdgeInstanceKind = "edge-instance";
     const string EdgePortKind = "edge-port";
-    const string TypeKind = "type";
     const string SourcePortRole = "source";
     const string TargetPortRole = "target";
     const string TypePortRole = "type";
@@ -99,11 +96,11 @@ public sealed class GraphService {
         return storage.Connect(sourceGlobalId, targetGlobalId);
     }
 
-    public Task<ServiceResult<Subgraph>> AssignNodeTypeAsync<TNodeType>(NodePath nodeGlobalId)
+    public Task<ServiceResult<Subgraph>> AssignNodeTypeAsync<TNodeType>(NodePath nodeId)
         where TNodeType : NodeType
     {
         return AssignNodeTypeAsync(
-            new InternalId(nodeGlobalId),
+            new InternalId(nodeId),
             runtimeTypes.GetNodeTypeId(typeof(TNodeType)));
     }
 
@@ -115,8 +112,8 @@ public sealed class GraphService {
         if (typeResult.Status != ServiceResultStatus.Ok || typeResult.Value is null)
             return ServiceResult<Subgraph>.From(typeResult);
         var typeNode = NodeType.FromState(typeResult.Value);
-        if (typeNode.ToString()!.Length < 2)//TODO реализовать проверку NodeType
-            return ServiceResult<Subgraph>.BadRequest($"Node '{typeId}' is not under node type root '{GraphSystemNodeIds.NodeTypeRoot}'.");
+        if (!GraphRuntimeMetadata.IsNodeType(typeResult.Value))
+            return ServiceResult<Subgraph>.BadRequest($"Node '{typeId}' is not a node type.");
 
         var nodeResult = await storage.Get(nodeId).ConfigureAwait(false);
         if (nodeResult.Status != ServiceResultStatus.Ok || nodeResult.Value is null)
@@ -192,7 +189,7 @@ public sealed class GraphService {
                 return ToSubgraphResult(delete);
         }
 
-        var relationRootId = relationRootGlobalId ?? (relationGlobalId is NodePath existingRelationId ? ParentOf(existingRelationId) : throw new Exception("переписать бред"));
+        var relationRootId = relationRootGlobalId ?? (relationGlobalId is NodePath existingRelationId ? ParentOf(existingRelationId) : throw new Exception("Relation root is required."));
         var relationRootResult = await storage.Get(relationRootId);
         if (relationRootResult.Status != ServiceResultStatus.Ok || relationRootResult.Value == null)
             return ServiceResult<Subgraph>.NotFound(relationRootId.ToString());
@@ -206,7 +203,7 @@ public sealed class GraphService {
 
         var ensureRoot = await EnsurePathAsync(relationRoot.GlobalId, new Dictionary<string, string> {
             [GraphRuntimeAttributeNames.GraphKind] = "relation-root",
-            [GraphRuntimeAttributeNames.GraphElement] = EdgeElement
+            [GraphRuntimeAttributeNames.GraphElement] = GraphRuntimeMetadata.EdgeElement
         });
         if (ensureRoot.Status != ServiceResultStatus.Ok)
             return ToSubgraphResult(ensureRoot);
@@ -299,39 +296,19 @@ public sealed class GraphService {
     }
 
     private static bool IsEdgeRelation(NodeState node) =>
-        HasAttribute(node, GraphRuntimeAttributeNames.GraphKind, EdgeInstanceKind) ||
-        HasAttribute(node, GraphRuntimeAttributeNames.GraphElement, EdgeElement)
+        GraphRuntimeMetadata.HasAttribute(node, GraphRuntimeAttributeNames.GraphKind, GraphRuntimeMetadata.EdgeInstanceKind) ||
+        GraphRuntimeMetadata.HasAttribute(node, GraphRuntimeAttributeNames.GraphElement, GraphRuntimeMetadata.EdgeElement)
         && node.Attributes.ContainsKey(GraphRuntimeAttributeNames.GraphTypeName);
 
-    private static bool IsEdgeType(NodeState node) =>
-        HasAttribute(node, GraphRuntimeAttributeNames.GraphKind, TypeKind)
-        && HasAttribute(node, GraphRuntimeAttributeNames.GraphElement, EdgeElement)
-        || IsChildOf(node.GlobalId, GraphSystemNodeIds.EdgeTypeRoot);
+    private static bool IsEdgeType(NodeState node) => GraphRuntimeMetadata.IsEdgeType(node);
 
     private static bool IsSourcePort(NodeState node) => IsPort(node, SourcePortRole);
 
     private static bool IsTargetPort(NodeState node) => IsPort(node, TargetPortRole);
 
     private static bool IsPort(NodeState node, string role) =>
-        HasAttribute(node, GraphRuntimeAttributeNames.GraphKind, EdgePortKind)
-        && HasAttribute(node, GraphRuntimeAttributeNames.GraphRole, role);
-
-    private static bool HasAttribute(NodeState node, string key, string value) =>
-        node.Attributes.TryGetValue(key, out var actual)
-        && string.Equals(actual, value, StringComparison.Ordinal);
-
-    private static bool IsChildOf(InternalId id, InternalId root) {
-        var idSegments = id.ToArray();
-        var rootSegments = root.ToArray();
-        if (idSegments.Length <= rootSegments.Length)
-            return false;
-
-        for (var index = 0; index < rootSegments.Length; index++)
-            if (idSegments[index] != rootSegments[index])
-                return false;
-
-        return true;
-    }
+        GraphRuntimeMetadata.HasAttribute(node, GraphRuntimeAttributeNames.GraphKind, EdgePortKind)
+        && GraphRuntimeMetadata.HasAttribute(node, GraphRuntimeAttributeNames.GraphRole, role);
 
     private async Task<ServiceResult<EdgeEndpoints>> ResolveEdgeEndpointsAsync(
         NodeRef? sourceId,
@@ -466,7 +443,7 @@ public sealed class GraphService {
 
         var shitAttributes = new Dictionary<string, string> {
             [GraphRuntimeAttributeNames.GraphKind] = "relation-root",
-            [GraphRuntimeAttributeNames.GraphElement] = EdgeElement
+            [GraphRuntimeAttributeNames.GraphElement] = GraphRuntimeMetadata.EdgeElement
         };
         var ensureRoot = await EnsurePathAsync(resolvedRelationRoot.GlobalId, shitAttributes).ConfigureAwait(false);
         if (ensureRoot.Status != ServiceResultStatus.Ok)
@@ -531,8 +508,8 @@ public sealed class GraphService {
         InternalId relationRootId,
         string relationLocalId) {
         var relationResult = await storage.Create(new NodeLocalId(relationLocalId), relationRootId, new Dictionary<string, string> {
-            [GraphRuntimeAttributeNames.GraphKind] = EdgeInstanceKind,
-            [GraphRuntimeAttributeNames.GraphElement] = EdgeElement,
+            [GraphRuntimeAttributeNames.GraphKind] = GraphRuntimeMetadata.EdgeInstanceKind,
+            [GraphRuntimeAttributeNames.GraphElement] = GraphRuntimeMetadata.EdgeElement,
             [GraphRuntimeAttributeNames.GraphTypeName] = typeId.ToString()
         });
         if (relationResult.Status != ServiceResultStatus.Ok || relationResult.Value is null)
@@ -571,7 +548,7 @@ public sealed class GraphService {
             [GraphRuntimeAttributeNames.GraphRole] = role
         });
 
-    private async Task<ServiceResult> EnsurePathAsync(InternalId id, IDictionary<string, string>? leafAttributes = null) {//TODO переосмыслить этот бред
+    private async Task<ServiceResult> EnsurePathAsync(InternalId id, IDictionary<string, string>? leafAttributes = null) {//TODO revisit path creation
         var segments = id.ToArray();
         for (var index = 0; index < segments.Length; index++) {
             var current = new InternalId(segments.Take(index + 1));
@@ -600,7 +577,7 @@ public sealed class GraphService {
 
     private static string LocalIdOf(NodePath id) => id.ToArray().LastOrDefault().ToString() ?? CreateRelationLocalId(id);
 
-    private static string CreateRelationLocalId(NodeRef typeId) {//TODO переписать этот бред
+    private static string CreateRelationLocalId(NodeRef typeId) {//TODO revisit relation id generation
         return $"{"edge"}-{Guid.NewGuid():N}"[..^24];
     }
 

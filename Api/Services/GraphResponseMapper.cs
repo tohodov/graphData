@@ -8,12 +8,12 @@ public static class GraphResponseMapper
     public static SubgraphResponse ToSubgraphResponse(Subgraph subgraph)
     {
         var nodes = subgraph.Nodes.ToArray();
-        var nodeGlobalIds = nodes
+        var nodeIds = nodes
             .Select(static node => node.GlobalId.ToString())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
         var edges = nodes
             .SelectMany(static node => node.Edges)
-            .Where(edge => nodeGlobalIds.Contains(edge.Node1.GlobalId.ToString()) && nodeGlobalIds.Contains(edge.Node2.GlobalId.ToString()))
+            .Where(edge => nodeIds.Contains(edge.Node1.GlobalId.ToString()) && nodeIds.Contains(edge.Node2.GlobalId.ToString()))
             .GroupBy(static edge => EdgeKey(edge.Node1.GlobalId.ToString(), edge.Node2.GlobalId.ToString()), StringComparer.OrdinalIgnoreCase)
             .Select(static group => ToEdgeResponse(group.First()))
             .ToArray();

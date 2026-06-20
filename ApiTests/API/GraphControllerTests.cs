@@ -329,7 +329,10 @@ public sealed class GraphControllerTests {
         var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
         var typeRoot = (await scope.Storage.Create(new("types"), graphData.GlobalId)).Value!;
         var nodeTypeRoot = (await scope.Storage.Create(new("nodes"), typeRoot.GlobalId)).Value!;
-        var weaponType = (await scope.Storage.Create(new("Weapon"), nodeTypeRoot.GlobalId)).Value!;
+        var weaponType = (await scope.Storage.Create(new("Weapon"), nodeTypeRoot.GlobalId, new Dictionary<string, string> {
+            [GraphRuntimeAttributeNames.GraphKind] = "type",
+            [GraphRuntimeAttributeNames.GraphElement] = "node"
+        })).Value!;
         var ak47 = (await scope.Storage.Create(new("ak-47"))).Value!;
         var controller = CreateController(scope.Storage);
 
@@ -747,7 +750,7 @@ public sealed class GraphControllerTests {
         }
 
         public Task<ServiceResult<NodeState>> Get(NodeRef path) =>
-            Task.FromResult(path == _root.GlobalId
+            Task.FromResult(path.Equals(_root.GlobalId)
                 ? ServiceResult<NodeState>.Ok(_root)
                 : ServiceResult<NodeState>.NotFound());
 

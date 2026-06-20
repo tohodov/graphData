@@ -116,13 +116,8 @@ export class GraphNode {
   }
 
   isRelationInstance(basis: { relationRoot: string }): boolean {
-    if (this.hasKind("edge-instance")) {
-      return true;
-    }
-
-    return this.attribute(graphElementAttribute) === "edge"
-      && GraphId.isChildOf(this.name, basis.relationRoot)
-      && !this.name.slice(basis.relationRoot.length + 1).includes("/");
+    return this.hasKind("edge-instance")
+      || (this.attribute(graphElementAttribute) === "edge" && Boolean(this.attribute(graphTypeNameAttribute)));
   }
 
   isChildOf(parentGlobalId: string): boolean {

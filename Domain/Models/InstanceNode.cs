@@ -14,7 +14,7 @@ public class InstanceNode : Node, IGraphNodeType
 
     public IReadOnlyCollection<NodeType> AssignedTypes => field ??= State.Edges
         .Select(OtherEndpoint)
-        .Where(static node => throw new Exception())//TODO 
+        .Where(GraphRuntimeMetadata.IsNodeType)
         .GroupBy(static node => node.GlobalId)
         .Select(static group => NodeType.FromState(group.First()))
         .ToArray();
@@ -25,7 +25,7 @@ public class InstanceNode : Node, IGraphNodeType
 
     public IReadOnlyCollection<InstanceNode> NeighborInstances => field ??= State.Edges
         .Select(OtherEndpoint)
-        .Where(static node => throw new Exception())//TODO 
+        .Where(static node => !GraphRuntimeMetadata.IsGraphType(node))
         .GroupBy(static node => node.GlobalId)
         .Select(static group => new InstanceNode(group.First()))
         .ToArray();

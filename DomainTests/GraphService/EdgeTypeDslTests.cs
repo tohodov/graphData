@@ -45,33 +45,36 @@ public sealed class EdgeTypeDslTests
         AssertMetadataFree(weaponEndpoint);
         AssertMetadataFree(manufacturerEndpoint);
 
-        //var edgeTypeId = EdgeTypeId<ManufacturedByEdgeType>();
-        //var weaponEndpointSpecId = new InternalId(edgeTypeId.Concat([new NodeLocalId(nameof(ManufacturedByEdgeType.Weapon))]));
-        //var manufacturerEndpointSpecId = new InternalId(edgeTypeId.Concat([new NodeLocalId(nameof(ManufacturedByEdgeType.Manufacturer))]));
-        //await AssertConnectedAsync(scope, relationId, edgeTypeId);
+        var edgeTypeId = await GetEdgeTypeIdAsync<ManufacturedByEdgeType>(graph);
+        var weaponNodeTypeId = await GetNodeTypeIdAsync<EdgeWeaponNodeType>(graph);
+        var manufacturerNodeTypeId = await GetNodeTypeIdAsync<EdgeManufacturerNodeType>(graph);
+        var weaponEndpointSpec = await GetEndpointSpecAsync(scope, weaponEndpointId, relationId, weapon.Value.GlobalId);
+        var manufacturerEndpointSpec = await GetEndpointSpecAsync(scope, manufacturerEndpointId, relationId, manufacturer.Value.GlobalId);
+
+        await AssertConnectedAsync(scope, relationId, edgeTypeId);
         await AssertConnectedAsync(scope, weaponEndpointId, weapon.Value.GlobalId);
-        //await AssertConnectedAsync(scope, weaponEndpointId, weaponEndpointSpecId);
+        await AssertConnectedAsync(scope, weaponEndpointId, weaponEndpointSpec.GlobalId);
         await AssertConnectedAsync(scope, manufacturerEndpointId, manufacturer.Value.GlobalId);
-        //await AssertConnectedAsync(scope, manufacturerEndpointId, manufacturerEndpointSpecId);
-        //await AssertConnectedAsync(scope, weaponEndpointSpecId, NodeTypeId<EdgeWeaponNodeType>());
-        //await AssertConnectedAsync(scope, manufacturerEndpointSpecId, NodeTypeId<EdgeManufacturerNodeType>());
+        await AssertConnectedAsync(scope, manufacturerEndpointId, manufacturerEndpointSpec.GlobalId);
+        await AssertConnectedAsync(scope, weaponEndpointSpec.GlobalId, weaponNodeTypeId);
+        await AssertConnectedAsync(scope, manufacturerEndpointSpec.GlobalId, manufacturerNodeTypeId);
 
         var weaponConnections = (await scope.Storage.GetConnectedNodesAsync((await scope.Storage.Get(weapon.Value.GlobalId)).Value!)).Value!;
         Assert.IsFalse(weaponConnections.Any(node => node.GlobalId == manufacturer.Value.GlobalId));
 
         var returnedIds = result.Value!.Nodes.Select(static node => node.GlobalId).ToArray();
-        //CollectionAssert.IsSubsetOf(
-        //    new[] {
-        //        relationId,
-        //        edgeTypeId,
-        //        weapon.Value.GlobalId,
-        //        manufacturer.Value.GlobalId,
-        //        weaponEndpointId,
-        //        manufacturerEndpointId,
-        //        weaponEndpointSpecId,
-        //        manufacturerEndpointSpecId
-        //    },
-        //    returnedIds);
+        CollectionAssert.IsSubsetOf(
+            new[] {
+                relationId,
+                edgeTypeId,
+                weapon.Value.GlobalId,
+                manufacturer.Value.GlobalId,
+                weaponEndpointId,
+                manufacturerEndpointId,
+                weaponEndpointSpec.GlobalId,
+                manufacturerEndpointSpec.GlobalId
+            },
+            returnedIds);
     }
 
     [TestMethod]
@@ -89,24 +92,37 @@ public sealed class EdgeTypeDslTests
 
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
         var definition = result.Value!;
-        //Assert.AreEqual(EdgeTypeId<ShipmentEdgeType>(), definition.TypeId);
+        var typeState = await GetRequiredAsync(scope, definition.TypeId);
+        Assert.AreEqual("type", typeState.Attributes[GraphRuntimeAttributeNames.GraphKind]);
+        Assert.AreEqual("edge", typeState.Attributes[GraphRuntimeAttributeNames.GraphElement]);
+        var weaponNodeTypeId = await GetNodeTypeIdAsync<EdgeWeaponNodeType>(graph);
+        var manufacturerNodeTypeId = await GetNodeTypeIdAsync<EdgeManufacturerNodeType>(graph);
+
         Assert.AreEqual(4, definition.Endpoints.Count);
-        //AssertEndpoint(definition, nameof(ShipmentEdgeType.Weapon), typeof(EdgeWeaponNodeType), NodeSlotCardinality.Required(), NodeTypeId<EdgeWeaponNodeType>());
+        AssertEndpoint(definition, nameof(ShipmentEdgeType.Weapon), typeof(EdgeWeaponNodeType), NodeSlotCardinality.Required(), weaponNodeTypeId);
         AssertEndpoint(definition, nameof(ShipmentEdgeType.Counterparty), typeof(Node), NodeSlotCardinality.Required());
         AssertEndpoint(definition, nameof(ShipmentEdgeType.OptionalWaypoint), typeof(Node), NodeSlotCardinality.Optional());
-        //AssertEndpoint(definition, nameof(ShipmentEdgeType.Manufacturers), typeof(EdgeManufacturerNodeType), NodeSlotCardinality.Many(), NodeTypeId<EdgeManufacturerNodeType>(), isCollection: true);
+        AssertEndpoint(definition, nameof(ShipmentEdgeType.Manufacturers), typeof(EdgeManufacturerNodeType), NodeSlotCardinality.Many(), manufacturerNodeTypeId, isCollection: true);
         Assert.IsFalse(definition.Endpoints.Any(endpoint => endpoint.Name == nameof(ShipmentEdgeType.Note)));
     }
 
     private static string EndpointInstanceLocalId(string endpointName) =>
         $"endpoint-{endpointName}";
 
-    private static InternalId RuntimeTypeId<TType>(InternalId root, string suffix)
+    private static async Task<InternalId> GetEdgeTypeIdAsync<TEdgeType>(GraphData.Core.Services.GraphService graph)
+        where TEdgeType : EdgeType
     {
-        var name = typeof(TType).Name;
-        if (name.EndsWith(suffix, StringComparison.Ordinal))
-            name = name[..^suffix.Length];
-        return new InternalId(root.Concat([new NodeLocalId(name)]));
+        var result = await graph.GetEdgeTypeDefinitionAsync<TEdgeType>();
+        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
+        return result.Value!.TypeId;
+    }
+
+    private static async Task<InternalId> GetNodeTypeIdAsync<TNodeType>(GraphData.Core.Services.GraphService graph)
+        where TNodeType : NodeType
+    {
+        var result = await graph.GetNodeTypeDefinitionAsync<TNodeType>();
+        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
+        return result.Value!.Type.GlobalId;
     }
 
     private static async Task<NodeState> GetRequiredAsync(TestGraphStorageScope scope, InternalId id)
@@ -132,6 +148,20 @@ public sealed class EdgeTypeDslTests
         Assert.IsTrue(
             connected.Any(node => node.GlobalId == targetId),
             $"Expected '{sourceId}' to be connected to '{targetId}'.");
+    }
+
+    private static async Task<NodeState> GetEndpointSpecAsync(
+        TestGraphStorageScope scope,
+        InternalId endpointInstanceId,
+        InternalId relationId,
+        InternalId endpointNodeId)
+    {
+        var endpoint = await GetRequiredAsync(scope, endpointInstanceId);
+        var connected = (await scope.Storage.GetConnectedNodesAsync(endpoint)).Value!;
+        var spec = connected.Single(node =>
+            node.GlobalId != relationId
+            && node.GlobalId != endpointNodeId);
+        return spec;
     }
 
     private static void AssertEndpoint(

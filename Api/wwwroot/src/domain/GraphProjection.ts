@@ -135,16 +135,27 @@ export class GraphProjection {
     });
 
     return physical.nodes
-      .filter(node => GraphNode.from(node).isRelationInstance(this.model.basis))
+      .filter(node => {
+        if (GraphNode.from(node).isRelationInstance(this.model.basis)) {
+          return true;
+        }
+
+        const incident = edgesByNode.get(node.name) ?? [];
+        return incident.some(edge => {
+          const otherId = edge.sourceGlobalId === node.name ? edge.targetGlobalId : edge.sourceGlobalId;
+          return this.model.schema.edgeTypes.has(otherId);
+        });
+      })
       .map(relation => {
         const incident = edgesByNode.get(relation.name) ?? [];
         const ports = incident
           .map(edge => nodesByName.get(edge.sourceGlobalId === relation.name ? edge.targetGlobalId : edge.sourceGlobalId))
           .filter(Boolean);
-        const sourcePort = ports.find(port => port.attributes?.[graphRoleAttribute] === "source") ?? ports[0];
-        const targetPort = ports.find(port => port.attributes?.[graphRoleAttribute] === "target") ?? ports.find(port => port !== sourcePort);
         const typePort = ports.find(port => port.attributes?.[graphRoleAttribute] === "type")
           ?? ports.find(port => this.model.schema.edgeTypes.has(port.name));
+        const endpointPorts = ports.filter(port => port !== typePort);
+        const sourcePort = endpointPorts.find(port => port.attributes?.[graphRoleAttribute] === "source") ?? endpointPorts[0];
+        const targetPort = endpointPorts.find(port => port.attributes?.[graphRoleAttribute] === "target") ?? endpointPorts.find(port => port !== sourcePort);
         const sourceGlobalId = sourcePort ? this.portEndpoint(sourcePort.name, edgesByNode, relation.name) : null;
         const targetGlobalId = targetPort ? this.portEndpoint(targetPort.name, edgesByNode, relation.name) : null;
         const typeGlobalId = typePort?.attributes?.[graphRoleAttribute] === "type"

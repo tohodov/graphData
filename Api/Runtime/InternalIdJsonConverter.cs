@@ -4,7 +4,7 @@ using Abstractions;
 
 namespace GraphData.Api.Runtime;
 
-public sealed class NodeGlobalIdJsonConverter : JsonConverter<InternalId>
+public sealed class InternalIdJsonConverter : JsonConverter<InternalId>
 {
     public override InternalId Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {

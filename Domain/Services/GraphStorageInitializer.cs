@@ -195,10 +195,6 @@ public sealed class GraphStorageInitializer
 
     private static Dictionary<string, string> CreateRuntimeTypeAttributes(RuntimeGraphTypeDefinition type)
     {
-        if (!IsChildOf(type.TypeId, type.RootId))
-            throw new InvalidOperationException(
-                $"Runtime graph type '{type.ClrType.FullName}' uses id '{type.TypeId}', but it must be under '{type.RootId}'.");
-
         var defaults = GetRuntimeTypeDefaults(type);
         var attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
             [GraphRuntimeAttributeNames.GraphKind] = "type",
@@ -240,20 +236,6 @@ public sealed class GraphStorageInitializer
         if (type.Element == "edge" && name.EndsWith(nameof(Edge), StringComparison.Ordinal))
             return name[..^nameof(Edge).Length];
         return name;
-    }
-
-    private static bool IsChildOf(InternalId id, InternalId root)
-    {
-        var idSegments = id.ToArray();
-        var rootSegments = root.ToArray();
-        if (idSegments.Length <= rootSegments.Length)
-            return false;
-
-        for (var index = 0; index < rootSegments.Length; index++)
-            if (idSegments[index] != rootSegments[index])
-                return false;
-
-        return true;
     }
 
     private static T RequireOk<T>(ServiceResult<T> result, string operation) where T : class

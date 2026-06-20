@@ -68,6 +68,10 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
     public Task<ServiceResult> Connect(NodeRef leftPath, NodeRef rightPath) {
         if (leftPath.Equals(rightPath))
             return Task.FromResult(ServiceResult.BadRequest("SourcePath and TargetPath must be different."));
+        if (!TryValidateNodeRef(leftPath, "Source node path", out var validationError))
+            return Task.FromResult(ServiceResult.BadRequest(validationError));
+        if (!TryValidateNodeRef(rightPath, "Target node path", out validationError))
+            return Task.FromResult(ServiceResult.BadRequest(validationError));
 
         var left = FindNode(leftPath);
         var right = FindNode(rightPath);
@@ -86,6 +90,10 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
     public Task<ServiceResult> Disconnect(NodeRef leftPath, NodeRef rightPath) {
         if (leftPath.Equals(rightPath))
             return Task.FromResult(ServiceResult.BadRequest("SourcePath and TargetPath must be different."));
+        if (!TryValidateNodeRef(leftPath, "Source node path", out var validationError))
+            return Task.FromResult(ServiceResult.BadRequest(validationError));
+        if (!TryValidateNodeRef(rightPath, "Target node path", out validationError))
+            return Task.FromResult(ServiceResult.BadRequest(validationError));
 
         var left = FindNode(leftPath);
         var right = FindNode(rightPath);
@@ -155,6 +163,14 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
         NodeRef.InternalId id => FindNode((NodeRef.NodePath)id),//TODO пересмотреть поиск папки
         _ => throw new Exception(),
     };
+
+    private static bool TryValidateNodeRef(NodeRef nodeRef, string subject, out string error) =>
+        nodeRef switch {
+            NodeRef.NodePath path => TryValidatePath(path, subject, out error),
+            NodeRef.InternalId id => TryValidatePath((NodeRef.NodePath)id, subject, out error),
+            _ => throw new ArgumentOutOfRangeException(nameof(nodeRef), nodeRef, "Unsupported node reference.")
+        };
+
     private NodeFileSystem? FindNode(NodeRef.NodePath path) {
         if (!TryValidatePath(path, "Node path", out var validationError))
             return null;

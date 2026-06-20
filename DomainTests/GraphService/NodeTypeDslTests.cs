@@ -16,11 +16,8 @@ public sealed class NodeTypeDslTests
     public async Task NodeTypeDefinition_EnforcesRequiredTypedSlot()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
-        var typeRoot = (await scope.Storage.Create(new("types"), graphData.GlobalId)).Value!;
-        var nodeTypeRoot = (await scope.Storage.Create(new("nodes"), typeRoot.GlobalId)).Value!;
-        var weaponTypeState = (await scope.Storage.Create(new("Weapon"), nodeTypeRoot.GlobalId)).Value!;
-        var manufacturerTypeState = (await scope.Storage.Create(new("Manufacturer"), nodeTypeRoot.GlobalId)).Value!;
+        var weaponTypeState = (await scope.Storage.Create(new("weapon-type"), attributes: NodeTypeAttributes())).Value!;
+        var manufacturerTypeState = (await scope.Storage.Create(new("manufacturer-type"), attributes: NodeTypeAttributes())).Value!;
         var weaponType = NodeType.FromState(weaponTypeState);
         var manufacturerType = NodeType.FromState(manufacturerTypeState);
         var definition = weaponType.Define(type => type.RequiresSlot("manufacturer", manufacturerType));
@@ -55,8 +52,9 @@ public sealed class NodeTypeDslTests
 
         Assert.AreEqual(ServiceResultStatus.BadRequest, invalid.Status);
         StringAssert.Contains(invalid.Error, "Manufacturer");
+        var weaponTypeId = await GetNodeTypeIdAsync<WeaponNodeType>(graph);
         var invalidConnections = (await scope.Storage.GetConnectedNodesAsync((await scope.Storage.Get(ak47.GlobalId)).Value!)).Value!;
-        //Assert.IsFalse(invalidConnections.Any(node => node.GlobalId == TypeId<WeaponNodeType>()));
+        Assert.IsFalse(invalidConnections.Any(node => node.GlobalId == weaponTypeId));
 
         var country = await graph.CreateNode<CountryNodeType>(new("ussr"));
         Assert.AreEqual(ServiceResultStatus.Ok, country.Status, country.Error);
@@ -74,7 +72,31 @@ public sealed class NodeTypeDslTests
 
         Assert.AreEqual(ServiceResultStatus.Ok, valid.Status, valid.Error);
         var validConnections = (await scope.Storage.GetConnectedNodesAsync((await scope.Storage.Get(ak47.GlobalId)).Value!)).Value!;
-        //Assert.IsTrue(validConnections.Any(node => node.GlobalId == TypeId<WeaponNodeType>()));
+        Assert.IsTrue(validConnections.Any(node => node.GlobalId == weaponTypeId));
+    }
+
+    [TestMethod]
+    public async Task GraphService_AssignNodeTypeAsync_UsesTypeMetadataInsteadOfInternalIdShape()
+    {
+        await using var scope = TestGraphStorageScope.Create();
+        var graph = new GraphData.Core.Services.GraphService(
+            scope.Storage,
+            new GraphData.Core.Services.GraphSearchService(scope.Storage),
+            new CancellationTokensAccessorMock());
+        var arbitraryType = (await scope.Storage.Create(new("weapon-type"), attributes: NodeTypeAttributes())).Value!;
+        var graphData = (await scope.Storage.Create(new("graphdata"))).Value!;
+        var typeRoot = (await scope.Storage.Create(new("types"), graphData.GlobalId)).Value!;
+        var nodeTypeRoot = (await scope.Storage.Create(new("nodes"), typeRoot.GlobalId)).Value!;
+        var pathShapedNonType = (await scope.Storage.Create(new("Fake"), nodeTypeRoot.GlobalId)).Value!;
+        var ak47 = (await scope.Storage.Create(new("ak-47"))).Value!;
+        var m16 = (await scope.Storage.Create(new("m16"))).Value!;
+
+        var arbitraryResult = await graph.AssignNodeTypeAsync(ak47.GlobalId, arbitraryType.GlobalId);
+        var pathShapedResult = await graph.AssignNodeTypeAsync(m16.GlobalId, pathShapedNonType.GlobalId);
+
+        Assert.AreEqual(ServiceResultStatus.Ok, arbitraryResult.Status, arbitraryResult.Error);
+        Assert.AreEqual(ServiceResultStatus.BadRequest, pathShapedResult.Status);
+        StringAssert.Contains(pathShapedResult.Error, "not a node type");
     }
 
     [TestMethod]
@@ -92,9 +114,13 @@ public sealed class NodeTypeDslTests
 
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
         var definition = result.Value!;
-        AssertField(definition, nameof(ManufacturerNodeType.Country), NodeFieldValueKind.Node, typeof(CountryNodeType), NodeSlotCardinality.Required());
-        AssertField(definition, nameof(ManufacturerNodeType.ParentCompany), NodeFieldValueKind.Node, typeof(ManufacturerNodeType), NodeSlotCardinality.Optional());
-        AssertField(definition, nameof(ManufacturerNodeType.ProducedWeapons), NodeFieldValueKind.Node, typeof(WeaponNodeType), NodeSlotCardinality.Many(), isCollection: true);
+        var countryTypeId = await GetNodeTypeIdAsync<CountryNodeType>(graph);
+        var manufacturerTypeId = await GetNodeTypeIdAsync<ManufacturerNodeType>(graph);
+        var weaponTypeId = await GetNodeTypeIdAsync<WeaponNodeType>(graph);
+
+        AssertField(definition, nameof(ManufacturerNodeType.Country), NodeFieldValueKind.Node, typeof(CountryNodeType), NodeSlotCardinality.Required(), countryTypeId);
+        AssertField(definition, nameof(ManufacturerNodeType.ParentCompany), NodeFieldValueKind.Node, typeof(ManufacturerNodeType), NodeSlotCardinality.Optional(), manufacturerTypeId);
+        AssertField(definition, nameof(ManufacturerNodeType.ProducedWeapons), NodeFieldValueKind.Node, typeof(WeaponNodeType), NodeSlotCardinality.Many(), weaponTypeId, isCollection: true);
         AssertField(definition, nameof(ManufacturerNodeType.Headquarters), NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required());
         AssertField(definition, nameof(ManufacturerNodeType.ArchiveNode), NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Optional());
         AssertField(definition, nameof(ManufacturerNodeType.LegalName), NodeFieldValueKind.Primitive, typeof(string), NodeSlotCardinality.Required());
@@ -119,14 +145,29 @@ public sealed class NodeTypeDslTests
         NodeFieldValueKind kind,
         Type clrType,
         NodeSlotCardinality cardinality,
+        InternalId? nodeTypeId = null,
         bool isCollection = false)
     {
         var field = definition.Fields.Single(value => value.Name == name);
         Assert.AreEqual(kind, field.ValueKind);
         Assert.AreEqual(clrType, field.ClrType);
         Assert.AreEqual(cardinality, field.Cardinality);
-        //Assert.AreEqual(nodeTypeId, field.NodeTypeId);
+        Assert.AreEqual(nodeTypeId, field.NodeTypeId);
         Assert.AreEqual(isCollection, field.IsCollection);
+    }
+
+    private static Dictionary<string, string> NodeTypeAttributes() =>
+        new(StringComparer.OrdinalIgnoreCase) {
+            [GraphRuntimeAttributeNames.GraphKind] = "type",
+            [GraphRuntimeAttributeNames.GraphElement] = "node"
+        };
+
+    private static async Task<InternalId> GetNodeTypeIdAsync<TNodeType>(GraphData.Core.Services.GraphService graph)
+        where TNodeType : NodeType
+    {
+        var result = await graph.GetNodeTypeDefinitionAsync<TNodeType>();
+        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
+        return result.Value!.Type.GlobalId;
     }
 
     private sealed class WeaponNodeType : NodeType

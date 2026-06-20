@@ -37,20 +37,6 @@ public abstract class EdgeType : Edge
     internal static InternalId CreateDefaultTypeId(Type type) =>
         new(GraphSystemNodeIds.EdgeTypeRoot.Concat([new NodeLocalId(CreateDefaultLocalId(type))]));
 
-    internal static bool IsEdgeTypeId(InternalId id)
-    {
-        var idSegments = id.ToArray();
-        var rootSegments = GraphSystemNodeIds.EdgeTypeRoot.ToArray();
-        if (idSegments.Length <= rootSegments.Length)
-            return false;
-
-        for (var index = 0; index < rootSegments.Length; index++)
-            if (idSegments[index] != rootSegments[index])
-                return false;
-
-        return true;
-    }
-
     private static string CreateDefaultLocalId(Type type)
     {
         var name = type.Name;

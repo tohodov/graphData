@@ -416,7 +416,7 @@ public sealed class GraphUiRegressionTests {
             model.putNode(new GraphNode({
               globalId: relationId,
               displayName: "R",
-              attributes: { [graphElementAttribute]: "edge" },
+              attributes: { [graphKindAttribute]: "edge-instance", [graphElementAttribute]: "edge" },
               edges: [{ sourceGlobalId: relationId, targetGlobalId: targetPortId }]
             }));
             model.putNode(new GraphNode({
