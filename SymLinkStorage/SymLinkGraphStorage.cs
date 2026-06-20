@@ -5,7 +5,7 @@ using Microsoft.Extensions.Options;
 
 namespace Storage;
 
-internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
+internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
     public NodeGlobalId Root => new NodeGlobalId(new string[0]);
@@ -129,15 +129,16 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
         return Task.FromResult(ServiceResult<IReadOnlyCollection<NodeState>>.Ok(GetConnectedNodes(node)));
     }
 
-    public Task<IReadOnlyCollection<NodeState>> GetAllNodesAsync() {
+    public async IAsyncEnumerable<NodeState> EnumerateNodesAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default) {
         if (!root.Exists)
-            return Task.FromResult<IReadOnlyCollection<NodeState>>(Array.Empty<NodeState>());
+            yield break;
 
-        var nodes = new List<NodeState>();
         var stack = new Stack<DirectoryInfo>();
         stack.Push(root);
 
         while (stack.Count > 0) {
+            cancellationToken.ThrowIfCancellationRequested();
             cancellationTokens.Token.ThrowIfCancellationRequested();
 
             var current = stack.Pop();
@@ -147,13 +148,13 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeCatalog {
 
                 var relativePath = Path.GetRelativePath(root.FullName, directory.FullName);
                 if (!string.IsNullOrWhiteSpace(relativePath) && relativePath != ".")
-                    nodes.Add(new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), this));
+                    yield return new NodeFileSystem(new NodeLocalId(NormalizeNodeName(relativePath)), this);
 
                 stack.Push(directory);
             }
-        }
 
-        return Task.FromResult<IReadOnlyCollection<NodeState>>(nodes);
+            await Task.Yield();
+        }
     }
 
     internal NodeFileSystem? GetInternal(NodeFileSystem? parent, NodeLocalId nodeId) {

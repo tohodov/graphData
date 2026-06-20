@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 namespace GraphData.PerNodeFileStorage;
 
 [Obsolete("пока SymLinkStorage основной", true)]
-internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
+internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeStream
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -237,16 +237,17 @@ internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
         return nodes;
     }
 
-    public async Task<IReadOnlyCollection<NodeState>> GetAllNodesAsync()
+    public async IAsyncEnumerable<NodeState> EnumerateNodesAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(_metadataRoot))
         {
-            return Array.Empty<NodeState>();
+            yield break;
         }
 
-        var nodes = new List<NodeState>();
         foreach (var metadataPath in Directory.EnumerateFiles(_metadataRoot, $"*{_options.MetadataFileExtension}", SearchOption.TopDirectoryOnly))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var encodedName = Path.GetFileNameWithoutExtension(metadataPath);
             if (string.IsNullOrWhiteSpace(encodedName))
             {
@@ -257,11 +258,9 @@ internal sealed class PerNodeFileGraphStorage : IGraphStorage, IGraphNodeCatalog
             var document = await ReadMetadataWithLockAsync(nodeName).ConfigureAwait(false);
             if (document is not null)
             {
-                nodes.Add(CreateNode(document));
+                yield return CreateNode(document);
             }
         }
-
-        return nodes;
     }
 
     private async Task<NodeDocument?> ReadMetadataWithLockAsync(string nodeName)

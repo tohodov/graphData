@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Abstractions;
 using GraphData.Core.Models;
@@ -416,11 +417,17 @@ public sealed class GraphSearchServiceTests
         }
     }
 
-    private sealed class StreamingProbeStorage(params NodeState[] nodes) : IGraphStorage, IGraphNodeCatalog
+    private sealed class StreamingProbeStorage(params NodeState[] nodes) : IGraphStorage, IGraphNodeStream
     {
-        public Task<IReadOnlyCollection<NodeState>> GetAllNodesAsync()
+        public async IAsyncEnumerable<NodeState> EnumerateNodesAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
-            return Task.FromResult<IReadOnlyCollection<NodeState>>(nodes);
+            foreach (var node in nodes)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                yield return node;
+                await Task.Yield();
+            }
         }
 
         public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node)

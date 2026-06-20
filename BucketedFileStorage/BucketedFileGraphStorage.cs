@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 namespace GraphData.BucketedFileStorage;
 
 [Obsolete("пока SymLinkStorage основной", true)]
-internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalog
+internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeStream
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -241,16 +241,17 @@ internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalo
         return nodes;
     }
 
-    public async Task<IReadOnlyCollection<NodeState>> GetAllNodesAsync()
+    public async IAsyncEnumerable<NodeState> EnumerateNodesAsync(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(_metadataRoot))
         {
-            return Array.Empty<NodeState>();
+            yield break;
         }
 
-        var nodes = new List<NodeState>();
         foreach (var metadataPath in Directory.EnumerateFiles(_metadataRoot, "*.json", SearchOption.TopDirectoryOnly))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var bucketKey = Path.GetFileNameWithoutExtension(metadataPath);
             if (string.IsNullOrWhiteSpace(bucketKey))
             {
@@ -262,15 +263,17 @@ internal sealed class BucketedFileGraphStorage : IGraphStorage, IGraphNodeCatalo
             try
             {
                 var bucket = await ReadMetadataBucketAsync(bucketKey).ConfigureAwait(false);
-                nodes.AddRange(bucket.Values.Select(CreateNode));
+                foreach (var document in bucket.Values)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    yield return CreateNode(document);
+                }
             }
             finally
             {
                 bucketLock.Release();
             }
         }
-
-        return nodes;
     }
 
     private async Task<NodeDocument?> ReadMetadataWithLockAsync(string nodeName)

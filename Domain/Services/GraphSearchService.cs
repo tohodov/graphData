@@ -19,13 +19,13 @@ public sealed class GraphSearchService {
     public async IAsyncEnumerable<NodeSearchMatch> SearchNodesStreamAsync(NodeSearchQuery query, [EnumeratorCancellation] CancellationToken cancellationToken = default) {
         Validate(query);
 
-        var graph = await SearchGraph.CreateAsync(_storage).ConfigureAwait(false);
+        var graph = new SearchGraph(_storage, cancellationToken);
         var returnVariables = NormalizeReturnVariables(query.Return);
         var limit = NormalizeLimit(query.Limit);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var yielded = 0;
 
-        foreach (var solution in EnumerateSolutions(query, graph, returnVariables)) {
+        await foreach (var solution in EnumerateSolutions(query, graph, returnVariables, cancellationToken).ConfigureAwait(false)) {
             cancellationToken.ThrowIfCancellationRequested();
             if (returnVariables.Any(variable => !solution.Bindings.ContainsKey(variable))) {
                 continue;
@@ -47,13 +47,14 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<SearchSolution> EnumerateSolutions(
+    private static IAsyncEnumerable<SearchSolution> EnumerateSolutions(
         NodeSearchQuery query,
         SearchGraph graph,
-        string[] returnVariables) {
+        string[] returnVariables,
+        CancellationToken cancellationToken) {
         var effectiveWhere = BuildEffectiveWhere(query.Where, returnVariables);
         var initial = new SearchSolution(new Dictionary<string, Node>(StringComparer.OrdinalIgnoreCase), 0, []);
-        return Evaluate(effectiveWhere, [initial], graph);
+        return Evaluate(effectiveWhere, ToAsyncEnumerable([initial]), graph, cancellationToken);
     }
 
     private static NodeSearchMatch ToMatch(SearchSolution solution, string[] returnVariables) {
@@ -166,19 +167,20 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<SearchSolution> Evaluate(
+    private static IAsyncEnumerable<SearchSolution> Evaluate(
         NodeSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        CancellationToken cancellationToken) {
         return expression switch {
-            AllNodeSearchExpression all => EvaluateAll(all, input, graph),
-            AnyNodeSearchExpression any => EvaluateAny(any, input, graph),
-            NotNodeSearchExpression not => EvaluateNot(not, input, graph),
-            ExistsNodeSearchExpression exists => EvaluateExists(exists, input, graph),
-            NodeExistsSearchExpression node => EvaluateNode(node, input, graph),
-            NodeNameSearchExpression name => EvaluateName(name, input, graph),
-            NodeAttributeSearchExpression attribute => EvaluateAttribute(attribute, input, graph),
-            NodeTextSearchExpression text => EvaluateText(text, input, graph),
+            AllNodeSearchExpression all => EvaluateAll(all, input, graph, cancellationToken),
+            AnyNodeSearchExpression any => EvaluateAny(any, input, graph, cancellationToken),
+            NotNodeSearchExpression not => EvaluateNot(not, input, graph, cancellationToken),
+            ExistsNodeSearchExpression exists => EvaluateExists(exists, input, graph, cancellationToken),
+            NodeExistsSearchExpression node => EvaluateNode(node, input, graph, cancellationToken),
+            NodeNameSearchExpression name => EvaluateName(name, input, graph, cancellationToken),
+            NodeAttributeSearchExpression attribute => EvaluateAttribute(attribute, input, graph, cancellationToken),
+            NodeTextSearchExpression text => EvaluateText(text, input, graph, cancellationToken),
             NodeConnectedSearchExpression connected => EvaluatePath(
                 connected.Left,
                 connected.Right,
@@ -187,7 +189,8 @@ public sealed class GraphSearchService {
                 includeSelf: false,
                 input,
                 graph,
-                "connected"),
+                "connected",
+                cancellationToken),
             NodePathSearchExpression path => EvaluatePath(
                 path.Left,
                 path.Right,
@@ -196,59 +199,68 @@ public sealed class GraphSearchService {
                 path.IncludeSelf,
                 input,
                 graph,
-                "path"),
-            NodeDescendantSearchExpression descendant => EvaluateDescendant(descendant, input, graph),
-            NodeDegreeSearchExpression degree => EvaluateDegree(degree, input, graph),
-            NodeSameSearchExpression same => EvaluateSame(same, input, graph),
-            NodeNotSameSearchExpression notSame => EvaluateNotSame(notSame, input, graph),
+                "path",
+                cancellationToken),
+            NodeDescendantSearchExpression descendant => EvaluateDescendant(descendant, input, graph, cancellationToken),
+            NodeDegreeSearchExpression degree => EvaluateDegree(degree, input, graph, cancellationToken),
+            NodeSameSearchExpression same => EvaluateSame(same, input, graph, cancellationToken),
+            NodeNotSameSearchExpression notSame => EvaluateNotSame(notSame, input, graph, cancellationToken),
             _ => throw new NotSupportedException($"Unsupported search expression type '{expression.GetType().Name}'.")
         };
     }
 
-    private static IEnumerable<SearchSolution> EvaluateAll(
+    private static IAsyncEnumerable<SearchSolution> EvaluateAll(
         AllNodeSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        CancellationToken cancellationToken) {
         var current = input;
         foreach (var child in expression.Expressions.OrderBy(static child => child is NotNodeSearchExpression ? 1 : 0)) {
-            current = Evaluate(child, current, graph);
+            current = Evaluate(child, current, graph, cancellationToken);
         }
 
         return current;
     }
 
-    private static IEnumerable<SearchSolution> EvaluateAny(
+    private static async IAsyncEnumerable<SearchSolution> EvaluateAny(
         AnyNodeSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
-        foreach (var solution in input) {
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
             foreach (var child in expression.Expressions) {
-                foreach (var result in Evaluate(child, [solution], graph)) {
+                await foreach (var result in Evaluate(child, ToAsyncEnumerable([solution]), graph, cancellationToken).ConfigureAwait(false)) {
                     yield return result;
                 }
             }
         }
     }
 
-    private static IEnumerable<SearchSolution> EvaluateNot(
+    private static async IAsyncEnumerable<SearchSolution> EvaluateNot(
         NotNodeSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
-        foreach (var solution in input) {
-            if (!Evaluate(expression.Expression, [solution], graph).Any()) {
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            if (!await AnyAsync(Evaluate(expression.Expression, ToAsyncEnumerable([solution]), graph, cancellationToken), cancellationToken).ConfigureAwait(false)) {
                 yield return solution.AddMatch("not");
             }
         }
     }
 
-    private static IEnumerable<SearchSolution> EvaluateExists(
+    private static async IAsyncEnumerable<SearchSolution> EvaluateExists(
         ExistsNodeSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
-        foreach (var solution in input) {
-            var inner = Evaluate(expression.Expression, [solution], graph)
-                .OrderByDescending(static result => result.Score)
-                .FirstOrDefault();
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            SearchSolution? inner = null;
+            await foreach (var result in Evaluate(expression.Expression, ToAsyncEnumerable([solution]), graph, cancellationToken).WithCancellation(cancellationToken).ConfigureAwait(false)) {
+                if (inner is null || result.Score > inner.Score) {
+                    inner = result;
+                }
+            }
+
             if (inner is null) {
                 continue;
             }
@@ -258,24 +270,28 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<SearchSolution> EvaluateNode(
+    private static async IAsyncEnumerable<SearchSolution> EvaluateNode(
         NodeExistsSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
-        return input.SelectMany(solution => BindSelector(
-            solution,
-            expression.Node,
-            graph.Nodes,
-            score: 0.05,
-            match: "node"));
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            await foreach (var candidate in CandidateNodes(solution, expression.Node, graph, cancellationToken).ConfigureAwait(false)) {
+                var bound = TryBind(solution, expression.Node, candidate, 0.05, "node");
+                if (bound is not null) {
+                    yield return bound;
+                }
+            }
+        }
     }
 
-    private static IEnumerable<SearchSolution> EvaluateName(
+    private static async IAsyncEnumerable<SearchSolution> EvaluateName(
         NodeNameSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
-        foreach (var solution in input) {
-            foreach (var candidate in CandidateNodes(solution, expression.Node, graph)) {
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            await foreach (var candidate in CandidateNodes(solution, expression.Node, graph, cancellationToken).ConfigureAwait(false)) {
                 if (!MatchesText(candidate.LocalId, expression.Operator, expression.Value)) {
                     continue;
                 }
@@ -289,12 +305,13 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<SearchSolution> EvaluateAttribute(
+    private static async IAsyncEnumerable<SearchSolution> EvaluateAttribute(
         NodeAttributeSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
-        foreach (var solution in input) {
-            foreach (var candidate in CandidateNodes(solution, expression.Node, graph)) {
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            await foreach (var candidate in CandidateNodes(solution, expression.Node, graph, cancellationToken).ConfigureAwait(false)) {
                 if (!MatchesAttribute(candidate, expression.Key, expression.Operator, expression.Value)) {
                     continue;
                 }
@@ -307,12 +324,13 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<SearchSolution> EvaluateText(
+    private static async IAsyncEnumerable<SearchSolution> EvaluateText(
         NodeTextSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
-        foreach (var solution in input) {
-            foreach (var candidate in CandidateNodes(solution, expression.Node, graph)) {
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            await foreach (var candidate in CandidateNodes(solution, expression.Node, graph, cancellationToken).ConfigureAwait(false)) {
                 var score = GetTextScore(candidate, expression.Value);
                 if (score <= 0) {
                     continue;
@@ -326,17 +344,18 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<SearchSolution> EvaluatePath(
+    private static async IAsyncEnumerable<SearchSolution> EvaluatePath(
         NodeSearchNodeSelector left,
         NodeSearchNodeSelector right,
         int minDepth,
         int maxDepth,
         bool includeSelf,
-        IEnumerable<SearchSolution> input,
+        IAsyncEnumerable<SearchSolution> input,
         SearchGraph graph,
-        string matchName) {
-        foreach (var solution in input) {
-            foreach (var (leftNode, rightNode, distance) in CandidatePaths(solution, left, right, minDepth, maxDepth, includeSelf, graph)) {
+        string matchName,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            await foreach (var (leftNode, rightNode, distance) in CandidatePaths(solution, left, right, minDepth, maxDepth, includeSelf, graph, cancellationToken).ConfigureAwait(false)) {
                 var bound = TryBind(solution, left, leftNode, PathScore(distance), $"{matchName}:depth={distance}");
                 bound = bound is null ? null : TryBind(bound, right, rightNode);
                 if (bound is not null) {
@@ -346,12 +365,13 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<SearchSolution> EvaluateDescendant(
+    private static async IAsyncEnumerable<SearchSolution> EvaluateDescendant(
         NodeDescendantSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
-        foreach (var solution in input) {
-            foreach (var (ancestor, descendant, depth) in CandidateDescendants(solution, expression, graph)) {
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            await foreach (var (ancestor, descendant, depth) in CandidateDescendants(solution, expression, graph, cancellationToken).ConfigureAwait(false)) {
                 var ancestorName = NormalizeNodeName(ancestor.LocalId);
                 var bound = TryBind(solution, expression.Ancestor, ancestor, 0.3, $"ancestor:{ancestorName}");
                 bound = bound is null ? null : TryBind(bound, expression.Descendant, descendant, 0.75 + 0.25 / depth, $"descendant-of:{ancestorName} depth={depth}");
@@ -362,13 +382,14 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<SearchSolution> EvaluateDegree(
+    private static async IAsyncEnumerable<SearchSolution> EvaluateDegree(
         NodeDegreeSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
-        foreach (var solution in input) {
-            foreach (var candidate in CandidateNodes(solution, expression.Node, graph)) {
-                var degree = graph.GetDegree(candidate);
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            await foreach (var candidate in CandidateNodes(solution, expression.Node, graph, cancellationToken).ConfigureAwait(false)) {
+                var degree = await graph.GetDegreeAsync(candidate).ConfigureAwait(false);
                 if (!MatchesNumber(degree, expression.Operator, expression.Value)) {
                     continue;
                 }
@@ -381,12 +402,13 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<SearchSolution> EvaluateSame(
+    private static async IAsyncEnumerable<SearchSolution> EvaluateSame(
         NodeSameSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
-        foreach (var solution in input) {
-            foreach (var (left, right) in CandidateNodePairs(solution, expression.Left, expression.Right, graph)) {
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            await foreach (var (left, right) in CandidateNodePairs(solution, expression.Left, expression.Right, graph, cancellationToken).ConfigureAwait(false)) {
                 if (!SameNode(left, right)) {
                     continue;
                 }
@@ -400,12 +422,13 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<SearchSolution> EvaluateNotSame(
+    private static async IAsyncEnumerable<SearchSolution> EvaluateNotSame(
         NodeNotSameSearchExpression expression,
-        IEnumerable<SearchSolution> input,
-        SearchGraph graph) {
-        foreach (var solution in input) {
-            foreach (var (left, right) in CandidateNodePairs(solution, expression.Left, expression.Right, graph)) {
+        IAsyncEnumerable<SearchSolution> input,
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            await foreach (var (left, right) in CandidateNodePairs(solution, expression.Left, expression.Right, graph, cancellationToken).ConfigureAwait(false)) {
                 if (SameNode(left, right)) {
                     continue;
                 }
@@ -419,29 +442,33 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<Node> CandidateNodes(SearchSolution solution, NodeSearchNodeSelector selector, SearchGraph graph) {
-        return selector switch {
-            NodeLiteralSearchSelector literal => graph.TryGetNode(literal.Name, out var node)
-                ? [node]
-                : [],
-            NodeVariableSearchSelector variable => solution.Bindings.TryGetValue(variable.Name, out var node)
-                ? [node]
-                : graph.Nodes,
-            _ => throw new NotSupportedException($"Unsupported node selector type '{selector.GetType().Name}'.")
-        };
-    }
-
-    private static IEnumerable<SearchSolution> BindSelector(
+    private static async IAsyncEnumerable<Node> CandidateNodes(
         SearchSolution solution,
         NodeSearchNodeSelector selector,
-        IEnumerable<Node> candidates,
-        double score,
-        string match) {
-        foreach (var candidate in candidates) {
-            var bound = TryBind(solution, selector, candidate, score, match);
-            if (bound is not null) {
-                yield return bound;
-            }
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        switch (selector) {
+            case NodeLiteralSearchSelector literal:
+                var literalNode = await graph.TryGetNodeAsync(literal.Name).ConfigureAwait(false);
+                if (literalNode is not null) {
+                    yield return literalNode;
+                }
+
+                break;
+
+            case NodeVariableSearchSelector variable when solution.Bindings.TryGetValue(variable.Name, out var node):
+                yield return node;
+                break;
+
+            case NodeVariableSearchSelector:
+                await foreach (var candidate in graph.Nodes.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+                    yield return candidate;
+                }
+
+                break;
+
+            default:
+                throw new NotSupportedException($"Unsupported node selector type '{selector.GetType().Name}'.");
         }
     }
 
@@ -474,50 +501,46 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IEnumerable<(Node Left, Node Right)> CandidateNodePairs(
+    private static async IAsyncEnumerable<(Node Left, Node Right)> CandidateNodePairs(
         SearchSolution solution,
         NodeSearchNodeSelector left,
         NodeSearchNodeSelector right,
-        SearchGraph graph) {
-        var leftCandidates = CandidateNodes(solution, left, graph).ToArray();
-        var rightCandidates = CandidateNodes(solution, right, graph).ToArray();
-
-        foreach (var leftNode in leftCandidates) {
-            foreach (var rightNode in rightCandidates) {
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var leftNode in CandidateNodes(solution, left, graph, cancellationToken).ConfigureAwait(false)) {
+            await foreach (var rightNode in CandidateNodes(solution, right, graph, cancellationToken).ConfigureAwait(false)) {
                 yield return (leftNode, rightNode);
             }
         }
     }
 
-    private static IEnumerable<(Node Left, Node Right, int Distance)> CandidatePaths(
+    private static async IAsyncEnumerable<(Node Left, Node Right, int Distance)> CandidatePaths(
         SearchSolution solution,
         NodeSearchNodeSelector left,
         NodeSearchNodeSelector right,
         int minDepth,
         int maxDepth,
         bool includeSelf,
-        SearchGraph graph) {
-        var leftCandidates = CandidateNodes(solution, left, graph).ToArray();
-        var rightCandidates = CandidateNodes(solution, right, graph).ToArray();
-        var rightNames = rightCandidates
-            .Select(static node => NormalizeNodeName(node.LocalId))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        var rightNames = await GetKnownSelectorNamesAsync(solution, right, graph).ConfigureAwait(false);
 
-        foreach (var leftNode in leftCandidates) {
-            foreach (var path in graph.GetReachable(leftNode, minDepth, maxDepth, includeSelf)) {
-                if (rightNames.Contains(NormalizeNodeName(path.Node.LocalId))) {
+        await foreach (var leftNode in CandidateNodes(solution, left, graph, cancellationToken).ConfigureAwait(false)) {
+            foreach (var path in await graph.GetReachableAsync(leftNode, minDepth, maxDepth, includeSelf).ConfigureAwait(false)) {
+                if (rightNames is null || rightNames.Contains(NormalizeNodeName(path.Node.LocalId))) {
                     yield return (leftNode, path.Node, path.Distance);
                 }
             }
         }
     }
 
-    private static IEnumerable<(Node Ancestor, Node Descendant, int Depth)> CandidateDescendants(
+    private static async IAsyncEnumerable<(Node Ancestor, Node Descendant, int Depth)> CandidateDescendants(
         SearchSolution solution,
         NodeDescendantSearchExpression expression,
-        SearchGraph graph) {
-        foreach (var ancestor in CandidateNodes(solution, expression.Ancestor, graph)) {
-            foreach (var descendant in CandidateNodes(solution, expression.Descendant, graph)) {
+        SearchGraph graph,
+        [EnumeratorCancellation] CancellationToken cancellationToken) {
+        await foreach (var ancestor in CandidateNodes(solution, expression.Ancestor, graph, cancellationToken).ConfigureAwait(false)) {
+            await foreach (var descendant in CandidateNodes(solution, expression.Descendant, graph, cancellationToken).ConfigureAwait(false)) {
                 var depth = graph.GetDescendantDepth(ancestor, descendant);
                 if (depth >= expression.MinDepth && depth <= expression.MaxDepth) {
                     yield return (ancestor, descendant, depth);
@@ -526,73 +549,8 @@ public sealed class GraphSearchService {
         }
     }
 
-    private static IReadOnlyCollection<SearchSolution> DistinctByReturnVariables(
-        IEnumerable<SearchSolution> solutions,
-        string[] returnVariables) {
-        var distinct = new Dictionary<string, SearchSolution>(StringComparer.OrdinalIgnoreCase);
-        foreach (var solution in solutions) {
-            if (returnVariables.Any(variable => !solution.Bindings.ContainsKey(variable))) {
-                continue;
-            }
-
-            var key = GetReturnKey(solution, returnVariables);
-            if (!distinct.TryGetValue(key, out var existing) || solution.Score > existing.Score) {
-                distinct[key] = solution;
-            }
-        }
-
-        return distinct.Values;
-    }
-
     private static string GetReturnKey(SearchSolution solution, string[] returnVariables) {
         return string.Join('\u001f', returnVariables.Select(variable => NormalizeNodeName(solution.Bindings[variable].LocalId)));
-    }
-
-    private static IOrderedEnumerable<SearchSolution> OrderSolutions(
-        IEnumerable<SearchSolution> solutions,
-        NodeSearchOrder[]? orders,
-        string[] returnVariables,
-        SearchGraph graph) {
-        IOrderedEnumerable<SearchSolution>? ordered = null;
-        if (orders is not null) {
-            foreach (var order in orders) {
-                ordered = ApplyOrder(solutions, ordered, order, graph);
-            }
-        }
-
-        ordered ??= solutions.OrderByDescending(static solution => solution.Score);
-        return ordered.ThenBy(
-            solution => string.Join('\u001f', returnVariables.Select(variable => solution.Bindings[variable].LocalId)),
-            StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static IOrderedEnumerable<SearchSolution> ApplyOrder(
-        IEnumerable<SearchSolution> solutions,
-        IOrderedEnumerable<SearchSolution>? ordered,
-        NodeSearchOrder order,
-        SearchGraph graph) {
-        return order switch {
-            NodeSearchScoreOrder score => ApplyOrderKey(solutions, ordered, static solution => solution.Score, IsDescending(score.Direction)),
-            NodeSearchNameOrder name => ApplyOrderKey(solutions, ordered, solution => solution.Bindings[name.Variable].LocalId, IsDescending(name.Direction)),
-            NodeSearchDegreeOrder degree => ApplyOrderKey(solutions, ordered, solution => graph.GetDegree(solution.Bindings[degree.Variable]), IsDescending(degree.Direction)),
-            _ => throw new NotSupportedException($"Unsupported search order type '{order.GetType().Name}'.")
-        };
-    }
-
-    private static IOrderedEnumerable<SearchSolution> ApplyOrderKey<TKey>(
-        IEnumerable<SearchSolution> solutions,
-        IOrderedEnumerable<SearchSolution>? ordered,
-        Func<SearchSolution, TKey> keySelector,
-        bool descending) {
-        if (ordered is null) {
-            return descending
-                ? solutions.OrderByDescending(keySelector)
-                : solutions.OrderBy(keySelector);
-        }
-
-        return descending
-            ? ordered.ThenByDescending(keySelector)
-            : ordered.ThenBy(keySelector);
     }
 
     private static void Validate(NodeSearchQuery query) {
@@ -882,6 +840,43 @@ public sealed class GraphSearchService {
         return string.Equals(direction, SearchOrderDirections.Descending, StringComparison.OrdinalIgnoreCase);
     }
 
+    private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> source) {
+        foreach (var item in source) {
+            yield return item;
+            await Task.Yield();
+        }
+    }
+
+    private static async Task<HashSet<string>?> GetKnownSelectorNamesAsync(
+        SearchSolution solution,
+        NodeSearchNodeSelector selector,
+        SearchGraph graph) {
+        switch (selector) {
+            case NodeLiteralSearchSelector literal:
+                var literalNode = await graph.TryGetNodeAsync(literal.Name).ConfigureAwait(false);
+                return literalNode is null
+                    ? []
+                    : new HashSet<string>([NormalizeNodeName(literalNode.LocalId)], StringComparer.OrdinalIgnoreCase);
+
+            case NodeVariableSearchSelector variable when solution.Bindings.TryGetValue(variable.Name, out var node):
+                return new HashSet<string>([NormalizeNodeName(node.LocalId)], StringComparer.OrdinalIgnoreCase);
+
+            case NodeVariableSearchSelector:
+                return null;
+
+            default:
+                throw new NotSupportedException($"Unsupported node selector type '{selector.GetType().Name}'.");
+        }
+    }
+
+    private static async Task<bool> AnyAsync<T>(IAsyncEnumerable<T> source, CancellationToken cancellationToken) {
+        await foreach (var _ in source.WithCancellation(cancellationToken).ConfigureAwait(false)) {
+            return true;
+        }
+
+        return false;
+    }
+
     private static double PathScore(int distance) {
         return distance <= 0 ? 1 : 0.7 / distance;
     }
@@ -920,61 +915,44 @@ public sealed class GraphSearchService {
     }
 
     private sealed class SearchGraph {
-        private readonly IReadOnlyDictionary<string, Node> _nodesByName;
-        private readonly IReadOnlyDictionary<string, Node[]> _connectionsByName;
+        private readonly IGraphStorage _storage;
+        private readonly IGraphNodeStream _nodeStream;
+        private readonly CancellationToken _cancellationToken;
+        private readonly Dictionary<string, Node> _nodesByName = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Node[]> _connectionsByName = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, NodeDistance[]> _reachableCache = new(StringComparer.OrdinalIgnoreCase);
 
-        private SearchGraph(
-            IReadOnlyCollection<Node> nodes,
-            IReadOnlyDictionary<string, Node[]> connectionsByName) {
-            Nodes = nodes;
-            _nodesByName = nodes.ToDictionary(static node => NormalizeNodeName(node.LocalId), StringComparer.OrdinalIgnoreCase);
-            _connectionsByName = connectionsByName;
-        }
-
-        public IReadOnlyCollection<Node> Nodes { get; }
-
-        public static async Task<SearchGraph> CreateAsync(IGraphStorage storage) {
-            if (storage is not IGraphNodeCatalog catalog) {
-                throw new NotSupportedException("The configured graph storage provider does not expose a node catalog.");
+        public SearchGraph(IGraphStorage storage, CancellationToken cancellationToken) {
+            if (storage is not IGraphNodeStream nodeStream) {
+                throw new NotSupportedException("The configured graph storage provider does not expose a node stream.");
             }
 
-            var nodes = (await catalog.GetAllNodesAsync().ConfigureAwait(false))
-                .Select(static state => new Node(state))
-                .OrderBy(static node => node.LocalId)
-                .ToArray();
-            var knownNodes = nodes
-                .Select(static node => NormalizeNodeName(node.LocalId))
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var connections = new Dictionary<string, Node[]>(StringComparer.OrdinalIgnoreCase);
+            _storage = storage;
+            _nodeStream = nodeStream;
+            _cancellationToken = cancellationToken;
+        }
 
-            foreach (var node in nodes) {
-                var connectedResult = await storage.GetConnectedNodesAsync(node.State).ConfigureAwait(false);
-                if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null) {
-                    throw new InvalidOperationException(connectedResult.Error ?? $"Failed to read connections for node '{node.LocalId}'.");
-                }
+        public IAsyncEnumerable<Node> Nodes => EnumerateNodesAsync();
 
-                connections[NormalizeNodeName(node.LocalId)] = connectedResult.Value
-                    .Select(static state => new Node(state))
-                    .Where(connection => knownNodes.Contains(NormalizeNodeName(connection.LocalId)))
-                    .OrderBy(static connection => connection.LocalId)
-                    .ToArray();
+        public async Task<Node?> TryGetNodeAsync(string name) {
+            var normalizedName = NormalizeNodeName(name);
+            if (_nodesByName.TryGetValue(normalizedName, out var node)) {
+                return node;
             }
 
-            return new SearchGraph(nodes, connections);
+            var result = await _storage.Get(new NodePath(normalizedName.Split('/', StringSplitOptions.RemoveEmptyEntries))).ConfigureAwait(false);
+            if (result.Status != ServiceResultStatus.Ok || result.Value is null) {
+                return null;
+            }
+
+            return Remember(new Node(result.Value));
         }
 
-        public bool TryGetNode(string name, out Node node) {
-            return _nodesByName.TryGetValue(NormalizeNodeName(name), out node!);
+        public async Task<int> GetDegreeAsync(Node node) {
+            return (await GetConnectionsAsync(node).ConfigureAwait(false)).Length;
         }
 
-        public int GetDegree(Node node) {
-            return _connectionsByName.TryGetValue(NormalizeNodeName(node.LocalId), out var connections)
-                ? connections.Length
-                : 0;
-        }
-
-        public IReadOnlyCollection<NodeDistance> GetReachable(Node start, int minDepth, int maxDepth, bool includeSelf) {
+        public async Task<IReadOnlyCollection<NodeDistance>> GetReachableAsync(Node start, int minDepth, int maxDepth, bool includeSelf) {
             var cacheKey = $"{NormalizeNodeName(start.LocalId)}\u001f{minDepth}\u001f{maxDepth}\u001f{includeSelf}";
             if (_reachableCache.TryGetValue(cacheKey, out var cached)) {
                 return cached;
@@ -995,11 +973,7 @@ public sealed class GraphSearchService {
                     continue;
                 }
 
-                if (!_connectionsByName.TryGetValue(NormalizeNodeName(node.LocalId), out var connections)) {
-                    continue;
-                }
-
-                foreach (var connected in connections) {
+                foreach (var connected in await GetConnectionsAsync(node).ConfigureAwait(false)) {
                     if (!visited.Add(NormalizeNodeName(connected.LocalId))) {
                         continue;
                     }
@@ -1019,6 +993,37 @@ public sealed class GraphSearchService {
                 .ToArray();
             _reachableCache[cacheKey] = reachable;
             return reachable;
+        }
+
+        private async IAsyncEnumerable<Node> EnumerateNodesAsync() {
+            await foreach (var node in _nodeStream.EnumerateNodesAsync(_cancellationToken).WithCancellation(_cancellationToken).ConfigureAwait(false)) {
+                yield return Remember(new Node(node));
+            }
+        }
+
+        private async Task<Node[]> GetConnectionsAsync(Node node) {
+            var key = NormalizeNodeName(node.LocalId);
+            if (_connectionsByName.TryGetValue(key, out var cached)) {
+                return cached;
+            }
+
+            var connectedResult = await _storage.GetConnectedNodesAsync(node.State).ConfigureAwait(false);
+            if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null) {
+                throw new InvalidOperationException(connectedResult.Error ?? $"Failed to read connections for node '{node.LocalId}'.");
+            }
+
+            var connections = connectedResult.Value
+                .Select(static state => new Node(state))
+                .Select(Remember)
+                .OrderBy(static connection => connection.LocalId)
+                .ToArray();
+            _connectionsByName[key] = connections;
+            return connections;
+        }
+
+        private Node Remember(Node node) {
+            _nodesByName[NormalizeNodeName(node.LocalId)] = node;
+            return node;
         }
 
         public int GetDescendantDepth(Node ancestor, Node descendant) {

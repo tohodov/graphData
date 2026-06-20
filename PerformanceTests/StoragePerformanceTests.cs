@@ -63,10 +63,14 @@ public sealed class StoragePerformanceTests {
             await scope.Storage.Update(name, attributes).ConfigureAwait(false);
         }).ConfigureAwait(false);
 
-        if (scope.Storage is IGraphNodeCatalog catalog) {
-            await run.MeasureAsync("catalog-get-all", graph.NodeCount, async () => {
-                var nodes = await catalog.GetAllNodesAsync().ConfigureAwait(false);
-                PerformanceAssert.AreEqual(graph.NodeCount, nodes.Count);
+        if (scope.Storage is IGraphNodeStream nodeStream) {
+            await run.MeasureAsync("stream-nodes", graph.NodeCount, async () => {
+                var count = 0;
+                await foreach (var _ in nodeStream.EnumerateNodesAsync().ConfigureAwait(false)) {
+                    count++;
+                }
+
+                PerformanceAssert.AreEqual(graph.NodeCount, count);
             }).ConfigureAwait(false);
         }
 
