@@ -311,6 +311,7 @@ public sealed class GraphUiRegressionTests {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
             ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
             ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
             ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
 
@@ -438,11 +439,18 @@ public sealed class GraphUiRegressionTests {
                 nodeTypeRoot: "graphdata/types/nodes"
               }
             });
-            model.schema.projectionBasis = "relations";
 
+            const typeId = "graphdata/types/nodes/Relation";
             const relationId = "r1";
             const sourcePortId = relationId + "/source";
             const targetPortId = relationId + "/target";
+            const typePortId = relationId + "/type";
+            model.schema.edgeTypes.set(typeId, {
+              globalId: typeId,
+              label: "Relation",
+              visible: true,
+              collapsed: true
+            });
 
             model.putNode(new GraphNode({
               globalId: "a",
@@ -459,7 +467,10 @@ public sealed class GraphUiRegressionTests {
               globalId: relationId,
               displayName: "R",
               attributes: { [graphKindAttribute]: "edge-instance", [graphElementAttribute]: "edge" },
-              edges: [{ sourceGlobalId: relationId, targetGlobalId: targetPortId }]
+              edges: [
+                { sourceGlobalId: relationId, targetGlobalId: targetPortId },
+                { sourceGlobalId: relationId, targetGlobalId: typePortId }
+              ]
             }));
             model.putNode(new GraphNode({
               globalId: targetPortId,
@@ -468,8 +479,19 @@ public sealed class GraphUiRegressionTests {
               edges: [{ sourceGlobalId: targetPortId, targetGlobalId: "b" }]
             }));
             model.putNode(new GraphNode({
+              globalId: typePortId,
+              displayName: "type",
+              attributes: { [graphRoleAttribute]: "type" },
+              edges: [{ sourceGlobalId: typePortId, targetGlobalId: typeId }]
+            }));
+            model.putNode(new GraphNode({
               globalId: "b",
               displayName: "B",
+              edges: []
+            }));
+            model.putNode(new GraphNode({
+              globalId: typeId,
+              displayName: "Relation",
               edges: []
             }));
 
@@ -522,7 +544,6 @@ public sealed class GraphUiRegressionTests {
                 nodeTypeRoot: "graphdata/types/nodes"
               }
             });
-            model.schema.projectionBasis = "relations";
 
             const typeId = "graphdata/types/nodes/DependsOn";
             const relationId = "r1";
@@ -533,6 +554,8 @@ public sealed class GraphUiRegressionTests {
               globalId: typeId,
               label: "DependsOn",
               directed: true,
+              collapsed: true,
+              visible: true,
               rank: 77
             });
 
@@ -661,6 +684,7 @@ public sealed class GraphUiRegressionTests {
     public void GraphModel_RebuildProjectionPublishesIntermediateGraph() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
             ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
 
         engine.Execute(
@@ -689,9 +713,11 @@ public sealed class GraphUiRegressionTests {
 
             globalThis.__result = events.length === 1
               && events[0].reason === "basis-rule-change"
+              && events[0].physicalGraph.nodes.length === 2
               && events[0].primitiveGraph.nodes.length === 2
+              && events[0].primitiveGraph === events[0].physicalGraph
               && events[0].intermediateGraph === graph
-              && model.primitiveGraphCache.edges.length === 1
+              && model.physicalGraph().edges.length === 1
               && model.intermediateGraph === graph;
             """);
 
@@ -699,7 +725,7 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
-    public void GraphModel_PrimitiveCacheKeepsHiddenLoadedNodes() {
+    public void GraphModel_PhysicalGraphKeepsHiddenLoadedNodes() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
             ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
@@ -723,11 +749,57 @@ public sealed class GraphUiRegressionTests {
             }));
 
             const graph = model.rebuildProjection({ emit: true, reason: "cache" });
+            const physical = model.physicalGraph();
 
-            globalThis.__result = model.primitiveGraphCache.nodes.length === 2
-              && model.primitiveGraphCache.nodes.some(node => node.name === "graphdata/types/nodes/HiddenType")
+            globalThis.__result = physical.nodes.length === 2
+              && physical.nodes.some(node => node.name === "graphdata/types/nodes/HiddenType")
               && graph.nodes.length === 1
               && graph.nodes[0].name === "root";
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void GraphProjection_DoesNotHideSchemaRootWithoutExplicitRule() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            model.applyUiSettings({
+              basis: {
+                nodeTypeRoot: "graphdata/types/nodes"
+              }
+            });
+            const edge = new GraphEdge({
+              sourceGlobalId: "root",
+              targetGlobalId: "graphdata/types/nodes",
+              sourceLocalId: "root",
+              targetLocalId: "Types"
+            });
+            model.putNode(new GraphNode({
+              globalId: "root",
+              displayName: "Root",
+              showed: true,
+              edges: [edge]
+            }));
+            model.putNode(new GraphNode({
+              globalId: "graphdata/types/nodes",
+              displayName: "Types",
+              showed: true,
+              edges: [edge]
+            }));
+
+            const graph = model.visibleGraph();
+            const names = new Set(graph.nodes.map(node => node.name));
+            globalThis.__result = names.has("root")
+              && names.has("graphdata/types/nodes")
+              && graph.edges.length === 1;
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());

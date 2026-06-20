@@ -130,7 +130,6 @@ export class GraphModel {
   searchAbort: AbortController | null;
   busy: boolean;
   schema: any;
-  primitiveGraphCache: any;
   intermediateGraph: any;
   projectionRevision: number;
   projectionListeners: Set<(event: any) => void>;
@@ -149,12 +148,10 @@ export class GraphModel {
     this.simulationHandle = null;
     this.searchAbort = null;
     this.busy = false;
-    this.primitiveGraphCache = { nodes: [], edges: [] };
     this.intermediateGraph = { nodes: [], edges: [] };
     this.projectionRevision = 0;
     this.projectionListeners = new Set();
     this.schema = {
-      projectionBasis: "typed",
       defaultBasis: { ...defaultBasis },
       basis: { ...defaultBasis },
       systemNodeIds: {},
@@ -214,7 +211,6 @@ export class GraphModel {
     this.parentByNode.clear();
     this.positions.clear();
     this.velocities.clear();
-    this.primitiveGraphCache = { nodes: [], edges: [] };
     this.intermediateGraph = { nodes: [], edges: [] };
     this.rebuildProjection({ reason: "reset" });
   }
@@ -225,10 +221,12 @@ export class GraphModel {
   }
 
   emitProjectionRebuilt(reason: string): void {
+    const physicalGraph = this.physicalGraph();
     const event = {
       reason,
       revision: this.projectionRevision,
-      primitiveGraph: this.primitiveGraphCache,
+      physicalGraph,
+      primitiveGraph: physicalGraph,
       intermediateGraph: this.intermediateGraph
     };
     this.projectionListeners.forEach(listener => listener(event));
@@ -375,32 +373,11 @@ export class GraphModel {
     return this.loaded.get(globalId)?.displayName ?? globalId;
   }
 
-  primitiveGraph(): any {
-    const nodes = new Map();
-    const edges = new Map();
-
-    for (const node of this.loaded.values()) {
-      nodes.set(node.name, node.toViewNode());
-      node.edges.forEach(edge => {
-        if (!edges.has(edge.key)) {
-          edges.set(edge.key, edge.toViewEdge(this.edgeEndpointNodes(edge)));
-        }
-      });
-    }
-
-    this.primitiveGraphCache = { nodes: [...nodes.values()], edges: [...edges.values()] };
-    return this.primitiveGraphCache;
-  }
-
   physicalGraph(): any {
     const nodes = new Map();
     const edges = new Map();
 
     for (const node of this.loaded.values()) {
-      if (node.showed === false) {
-        continue;
-      }
-
       nodes.set(node.name, node.toViewNode());
       node.edges.forEach(edge => {
         if (!edges.has(edge.key)) {
@@ -421,7 +398,6 @@ export class GraphModel {
   }
 
   rebuildProjection(options: any = {}): any {
-    this.primitiveGraph();
     const physical = this.physicalGraph();
     this.intermediateGraph = this.projectedGraph(physical);
     this.projectionRevision += 1;

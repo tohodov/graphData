@@ -735,11 +735,10 @@ export class GraphViewer {
   for (const node of basisGraph.nodes.values()) {
     const existing = this.graph.loaded.get(node.name);
     const stored = existing ? this.mergeNodeResponses(existing, node) : GraphNode.from(node);
-    if (!existing) {
-      stored.showed = false;
-      stored.clearPosition();
-    }
     this.graph.loaded.set(stored.name, stored);
+    if (!existing && !this.graph.positions.has(stored.name)) {
+      this.seedPosition(stored.name, this.graph.rootName, this.graph.visibleNodeCount());
+    }
   }
 
   this.refreshEdgeAngles();
@@ -815,11 +814,13 @@ export class GraphViewer {
     return;
   }
 
+  const physicalGraph = this.graph.physicalGraph();
   this.document.dispatchEvent(new CustomEventCtor("graph-projection-rebuilt", {
     detail: {
       reason,
       revision: this.graph.projectionRevision,
-      primitiveGraph: this.graph.primitiveGraphCache,
+      physicalGraph,
+      primitiveGraph: physicalGraph,
       intermediateGraph: this.graph.intermediateGraph
     }
   }));
@@ -1320,12 +1321,7 @@ export class GraphViewer {
   return [...ids]
     .map(id => this.graph.loaded.get(id))
     .filter(Boolean)
-    .map(node => {
-      const cached = GraphNode.from(node);
-      cached.showed = false;
-      cached.clearPosition();
-      return cached;
-    });
+    .map(node => GraphNode.from(node));
 
   }
 
@@ -2151,7 +2147,7 @@ export class GraphViewer {
       rules.className = "basis-rule-grid";
       rules.hidden = !expanded;
       const visible = this.createCheckboxRule("Показывать", type.visible);
-      const collapsed = this.createCheckboxRule("Сворачивать", type.collapsed !== false);
+      const collapsed = this.createCheckboxRule("Сворачивать", type.collapsed === true);
       const color = this.createTextRule("Цвет", type.color || "", "#0f766e");
       const rank = this.createTextRule("Ранг", GraphType.formatRankInput(type.rank), element === "node" ? "50" : "30");
       rules.append(visible.label, collapsed.label, color.label, rank.label);
@@ -2346,13 +2342,12 @@ export class GraphViewer {
   const physical = this.graph.physicalGraph();
   const relations = this.graph.discoverRelationInstances(physical);
   const graph = this.graph.visibleGraph();
-  const primitive = this.graph.primitiveGraphCache;
   const projectedRelations = graph.edges.filter(edge => edge.projected).length;
   const rankedNodes = graph.nodes.filter(node => Number.isFinite(node.viewRank));
   const topRank = rankedNodes.length === 0
     ? ""
     : ` Топ rank: ${GraphType.formatRank(Math.max(...rankedNodes.map(node => node.viewRank)))}.`;
-  this.projectionSummary.textContent = `Проекция по типам: ${graph.nodes.length} узлов, ${graph.edges.length} связей. Кэш примитивов: ${primitive.nodes.length} узлов, ${primitive.edges.length} связей. Видимых типизированных конструкций: ${relations.length}, свернутых: ${projectedRelations}.${topRank}`;
+  this.projectionSummary.textContent = `Проекция по типам: ${graph.nodes.length} узлов, ${graph.edges.length} связей. Внутренний граф: ${physical.nodes.length} узлов, ${physical.edges.length} связей. Видимых типизированных конструкций: ${relations.length}, свернутых: ${projectedRelations}.${topRank}`;
 
   }
 
