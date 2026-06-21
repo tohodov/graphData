@@ -4,7 +4,7 @@ export class GraphApi {
     this.fetchApi = fetchApi;
   }
 
-  async json(url: string, options: { method?: string; body?: BodyInit | null; expectJson?: boolean } = {}): Promise<any> {
+  async json<T = unknown>(url: string, options: { method?: string; body?: BodyInit | null; expectJson?: boolean } = {}): Promise<T | null> {
     const response = await this.fetchApi(url, {
       method: options.method ?? "GET",
       headers: { "Content-Type": "application/json" },
@@ -17,7 +17,7 @@ export class GraphApi {
       throw error;
     }
     if (options.expectJson === false || response.status === 204) return null;
-    return response.json();
+    return response.json() as Promise<T>;
   }
 
   fetch(url: string, options: RequestInit = {}): Promise<Response> {

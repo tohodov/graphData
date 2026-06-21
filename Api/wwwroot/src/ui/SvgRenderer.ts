@@ -3,9 +3,16 @@ import type { GraphRenderer, GraphRendererHost, GraphRenderMemory, GraphView } f
 const svgNs = "http://www.w3.org/2000/svg";
 
 export class SvgRenderer implements GraphRenderer {
-  [key: string]: any;
-
   mode = "svg";
+  document: Document;
+  window: Window;
+  surface: HTMLElement;
+  memory: GraphRenderMemory | null;
+  width: number;
+  height: number;
+  svg: SVGElement;
+  edgeLayer: SVGElement;
+  nodeLayer: SVGElement;
 
   constructor({ document, window, surface }: GraphRendererHost) {
     this.document = document;

@@ -1,3 +1,5 @@
+import type { ProjectedGraph } from "../domain/GraphModel.js";
+
 export type GraphView = {
   x: number;
   y: number;
@@ -5,10 +7,10 @@ export type GraphView = {
 };
 
 export type GraphRenderMemory = {
-  graph: any;
-  nodes: any[];
-  edges: any[];
-  nodeIndexByName: Map<any, any>;
+  graph: ProjectedGraph;
+  nodes: Record<string, unknown>[];
+  edges: Record<string, unknown>[];
+  nodeIndexByName: Map<string, number>;
   nodeCount: number;
   edgeCount: number;
   nodeVertexData: Float32Array;

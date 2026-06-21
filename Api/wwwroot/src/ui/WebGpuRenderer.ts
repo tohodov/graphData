@@ -3,9 +3,24 @@ import nodeShader from "./shaders/node.wgsl";
 import type { GraphRenderer, GraphRendererHost, GraphRenderMemory, GraphView } from "./GraphRenderer.js";
 
 export class WebGpuRenderer implements GraphRenderer {
-  [key: string]: any;
-
   mode = "webgpu";
+  document: Document;
+  window: Window;
+  surface: HTMLElement | undefined;
+  canvas: HTMLCanvasElement;
+  ownsCanvas: boolean;
+  device: GPUDevice | null;
+  context: GPUCanvasContext | null;
+  format: GPUTextureFormat | null;
+  pixelRatio: number;
+  uniformBuffer: GPUBuffer | null;
+  uniformBindGroup: GPUBindGroup | null;
+  nodeBuffer: GPUBuffer | null;
+  edgeBuffer: GPUBuffer | null;
+  nodeCount: number;
+  edgeVertexCount: number;
+  nodePipeline: GPURenderPipeline | null;
+  edgePipeline: GPURenderPipeline | null;
 
   constructor({ document, window, surface, canvas }: GraphRendererHost & { canvas?: HTMLCanvasElement }) {
     this.document = document;
@@ -291,7 +306,7 @@ export class WebGpuRenderer implements GraphRenderer {
   }
 
   gpuBufferUsage() {
-    const usage = this.window.GPUBufferUsage ?? globalThis["GPUBufferUsage"];
+    const usage = globalThis.GPUBufferUsage;
     if (!usage) {
       throw new Error("WebGPU buffer usage constants are unavailable");
     }
@@ -299,7 +314,7 @@ export class WebGpuRenderer implements GraphRenderer {
   }
 
   gpuShaderStage() {
-    const stage = this.window.GPUShaderStage ?? globalThis["GPUShaderStage"];
+    const stage = globalThis.GPUShaderStage;
     if (!stage) {
       throw new Error("WebGPU shader stage constants are unavailable");
     }

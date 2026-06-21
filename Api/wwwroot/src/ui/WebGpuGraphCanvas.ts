@@ -2,7 +2,8 @@ import { nodeRadius } from "../domain/graphAttributes.js";
 import { HtmlCanvasRenderer } from "./HtmlCanvasRenderer.js";
 import { SvgRenderer } from "./SvgRenderer.js";
 import { WebGpuRenderer } from "./WebGpuRenderer.js";
-import type { GraphRenderer } from "./GraphRenderer.js";
+import { GraphNode } from "../domain/GraphNode.js";
+import type { GraphRenderer, GraphRendererHost, GraphView, GraphRenderMemory } from "./GraphRenderer.js";
 
 const tapMoveThreshold = 8;
 const defaultEdgeColor = [0.20, 0.27, 0.30, 0.62];
@@ -14,7 +15,34 @@ const edgePickThreshold = 9;
 const rendererModes = ["webgpu", "svg", "html-canvas"];
 
 export class WebGpuGraphCanvas {
-  [key: string]: any;
+  document: Document;
+  window: Window;
+  canvas: HTMLCanvasElement;
+  rendererSelect: HTMLSelectElement;
+  labelLayer: HTMLElement;
+  emptyState: HTMLElement;
+  gpuWarning: HTMLElement;
+  buildGraph: () => import("../domain/GraphModel.js").ProjectedGraph;
+  positions: Map<string, { x: number; y: number; }>;
+  velocities: Map<string, { x: number; y: number; }>;
+  view: GraphView;
+  callbacks: Record<string, Function>;
+  renderer: GraphRenderer | null;
+  rendererReady: boolean;
+  rendererMode: string;
+  rendererAvailability: Map<string, { available: boolean; error: Error | null; }> | null;
+  rendererAvailabilityPromise: Promise<Map<string, { available: boolean; error: Error | null; }>> | null;
+  webGpuError: Error | null;
+  renderPending: boolean;
+  memory: GraphRenderMemory | null;
+  currentGraph: import("../domain/GraphModel.js").ProjectedGraph | null;
+  dragging: { name: string; names: string[]; x: number; y: number; startX: number; startY: number; pointerType: string } | null;
+  pointer: { x: number; y: number; startX: number; startY: number } | null;
+  selectionBox: { startX: number; startY: number; x: number; y: number; append: boolean } | null;
+  selectionBoxElement: HTMLElement;
+  simulationHandle: number | null;
+  resizeObserver: unknown | null;
+  resizePending: boolean;
 
   constructor({
     document,
@@ -250,7 +278,7 @@ export class WebGpuGraphCanvas {
       canvas.setAttribute("layoutsubtree", "");
       canvas.layoutSubtree = true;
       const context = canvas.getContext("2d") as (CanvasRenderingContext2D & {
-        drawElementImage?: (...args: any[]) => DOMMatrix;
+        drawElementImage?: (...args: unknown[]) => DOMMatrix;
       }) | null;
       if (!context) {
         throw new Error("HTML-in-Canvas renderer requires a 2D canvas context.");
@@ -274,11 +302,11 @@ export class WebGpuGraphCanvas {
       throw new Error("WebGPU is unavailable: this browser context did not expose navigator.gpu.");
     }
 
-    if (!this.window.GPUBufferUsage && !globalThis["GPUBufferUsage"]) {
+    if (!globalThis.GPUBufferUsage) {
       throw new Error("WebGPU buffer usage constants are unavailable");
     }
 
-    if (!this.window.GPUShaderStage && !globalThis["GPUShaderStage"]) {
+    if (!globalThis.GPUShaderStage) {
       throw new Error("WebGPU shader stage constants are unavailable");
     }
 
@@ -535,12 +563,13 @@ export class WebGpuGraphCanvas {
   }
 
   bindCanvasResizeObserver() {
-    if (this.resizeObserver || typeof this.window.ResizeObserver !== "function") {
+    if (this.resizeObserver || typeof (this.window as unknown as { ResizeObserver: unknown }).ResizeObserver !== "function") {
       return;
     }
 
-    this.resizeObserver = new this.window.ResizeObserver(() => this.scheduleResizeRefresh());
-    this.resizeObserver.observe(this.canvas);
+    const ResizeObserverCtor = (this.window as unknown as { ResizeObserver: any }).ResizeObserver;
+    this.resizeObserver = new ResizeObserverCtor(() => this.scheduleResizeRefresh());
+    (this.resizeObserver as any).observe(this.canvas);
   }
 
   render() {
@@ -588,17 +617,17 @@ export class WebGpuGraphCanvas {
 
   simulateStep() {
     const graph = this.currentGraph ?? this.buildGraph();
-    const forces = new Map<any, any>(graph.nodes.map(node => [node.name, { x: 0, y: 0 }]));
+    const forces = new Map<string, { x: number; y: number; }>(graph.nodes.map(node => [node.name as string, { x: 0, y: 0 }]));
 
     graph.edges.forEach(edge => {
       if (edge.collapsed) {
         return;
       }
 
-      const source = this.positions.get(edge.sourceGlobalId);
-      const target = this.positions.get(edge.targetGlobalId);
-      const sourceForce = forces.get(edge.sourceGlobalId);
-      const targetForce = forces.get(edge.targetGlobalId);
+      const source = this.positions.get(edge.sourceGlobalId ?? "");
+      const target = this.positions.get(edge.targetGlobalId ?? "");
+      const sourceForce = forces.get(edge.sourceGlobalId ?? "");
+      const targetForce = forces.get(edge.targetGlobalId ?? "");
       if (!source || !target || !sourceForce || !targetForce) {
         return;
       }
@@ -606,7 +635,7 @@ export class WebGpuGraphCanvas {
       let dx = target.x - source.x;
       let dy = target.y - source.y;
       let distance = Math.max(1, Math.hypot(dx, dy));
-      const desired = nodeRadius * 3 + Math.min(90, Math.max(0, (edge.viewRank ?? 0) * 0.3));
+      const desired = nodeRadius * 3 + Math.min(90, Math.max(0, (Number(edge.viewRank) || 0) * 0.3));
       const strength = (distance - desired) * 0.018;
       const fx = (dx / distance) * strength;
       const fy = (dy / distance) * strength;
@@ -617,9 +646,9 @@ export class WebGpuGraphCanvas {
     });
 
     graph.nodes.forEach(node => {
-      const position = this.positions.get(node.name);
-      const velocity = this.velocities.get(node.name) ?? { x: 0, y: 0 };
-      const force = forces.get(node.name);
+      const position = this.positions.get(node.name ?? "");
+      const velocity = this.velocities.get(node.name ?? "") ?? { x: 0, y: 0 };
+      const force = forces.get(node.name ?? "");
       if (!position || !force) {
         return;
       }
@@ -630,7 +659,7 @@ export class WebGpuGraphCanvas {
       velocity.y = (velocity.y + force.y) * 0.82;
       position.x += velocity.x;
       position.y += velocity.y;
-      this.velocities.set(node.name, velocity);
+      this.velocities.set(node.name ?? "", velocity);
     });
   }
 
@@ -646,7 +675,7 @@ export class WebGpuGraphCanvas {
 
     const rect = this.canvas.getBoundingClientRect();
     const points = graph.nodes
-      .map(node => this.positions.get(node.name))
+      .map(node => this.positions.get(node.name ?? ""))
       .filter(Boolean);
     if (points.length === 0) {
       return;

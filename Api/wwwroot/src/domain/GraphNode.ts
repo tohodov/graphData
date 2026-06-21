@@ -1,5 +1,5 @@
 import { graphElementAttribute, graphKindAttribute, graphTypeNameAttribute } from "./graphAttributes.js";
-import { GraphEdge } from "./GraphEdge.js";
+import { GraphEdge, type GraphEdgeSnapshot } from "./GraphEdge.js";
 import { GraphId } from "./GraphId.js";
 
 export type GraphPoint = { x: number; y: number };
@@ -9,6 +9,18 @@ function normalizePoint(value: GraphPoint | null | undefined): GraphPoint | null
     ? { x: value.x, y: value.y }
     : null;
 }
+
+export type GraphNodeSnapshot = {
+  globalId?: string;
+  name?: string;
+  localId?: string;
+  displayName?: string;
+  attributes?: Record<string, string>;
+  edges?: Array<GraphEdge | GraphEdgeSnapshot>;
+  collapsed?: boolean;
+  showed?: boolean | undefined;
+  position?: GraphPoint | null;
+};
 
 export class GraphNode {
   globalId: string;
@@ -30,17 +42,7 @@ export class GraphNode {
     collapsed = false,
     showed,
     position = null
-  }: {
-    globalId?: string;
-    name?: string;
-    localId?: string;
-    displayName?: string;
-    attributes?: Record<string, string>;
-    edges?: any[];
-    collapsed?: boolean;
-    showed?: boolean | undefined;
-    position?: GraphPoint | null;
-  }) {
+  }: GraphNodeSnapshot) {
     this.globalId = globalId ?? name;
     this.name = this.globalId;
     this.localId = localId ?? GraphId.localId(this.globalId);
@@ -52,15 +54,15 @@ export class GraphNode {
     this.position = normalizePoint(position);
   }
 
-  static fromApi(node: any): GraphNode {
+  static fromApi(node: GraphNodeSnapshot | null | undefined): GraphNode {
     return new GraphNode(node ?? {});
   }
 
-  static from(node: GraphNode | any): GraphNode {
+  static from(node: GraphNode | GraphNodeSnapshot | null | undefined): GraphNode {
     return node instanceof GraphNode ? node : new GraphNode(node ?? {});
   }
 
-  merge(expansion: GraphNode | any): GraphNode {
+  merge(expansion: GraphNode | GraphNodeSnapshot | null | undefined): GraphNode {
     const next = GraphNode.from(expansion);
     this.globalId = next.globalId;
     this.name = next.name;

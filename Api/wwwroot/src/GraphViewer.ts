@@ -25,13 +25,63 @@ type GraphViewerDependencies = {
 };
 
 export class GraphViewer {
-  [key: string]: any;
-
   document: Document;
   window: Window;
   api: GraphApi;
   graph: GraphModel;
   canvas: WebGpuGraphCanvas;
+
+  graphSurface: HTMLElement;
+  labelLayer: HTMLElement;
+  selectionOverlay: HTMLElement;
+  selectionOverlayToggle: HTMLElement;
+  selectionSummary: HTMLElement;
+  selectionList: HTMLElement;
+  selectionOverlayCollapsed: boolean;
+  expandedSelectionKeys: Set<string>;
+  expandedBasisRuleKeys: Set<string>;
+  gpuWarning: HTMLElement;
+  fitButton: HTMLButtonElement;
+  resetButton: HTMLButtonElement;
+  rendererSelect: HTMLSelectElement;
+  mobileMenuToggle: HTMLButtonElement;
+  mobileMenuClose: HTMLButtonElement;
+  statusOutput: HTMLOutputElement;
+  emptyState: HTMLElement;
+  emptyTitle: HTMLElement;
+  clearSelectionButton: HTMLButtonElement;
+  deleteSelectedNodesButton: HTMLButtonElement;
+  createNodeForm: HTMLFormElement;
+  createNodeName: HTMLInputElement;
+  createNodeParent: HTMLInputElement;
+  createNodeType: HTMLSelectElement;
+  connectForm: HTMLFormElement;
+  connectTargetName: HTMLInputElement;
+  connectEdgeType: HTMLSelectElement;
+  connectEdgeName: HTMLInputElement;
+  searchForm: HTMLFormElement;
+  searchQueryJson: HTMLTextAreaElement | HTMLInputElement;
+  searchSubmitButton: HTMLButtonElement;
+  searchStopButton: HTMLButtonElement;
+  searchResults: HTMLElement;
+  subgraphForm: HTMLFormElement;
+  subgraphResults: HTMLElement;
+  basisNodeInput: HTMLInputElement;
+  nodeTypeRootInput: HTMLInputElement;
+  edgeTypeRootInput: HTMLInputElement;
+  relationRootInput: HTMLInputElement;
+  loadBasisButton: HTMLButtonElement;
+  ensureBasisButton: HTMLButtonElement;
+  refreshTypesButton: HTMLButtonElement;
+  loadRelationsButton: HTMLButtonElement;
+  projectionSummary: HTMLElement;
+  nodeTypeList: HTMLElement;
+  assignNodeType: HTMLSelectElement;
+  assignNodeTypeButton: HTMLButtonElement;
+  assignEdgeType: HTMLSelectElement;
+  assignEdgeTypeButton: HTMLButtonElement;
+  edgeTypeList: HTMLElement;
+  typedEdgeList: HTMLElement;
 
   constructor({ document, window, api = new GraphApi(window.fetch.bind(window)) }: GraphViewerDependencies) {
     this.document = document;
@@ -359,7 +409,7 @@ export class GraphViewer {
 
   }
 
-  async loadNode(name, fromName, options: any = {}) {
+  async loadNode(name: string, fromName: string | null = null, options: { silent?: boolean; select?: boolean } = {}) {
   const select = options.select ?? true;
   this.setBusy(true);
   try {
@@ -402,7 +452,7 @@ export class GraphViewer {
 
   }
 
-  storeNodeExpansion(expansion, fromName, options: any = {}) {
+  storeNodeExpansion(expansion: import("./domain/GraphNode.js").GraphNodeSnapshot, fromName: string | null = null, options: { silent?: boolean; select?: boolean } = {}) {
   const select = options.select ?? true;
   const incoming = GraphNode.from(expansion);
   const existing = this.graph.loaded.get(incoming.name);
@@ -447,7 +497,7 @@ export class GraphViewer {
 
   }
 
-  async createNode(name, options: any = {}) {
+  async createNode(name: string, options: { silent?: boolean } = {}) {
   const parentGlobalId = options.parentGlobalId || null;
   const typeGlobalId = options.typeGlobalId || "";
   this.setBusy(true);
@@ -541,7 +591,7 @@ export class GraphViewer {
 
   }
 
-  async connectNodes(sourceGlobalId, targetGlobalId, options: any = {}) {
+  async connectNodes(sourceGlobalId: string, targetGlobalId: string, options: { silent?: boolean; relationGlobalId?: string; typeGlobalId?: string } = {}) {
   const typeGlobalId = options.typeGlobalId || "";
   this.setBusy(true);
   try {
@@ -654,7 +704,7 @@ export class GraphViewer {
 
   }
 
-  async refreshTypes(options: any = {}) {
+  async refreshTypes(options: { silent?: boolean } = {}) {
   if (!options.preserveBusy) {
     this.setBusy(true);
   }
@@ -812,7 +862,7 @@ export class GraphViewer {
   }
 
   dispatchProjectionRebuilt(event) {
-  const CustomEventCtor = (this.window as any)?.CustomEvent;
+  const CustomEventCtor = (this.window as Window & { CustomEvent?: typeof CustomEvent })?.CustomEvent ?? CustomEvent;
   if (typeof CustomEventCtor !== "function") {
     return;
   }
@@ -953,7 +1003,7 @@ export class GraphViewer {
 
   }
 
-  async changeGraphEdgeType(edge, typeGlobalId, options: any = {}) {
+  async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge, typeGlobalId: string, options: { silent?: boolean } = {}) {
   const relationRoot = this.getBasis().relationRoot?.trim();
   return this.apiJson("/api/graph/edges/type", {
     method: "PUT",
@@ -970,7 +1020,7 @@ export class GraphViewer {
   }
 
   async upsertGraphType(rootGlobalId, localId, label, color, element, directed = false, rank = element === "node" ? 50 : 30) {
-  const attrs: any = {
+  const attrs: Record<string, string> = {
     [graphKindAttribute]: "type",
     [graphElementAttribute]: element,
     label,
@@ -1249,7 +1299,7 @@ export class GraphViewer {
 
   }
 
-  loadSubgraphIntoViewer(response, roots, options: any = {}) {
+  loadSubgraphIntoViewer(response: { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[]; edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }, roots: string[], options: { silent?: boolean } = {}) {
   const basisNodes = this.cachedBasisNodes();
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
@@ -1288,7 +1338,7 @@ export class GraphViewer {
 
   }
 
-  mergeSubgraphIntoViewer(response, options: any = {}) {
+  mergeSubgraphIntoViewer(response: { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[]; edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }, options: { silent?: boolean; select?: boolean } = {}) {
   const select = options.select ?? false;
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
@@ -1509,7 +1559,7 @@ export class GraphViewer {
 
   }
 
-  revealLoadedNode(name, fromName, options: any = {}) {
+  revealLoadedNode(name: string, fromName: string | null = null, options: { silent?: boolean } = {}) {
   const node = this.graph.loaded.get(name);
   if (!node) {
     return false;
@@ -1584,9 +1634,9 @@ export class GraphViewer {
 
   renderSelectionOverlay(graph) {
   this.pruneSelectionToGraph(graph);
-  const selectedNodes: any[] = this.selectedNodeObjects(graph)
+  const selectedNodes = this.selectedNodeObjects(graph)
     .sort((left, right) => this.displayName(left.name).localeCompare(this.displayName(right.name), "ru"));
-  const selectedEdges: any[] = this.selectedEdgeObjects(graph)
+  const selectedEdges = this.selectedEdgeObjects(graph)
     .sort((left, right) => this.edgeSelectionTitle(left).localeCompare(this.edgeSelectionTitle(right), "ru"));
   const total = selectedNodes.length + selectedEdges.length;
 
@@ -1859,9 +1909,9 @@ export class GraphViewer {
 
   }
 
-  selectedNodeObjects(graph = null): any[] {
-  const nodes: any[] = graph?.nodes ?? [...this.graph.loaded.values()].filter(node => node.showed  === true);
-  const nodesByName = new Map<string, any>(nodes.map(node => [node.name, node]));
+  selectedNodeObjects(graph: import("./domain/GraphModel.js").ProjectedGraph | null = null): import("./domain/GraphNode.js").GraphNode[] {
+  const nodes: import("./domain/GraphNode.js").GraphNode[] = graph?.nodes ?? [...this.graph.loaded.values()].filter(node => node.showed  === true);
+  const nodesByName = new Map<string, import("./domain/GraphNode.js").GraphNode>(nodes.map(node => [node.name, node]));
   return [...this.graph.selectedNames]
     .map(name => nodesByName.get(name))
     .filter(Boolean);
@@ -1873,10 +1923,10 @@ export class GraphViewer {
 
   }
 
-  selectedEdgeObjects(graph = null): any[] {
+  selectedEdgeObjects(graph: import("./domain/GraphModel.js").ProjectedGraph | null = null): import("./domain/GraphEdge.js").GraphEdge[] {
   const source = graph ?? this.graph.visibleGraph();
-  const edges: any[] = source.edges ?? [];
-  const edgesByKey = new Map<string, any>(edges.map(edge => [edge.key, edge]));
+  const edges: import("./domain/GraphEdge.js").GraphEdge[] = source.edges ?? [];
+  const edgesByKey = new Map<string, import("./domain/GraphEdge.js").GraphEdge>(edges.map(edge => [edge.key, edge]));
   return [...this.graph.selectedEdgeKeys]
     .map(key => edgesByKey.get(key))
     .filter(Boolean);
@@ -2164,7 +2214,7 @@ export class GraphViewer {
       const rank = this.createTextRule("Ранг", GraphType.formatRankInput(type.rank), element === "node" ? "50" : "30");
       rules.append(visible.label, collapsed.label, color.label, rank.label);
 
-      const extraControls: any = {};
+      const extraControls: Record<string, { label: HTMLLabelElement; input?: HTMLInputElement; select?: HTMLSelectElement; checkbox?: HTMLInputElement }> = {};
       if (element === "node") {
         extraControls.info = this.createTextRule("Инфо атрибут", type.infoAttribute || "", "например: status");
         rules.append(extraControls.info.label);
@@ -2449,8 +2499,9 @@ export class GraphViewer {
 
   }
 
-  readNumber(selector, fallback) {
-  const value = Number.parseInt(this.document.querySelector(selector).value, 10);
+  readNumber(selector: string, fallback: number) {
+  const element = this.document.querySelector<HTMLInputElement>(selector);
+  const value = Number.parseInt(element?.value ?? "", 10);
   return Number.isFinite(value) ? value : fallback;
 
   }

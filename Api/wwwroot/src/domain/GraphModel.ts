@@ -1,7 +1,16 @@
 import { defaultBasis } from "./graphAttributes.js";
 import { GraphEdge } from "./GraphEdge.js";
-import { GraphNode, type GraphPoint } from "./GraphNode.js";
+import { GraphNode, type GraphPoint, type GraphNodeSnapshot } from "./GraphNode.js";
 import { GraphProjection } from "./GraphProjection.js";
+import type { GraphType } from "./GraphType.js";
+import type { GraphEdgeSnapshot, GraphEdgeControlSnapshot } from "./GraphEdge.js";
+
+interface PositionableNode extends GraphNode {
+  position?: GraphPoint | null;
+  hasPosition?: () => boolean;
+  setPosition?: (p: GraphPoint) => void;
+  clearPosition?: () => void;
+}
 
 class GraphNodePositionMap {
   private readonly nodes: Map<string, GraphNode>;
@@ -85,31 +94,31 @@ class GraphNodePositionMap {
   }
 
   private nodePosition(node: GraphNode): GraphPoint | null {
-    const position = (node as any).position;
+    const position = (node as PositionableNode).position;
     return position && Number.isFinite(position.x) && Number.isFinite(position.y)
       ? position
       : null;
   }
 
   private nodeHasPosition(node: GraphNode): boolean {
-    return typeof (node as any).hasPosition === "function"
-      ? (node as any).hasPosition()
+    return typeof (node as PositionableNode).hasPosition === "function"
+      ? (node as PositionableNode).hasPosition!()
       : this.nodePosition(node) !== null;
   }
 
   private setNodePosition(node: GraphNode, position: GraphPoint): void {
-    if (typeof (node as any).setPosition === "function") {
-      (node as any).setPosition(position);
+    if (typeof (node as PositionableNode).setPosition === "function") {
+      (node as PositionableNode).setPosition!(position);
     } else {
-      (node as any).position = { x: position.x, y: position.y };
+      (node as PositionableNode).position = { x: position.x, y: position.y };
     }
   }
 
   private clearNodePosition(node: GraphNode): void {
-    if (typeof (node as any).clearPosition === "function") {
-      (node as any).clearPosition();
+    if (typeof (node as PositionableNode).clearPosition === "function") {
+      (node as PositionableNode).clearPosition!();
     } else {
-      (node as any).position = null;
+      (node as PositionableNode).position = null;
     }
   }
 }
@@ -133,7 +142,7 @@ class EventedGraphNodeMap extends Map<string, GraphNode> {
     this.owner = owner;
   }
 
-  set(name: string, node: GraphNode | any): this {
+  set(name: string, node: GraphNode | GraphNodeSnapshot | null | undefined): this {
     const rich = GraphNode.from(node);
     super.set(name, rich);
     this.changed({ kind: "node-upsert", reason: "node-upsert", name, node: rich });
@@ -193,6 +202,59 @@ class EventedGraphNodeMap extends Map<string, GraphNode> {
   }
 }
 
+export type PrimitiveGraphChangeEvent = PrimitiveGraphChange & { primitiveRevision: number; };
+export type ProjectedGraphNode = import("./GraphNode.js").GraphNodeSnapshot & {
+  viewRank?: number;
+  viewRadius?: number;
+  viewRankReason?: string;
+  typeGlobalId?: string;
+  typeLabel?: string;
+  typeRank?: number;
+  color?: string;
+  displayName?: string;
+};
+
+export type ProjectedGraphEdge = {
+  key?: string;
+  sourceGlobalId: string;
+  targetGlobalId: string;
+  sourceLocalId?: string;
+  targetLocalId?: string;
+  relationGlobalId?: string;
+  typeGlobalId?: string | null;
+  label?: string;
+  color?: string;
+  directed?: boolean;
+  typeRank?: number;
+  projected?: boolean;
+  collapsed?: boolean;
+  viewRank?: number;
+  viewRankReason?: string;
+  selected?: boolean;
+};
+
+export type ProjectedGraph = {
+  nodes: ProjectedGraphNode[];
+  edges: ProjectedGraphEdge[];
+};
+export type ProjectionRebuiltEvent = {
+  reason: string;
+  revision: number;
+  primitiveRevision: number;
+  changes: PrimitiveGraphChange[];
+  projectionGraph: ProjectedGraph;
+  intermediateGraph: ProjectedGraph;
+};
+export type PointerState = { x: number; y: number; startX?: number; startY?: number; node?: GraphNode; element?: unknown; };
+export type GraphSchema = {
+  defaultBasis: { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string };
+  basis: { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string };
+  systemNodeIds: Record<string, string>;
+  baseTypeIds: Record<string, string>;
+  nodeTypes: Map<string, GraphType>;
+  edgeTypes: Map<string, GraphType>;
+};
+
 export class GraphModel {
   rootName: string | null;
   _selectedName: string | null;
@@ -203,19 +265,19 @@ export class GraphModel {
   positions: GraphNodePositionMap;
   velocities: Map<string, { x: number; y: number }>;
   view: { x: number; y: number; scale: number };
-  dragging: any;
-  pointer: any;
+  dragging: PointerState | null;
+  pointer: PointerState | null;
   simulationHandle: number | null;
   searchAbort: AbortController | null;
   busy: boolean;
-  schema: any;
-  intermediateGraph: any;
+  schema: GraphSchema;
+  intermediateGraph: ProjectedGraph;
   projectionDirty: boolean;
   projectionRevision: number;
   primitiveRevision: number;
-  primitiveListeners: Set<(event: any) => void>;
-  projectionListeners: Set<(event: any) => void>;
-  queuedProjectionPromise: Promise<any> | null;
+  primitiveListeners: Set<(event: PrimitiveGraphChangeEvent) => void>;
+  projectionListeners: Set<(event: ProjectionRebuiltEvent) => void>;
+  queuedProjectionPromise: Promise<ProjectedGraph> | null;
   queuedProjectionReason: string;
   queuedProjectionChanges: PrimitiveGraphChange[];
   constructor() {
@@ -252,7 +314,7 @@ export class GraphModel {
     };
   }
 
-  applyUiSettings(settings: any): void {
+  applyUiSettings(settings: Record<string, unknown> | null | undefined): void {
     const basis = GraphModel.readBasis(settings?.basis ?? settings?.systemNodeIds, this.schema.defaultBasis);
     this.schema.defaultBasis = { ...basis };
     this.schema.basis = { ...basis };
@@ -264,7 +326,7 @@ export class GraphModel {
     return this.schema.defaultBasis;
   }
 
-  static readBasis(value: any, fallback: any = defaultBasis): { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string } {
+  static readBasis(value: Record<string, unknown> | null | undefined, fallback: Record<string, unknown> | null | undefined = defaultBasis as Record<string, unknown>): { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string } {
     return {
       nodeTypeRoot: String(value?.nodeTypeRoot || fallback?.nodeTypeRoot || ""),
       edgeTypeRoot: String(value?.edgeTypeRoot || fallback?.edgeTypeRoot || ""),
@@ -308,12 +370,12 @@ export class GraphModel {
     });
   }
 
-  onPrimitiveGraphChanged(listener: (event: any) => void): () => void {
+  onPrimitiveGraphChanged(listener: (event: PrimitiveGraphChangeEvent) => void): () => void {
     this.primitiveListeners.add(listener);
     return () => this.primitiveListeners.delete(listener);
   }
 
-  onProjectionRebuilt(listener: (event: any) => void): () => void {
+  onProjectionRebuilt(listener: (event: ProjectionRebuiltEvent) => void): () => void {
     this.projectionListeners.add(listener);
     return () => this.projectionListeners.delete(listener);
   }
@@ -339,7 +401,7 @@ export class GraphModel {
     return this.loaded.batch(reason, action);
   }
 
-  async requestProjectionRebuild(reason = "projection"): Promise<any> {
+  async requestProjectionRebuild(reason = "projection"): Promise<ProjectedGraph> {
     this.queuedProjectionReason = reason;
     this.projectionDirty = true;
     if (this.queuedProjectionPromise) {
@@ -361,7 +423,7 @@ export class GraphModel {
     return this.queuedProjectionPromise;
   }
 
-  async whenProjectionSettled(): Promise<any> {
+  async whenProjectionSettled(): Promise<ProjectedGraph> {
     return this.queuedProjectionPromise ?? this.intermediateGraph;
   }
 
@@ -395,7 +457,7 @@ export class GraphModel {
     this._selectedName = name;
   }
 
-  selectOnlyEdge(edge: GraphEdge | string | any): void {
+  selectOnlyEdge(edge: GraphEdge | string | { key?: string }): void {
     const key = this.edgeKey(edge);
     this.clearSelection();
     if (key) {
@@ -403,14 +465,14 @@ export class GraphModel {
     }
   }
 
-  addSelectedEdge(edge: GraphEdge | string | any): void {
+  addSelectedEdge(edge: GraphEdge | string | { key?: string }): void {
     const key = this.edgeKey(edge);
     if (key) {
       this.selectedEdgeKeys.add(key);
     }
   }
 
-  toggleSelectedEdge(edge: GraphEdge | string | any): boolean {
+  toggleSelectedEdge(edge: GraphEdge | string | { key?: string }): boolean {
     const key = this.edgeKey(edge);
     if (!key) {
       return false;
@@ -455,7 +517,7 @@ export class GraphModel {
     return this.selectedNames.has(name);
   }
 
-  removeSelectedEdge(edge: GraphEdge | string | any): void {
+  removeSelectedEdge(edge: GraphEdge | string | { key?: string }): void {
     const key = this.edgeKey(edge);
     if (key) {
       this.selectedEdgeKeys.delete(key);
@@ -471,12 +533,12 @@ export class GraphModel {
     }
   }
 
-  isSelectedEdge(edge: GraphEdge | string | any): boolean {
+  isSelectedEdge(edge: GraphEdge | string | { key?: string }): boolean {
     const key = this.edgeKey(edge);
     return Boolean(key && this.selectedEdgeKeys.has(key));
   }
 
-  selectElements(nodeNames: Iterable<string> = [], edgeKeys: Iterable<string> = [], options: any = {}): void {
+  selectElements(nodeNames: Iterable<string> = [], edgeKeys: Iterable<string> = [], options: { append?: boolean } = {}): void {
     if (options.append !== true) {
       this.clearSelection();
     }
@@ -527,7 +589,7 @@ export class GraphModel {
     return this.loaded.get(globalId)?.displayName ?? globalId;
   }
 
-  visibleGraph(): any {
+  visibleGraph(): ProjectedGraph {
     if (this.projectionDirty) {
       this.rebuildProjectionNow({ emit: false, reason: "visible-graph" });
     }
@@ -535,11 +597,11 @@ export class GraphModel {
     return this.withEdgeControls(this.intermediateGraph);
   }
 
-  rebuildProjection(options: any = {}): any {
+  rebuildProjection(options: { emit?: boolean; reason?: string } = {}): ProjectedGraph {
     return this.rebuildProjectionNow(options);
   }
 
-  rebuildProjectionNow(options: any = {}): any {
+  rebuildProjectionNow(options: { emit?: boolean; reason?: string } = {}): ProjectedGraph {
     this.intermediateGraph = new GraphProjection(this).projectFromCache();
     this.projectionDirty = false;
     this.projectionRevision += 1;
@@ -549,13 +611,13 @@ export class GraphModel {
     return this.intermediateGraph;
   }
 
-  *primitiveNodeViews(): IterableIterator<any> {
+  *primitiveNodeViews(): IterableIterator<Record<string, unknown>> {
     for (const node of this.loaded.values()) {
       yield node.toViewNode();
     }
   }
 
-  *primitiveEdgeViews(): IterableIterator<any> {
+  *primitiveEdgeViews(): IterableIterator<Record<string, unknown>> {
     const emitted = new Set<string>();
     for (const node of this.loaded.values()) {
       for (const edge of node.edges ?? []) {
@@ -583,7 +645,7 @@ export class GraphModel {
     return keys.size;
   }
 
-  withEdgeControls(graph: any): any {
+  withEdgeControls(graph: ProjectedGraph): ProjectedGraph {
     return {
       ...graph,
       edges: (graph.edges ?? []).map(edge => ({
@@ -593,7 +655,7 @@ export class GraphModel {
     };
   }
 
-  edgeControls(edge: GraphEdge | any): any[] {
+  edgeControls(edge: GraphEdge | GraphEdgeSnapshot): GraphEdgeControlSnapshot[] {
     const normalized = this.edgeWithEndpointNodes(edge);
     return normalized.controls({
       isCollapsed: this.isEdgeCollapsed(normalized),
@@ -601,7 +663,7 @@ export class GraphModel {
     });
   }
 
-  edgeEndpointControl(edge: GraphEdge | any, anchorName: string): any | null {
+  edgeEndpointControl(edge: GraphEdge | GraphEdgeSnapshot, anchorName: string): GraphEdgeControlSnapshot | null {
     const normalized = this.edgeWithEndpointNodes(edge);
     return normalized.endpointControl(anchorName, {
       isCollapsed: this.isEdgeCollapsed(normalized),
@@ -609,12 +671,12 @@ export class GraphModel {
     });
   }
 
-  edgeWithEndpointNodes(edge: GraphEdge | any): GraphEdge {
+  edgeWithEndpointNodes(edge: GraphEdge | GraphEdgeSnapshot): GraphEdge {
     const normalized = GraphEdge.from(edge);
     return GraphEdge.from(normalized.toViewEdge(this.edgeEndpointNodes(normalized)));
   }
 
-  edgeEndpointNodes(edge: GraphEdge | any): Record<string, unknown> {
+  edgeEndpointNodes(edge: GraphEdge | GraphEdgeSnapshot): Record<string, unknown> {
     const normalized = GraphEdge.from(edge);
     return {
       sourceNode: this.loaded.get(normalized.sourceGlobalId) ?? null,
@@ -624,7 +686,7 @@ export class GraphModel {
     };
   }
 
-  collapseEdge(edge: GraphEdge | string | any): void {
+  collapseEdge(edge: GraphEdge | string | { key?: string; collapsed?: boolean; relationGlobalId?: string }): void {
     const key = this.edgeKey(edge);
     if (!key) {
       return;
@@ -645,7 +707,7 @@ export class GraphModel {
     this.notifyPrimitiveChanged("edge-collapse", { key });
   }
 
-  expandEdge(edge: GraphEdge | string | any): void {
+  expandEdge(edge: GraphEdge | string | { key?: string; collapsed?: boolean; relationGlobalId?: string }): void {
     const key = this.edgeKey(edge);
     if (!key) {
       return;
@@ -666,21 +728,21 @@ export class GraphModel {
     this.notifyPrimitiveChanged("edge-expand", { key });
   }
 
-  isEdgeCollapsed(edge: GraphEdge | string | any): boolean {
+  isEdgeCollapsed(edge: GraphEdge | string | { key?: string; collapsed?: boolean; relationGlobalId?: string }): boolean {
     if (typeof edge !== "string" && edge?.collapsed === true) {
       return true;
     }
 
     const relationGlobalId = this.projectedRelationGlobalId(edge);
     if (relationGlobalId) {
-      return Boolean((this.loaded.get(relationGlobalId) as any)?.collapsed);
+      return Boolean((this.loaded.get(relationGlobalId) as Record<string, unknown>)?.collapsed);
     }
 
     const key = this.edgeKey(edge);
     return Boolean(key && this.findEdgeObjects(key).some(match => match.collapsed));
   }
 
-  edgeKey(edge: GraphEdge | string | any): string {
+  edgeKey(edge: GraphEdge | string | { key?: string; sourceGlobalId?: string; targetGlobalId?: string; }): string {
     if (typeof edge === "string") {
       return edge;
     }
@@ -706,19 +768,19 @@ export class GraphModel {
     return matches;
   }
 
-  setProjectedRelationCollapsed(edge: any, collapsed: boolean): void {
+  setProjectedRelationCollapsed(edge: string | { key?: string; relationGlobalId?: string }, collapsed: boolean): void {
     const relationGlobalId = this.projectedRelationGlobalId(edge);
     if (!relationGlobalId) {
       return;
     }
 
-    const relation = this.loaded.get(relationGlobalId) as any;
+    const relation = this.loaded.get(relationGlobalId) as Record<string, unknown>;
     if (relation) {
       relation.collapsed = collapsed;
     }
   }
 
-  projectedRelationGlobalId(edge: GraphEdge | string | any): string | null {
+  projectedRelationGlobalId(edge: GraphEdge | string | { key?: string; relationGlobalId?: string }): string | null {
     if (typeof edge === "string") {
       return edge.startsWith("projected:") ? edge.slice("projected:".length) : null;
     }
@@ -728,21 +790,21 @@ export class GraphModel {
       : null;
   }
 
-  rankGraph(graph: any): any {
+  rankGraph(graph: ProjectedGraph): ProjectedGraph {
     return new GraphProjection(this).rank(graph);
   }
 
-  discoverRelationInstances(physical: any = null): any[] {
+  discoverRelationInstances(physical: ProjectedGraph | null = null): GraphNode[] {
     return physical
       ? new GraphProjection(this).relations(physical)
       : new GraphProjection(this).relationsFromCache();
   }
 
-  getPortEndpoint(portGlobalId: string, edgesByNode: Map<string, any[]>, relationGlobalId: string): string | null {
+  getPortEndpoint(portGlobalId: string, edgesByNode: Map<string, GraphEdge[]>, relationGlobalId: string): string | null {
     return new GraphProjection(this).portEndpoint(portGlobalId, edgesByNode, relationGlobalId);
   }
 
-  nodeTypeAssignments(physical: any = null): Map<string, any> {
+  nodeTypeAssignments(physical: ProjectedGraph | null = null): Map<string, string[]> {
     return physical
       ? new GraphProjection(this).nodeTypeAssignments(physical)
       : new GraphProjection(this).nodeTypeAssignmentsFromCache();
@@ -754,7 +816,7 @@ export class GraphModel {
       || globalId === this.basis.relationRoot;
   }
 
-  treeChildNameForEdge(edge: GraphEdge | any, anchorName: string): string | null {
+  treeChildNameForEdge(edge: GraphEdge | GraphEdgeSnapshot, anchorName: string): string | null {
     const normalized = GraphEdge.from(edge);
     const otherName = normalized.otherEndpoint(anchorName);
     return this.parentByNode.get(otherName) === anchorName
@@ -764,7 +826,7 @@ export class GraphModel {
         : null;
   }
 
-  formatProjectedNodeName(node: any, nodeType: any): string {
+  formatProjectedNodeName(node: ProjectedGraphNode | import("./GraphNode.js").GraphNode, nodeType: GraphType | Record<string, unknown>): string {
     if (!nodeType?.infoAttribute) {
       return node.displayName;
     }

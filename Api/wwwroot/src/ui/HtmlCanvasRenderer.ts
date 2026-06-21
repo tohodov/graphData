@@ -17,9 +17,20 @@ type HtmlCanvasContext2D = CanvasRenderingContext2D & {
 };
 
 export class HtmlCanvasRenderer implements GraphRenderer {
-  [key: string]: any;
-
   mode = "html-canvas";
+  document: Document;
+  window: Window;
+  surface: HTMLElement;
+  canvas: HtmlCanvasElement;
+  context: HtmlCanvasContext2D | null;
+  memory: GraphRenderMemory | null;
+  nodeElements: HTMLElement[];
+  edgeElements: HTMLElement[];
+  nodeKeys: string[];
+  edgeKeys: string[];
+  pixelRatio: number;
+  pendingView: GraphView;
+  paintListener: () => void;
 
   constructor({ document, window, surface }: GraphRendererHost) {
     this.document = document;

@@ -11,6 +11,7 @@
     "checkJs": false,
     "strict": false,
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["@webgpu/types"],
     "skipLibCheck": true
   },
   "include": ["wwwroot/main.ts", "wwwroot/src/**/*.ts"],

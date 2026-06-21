@@ -10,6 +10,21 @@ import {
   projectionVisibleAttribute
 } from "./graphAttributes.js";
 
+export type GraphTypeSnapshot = {
+  globalId?: string;
+  localId?: string;
+  label?: string;
+  color?: string;
+  element?: string;
+  visible?: boolean;
+  collapsed?: boolean;
+  infoAttribute?: string;
+  labelVisible?: boolean;
+  directed?: boolean;
+  rank?: number;
+  attributes?: Record<string, string>;
+};
+
 export class GraphType {
   globalId: string;
   localId: string;
@@ -23,9 +38,9 @@ export class GraphType {
   directed: boolean;
   rank: number;
   attributes: Record<string, string>;
-  constructor(options: any) {
-    this.globalId = options.globalId;
-    this.localId = options.localId;
+  constructor(options: GraphTypeSnapshot) {
+    this.globalId = options.globalId ?? "";
+    this.localId = options.localId ?? "";
     this.label = options.label ?? options.localId;
     this.color = GraphType.normalizeColor(options.color);
     this.element = options.element ?? "node";
@@ -38,7 +53,7 @@ export class GraphType {
     this.attributes = { ...(options.attributes ?? {}) };
   }
 
-  static fromNode(node: any, fallbackElement = "node"): GraphType {
+  static fromNode(node: Record<string, unknown>, fallbackElement = "node"): GraphType {
     const fallbackRank = fallbackElement === "edge" ? 30 : 50;
     return new GraphType({
       globalId: node.globalId,
