@@ -11,44 +11,55 @@ function normalizePoint(value: GraphPoint | null | undefined): GraphPoint | null
 }
 
 export type GraphNodeSnapshot = {
-  globalId?: string;
+  internalId?: string;
+  path?: string;
   name?: string;
   localId?: string;
   displayName?: string;
   attributes?: Record<string, string>;
   edges?: Array<GraphEdge | GraphEdgeSnapshot>;
+  nodes?: Array<GraphNode | GraphNodeSnapshot>;
   collapsed?: boolean;
   showed?: boolean | undefined;
   position?: GraphPoint | null;
+  // Backward compatibility
+  globalId?: string;
 };
 
 export class GraphNode {
-  globalId: string;
+  internalId: string;
+  path: string;
   name: string;
   localId: string;
   displayName: string;
   attributes: Record<string, string>;
   edges: GraphEdge[];
+  nodes: GraphNode[];
   collapsed: boolean;
   showed: boolean | undefined;
   position: GraphPoint | null;
   constructor({
+    internalId,
+    path,
     globalId,
     name,
     localId,
     displayName,
     attributes = {},
     edges = [],
+    nodes = [],
     collapsed = false,
     showed,
     position = null
   }: GraphNodeSnapshot) {
-    this.globalId = globalId ?? name ?? "";
-    this.name = this.globalId;
-    this.localId = localId ?? GraphId.localId(this.globalId);
+    this.internalId = internalId ?? globalId ?? name ?? "";
+    this.path = path ?? globalId ?? name ?? "";
+    this.name = this.path;
+    this.localId = localId ?? GraphId.localId(this.path);
     this.displayName = displayName ?? this.localId;
     this.attributes = { ...(attributes ?? {}) };
     this.edges = edges.map(edge => GraphEdge.from(edge));
+    this.nodes = nodes.map(node => GraphNode.from(node));
     this.collapsed = Boolean(collapsed);
     this.showed = showed;
     this.position = normalizePoint(position);
@@ -64,12 +75,15 @@ export class GraphNode {
 
   merge(expansion: GraphNode | GraphNodeSnapshot | null | undefined): GraphNode {
     const next = GraphNode.from(expansion);
-    this.globalId = next.globalId;
+    this.internalId = next.internalId;
+    this.path = next.path;
     this.name = next.name;
     this.localId = next.localId;
     this.displayName = next.displayName;
     this.attributes = { ...next.attributes };
     this.edges = GraphEdge.mergeMany(this.edges, next.edges);
+    // TODO: GraphNode.mergeMany(this.nodes, next.nodes)? For now just replace or concat?
+    this.nodes = next.nodes.length > 0 ? next.nodes : this.nodes;
     this.collapsed = this.collapsed || next.collapsed;
     this.showed = this.showed === true || next.showed === true ? true : (this.showed === false || next.showed === false ? false : undefined);
     this.position = next.position ?? this.position;
@@ -107,14 +121,14 @@ export class GraphNode {
     return this.attribute(graphElementAttribute) ?? fallback;
   }
 
-  assignedTypeGlobalId(): string {
+  assignedTypePath(): string {
     return this.attribute(graphTypeNameAttribute) ?? "";
   }
 
   isSchemaRoot(basis: { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string }): boolean {
-    return this.globalId === basis.nodeTypeRoot
-      || this.globalId === basis.edgeTypeRoot
-      || this.globalId === basis.relationRoot;
+    return this.path === basis.nodeTypeRoot
+      || this.path === basis.edgeTypeRoot
+      || this.path === basis.relationRoot;
   }
 
   isRelationInstance(basis: { relationRoot: string }): boolean {
@@ -122,22 +136,23 @@ export class GraphNode {
       || (this.attribute(graphElementAttribute) === "edge" && Boolean(this.attribute(graphTypeNameAttribute)));
   }
 
-  isChildOf(parentGlobalId: string): boolean {
-    return GraphId.isChildOf(this.globalId, parentGlobalId);
+  isChildOf(parentPath: string): boolean {
+    return GraphId.isChildOf(this.path, parentPath);
   }
 
-  edgeTo(globalId: string): GraphEdge | null {
-    return this.edges.find(edge => edge.connects(globalId)) ?? null;
+  edgeTo(path: string): GraphEdge | null {
+    return this.edges.find(edge => edge.connects(path)) ?? null;
   }
 
   neighborIds(): string[] {
-    return this.edges.map(edge => edge.otherEndpoint(this.globalId));
+    return this.edges.map(edge => edge.otherEndpoint(this.path));
   }
 
   toViewNode(extra: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       name: this.name,
-      globalId: this.globalId,
+      internalId: this.internalId,
+      path: this.path,
       localId: this.localId,
       displayName: this.displayName,
       attributes: { ...this.attributes },

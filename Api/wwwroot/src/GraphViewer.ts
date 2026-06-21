@@ -222,7 +222,7 @@ export class GraphViewer {
     this.render();
 
     const params = new URLSearchParams(this.window.location.search);
-    const initialGlobalId = params.get("globalId");
+    const initialGlobalId = params.get("path");
     if (initialGlobalId) {
       await this.loadRoot(initialGlobalId);
     } else {
@@ -331,14 +331,14 @@ export class GraphViewer {
     this.connectForm.addEventListener("submit", event => {
       event.preventDefault();
       const selectedNodeNames = this.selectedNodeNames();
-      const sourceGlobalId = selectedNodeNames.length === 1 ? selectedNodeNames[0] : null;
-      const targetGlobalId = this.connectTargetName.value.trim();
-      if (!sourceGlobalId || !targetGlobalId) {
+      const node1Path = selectedNodeNames.length === 1 ? selectedNodeNames[0] : null;
+      const node2Path = this.connectTargetName.value.trim();
+      if (!node1Path || !node2Path) {
         this.setStatus("Выберите ровно один узел и укажите цель связи");
         return;
       }
 
-      void this.connectNodes(sourceGlobalId, targetGlobalId, {
+      void this.connectNodes(node1Path, node2Path, {
         typeGlobalId: this.connectEdgeType.value,
         relationLocalId: this.connectEdgeName.value.trim()
       });
@@ -395,7 +395,7 @@ export class GraphViewer {
   });
   await this.loadNode(name, null);
   const url = new URL(this.window.location.href);
-  url.searchParams.set("globalId", this.graph.rootName ?? name);
+  url.searchParams.set("path", this.graph.rootName ?? name);
   this.window.history.replaceState({}, "", url);
   this.fitView();
 
@@ -518,7 +518,7 @@ export class GraphViewer {
   try {
     const created = await this.createGraphNode(name, parentGlobalId ?? undefined);
     if (typeGlobalId) {
-      await this.assignGraphNodeType(created.globalId, typeGlobalId);
+      await this.assignGraphNodeType(created.path, typeGlobalId);
     }
     this.createNodeName.value = "";
     this.createNodeParent.value = "";
@@ -529,7 +529,7 @@ export class GraphViewer {
     this.graph.loaded.set(created.name, created);
     this.seedPosition(created.name, seedFromName, seedIndex);
     if (typeGlobalId) {
-      const expanded = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(created.globalId)}`));
+      const expanded = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(created.path)}`));
       this.storeNodeExpansion(expanded, null, { select: true });
     }
     this.render();
@@ -605,28 +605,28 @@ export class GraphViewer {
 
   }
 
-  async connectNodes(sourceGlobalId: string, targetGlobalId: string, options: GraphViewerOptions = {}) {
+  async connectNodes(node1Path: string, node2Path: string, options: GraphViewerOptions = {}) {
   const typeGlobalId = options.typeGlobalId || "";
   this.setBusy(true);
   try {
     if (typeGlobalId) {
       const subgraph = await this.changeGraphEdgeType({
-        sourceGlobalId,
-        targetGlobalId,
+        node1Path,
+        node2Path,
         relationGlobalId: null
       }, typeGlobalId, { relationLocalId: options.relationLocalId || "" });
       this.mergeSubgraphIntoViewer(subgraph, { select: false });
-      this.graph.selectedName = sourceGlobalId;
+      this.graph.selectedName = node1Path;
       this.selectReturnedRelationEdges(subgraph);
     } else {
-      await this.connectGraphNodes(sourceGlobalId, targetGlobalId);
-      await this.loadNode(sourceGlobalId, null, { select: true });
+      await this.connectGraphNodes(node1Path, node2Path);
+      await this.loadNode(node1Path, null, { select: true });
     }
     this.connectTargetName.value = "";
     this.connectEdgeName.value = "";
     this.render();
     this.renderTypeControls();
-    this.setStatus(`Связаны "${this.displayName(sourceGlobalId)}" и "${this.displayName(targetGlobalId)}"`);
+    this.setStatus(`Связаны "${this.displayName(node1Path)}" и "${this.displayName(node2Path)}"`);
   } catch (error) {
     this.setStatus((error as Error).message);
   } finally {
@@ -635,12 +635,12 @@ export class GraphViewer {
 
   }
 
-  async connectGraphNodes(sourceGlobalId: string, targetGlobalId: string) {
+  async connectGraphNodes(node1Path: string, node2Path: string) {
   await this.apiJson("/api/graph/connections", {
     method: "POST",
     body: JSON.stringify({
-      sourceGlobalId: this.parseGlobalId(sourceGlobalId),
-      targetGlobalId: this.parseGlobalId(targetGlobalId)
+      node1Path: this.parseGlobalId(node1Path),
+      node2Path: this.parseGlobalId(node2Path)
     }),
     expectJson: false
   });
@@ -747,9 +747,9 @@ export class GraphViewer {
       }
 
       if (element === "edge") {
-        this.graph.schema.edgeTypes.set(node.globalId, GraphType.fromNode(node, "edge"));
+        this.graph.schema.edgeTypes.set(node.path, GraphType.fromNode(node, "edge"));
       } else {
-        this.graph.schema.nodeTypes.set(node.globalId, GraphType.fromNode(node, "node"));
+        this.graph.schema.nodeTypes.set(node.path, GraphType.fromNode(node, "node"));
       }
     }
 
@@ -779,15 +779,15 @@ export class GraphViewer {
   const edgePairs = new Set<string>();
   const addEdgePair = (edge: any) => {
     const normalized = this.normalizeEdgeResponse(edge);
-    if (normalized.sourceGlobalId && normalized.targetGlobalId) {
-      edgePairs.add(GraphEdge.keyFor(normalized.sourceGlobalId, normalized.targetGlobalId));
+    if (normalized.node1Path && normalized.node2Path) {
+      edgePairs.add(GraphEdge.keyFor(normalized.node1Path, normalized.node2Path));
     }
   };
 
   subgraphs.forEach(subgraph => {
     (subgraph.nodes ?? []).forEach((nodeResponse: any) => {
       const node = this.normalizeNodeResponse(nodeResponse);
-      nodes.set(node.globalId, node);
+      nodes.set(node.path, node);
       (node.edges ?? []).forEach(edge => addEdgePair(edge));
     });
     subgraph.edges?.forEach((edge: import("./domain/GraphEdge.js").GraphEdgeSnapshot) => addEdgePair(edge));
@@ -814,8 +814,8 @@ export class GraphViewer {
   }
 
   typeElementFromBasisNode(node: any, edgePairs: Set<string>): "node" | "edge" | null {
-  const globalId = node.globalId;
-  if (!globalId || this.graph.isSchemaRoot(globalId) || this.isSystemTypeRoot(globalId)) {
+  const path = node.path;
+  if (!path || this.graph.isSchemaRoot(path) || this.isSystemTypeRoot(path)) {
     return null;
   }
 
@@ -828,18 +828,18 @@ export class GraphViewer {
     return "node";
   }
 
-  if (globalId === baseTypeIds.edgeType || globalId === baseTypeIds.relation) {
+  if (path === baseTypeIds.edgeType || path === baseTypeIds.relation) {
     return "edge";
   }
-  if (this.hasBasisEdge(edgePairs, globalId, baseTypeIds.edgeType)
-      || this.hasBasisEdge(edgePairs, globalId, baseTypeIds.relation)) {
+  if (this.hasBasisEdge(edgePairs, path, baseTypeIds.edgeType)
+      || this.hasBasisEdge(edgePairs, path, baseTypeIds.relation)) {
     return "edge";
   }
-  if (globalId === baseTypeIds.nodeType || this.hasBasisEdge(edgePairs, globalId, baseTypeIds.nodeType)) {
+  if (path === baseTypeIds.nodeType || this.hasBasisEdge(edgePairs, path, baseTypeIds.nodeType)) {
     return "node";
   }
 
-  return this.isDirectBasisType(globalId) ? "node" : null;
+  return this.isDirectBasisType(path) ? "node" : null;
 
   }
 
@@ -848,23 +848,23 @@ export class GraphViewer {
 
   }
 
-  isDirectBasisType(globalId: string) {
+  isDirectBasisType(path: string) {
   return this.basisTypeRoots().some(root => {
     const rootSegments = root.split("/").filter(Boolean);
-    const segments = String(globalId).split("/").filter(Boolean);
+    const segments = String(path).split("/").filter(Boolean);
     return segments.length === rootSegments.length + 1
       && rootSegments.every((segment, index) => segment === segments[index]);
   });
 
   }
 
-  isSystemTypeRoot(globalId: string) {
+  isSystemTypeRoot(path: string) {
   const systemIds = this.graph.schema.systemNodeIds ?? {};
-  return globalId === systemIds.typeRoot
-    || globalId === systemIds.graphDataRoot
-    || globalId === systemIds.nodeTypeRoot
-    || globalId === systemIds.edgeTypeRoot
-    || globalId === systemIds.relationRoot;
+  return path === systemIds.typeRoot
+    || path === systemIds.graphDataRoot
+    || path === systemIds.nodeTypeRoot
+    || path === systemIds.edgeTypeRoot
+    || path === systemIds.relationRoot;
 
   }
 
@@ -910,7 +910,7 @@ export class GraphViewer {
       limit: 500
     });
     const relationIds = matches
-      .map(match => this.normalizeNodeResponse(match.node).globalId);
+      .map(match => this.normalizeNodeResponse(match.node).path);
 
     for (const relationId of relationIds) {
       const subgraph = await this.loadSubgraphForRoots([relationId], 2);
@@ -998,7 +998,7 @@ export class GraphViewer {
     for (const edge of edges) {
       const subgraph = await this.changeGraphEdgeType(edge, typeGlobalId);
       this.graph.removeSelectedEdge(edge.key ?? "");
-      this.removeLocalEdge(edge.sourceGlobalId ?? "", edge.targetGlobalId ?? "");
+      this.removeLocalEdge(edge.node1Path ?? "", edge.node2Path ?? "");
       if (edge.relationGlobalId) {
         this.removeLocalRelationSubgraph(edge.relationGlobalId);
       }
@@ -1017,14 +1017,14 @@ export class GraphViewer {
 
   }
 
-async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { sourceGlobalId: string; targetGlobalId: string; relationGlobalId: string | null, relationLocalId?: string }, typeGlobalId: string, options: GraphViewerOptions = {}): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
+async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { node1Path: string; node2Path: string; relationGlobalId: string | null, relationLocalId?: string }, typeGlobalId: string, options: GraphViewerOptions = {}): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
   const relationRoot = this.getBasis().relationRoot?.trim();
   return (await this.apiJson("/api/graph/edges/type", {
     method: "PUT",
     body: JSON.stringify({
       relationGlobalId: edge.relationGlobalId ? this.parseGlobalId(edge.relationGlobalId) : null,
-      sourceGlobalId: edge.sourceGlobalId ? this.parseGlobalId(edge.sourceGlobalId) : null,
-      targetGlobalId: edge.targetGlobalId ? this.parseGlobalId(edge.targetGlobalId) : null,
+      node1Path: edge.node1Path ? this.parseGlobalId(edge.node1Path) : null,
+      node2Path: edge.node2Path ? this.parseGlobalId(edge.node2Path) : null,
       typeGlobalId: this.parseGlobalId(typeGlobalId),
       relationParentGlobalId: relationRoot ? this.parseGlobalId(relationRoot) : null,
       relationLocalId: options.relationLocalId || (edge as any).relationLocalId || null
@@ -1048,8 +1048,8 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
 
   }
 
-  async ensurePath(globalId: string, leafAttributes: Record<string, string> | null = null) {
-  const segments = this.parseGlobalId(globalId);
+  async ensurePath(path: string, leafAttributes: Record<string, string> | null = null) {
+  const segments = this.parseGlobalId(path);
   let parent: string | null = null;
   let current = "";
   for (let index = 0; index < segments.length; index += 1) {
@@ -1296,7 +1296,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
     const response = await this.apiJson("/api/graph/subgraph", {
       method: "POST",
       body: JSON.stringify({
-        globalIds: roots.map((root: string) => this.parseGlobalId(root)),
+        paths: roots.map((root: string) => this.parseGlobalId(root)),
         maxDepth: this.readNumber("#subgraph-depth", 1),
         includeDisconnectedRoots: (this.document.querySelector("#subgraph-include-disconnected") as HTMLInputElement).checked
       })
@@ -1319,7 +1319,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
   const edgesByNode = new Map();
   edges.forEach(edge => {
-    [edge.sourceGlobalId, edge.targetGlobalId].forEach(name => {
+    [edge.node1Path, edge.node2Path].forEach(name => {
       if (!edgesByNode.has(name)) {
         edgesByNode.set(name, []);
       }
@@ -1359,7 +1359,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
   const edgesByNode = new Map();
 
   edges.forEach(edge => {
-    [edge.sourceGlobalId, edge.targetGlobalId].forEach(name => {
+    [edge.node1Path, edge.node2Path].forEach(name => {
       if (!edgesByNode.has(name)) {
         edgesByNode.set(name, []);
       }
@@ -1413,12 +1413,12 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
 
   }
 
-  removeLocalEdge(sourceGlobalId: string, targetGlobalId: string) {
-  if (!sourceGlobalId || !targetGlobalId) {
+  removeLocalEdge(node1Path: string, node2Path: string) {
+  if (!node1Path || !node2Path) {
     return;
   }
 
-  const key = GraphEdge.keyFor(sourceGlobalId, targetGlobalId);
+  const key = GraphEdge.keyFor(node1Path, node2Path);
   for (const node of this.graph.loaded.values()) {
     node.edges = (node.edges ?? []).filter(edge => edge.key !== key);
   }
@@ -1442,17 +1442,17 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
   const relationIds = new Set<string>();
   const edgeTypeIds = new Set(this.graph.schema.edgeTypes.keys());
   for (const edge of response.edges ?? []) {
-    if (edgeTypeIds.has(edge.sourceGlobalId) && !this.graph.isSchemaRoot(edge.targetGlobalId)) {
-      relationIds.add(edge.targetGlobalId);
-    } else if (edgeTypeIds.has(edge.targetGlobalId) && !this.graph.isSchemaRoot(edge.sourceGlobalId)) {
-      relationIds.add(edge.sourceGlobalId);
+    if (edgeTypeIds.has(edge.node1Path) && !this.graph.isSchemaRoot(edge.node2Path)) {
+      relationIds.add(edge.node2Path);
+    } else if (edgeTypeIds.has(edge.node2Path) && !this.graph.isSchemaRoot(edge.node1Path)) {
+      relationIds.add(edge.node1Path);
     }
   }
 
   for (const relationId of (response.nodes ?? [])
     .map((node: any) => this.normalizeNodeResponse(node))
     .filter((node: any) => node.attributes?.[graphKindAttribute] === "edge-instance")
-    .map((node: any) => node.globalId)) {
+    .map((node: any) => node.path)) {
     relationIds.add(relationId);
   }
 
@@ -1472,7 +1472,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
   return (await this.apiJson("/api/graph/subgraph", {
     method: "POST",
     body: JSON.stringify({
-      globalIds: roots.map(root => this.parseGlobalId(root)),
+      paths: roots.map(root => this.parseGlobalId(root)),
       maxDepth
     })
   })) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
@@ -1528,7 +1528,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
   if (pruneEdges) {
     for (const expansion of this.graph.loaded.values()) {
       expansion.edges = (expansion.edges ?? [])
-        .filter(edge => edge.sourceGlobalId !== name && edge.targetGlobalId !== name);
+        .filter(edge => edge.node1Path !== name && edge.node2Path !== name);
     }
   }
   this.refreshEdgeAngles();
@@ -1600,7 +1600,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
   }
 
   collapseEdge(edge: any, anchorName: string) {
-  const otherName = edge.sourceGlobalId === anchorName ? edge.targetGlobalId : edge.sourceGlobalId;
+  const otherName = edge.node1Path === anchorName ? edge.node2Path : edge.node1Path;
   const childName = this.graph.treeChildNameForEdge(edge, anchorName);
 
   if (childName) {
@@ -1678,7 +1678,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
       key: this.selectionKeyForNode(node.name ?? ""),
       kind: "Узел",
       title: node.displayName ?? node.name,
-      subtitle: node.globalId ?? node.name,
+      subtitle: node.path ?? node.name,
       body: () => this.createNodeSelectionDetails(node),
       remove: () => {
         this.graph.removeSelectedName(node.name ?? "");
@@ -1774,7 +1774,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
   const details = this.document.createElement("div");
   details.className = "selection-details";
   details.append(this.createDetailsList([
-    ["GlobalId", node.globalId ?? node.name],
+    ["GlobalId", node.path ?? node.name],
     ["Rank", node.viewRank === undefined ? "-" : GraphType.formatRank(node.viewRank)],
     ["Причина rank", node.viewRankReason || "-"]
   ]));
@@ -1800,8 +1800,8 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
   details.className = "selection-details";
   const relationId = this.edgeEditableNodeId(edge);
   details.append(this.createDetailsList([
-    ["Источник", this.edgeEndpointDisplayName(edge, edge.sourceGlobalId)],
-    ["Цель", this.edgeEndpointDisplayName(edge, edge.targetGlobalId)],
+    ["Источник", this.edgeEndpointDisplayName(edge, edge.node1Path)],
+    ["Цель", this.edgeEndpointDisplayName(edge, edge.node2Path)],
     ["Тип", edge.typeGlobalId ? this.displayName(edge.typeGlobalId) : "физическая связь"],
     ["Инстанс связи", relationId || "-"],
     ["Rank", edge.viewRank === undefined ? "-" : GraphType.formatRank(edge.viewRank)]
@@ -1883,8 +1883,8 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
   }
 
   edgeSelectionTitle(edge: any) {
-  const source = this.edgeEndpointDisplayName(edge, edge.sourceGlobalId);
-  const target = this.edgeEndpointDisplayName(edge, edge.targetGlobalId);
+  const source = this.edgeEndpointDisplayName(edge, edge.node1Path);
+  const target = this.edgeEndpointDisplayName(edge, edge.node2Path);
   return edge.directed ? `${source} -> ${target}` : `${source} - ${target}`;
 
   }
@@ -2015,8 +2015,8 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
 
   }
 
-  async refreshLoadedNodeForEditing(globalId: string) {
-  const expansion = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(globalId)}`));
+  async refreshLoadedNodeForEditing(path: string) {
+  const expansion = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(path)}`));
   const incoming = GraphNode.from(expansion);
   const existing = this.graph.loaded.get(incoming.name);
   const showed = existing ? existing.showed : undefined;
@@ -2106,9 +2106,9 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
     })
     .join(" · ");
   button.querySelector("span")!.textContent = bindings || `score ${match.score} ${match.matchedBy?.join(" ") ?? ""}`;
-  button.title = node.globalId;
+  button.title = node.path;
   button.addEventListener("click", () => {
-    this.loadRoot(node.globalId);
+    this.loadRoot(node.path);
     this.setActiveTab("operations");
   });
   this.searchResults.append(button);
@@ -2128,7 +2128,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
     button.type = "button";
     button.className = "result-row";
     button.textContent = node.displayName;
-    button.title = node.globalId;
+    button.title = node.path;
     button.addEventListener("click", () => {
       this.graph.selectedName = node.name;
       this.setActiveTab("operations");
@@ -2162,7 +2162,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
     .sort((a, b) => a.label.localeCompare(b.label, "ru"))
     .forEach(type => {
       const option = this.document.createElement("option");
-      option.value = type.globalId;
+      option.value = type.path;
       option.textContent = type.label;
       select.append(option);
     });
@@ -2185,12 +2185,12 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
   [...types.values()]
     .sort((a, b) => a.label.localeCompare(b.label, "ru"))
     .forEach(type => {
-      const ruleKey = this.basisRuleKey(element, type.globalId);
+      const ruleKey = this.basisRuleKey(element, type.path);
       const expanded = this.expandedBasisRuleKeys.has(ruleKey);
       const row = this.document.createElement("div");
       row.className = "basis-rule";
       row.classList.toggle("expanded", expanded);
-      row.title = type.globalId;
+      row.title = type.path;
 
       const header = this.document.createElement("div");
       header.className = "type-row";
@@ -2215,13 +2215,13 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
       open.type = "button";
       open.className = "compact-button";
       open.textContent = "Открыть";
-      open.title = type.globalId;
+      open.title = type.path;
       open.addEventListener("click", async event => {
         event.preventDefault();
         event.stopPropagation();
-        await this.ensureNodeLoaded(type.globalId);
-        this.revealLoadedNode(type.globalId, this.graph.rootName, { select: false });
-        this.graph.selectedName = type.globalId;
+        await this.ensureNodeLoaded(type.path);
+        this.revealLoadedNode(type.path, this.graph.rootName, { select: false });
+        this.graph.selectedName = type.path;
         this.render();
         this.setActiveTab("operations");
       });
@@ -2259,7 +2259,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
       const applyRules = () => {
         const rulesSnapshot = readRules();
         swatch.style.background = GraphType.normalizeColor(rulesSnapshot.color) || "#9daab2";
-        this.applyTypeProjectionRules(type.globalId, element, rulesSnapshot);
+        this.applyTypeProjectionRules(type.path, element, rulesSnapshot);
       };
 
       [visible.input, collapsed.input, extraControls.directed?.input, extraControls.labelVisible?.input]
@@ -2275,7 +2275,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
       save.type = "button";
       save.className = "compact-button";
       save.textContent = "Сохранить";
-      save.addEventListener("click", () => this.saveTypeProjectionRules(type.globalId, element, readRules()));
+      save.addEventListener("click", () => this.saveTypeProjectionRules(type.path, element, readRules()));
       actions.append(save);
       rules.append(actions);
 
@@ -2285,19 +2285,19 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
 
   }
 
-  basisRuleKey(element: string, globalId: string) {
-  return `${element}:${globalId}`;
+  basisRuleKey(element: string, path: string) {
+  return `${element}:${path}`;
 
   }
 
-  applyTypeProjectionRules(globalId: string, element: string, rules: any) {
+  applyTypeProjectionRules(path: string, element: string, rules: any) {
   const typeMap = element === "node" ? this.graph.schema.nodeTypes : this.graph.schema.edgeTypes;
-  const current = typeMap.get(globalId);
+  const current = typeMap.get(path);
   if (!current) {
     return;
   }
 
-  typeMap.set(globalId, new GraphType({
+  typeMap.set(path, new GraphType({
     ...current,
     element,
     visible: rules.visible,
@@ -2339,10 +2339,10 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
 
   }
 
-  async saveTypeProjectionRules(globalId: string, element: string, rules: any) {
+  async saveTypeProjectionRules(path: string, element: string, rules: any) {
   this.setBusy(true);
   try {
-    const loaded = await this.getLoadedNode(globalId);
+    const loaded = await this.getLoadedNode(path);
     if (!loaded) throw new Error("Node not loaded");
     const attributes = { ...(loaded.attributes ?? {}) };
     attributes[graphKindAttribute] = attributes[graphKindAttribute] || "type";
@@ -2375,17 +2375,17 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
       attributes[projectionLabelVisibleAttribute] = rules.labelVisible ? "true" : "false";
     }
 
-    await this.assignGraphNodeAttributes(globalId, attributes);
+    await this.assignGraphNodeAttributes(path, attributes);
     loaded.attributes = attributes;
-    this.graph.loaded.set(globalId, loaded);
+    this.graph.loaded.set(path, loaded);
     if (element === "node") {
-      this.graph.schema.nodeTypes.set(globalId, GraphType.fromNode(loaded, "node"));
+      this.graph.schema.nodeTypes.set(path, GraphType.fromNode(loaded, "node"));
     } else {
-      this.graph.schema.edgeTypes.set(globalId, GraphType.fromNode(loaded, "edge"));
+      this.graph.schema.edgeTypes.set(path, GraphType.fromNode(loaded, "edge"));
     }
     this.rebuildProjectionFromBasis("basis-rule-saved");
     this.renderTypeControls();
-    this.setStatus(`Правила сохранены: ${this.displayName(globalId)}`);
+    this.setStatus(`Правила сохранены: ${this.displayName(path)}`);
   } catch (error: any) {
     this.setStatus(error.message);
   } finally {
@@ -2409,7 +2409,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
       const open = this.document.createElement("button");
       open.type = "button";
       open.className = "result-row type-open-button";
-      open.textContent = `${relation.type?.label ?? "связь"}: ${this.displayName(relation.sourceGlobalId ?? "")} -> ${this.displayName(relation.targetGlobalId ?? "")}`;
+      open.textContent = `${relation.type?.label ?? "связь"}: ${this.displayName(relation.node1Path ?? "")} -> ${this.displayName(relation.node2Path ?? "")}`;
       open.title = relation.relationGlobalId;
       open.addEventListener("click", () => {
         this.graph.selectedName = relation.relationGlobalId;
@@ -2590,8 +2590,8 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
     return GraphEdge.fromApi(edge);
   }
 
-  displayName(globalId: string) {
-    return this.graph.displayName(globalId);
+  displayName(path: string) {
+    return this.graph.displayName(path);
   }
 
   refreshEdgeAngles() {
@@ -2606,7 +2606,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
   }
 
   assignEdgeAngles(node: any) {
-  const nodeName = node.name ?? node.globalId;
+  const nodeName = node.name ?? node.path;
   const edges = (node.edges ?? []).map((edge: any) => GraphEdge.from(edge));
   const ordered = [...edges].sort((left, right) => {
     const leftName = left.otherEndpoint(nodeName);
@@ -2664,30 +2664,30 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { so
 
   }
 
-  edgeEndpointDisplayName(edge: any, globalId: string) {
-    return GraphEdge.from(edge).endpointDisplayName(globalId, id => this.displayName(id));
+  edgeEndpointDisplayName(edge: any, path: string) {
+    return GraphEdge.from(edge).endpointDisplayName(path, id => this.displayName(id));
   }
 
   edgeNeighborLocalId(edge: any, anchorName: string) {
     return GraphEdge.from(edge).neighborLocalIdFor(anchorName);
   }
 
-  ensureNodeLoaded(globalId: string) {
-    if (this.graph.hasNode(globalId)) {
+  ensureNodeLoaded(path: string) {
+    if (this.graph.hasNode(path)) {
       return Promise.resolve();
     }
 
-    return this.apiJson("/api/graph/nodes?" + this.toGlobalIdQuery(globalId))
+    return this.apiJson("/api/graph/nodes?" + this.toGlobalIdQuery(path))
       .then(node => this.storeNodeExpansion(this.normalizeNodeResponse(node), null, { select: false }));
   }
 
-  async getLoadedNode(globalId: string) {
-    await this.ensureNodeLoaded(globalId);
-    return this.graph.node(globalId);
+  async getLoadedNode(path: string) {
+    await this.ensureNodeLoaded(path);
+    return this.graph.node(path);
   }
 
-  async updateGraphNodeAttributes(globalId: string, attributes: any) {
-    await this.apiJson("/api/graph/nodes?" + this.toGlobalIdQuery(globalId), {
+  async updateGraphNodeAttributes(path: string, attributes: any) {
+    await this.apiJson("/api/graph/nodes?" + this.toGlobalIdQuery(path), {
       method: "PUT",
       body: JSON.stringify({ attributes }),
       expectJson: false

@@ -652,10 +652,10 @@ export class WebGpuGraphCanvas {
         return;
       }
 
-      const source = this.positions.get(edge.sourceGlobalId ?? "");
-      const target = this.positions.get(edge.targetGlobalId ?? "");
-      const sourceForce = forces.get(edge.sourceGlobalId ?? "");
-      const targetForce = forces.get(edge.targetGlobalId ?? "");
+      const source = this.positions.get(edge.node1Path ?? "");
+      const target = this.positions.get(edge.node2Path ?? "");
+      const sourceForce = forces.get(edge.node1Path ?? "");
+      const targetForce = forces.get(edge.node2Path ?? "");
       if (!source || !target || !sourceForce || !targetForce) {
         return;
       }
@@ -758,13 +758,13 @@ export class WebGpuGraphCanvas {
         return;
       }
 
-      const source = nodeIndexByName.get(edge.sourceGlobalId);
-      const target = nodeIndexByName.get(edge.targetGlobalId);
+      const source = nodeIndexByName.get(edge.node1Path);
+      const target = nodeIndexByName.get(edge.node2Path);
       if (source === undefined || target === undefined || source === target) {
         return;
       }
 
-      const key = edge.key ?? edgeKey(edge.sourceGlobalId, edge.targetGlobalId, edge.relationGlobalId ?? edge.typeGlobalId ?? "");
+      const key = edge.key ?? edgeKey(edge.node1Path, edge.node2Path, edge.relationGlobalId ?? edge.typeGlobalId ?? "");
       if (!edgeMap.has(key)) {
         edgeMap.set(key, { ...edge, sourceIndex: source, targetIndex: target });
       }
@@ -804,8 +804,8 @@ export class WebGpuGraphCanvas {
     });
 
     memory.edges.forEach((edge, index) => {
-      const source = this.positions.get(edge.sourceGlobalId) ?? { x: 0, y: 0 };
-      const target = this.positions.get(edge.targetGlobalId) ?? { x: 0, y: 0 };
+      const source = this.positions.get(edge.node1Path) ?? { x: 0, y: 0 };
+      const target = this.positions.get(edge.node2Path) ?? { x: 0, y: 0 };
       const selected = this.callbacks.isEdgeSelected?.(edge.key) === true;
       edge.selected = selected;
       const color = selected ? selectedEdgeColor : parseColor(edge.color, defaultEdgeColor);
@@ -902,7 +902,7 @@ export class WebGpuGraphCanvas {
       const label = this.document.createElement("div");
       label.className = `graph-node-label${selected ? " selected" : ""}`;
       label.textContent = node.displayName ?? node.localId ?? node.name ?? "";
-      label.title = node.globalId ?? node.name ?? "";
+      label.title = node.path ?? node.name ?? "";
       label.style.width = `${Math.max(28, radius * 2 - 16)}px`;
       label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
       fragment.append(label);
@@ -1047,8 +1047,8 @@ export class WebGpuGraphCanvas {
     });
 
     this.memory.edges.forEach(edge => {
-      const source = this.positions.get(edge.sourceGlobalId ?? "");
-      const target = this.positions.get(edge.targetGlobalId ?? "");
+      const source = this.positions.get(edge.node1Path ?? "");
+      const target = this.positions.get(edge.node2Path ?? "");
       if (!source || !target) {
         return;
       }
@@ -1106,8 +1106,8 @@ export class WebGpuGraphCanvas {
     let bestDistance = Infinity;
 
     for (const edge of this.memory.edges) {
-      const source = this.positions.get(edge.sourceGlobalId);
-      const target = this.positions.get(edge.targetGlobalId);
+      const source = this.positions.get(edge.node1Path);
+      const target = this.positions.get(edge.node2Path);
       if (!source || !target) {
         continue;
       }

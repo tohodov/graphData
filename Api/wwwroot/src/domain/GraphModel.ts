@@ -210,10 +210,10 @@ export type ProjectedGraphNode = import("./GraphNode.js").GraphNodeSnapshot & {
 
 export type ProjectedGraphEdge = {
   key?: string;
-  sourceGlobalId: string;
-  targetGlobalId: string;
-  sourceLocalId?: string;
-  targetLocalId?: string;
+  node1Path: string;
+  node2Path: string;
+  node1LocalId?: string;
+  node2LocalId?: string;
   relationGlobalId?: string;
   typeGlobalId?: string | null;
   label?: string;
@@ -522,7 +522,7 @@ export class GraphModel {
   removeSelectedEdgesConnectedTo(name: string): void {
     for (const key of [...this.selectedEdgeKeys]) {
       const edge = this.findEdgeObjects(key)[0];
-      if (!edge || edge.sourceGlobalId === name || edge.targetGlobalId === name) {
+      if (!edge || edge.node1Path === name || edge.node2Path === name) {
         this.selectedEdgeKeys.delete(key);
       }
     }
@@ -557,12 +557,12 @@ export class GraphModel {
     this._selectedName = lastNode ?? this._selectedName ?? this.selectedNames.values().next().value ?? null;
   }
 
-  hasNode(globalId: string): boolean {
-    return this.loaded.has(globalId);
+  hasNode(path: string): boolean {
+    return this.loaded.has(path);
   }
 
-  isNodeVisible(globalId: string): boolean {
-    const node = this.loaded.get(globalId);
+  isNodeVisible(path: string): boolean {
+    const node = this.loaded.get(path);
     return Boolean(node && node.showed !== false);
   }
 
@@ -570,8 +570,8 @@ export class GraphModel {
     return [...this.loaded.values()].filter(node => node.showed !== false).length;
   }
 
-  node(globalId: string): GraphNode | null {
-    return this.loaded.get(globalId) ?? null;
+  node(path: string): GraphNode | null {
+    return this.loaded.get(path) ?? null;
   }
 
   putNode(node: GraphNode | unknown): GraphNode {
@@ -580,8 +580,8 @@ export class GraphModel {
     return rich;
   }
 
-  displayName(globalId: string): string {
-    return this.loaded.get(globalId)?.displayName ?? globalId;
+  displayName(path: string): string {
+    return this.loaded.get(path)?.displayName ?? path;
   }
 
   visibleGraph(): ProjectedGraph {
@@ -654,7 +654,7 @@ export class GraphModel {
     const normalized = this.edgeWithEndpointNodes(edge);
     return normalized.controls({
       isCollapsed: this.isEdgeCollapsed(normalized),
-      displayName: globalId => this.displayName(globalId)
+      displayName: path => this.displayName(path)
     });
   }
 
@@ -662,7 +662,7 @@ export class GraphModel {
     const normalized = this.edgeWithEndpointNodes(edge);
     return normalized.endpointControl(anchorName, {
       isCollapsed: this.isEdgeCollapsed(normalized),
-      displayName: globalId => this.displayName(globalId)
+      displayName: path => this.displayName(path)
     });
   }
 
@@ -674,10 +674,10 @@ export class GraphModel {
   edgeEndpointNodes(edge: GraphEdge | GraphEdgeSnapshot): Record<string, unknown> {
     const normalized = GraphEdge.from(edge);
     return {
-      sourceNode: this.loaded.get(normalized.sourceGlobalId) ?? null,
-      targetNode: this.loaded.get(normalized.targetGlobalId) ?? null,
-      sourcePositioned: this.positions.has(normalized.sourceGlobalId),
-      targetPositioned: this.positions.has(normalized.targetGlobalId)
+      node1: this.loaded.get(normalized.node1Path) ?? null,
+      node2: this.loaded.get(normalized.node2Path) ?? null,
+      node1Positioned: this.positions.has(normalized.node1Path),
+      node2Positioned: this.positions.has(normalized.node2Path)
     };
   }
 
@@ -737,7 +737,7 @@ export class GraphModel {
     return Boolean(key && this.findEdgeObjects(key).some(match => match.collapsed));
   }
 
-  edgeKey(edge: GraphEdge | string | { key?: string; sourceGlobalId?: string; targetGlobalId?: string; }): string {
+  edgeKey(edge: GraphEdge | string | { key?: string; node1Path?: string; node2Path?: string; }): string {
     if (typeof edge === "string") {
       return edge;
     }
@@ -747,7 +747,7 @@ export class GraphModel {
     }
 
     const normalized = GraphEdge.from(edge);
-    return normalized.sourceGlobalId && normalized.targetGlobalId ? normalized.key : "";
+    return normalized.node1Path && normalized.node2Path ? normalized.key : "";
   }
 
   findEdgeObjects(key: string): GraphEdge[] {
@@ -805,10 +805,10 @@ export class GraphModel {
       : new GraphProjection(this).nodeTypeAssignmentsFromCache();
   }
 
-  isSchemaRoot(globalId: string): boolean {
-    return globalId === this.basis.nodeTypeRoot
-      || globalId === this.basis.edgeTypeRoot
-      || globalId === this.basis.relationRoot;
+  isSchemaRoot(path: string): boolean {
+    return path === this.basis.nodeTypeRoot
+      || path === this.basis.edgeTypeRoot
+      || path === this.basis.relationRoot;
   }
 
   treeChildNameForEdge(edge: GraphEdge | GraphEdgeSnapshot, anchorName: string): string | null {

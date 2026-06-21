@@ -96,7 +96,7 @@ export class SvgRenderer implements GraphRenderer {
         transform: `translate(${data[index + 0] * view.scale + view.x} ${data[index + 1] * view.scale + view.y})`
       });
       const title = this.createSvg("title", {});
-      title.textContent = node?.globalId ?? node?.name ?? "";
+      title.textContent = node?.path ?? node?.name ?? "";
       const circle = this.createSvg("circle", {
         class: "graph-svg-node-shell",
         r: radius,

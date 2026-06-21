@@ -11,7 +11,7 @@ import {
 } from "./graphAttributes.js";
 
 export type GraphTypeSnapshot = {
-  globalId?: string;
+  path?: string;
   localId?: string;
   label?: string;
   color?: string;
@@ -26,7 +26,7 @@ export type GraphTypeSnapshot = {
 };
 
 export class GraphType {
-  globalId: string;
+  path: string;
   localId: string;
   label: string;
   color: string;
@@ -39,7 +39,7 @@ export class GraphType {
   rank: number;
   attributes: Record<string, string>;
   constructor(options: GraphTypeSnapshot) {
-    this.globalId = options.globalId ?? "";
+    this.path = options.path ?? "";
     this.localId = options.localId ?? "";
     this.label = options.label ?? options.localId ?? "";
     this.color = GraphType.normalizeColor(options.color);
@@ -56,7 +56,7 @@ export class GraphType {
   static fromNode(node: import("./GraphNode.js").GraphNodeSnapshot, fallbackElement = "node"): GraphType {
     const fallbackRank = fallbackElement === "edge" ? 30 : 50;
     return new GraphType({
-      globalId: node.globalId,
+      path: node.path,
       localId: node.localId,
       label: node.attributes?.label || node.localId,
       color: node.attributes?.[projectionColorAttribute] || node.attributes?.color,

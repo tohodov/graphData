@@ -95,7 +95,7 @@ export class HtmlCanvasRenderer implements GraphRenderer {
     memory.nodes.forEach((node, index) => {
       const element = this.document.createElement("div");
       element.className = "html-canvas-node";
-      element.title = node?.globalId ?? node?.name ?? "";
+      element.title = node?.path ?? node?.name ?? "";
       this.nodeElements.push(element);
       this.nodeKeys.push(node?.name ?? String(index));
       fragment.append(element);
@@ -248,7 +248,7 @@ export class HtmlCanvasRenderer implements GraphRenderer {
 
   edgeKey(edge: any) {
     return edge?.key
-      ?? `${edge?.sourceGlobalId ?? ""}\0${edge?.targetGlobalId ?? ""}\0${edge?.relationGlobalId ?? edge?.typeGlobalId ?? ""}`;
+      ?? `${edge?.node1Path ?? ""}\0${edge?.node2Path ?? ""}\0${edge?.relationGlobalId ?? edge?.typeGlobalId ?? ""}`;
   }
 }
 
