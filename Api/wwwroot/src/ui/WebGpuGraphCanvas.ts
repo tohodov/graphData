@@ -21,7 +21,7 @@ export class WebGpuGraphCanvas {
   rendererSelect: HTMLSelectElement;
   labelLayer: HTMLElement;
   emptyState: HTMLElement;
-  gpuWarning: HTMLElement;
+  gpuWarning: HTMLElement | null;
   buildGraph: () => import("../domain/GraphModel.js").ProjectedGraph;
   positions: Map<string, { x: number; y: number; }>;
   velocities: Map<string, { x: number; y: number; }>;
@@ -65,10 +65,37 @@ export class WebGpuGraphCanvas {
     addEdgeToSelection,
     toggleEdgeSelection,
     selectGraphElements,
+    calculateEdgeLabelPositions,
     activateEdgeControl,
     syncEdgeAngles,
     renderInspector,
     formatRank
+  }: {
+    document: Document;
+    window: Window;
+    canvas: HTMLCanvasElement;
+    rendererSelect: HTMLSelectElement;
+    labelLayer: HTMLElement;
+    emptyState: HTMLElement;
+    gpuWarning: HTMLElement | null;
+    buildGraph: () => import("../domain/GraphModel.js").ProjectedGraph;
+    positions: Map<string, { x: number; y: number; }>;
+    velocities: Map<string, { x: number; y: number; }>;
+    view: GraphView;
+    isNodeSelected: (name: string) => boolean;
+    isEdgeSelected: (key: string) => boolean;
+    selectOnlyNode: (name: string) => void;
+    addNodeToSelection: (name: string) => void;
+    toggleNodeSelection: (name: string) => void;
+    selectOnlyEdge: (key: string) => void;
+    addEdgeToSelection: (key: string) => void;
+    toggleEdgeSelection: (key: string) => void;
+    selectGraphElements: (nodes: import("../domain/GraphModel.js").ProjectedGraphNode[], edges: import("../domain/GraphModel.js").ProjectedGraphEdge[], append: boolean) => void;
+    calculateEdgeLabelPositions: (edges: import("../domain/GraphModel.js").ProjectedGraphEdge[], positions: Map<string, any>) => void;
+    activateEdgeControl: (edge: import("../domain/GraphModel.js").ProjectedGraphEdge, control: any, pointer: any) => void;
+    syncEdgeAngles: (edge: import("../domain/GraphModel.js").ProjectedGraphEdge, angle: number) => void;
+    renderInspector: () => void;
+    formatRank: (rank: number) => string;
   }) {
     this.document = document;
     this.window = window;
@@ -91,6 +118,7 @@ export class WebGpuGraphCanvas {
       addEdgeToSelection,
       toggleEdgeSelection,
       selectGraphElements,
+      calculateEdgeLabelPositions,
       activateEdgeControl,
       syncEdgeAngles,
       renderInspector,
@@ -122,7 +150,7 @@ export class WebGpuGraphCanvas {
     return normalizeRendererMode(params.get("renderer") ?? params.get("render"));
   }
 
-  createRenderer(mode) {
+  createRenderer(mode: string) {
     const host = {
       document: this.document,
       window: this.window,
@@ -151,16 +179,16 @@ export class WebGpuGraphCanvas {
         return;
       } catch (error) {
         lastError = error;
-        this.setRendererAvailability(mode, false, error);
+        this.setRendererAvailability(mode, false, error as Error);
       }
     }
 
     this.rendererReady = false;
-    this.setGpuWarning(lastError ?? new Error("No graph renderer is available"));
+    this.setGpuWarning(lastError as Error ?? new Error("No graph renderer is available"));
     this.renderLabels();
   }
 
-  async activateRenderer(mode) {
+  async activateRenderer(mode: string) {
     const targetMode = normalizeRendererMode(mode);
     const previousRenderer = this.renderer;
     const previousMode = this.rendererMode;
@@ -205,12 +233,12 @@ export class WebGpuGraphCanvas {
     });
   }
 
-  async changeRenderer(mode) {
+  async changeRenderer(mode: string) {
     const targetMode = normalizeRendererMode(mode);
     await this.checkRendererAvailability();
 
     if (!this.isRendererAvailable(targetMode)) {
-      this.setGpuWarning(this.rendererAvailability?.get(targetMode)?.error);
+      this.setGpuWarning(this.rendererAvailability?.get(targetMode)?.error as Error | null);
       this.syncRendererSelect();
       return;
     }
@@ -225,10 +253,10 @@ export class WebGpuGraphCanvas {
       this.setGpuWarning(null);
       this.writeRendererModeToUrl(targetMode);
     } catch (error) {
-      this.setRendererAvailability(targetMode, false, error);
-      this.setGpuWarning(error);
-      this.syncRendererSelect();
+      this.setRendererAvailability(targetMode, false, error as Error);
+      this.setGpuWarning(error as Error | null);
     }
+    this.syncRendererSelect();
   }
 
   syncRendererSelect() {
@@ -265,7 +293,7 @@ export class WebGpuGraphCanvas {
     return availability;
   }
 
-  async assertRendererAvailable(mode) {
+  async assertRendererAvailable(mode: string) {
     if (mode === "svg") {
       return;
     }
@@ -332,7 +360,7 @@ export class WebGpuGraphCanvas {
     this.syncRendererSelect();
   }
 
-  setRendererAvailability(mode, available, error = null) {
+  setRendererAvailability(mode: string, available: boolean, error: Error | null = null) {
     if (!this.rendererAvailability) {
       this.rendererAvailability = new Map();
     }
@@ -341,11 +369,11 @@ export class WebGpuGraphCanvas {
     this.syncRendererAvailability();
   }
 
-  isRendererAvailable(mode) {
+  isRendererAvailable(mode: string) {
     return this.rendererAvailability?.get(normalizeRendererMode(mode))?.available === true;
   }
 
-  availableRendererOrder(preferred) {
+  availableRendererOrder(preferred: string) {
     const mode = normalizeRendererMode(preferred);
     const order = mode === "webgpu"
       ? ["webgpu", "svg", "html-canvas"]
@@ -353,7 +381,7 @@ export class WebGpuGraphCanvas {
     return [...new Set(order)].filter(candidate => this.isRendererAvailable(candidate));
   }
 
-  writeRendererModeToUrl(mode) {
+  writeRendererModeToUrl(mode: string) {
     const url = new URL(this.window.location.href);
     url.searchParams.set("renderer", mode);
     this.window.history.replaceState({}, "", url);
@@ -469,7 +497,7 @@ export class WebGpuGraphCanvas {
         if (moved <= tapMoveThreshold) {
           const hit = this.pickNearest(event.clientX, event.clientY);
           if (hit) {
-            this.selectNode(hit.name, event, event.pointerType ?? "mouse");
+            this.selectNode(hit.name ?? "", event, event.pointerType ?? "mouse");
           } else {
             const edgeHit = this.pickNearestEdge(event.clientX, event.clientY);
             if (edgeHit) {
@@ -510,10 +538,10 @@ export class WebGpuGraphCanvas {
     this.window.addEventListener("resize", () => this.applyView());
   }
 
-  beginNodeDrag(hit, event) {
+  beginNodeDrag(hit: any, event: any) {
     this.dragging = {
       name: hit.name,
-      names: this.dragNodeNames(hit.name),
+      names: this.dragNodeNames(hit.name ?? ""),
       x: event.clientX,
       y: event.clientY,
       startX: event.clientX,
@@ -522,19 +550,19 @@ export class WebGpuGraphCanvas {
     };
   }
 
-  dragNodeNames(name) {
+  dragNodeNames(name: string) {
     if (!this.callbacks.isNodeSelected?.(name)) {
       return [name];
     }
 
     const selectedNames = this.memory?.nodes
-      ?.map(node => node.name)
+      ?.map(node => node.name ?? "")
       .filter(nodeName => nodeName && this.positions.has(nodeName) && this.callbacks.isNodeSelected?.(nodeName))
       ?? [];
     return selectedNames.length > 0 ? [...new Set(selectedNames)] : [name];
   }
 
-  dragSelectedNodes(event) {
+  dragSelectedNodes(event: any) {
     if (!this.dragging) {
       return;
     }
@@ -583,7 +611,7 @@ export class WebGpuGraphCanvas {
     this.requestDraw();
   }
 
-  runSimulation(frames, onComplete = null) {
+  runSimulation(frames: number, onComplete: (() => void) | null = null) {
     this.stopSimulation();
 
     if (!this.currentGraph) {
@@ -676,7 +704,7 @@ export class WebGpuGraphCanvas {
     const rect = this.canvas.getBoundingClientRect();
     const points = graph.nodes
       .map(node => this.positions.get(node.name ?? ""))
-      .filter(Boolean);
+      .filter(Boolean) as {x: number, y: number}[];
     if (points.length === 0) {
       return;
     }
@@ -713,7 +741,7 @@ export class WebGpuGraphCanvas {
     });
   }
 
-  screenToGraph(x, y) {
+  screenToGraph(x: number, y: number) {
     return {
       x: (x - this.view.x) / this.view.scale,
       y: (y - this.view.y) / this.view.scale
@@ -759,11 +787,11 @@ export class WebGpuGraphCanvas {
     return memory;
   }
 
-  writeVertexData(memory) {
+  writeVertexData(memory: GraphRenderMemory) {
     memory.nodes.forEach((node, index) => {
-      const position = this.positions.get(node.name) ?? { x: 0, y: 0 };
+      const position = this.positions.get(node.name ?? "") ?? { x: 0, y: 0 };
       const color = parseColor(node.color, defaultNodeStrokeColor);
-      const radius = Number.isFinite(node.viewRadius) ? node.viewRadius : nodeRadius;
+      const radius = (typeof node.viewRadius === "number" && Number.isFinite(node.viewRadius)) ? node.viewRadius : nodeRadius;
       const base = index * 8;
       memory.nodeVertexData[base + 0] = position.x;
       memory.nodeVertexData[base + 1] = position.y;
@@ -772,7 +800,7 @@ export class WebGpuGraphCanvas {
       memory.nodeVertexData[base + 4] = color[2];
       memory.nodeVertexData[base + 5] = color[3];
       memory.nodeVertexData[base + 6] = radius;
-      memory.nodeVertexData[base + 7] = this.callbacks.isNodeSelected(node.name) ? 1 : 0;
+      memory.nodeVertexData[base + 7] = this.callbacks.isNodeSelected?.(node.name ?? "") ? 1 : 0;
     });
 
     memory.edges.forEach((edge, index) => {
@@ -846,7 +874,7 @@ export class WebGpuGraphCanvas {
     this.renderEdgeEndpointControls(fragment, rect);
     const labelledNodes = this.memory.nodes
       .filter(node => {
-        const position = this.positions.get(node.name);
+        const position = this.positions.get(node.name ?? "");
         if (!position) {
           return false;
         }
@@ -858,11 +886,11 @@ export class WebGpuGraphCanvas {
         return x >= -margin && x <= rect.width + margin && y >= -margin && y <= rect.height + margin;
       })
       .sort((left, right) =>
-        Number(this.callbacks.isNodeSelected(right.name)) - Number(this.callbacks.isNodeSelected(left.name)))
+        Number(this.callbacks.isNodeSelected(right.name ?? "")) - Number(this.callbacks.isNodeSelected(left.name ?? "")))
       .slice(0, maxLabels);
 
     labelledNodes.forEach(node => {
-      const position = this.positions.get(node.name);
+      const position = this.positions.get(node.name ?? "");
       if (!position) {
         return;
       }
@@ -870,11 +898,11 @@ export class WebGpuGraphCanvas {
       const radius = screenNodeRadius(node, this.view.scale);
       const x = position.x * this.view.scale + this.view.x;
       const y = position.y * this.view.scale + this.view.y;
-      const selected = this.callbacks.isNodeSelected(node.name);
+      const selected = this.callbacks.isNodeSelected(node.name ?? "");
       const label = this.document.createElement("div");
       label.className = `graph-node-label${selected ? " selected" : ""}`;
-      label.textContent = node.displayName ?? node.localId ?? node.name;
-      label.title = node.globalId ?? node.name;
+      label.textContent = node.displayName ?? node.localId ?? node.name ?? "";
+      label.title = node.globalId ?? node.name ?? "";
       label.style.width = `${Math.max(28, radius * 2 - 16)}px`;
       label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
       fragment.append(label);
@@ -883,14 +911,14 @@ export class WebGpuGraphCanvas {
     this.labelLayer.append(fragment);
   }
 
-  renderEdgeEndpointControls(fragment, rect) {
+  renderEdgeEndpointControls(fragment: DocumentFragment, rect: DOMRect) {
     const graph = this.currentGraph ?? this.memory?.graph;
     if (!graph?.edges?.length) {
       return;
     }
 
-    const nodesByName = new Map((graph.nodes ?? []).map(node => [node.name, node]));
-    const rendered = new Set();
+    const nodesByName = new Map((graph.nodes ?? []).map(node => [node.name ?? "", node]));
+    const rendered = new Set<string>();
     graph.edges.forEach(edge => {
       (edge.controls ?? []).forEach(control => {
         this.renderEdgeEndpointControl(fragment, rect, edge, control, nodesByName, rendered);
@@ -898,7 +926,7 @@ export class WebGpuGraphCanvas {
     });
   }
 
-  renderEdgeEndpointControl(fragment, rect, edge, control, nodesByName, rendered) {
+  renderEdgeEndpointControl(fragment: DocumentFragment, rect: DOMRect, edge: any, control: any, nodesByName: Map<string, any>, rendered: Set<string>) {
     const anchorName = control?.anchorName;
     const otherName = control?.otherName;
     if (!anchorName || !otherName) {
@@ -956,12 +984,12 @@ export class WebGpuGraphCanvas {
     fragment.append(button);
   }
 
-  edgeEndpointPoint(anchor, otherName, radius) {
+  edgeEndpointPoint(anchor: {x: number, y: number}, otherName: string, radius: number) {
     const other = this.positions.get(otherName);
     return other ? pointOnCircle(anchor, this.graphToScreen(other), radius) : null;
   }
 
-  graphToScreen(position) {
+  graphToScreen(position: {x: number, y: number}) {
     return {
       x: position.x * this.view.scale + this.view.x,
       y: position.y * this.view.scale + this.view.y
@@ -989,7 +1017,7 @@ export class WebGpuGraphCanvas {
     }
   }
 
-  selectElementsInBox(box) {
+  selectElementsInBox(box: { startX: number, startY: number, x: number, y: number, append: boolean }) {
     if (!this.memory) {
       return;
     }
@@ -1006,7 +1034,7 @@ export class WebGpuGraphCanvas {
     const edgeKeys: string[] = [];
 
     this.memory.nodes.forEach(node => {
-      const position = this.positions.get(node.name);
+      const position = this.positions.get(node.name ?? "");
       if (!position) {
         return;
       }
@@ -1014,26 +1042,26 @@ export class WebGpuGraphCanvas {
       const center = this.graphToScreen(position);
       const radius = Math.max(4, screenNodeRadius(node, this.view.scale));
       if (circleIntersectsRect(center, radius, rect)) {
-        nodeNames.push(node.name);
+        nodeNames.push(node.name ?? "");
       }
     });
 
     this.memory.edges.forEach(edge => {
-      const source = this.positions.get(edge.sourceGlobalId);
-      const target = this.positions.get(edge.targetGlobalId);
+      const source = this.positions.get(edge.sourceGlobalId ?? "");
+      const target = this.positions.get(edge.targetGlobalId ?? "");
       if (!source || !target) {
         return;
       }
 
       if (segmentIntersectsRect(this.graphToScreen(source), this.graphToScreen(target), rect)) {
-        edgeKeys.push(edge.key);
+        edgeKeys.push(edge.key ?? "");
       }
     });
 
-    this.callbacks.selectGraphElements?.(nodeNames, edgeKeys, { append: box.append });
+    this.callbacks.selectGraphElements?.(nodeNames, edgeKeys, box.append);
   }
 
-  pickNearest(clientX, clientY) {
+  pickNearest(clientX: number, clientY: number) {
     if (!this.memory || this.memory.nodeCount === 0) {
       return null;
     }
@@ -1046,7 +1074,7 @@ export class WebGpuGraphCanvas {
 
     for (let index = 0; index < this.memory.nodes.length; index += 1) {
       const node = this.memory.nodes[index];
-      const position = this.positions.get(node.name);
+      const position = this.positions.get(node.name ?? "");
       if (!position) {
         continue;
       }
@@ -1064,7 +1092,7 @@ export class WebGpuGraphCanvas {
     return best;
   }
 
-  pickNearestEdge(clientX, clientY) {
+  pickNearestEdge(clientX: number, clientY: number) {
     if (!this.memory || this.memory.edgeCount === 0) {
       return null;
     }
@@ -1094,7 +1122,7 @@ export class WebGpuGraphCanvas {
     return best;
   }
 
-  selectNode(name, event, pointerType) {
+  selectNode(name: string, event: PointerEvent, pointerType: string) {
     if (pointerType !== "mouse") {
       this.callbacks.toggleNodeSelection(name);
       return;
@@ -1108,7 +1136,7 @@ export class WebGpuGraphCanvas {
     this.callbacks.selectOnlyNode(name);
   }
 
-  selectEdge(edge, event, pointerType) {
+  selectEdge(edge: any, event: PointerEvent, pointerType: string) {
     if (pointerType !== "mouse") {
       this.callbacks.toggleEdgeSelection?.(edge);
       return;
@@ -1122,7 +1150,7 @@ export class WebGpuGraphCanvas {
     this.callbacks.selectOnlyEdge?.(edge);
   }
 
-  setGpuWarning(error) {
+  setGpuWarning(error: Error | null) {
     if (!this.gpuWarning) {
       return;
     }
@@ -1142,7 +1170,7 @@ export class WebGpuGraphCanvas {
   }
 }
 
-function parseColor(value, fallback) {
+function parseColor(value: any, fallback: number[]) {
   if (!value) {
     return fallback;
   }
@@ -1177,13 +1205,13 @@ function parseColor(value, fallback) {
   return fallback;
 }
 
-function edgeKey(source, target, discriminator) {
+function edgeKey(source: string, target: string, discriminator: string) {
   return String(source).localeCompare(String(target), "ru") < 0
     ? `${source}\0${target}\0${discriminator}`
     : `${target}\0${source}\0${discriminator}`;
 }
 
-function pointOnCircle(anchor, target, radius) {
+function pointOnCircle(anchor: {x: number, y: number}, target: {x: number, y: number}, radius: number) {
   let dx = target.x - anchor.x;
   let dy = target.y - anchor.y;
   let distance = Math.hypot(dx, dy);
@@ -1199,19 +1227,19 @@ function pointOnCircle(anchor, target, radius) {
   };
 }
 
-function pointAtAngle(anchor, angle, radius) {
+function pointAtAngle(anchor: {x: number, y: number}, angle: number, radius: number) {
   return {
     x: anchor.x + Math.cos(angle) * radius,
     y: anchor.y + Math.sin(angle) * radius
   };
 }
 
-function screenNodeRadius(node, scale) {
+function screenNodeRadius(node: any, scale: number) {
   const radius = Number.isFinite(node?.viewRadius) ? node.viewRadius : nodeRadius;
   return radius * scale;
 }
 
-function normalizeClientRect(box) {
+function normalizeClientRect(box: { startX: number, startY: number, x: number, y: number }) {
   return {
     left: Math.min(box.startX, box.x),
     top: Math.min(box.startY, box.y),
@@ -1220,13 +1248,13 @@ function normalizeClientRect(box) {
   };
 }
 
-function circleIntersectsRect(center, radius, rect) {
+function circleIntersectsRect(center: {x: number, y: number}, radius: number, rect: any) {
   const closestX = clamp(center.x, rect.left, rect.right);
   const closestY = clamp(center.y, rect.top, rect.bottom);
   return (center.x - closestX) ** 2 + (center.y - closestY) ** 2 <= radius ** 2;
 }
 
-function segmentIntersectsRect(a, b, rect) {
+function segmentIntersectsRect(a: {x: number, y: number}, b: {x: number, y: number}, rect: any) {
   if (pointInRect(a, rect) || pointInRect(b, rect)) {
     return true;
   }
@@ -1241,11 +1269,11 @@ function segmentIntersectsRect(a, b, rect) {
     || segmentsIntersect(a, b, bottomLeft, topLeft);
 }
 
-function pointInRect(point, rect) {
+function pointInRect(point: {x: number, y: number}, rect: any) {
   return point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
 }
 
-function pointToSegmentDistance(point, a, b) {
+function pointToSegmentDistance(point: {x: number, y: number}, a: {x: number, y: number}, b: {x: number, y: number}) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const lengthSquared = dx * dx + dy * dy;
@@ -1259,7 +1287,7 @@ function pointToSegmentDistance(point, a, b) {
   return Math.hypot(point.x - x, point.y - y);
 }
 
-function segmentsIntersect(a, b, c, d) {
+function segmentsIntersect(a: {x: number, y: number}, b: {x: number, y: number}, c: {x: number, y: number}, d: {x: number, y: number}) {
   const abC = cross(a, b, c);
   const abD = cross(a, b, d);
   const cdA = cross(c, d, a);
@@ -1277,7 +1305,7 @@ function segmentsIntersect(a, b, c, d) {
     || Math.abs(cdB) <= epsilon && pointOnSegment(b, c, d);
 }
 
-function pointOnSegment(point, a, b) {
+function pointOnSegment(point: {x: number, y: number}, a: {x: number, y: number}, b: {x: number, y: number}) {
   const epsilon = 0.000001;
   return point.x >= Math.min(a.x, b.x) - epsilon
     && point.x <= Math.max(a.x, b.x) + epsilon
@@ -1285,15 +1313,15 @@ function pointOnSegment(point, a, b) {
     && point.y <= Math.max(a.y, b.y) + epsilon;
 }
 
-function cross(a, b, c) {
+function cross(a: {x: number, y: number}, b: {x: number, y: number}, c: {x: number, y: number}) {
   return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
 }
 
-function clamp(value, min, max) {
+function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
 
-function normalizeRendererMode(mode) {
+function normalizeRendererMode(mode: string | null) {
   const text = String(mode ?? "").toLowerCase().replace(/[_\s]/g, "-");
   if (text === "svg") {
     return "svg";

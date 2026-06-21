@@ -246,7 +246,7 @@ export class HtmlCanvasRenderer implements GraphRenderer {
       memory.edgeVertexData[base + 5]));
   }
 
-  edgeKey(edge) {
+  edgeKey(edge: any) {
     return edge?.key
       ?? `${edge?.sourceGlobalId ?? ""}\0${edge?.targetGlobalId ?? ""}\0${edge?.relationGlobalId ?? edge?.typeGlobalId ?? ""}`;
   }

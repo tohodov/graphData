@@ -97,12 +97,12 @@ export class WebGpuRenderer implements GraphRenderer {
     this.resize();
   }
 
-  createEdgePipeline(layout) {
-    return this.device.createRenderPipeline({
+  createEdgePipeline(layout: GPUPipelineLayout) {
+    return this.device!.createRenderPipeline({
       label: "graph-edge-pipeline",
       layout,
       vertex: {
-        module: this.device.createShaderModule({ code: edgeShader }),
+        module: this.device!.createShaderModule({ code: edgeShader }),
         entryPoint: "vs",
         buffers: [{
           arrayStride: 24,
@@ -113,10 +113,10 @@ export class WebGpuRenderer implements GraphRenderer {
         }]
       },
       fragment: {
-        module: this.device.createShaderModule({ code: edgeShader }),
+        module: this.device!.createShaderModule({ code: edgeShader }),
         entryPoint: "fs",
         targets: [{
-          format: this.format,
+          format: this.format!,
           blend: {
             color: {
               srcFactor: "src-alpha",
@@ -137,12 +137,12 @@ export class WebGpuRenderer implements GraphRenderer {
     });
   }
 
-  createNodePipeline(layout) {
-    return this.device.createRenderPipeline({
+  createNodePipeline(layout: GPUPipelineLayout) {
+    return this.device!.createRenderPipeline({
       label: "graph-node-pipeline",
       layout,
       vertex: {
-        module: this.device.createShaderModule({ code: nodeShader }),
+        module: this.device!.createShaderModule({ code: nodeShader }),
         entryPoint: "vs",
         buffers: [{
           arrayStride: 32,
@@ -156,10 +156,10 @@ export class WebGpuRenderer implements GraphRenderer {
         }]
       },
       fragment: {
-        module: this.device.createShaderModule({ code: nodeShader }),
+        module: this.device!.createShaderModule({ code: nodeShader }),
         entryPoint: "fs",
         targets: [{
-          format: this.format,
+          format: this.format!,
           blend: {
             color: {
               srcFactor: "src-alpha",
@@ -196,8 +196,8 @@ export class WebGpuRenderer implements GraphRenderer {
     this.canvas.width = width;
     this.canvas.height = height;
     this.context.configure({
-      device: this.device,
-      format: this.format,
+      device: this.device as GPUDevice,
+      format: (this.format ?? "bgra8unorm") as GPUTextureFormat,
       alphaMode: "premultiplied"
     });
     return true;
@@ -233,19 +233,20 @@ export class WebGpuRenderer implements GraphRenderer {
       return;
     }
 
-    this.device.queue.writeBuffer(this.nodeBuffer, 0, memory.nodeVertexData);
+    this.device!.queue.writeBuffer(this.nodeBuffer, 0, memory.nodeVertexData);
     if (this.edgeBuffer && memory.edgeVertexData.length > 0) {
-      this.device.queue.writeBuffer(this.edgeBuffer, 0, memory.edgeVertexData);
+      this.device!.queue.writeBuffer(this.edgeBuffer, 0, memory.edgeVertexData);
     }
   }
 
-  createBuffer(data, usage) {
+  createBuffer(data: Float32Array, usage: GPUBufferUsageFlags) {
+    if (!this.device) return null;
     const buffer = this.device.createBuffer({
       size: Math.max(4, align4(data.byteLength)),
       usage,
       mappedAtCreation: true
     });
-    new data.constructor(buffer.getMappedRange()).set(data);
+    new Float32Array(buffer.getMappedRange()).set(data);
     buffer.unmap();
     return buffer;
   }
@@ -280,12 +281,12 @@ export class WebGpuRenderer implements GraphRenderer {
     });
 
     pass.setBindGroup(0, this.uniformBindGroup);
-    if (this.edgeBuffer && this.edgeVertexCount > 0) {
+    if (this.edgePipeline && this.edgeBuffer && this.edgeVertexCount > 0) {
       pass.setPipeline(this.edgePipeline);
       pass.setVertexBuffer(0, this.edgeBuffer);
       pass.draw(this.edgeVertexCount);
     }
-    if (this.nodeBuffer && this.nodeCount > 0) {
+    if (this.nodePipeline && this.nodeBuffer && this.nodeCount > 0) {
       pass.setPipeline(this.nodePipeline);
       pass.setVertexBuffer(0, this.nodeBuffer);
       pass.draw(6, this.nodeCount);
@@ -322,6 +323,6 @@ export class WebGpuRenderer implements GraphRenderer {
   }
 }
 
-function align4(value) {
+function align4(value: number) {
   return Math.ceil(value / 4) * 4;
 }

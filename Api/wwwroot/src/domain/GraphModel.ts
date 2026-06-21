@@ -575,7 +575,7 @@ export class GraphModel {
   }
 
   putNode(node: GraphNode | unknown): GraphNode {
-    const rich = GraphNode.from(node);
+    const rich = GraphNode.from(node as GraphNodeSnapshot);
     this.loaded.set(rich.name, rich);
     return rich;
   }
@@ -763,7 +763,7 @@ export class GraphModel {
     return matches;
   }
 
-  setProjectedRelationCollapsed(edge: string | { key?: string; relationGlobalId?: string }, collapsed: boolean): void {
+  setProjectedRelationCollapsed(edge: string | { key?: string; relationGlobalId?: string | null }, collapsed: boolean): void {
     const relationGlobalId = this.projectedRelationGlobalId(edge);
     if (!relationGlobalId) {
       return;
@@ -775,7 +775,7 @@ export class GraphModel {
     }
   }
 
-  projectedRelationGlobalId(edge: GraphEdge | string | { key?: string; relationGlobalId?: string }): string | null {
+  projectedRelationGlobalId(edge: GraphEdge | string | { key?: string; relationGlobalId?: string | null }): string | null {
     if (typeof edge === "string") {
       return edge.startsWith("projected:") ? edge.slice("projected:".length) : null;
     }
@@ -823,10 +823,10 @@ export class GraphModel {
 
   formatProjectedNodeName(node: ProjectedGraphNode | import("./GraphNode.js").GraphNode, nodeType: GraphType | Record<string, unknown>): string {
     if (!nodeType?.infoAttribute) {
-      return node.displayName;
+      return node.displayName ?? "";
     }
 
     const value = node.attributes?.[(nodeType as GraphType).infoAttribute];
-    return value ? node.displayName + " · " + value : node.displayName;
+    return value ? (node.displayName ?? "") + " · " + value : (node.displayName ?? "");
   }
 }

@@ -43,7 +43,7 @@ export class GraphNode {
     showed,
     position = null
   }: GraphNodeSnapshot) {
-    this.globalId = globalId ?? name;
+    this.globalId = globalId ?? name ?? "";
     this.name = this.globalId;
     this.localId = localId ?? GraphId.localId(this.globalId);
     this.displayName = displayName ?? this.localId;

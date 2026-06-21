@@ -53,18 +53,18 @@ export class GraphProjection {
 
     const nodeTypeAssignments = this.nodeTypeAssignments(source);
     const visibleNodes = source.nodes
-      .filter(node => !hidden.has(node.name))
-      .filter(node => nodeTypeAssignments.get(node.name)?.visible !== false);
-    const visibleNodeIds = new Set(visibleNodes.map(node => node.name));
+      .filter(node => !hidden.has(node.name ?? ""))
+      .filter(node => nodeTypeAssignments.get(node.name ?? "")?.visible !== false);
+    const visibleNodeIds = new Set(visibleNodes.map(node => node.name ?? ""));
     const typedNodes = visibleNodes.map(node => {
-      const nodeType = nodeTypeAssignments.get(node.name);
+      const nodeType = nodeTypeAssignments.get(node.name ?? "");
       return {
         ...node,
         typeGlobalId: nodeType?.globalId,
         typeLabel: nodeType?.label,
         typeRank: nodeType?.rank,
         color: nodeType?.color,
-        displayName: this.model.formatProjectedNodeName(node, nodeType)
+        displayName: this.model.formatProjectedNodeName(node as any, nodeType ?? {})
       };
     });
 
@@ -88,16 +88,16 @@ export class GraphProjection {
     });
 
     const projectedEdges = collapsedRelations
-      .filter(relation => visibleNodeIds.has(relation.sourceGlobalId) && visibleNodeIds.has(relation.targetGlobalId))
+      .filter(relation => visibleNodeIds.has(relation.sourceGlobalId ?? "") && visibleNodeIds.has(relation.targetGlobalId ?? ""))
       .filter(relation => relation.type?.visible !== false)
       .map(relation => {
         const key = "projected:" + relation.relationGlobalId;
         return {
           key,
-          sourceGlobalId: relation.sourceGlobalId,
-          targetGlobalId: relation.targetGlobalId,
-          sourceLocalId: GraphId.localId(relation.sourceGlobalId),
-          targetLocalId: GraphId.localId(relation.targetGlobalId),
+          sourceGlobalId: relation.sourceGlobalId ?? "",
+          targetGlobalId: relation.targetGlobalId ?? "",
+          sourceLocalId: GraphId.localId(relation.sourceGlobalId ?? ""),
+          targetLocalId: GraphId.localId(relation.targetGlobalId ?? ""),
           relationGlobalId: relation.relationGlobalId,
           typeGlobalId: relation.type?.globalId,
           label: relation.type?.labelVisible === false ? "" : relation.type?.label ?? relation.displayName,
@@ -169,7 +169,7 @@ export class GraphProjection {
     });
 
     const rankedNodes = graph.nodes.map(node => {
-      const stats = nodeStats.get(node.name);
+      const stats = nodeStats.get(node.name ?? "");
       const typePriority = GraphType.readRank(node.typeRank, node.typeGlobalId ? 50 : 20);
       const degreeScore = Math.log1p(stats?.weightedDegree ?? 0) * 8;
       const rootBoost = node.name === this.model.rootName ? 18 : 0;
@@ -199,8 +199,8 @@ export class GraphProjection {
     physical.edges.forEach(edge => {
       if (!edgesByNode.has(edge.sourceGlobalId)) edgesByNode.set(edge.sourceGlobalId, []);
       if (!edgesByNode.has(edge.targetGlobalId)) edgesByNode.set(edge.targetGlobalId, []);
-      edgesByNode.get(edge.sourceGlobalId).push(edge);
-      edgesByNode.get(edge.targetGlobalId).push(edge);
+      edgesByNode.get(edge.sourceGlobalId)!.push(edge);
+      edgesByNode.get(edge.targetGlobalId)!.push(edge);
     });
 
     return physical.nodes
@@ -209,42 +209,42 @@ export class GraphProjection {
           return true;
         }
 
-        const incident = edgesByNode.get(node.name) ?? [];
+        const incident = edgesByNode.get(node.name ?? "") ?? [];
         return incident.some(edge => {
           const otherId = edge.sourceGlobalId === node.name ? edge.targetGlobalId : edge.sourceGlobalId;
           return this.model.schema.edgeTypes.has(otherId);
         });
       })
       .map(relation => {
-        const incident = edgesByNode.get(relation.name) ?? [];
+        const incident = edgesByNode.get(relation.name ?? "") ?? [];
         const ports = incident
           .map(edge => nodesByName.get(edge.sourceGlobalId === relation.name ? edge.targetGlobalId : edge.sourceGlobalId))
           .filter(Boolean);
-        const typePort = ports.find(port => port.attributes?.[graphRoleAttribute] === "type")
-          ?? ports.find(port => this.model.schema.edgeTypes.has(port.name));
+        const typePort = ports.find(port => port?.attributes?.[graphRoleAttribute] === "type")
+          ?? ports.find(port => port && this.model.schema.edgeTypes.has(port.name ?? ""));
         const endpointPorts = ports.filter(port => port !== typePort);
-        const sourcePort = endpointPorts.find(port => port.attributes?.[graphRoleAttribute] === "source") ?? endpointPorts[0];
-        const targetPort = endpointPorts.find(port => port.attributes?.[graphRoleAttribute] === "target") ?? endpointPorts.find(port => port !== sourcePort);
-        const sourceGlobalId = sourcePort ? this.portEndpoint(sourcePort.name, edgesByNode, relation.name) : null;
-        const targetGlobalId = targetPort ? this.portEndpoint(targetPort.name, edgesByNode, relation.name) : null;
+        const sourcePort = endpointPorts.find(port => port?.attributes?.[graphRoleAttribute] === "source") ?? endpointPorts[0];
+        const targetPort = endpointPorts.find(port => port?.attributes?.[graphRoleAttribute] === "target") ?? endpointPorts.find(port => port !== sourcePort);
+        const sourceGlobalId = sourcePort ? this.portEndpoint(sourcePort.name ?? "", edgesByNode, relation.name ?? "") : null;
+        const targetGlobalId = targetPort ? this.portEndpoint(targetPort.name ?? "", edgesByNode, relation.name ?? "") : null;
         const typeGlobalId = typePort?.attributes?.[graphRoleAttribute] === "type"
-          ? this.portEndpoint(typePort.name, edgesByNode, relation.name)
+          ? this.portEndpoint(typePort.name ?? "", edgesByNode, relation.name ?? "")
           : typePort?.name;
         const type = typeGlobalId ? this.model.schema.edgeTypes.get(typeGlobalId) : null;
         const physicalEdgeKeys = new Set(incident.map(edge => edge.key ?? GraphEdge.keyFor(edge.sourceGlobalId, edge.targetGlobalId)));
         for (const port of ports) {
-          for (const edge of edgesByNode.get(port.name) ?? []) {
+          for (const edge of edgesByNode.get(port?.name ?? "") ?? []) {
             physicalEdgeKeys.add(edge.key ?? GraphEdge.keyFor(edge.sourceGlobalId, edge.targetGlobalId));
           }
         }
         return {
-          relationGlobalId: relation.name,
-          displayName: relation.displayName,
+          relationGlobalId: relation.name ?? "",
+          displayName: relation.displayName ?? "",
           collapsed: Boolean(relation.collapsed),
           sourceGlobalId,
           targetGlobalId,
           type,
-          portGlobalIds: ports.map(port => port.name),
+          portGlobalIds: ports.map(port => port?.name ?? ""),
           physicalEdgeKeys
         };
       })

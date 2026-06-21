@@ -41,7 +41,7 @@ export class GraphType {
   constructor(options: GraphTypeSnapshot) {
     this.globalId = options.globalId ?? "";
     this.localId = options.localId ?? "";
-    this.label = options.label ?? options.localId;
+    this.label = options.label ?? options.localId ?? "";
     this.color = GraphType.normalizeColor(options.color);
     this.element = options.element ?? "node";
     this.visible = options.visible ?? true;
