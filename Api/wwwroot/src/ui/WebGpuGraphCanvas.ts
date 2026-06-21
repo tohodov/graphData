@@ -605,7 +605,7 @@ export class WebGpuGraphCanvas {
     this.currentGraph = graph;
     this.emptyState.classList.toggle("hidden", graph.nodes.length > 0);
     this.memory = this.buildRenderMemory(graph);
-    this.callbacks.renderInspector(graph);
+    this.callbacks.renderInspector();
     this.renderLabels();
     this.updateRendererGraph();
     this.requestDraw();

@@ -198,7 +198,7 @@ export class GraphViewer {
       activateEdgeControl: (edge, control) => this.handleEdgeControl(edge, control),
       calculateEdgeLabelPositions: () => {},
       syncEdgeAngles: () => this.refreshEdgeAngles(),
-      renderInspector: () => this.renderInspector(null),
+      renderInspector: () => this.renderInspector(),
       formatRank: value => GraphType.formatRank(value)
     });
     this.graph.onProjectionRebuilt(event => this.dispatchProjectionRebuilt(event));
@@ -1643,24 +1643,22 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     return this.canvas.screenToGraph(x, y);
   }
 
-  renderInspector(graph: any) {
-  this.renderSelectionOverlay(graph);
-  this.renderOperationPanel(graph);
-
+  renderInspector() {
+    this.renderSelectionOverlay();
+    this.renderOperationPanel();
   }
 
-  renderOperationPanel(graph: any) {
-  this.updateEditorState(graph);
-
+  renderOperationPanel() {
+    this.updateEditorState();
   }
 
-  renderSelectionOverlay(graph: any) {
-  this.pruneSelectionToGraph(graph);
-  const selectedNodes = this.selectedNodeObjects(graph)
-    .sort((left, right) => this.displayName(left.name ?? "").localeCompare(this.displayName(right.name ?? ""), "ru"));
-  const selectedEdges = this.selectedEdgeObjects(graph)
-    .sort((left, right) => this.edgeSelectionTitle(left).localeCompare(this.edgeSelectionTitle(right), "ru"));
-  const total = selectedNodes.length + selectedEdges.length;
+  renderSelectionOverlay() {
+    this.pruneSelectionToGraph();
+    const selectedNodes = this.selectedNodeObjects()
+      .sort((left, right) => this.displayName(left.name ?? "").localeCompare(this.displayName(right.name ?? ""), "ru"));
+    const selectedEdges = this.selectedEdgeObjects()
+      .sort((left, right) => this.edgeSelectionTitle(left).localeCompare(this.edgeSelectionTitle(right), "ru"));
+    const total = selectedNodes.length + selectedEdges.length;
 
   this.selectionOverlay.hidden = total === 0;
   this.selectionOverlay.classList.toggle("collapsed", this.selectionOverlayCollapsed);
@@ -1931,33 +1929,35 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
-  selectedNodeObjects(graph: import("./domain/GraphModel.js").ProjectedGraph | null = null): (import("./domain/GraphModel.js").ProjectedGraphNode | import("./domain/GraphNode.js").GraphNode)[] {
-  const nodes = graph?.nodes ?? [...this.graph.loaded.values()].filter(node => node.showed  === true);
-  const nodesByName = new Map<string, import("./domain/GraphModel.js").ProjectedGraphNode | import("./domain/GraphNode.js").GraphNode>(nodes.map(node => [node.name ?? "", node] as const));
-  return [...this.graph.selectedNames]
-    .map(name => nodesByName.get(name))
-    .filter(Boolean) as (import("./domain/GraphModel.js").ProjectedGraphNode | import("./domain/GraphNode.js").GraphNode)[];
+  selectedNodeObjects(): (import("./domain/GraphModel.js").ProjectedGraphNode | import("./domain/GraphNode.js").GraphNode)[] {
+    const activeGraph = this.graph.visibleGraph();
+    const nodes = activeGraph.nodes ?? [...this.graph.loaded.values()].filter(node => node.showed === true);
+    const nodesByName = new Map<string, import("./domain/GraphModel.js").ProjectedGraphNode | import("./domain/GraphNode.js").GraphNode>(nodes.map(node => [node.name ?? "", node] as const));
+    return [...this.graph.selectedNames]
+      .map(name => nodesByName.get(name))
+      .filter(Boolean) as (import("./domain/GraphModel.js").ProjectedGraphNode | import("./domain/GraphNode.js").GraphNode)[];
 
   }
 
-  selectedNodeNames(graph: any = null): string[] {
-  return this.selectedNodeObjects(graph).map(node => node.name ?? "");
+  selectedNodeNames(): string[] {
+    return this.selectedNodeObjects().map(node => node.name ?? "");
 
   }
 
-  selectedEdgeObjects(graph: import("./domain/GraphModel.js").ProjectedGraph | null = null): (import("./domain/GraphModel.js").ProjectedGraphEdge | import("./domain/GraphEdge.js").GraphEdge)[] {
-  const source = graph ?? this.graph.visibleGraph();
-  const edges = source.edges ?? [];
-  const edgesByKey = new Map<string, import("./domain/GraphModel.js").ProjectedGraphEdge | import("./domain/GraphEdge.js").GraphEdge>(edges.map(edge => [edge.key ?? "", edge] as const));
-  return [...this.graph.selectedEdgeKeys]
-    .map(key => edgesByKey.get(key))
-    .filter(Boolean) as (import("./domain/GraphModel.js").ProjectedGraphEdge | import("./domain/GraphEdge.js").GraphEdge)[];
+  selectedEdgeObjects(): (import("./domain/GraphModel.js").ProjectedGraphEdge | import("./domain/GraphEdge.js").GraphEdge)[] {
+    const activeGraph = this.graph.visibleGraph();
+    const edges = activeGraph.edges ?? [];
+    const edgesByKey = new Map<string, import("./domain/GraphModel.js").ProjectedGraphEdge | import("./domain/GraphEdge.js").GraphEdge>(edges.map(edge => [edge.key ?? "", edge] as const));
+    return [...this.graph.selectedEdgeKeys]
+      .map(key => edgesByKey.get(key))
+      .filter(Boolean) as (import("./domain/GraphModel.js").ProjectedGraphEdge | import("./domain/GraphEdge.js").GraphEdge)[];
 
   }
 
-  pruneSelectionToGraph(graph: any) {
-  const nodeNames = new Set((graph.nodes ?? []).map((node: any) => node.name));
-  const newEdgeKeys = new Set<string>((graph.edges ?? []).map((edge: any) => edge.key));
+  pruneSelectionToGraph() {
+    const activeGraph = this.graph.visibleGraph();
+    const nodeNames = new Set((activeGraph.nodes ?? []).map(node => node.name));
+    const newEdgeKeys = new Set<string>((activeGraph.edges ?? []).map(edge => edge.key as string));
 
   for (const name of [...this.graph.selectedNames]) {
     if (!nodeNames.has(name)) {
@@ -2553,10 +2553,10 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
-  updateEditorState(graph = null) {
-  const nodeCount = this.selectedNodeObjects(graph).length;
-  const edgeCount = this.selectedEdgeObjects(graph).length;
-  const total = nodeCount + edgeCount;
+  updateEditorState() {
+    const nodeCount = this.selectedNodeObjects().length;
+    const edgeCount = this.selectedEdgeObjects().length;
+    const total = nodeCount + edgeCount;
   this.clearSelectionButton.disabled = this.graph.busy || total === 0;
   this.deleteSelectedNodesButton.disabled = this.graph.busy || nodeCount === 0;
   this.assignNodeTypeButton.disabled = this.graph.busy || nodeCount === 0 || !this.assignNodeType.value;
