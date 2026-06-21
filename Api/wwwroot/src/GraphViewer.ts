@@ -639,8 +639,8 @@ export class GraphViewer {
   await this.apiJson("/api/graph/connections", {
     method: "POST",
     body: JSON.stringify({
-      node1Path: this.parseGlobalId(node1Path),
-      node2Path: this.parseGlobalId(node2Path)
+      sourceGlobalId: this.parseGlobalId(node1Path),
+      targetGlobalId: this.parseGlobalId(node2Path)
     }),
     expectJson: false
   });
@@ -1017,14 +1017,14 @@ export class GraphViewer {
 
   }
 
-async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { node1Path: string; node2Path: string; relationGlobalId: string | null, relationLocalId?: string }, typeGlobalId: string, options: GraphViewerOptions = {}): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
+  async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { node1Path: string; node2Path: string; relationGlobalId: string | null, relationLocalId?: string }, typeGlobalId: string, options: GraphViewerOptions = {}): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
   const relationRoot = this.getBasis().relationRoot?.trim();
   return (await this.apiJson("/api/graph/edges/type", {
     method: "PUT",
     body: JSON.stringify({
       relationGlobalId: edge.relationGlobalId ? this.parseGlobalId(edge.relationGlobalId) : null,
-      node1Path: edge.node1Path ? this.parseGlobalId(edge.node1Path) : null,
-      node2Path: edge.node2Path ? this.parseGlobalId(edge.node2Path) : null,
+      sourceGlobalId: edge.node1Path ? this.parseGlobalId(edge.node1Path) : null,
+      targetGlobalId: edge.node2Path ? this.parseGlobalId(edge.node2Path) : null,
       typeGlobalId: this.parseGlobalId(typeGlobalId),
       relationParentGlobalId: relationRoot ? this.parseGlobalId(relationRoot) : null,
       relationLocalId: options.relationLocalId || (edge as any).relationLocalId || null
@@ -1296,7 +1296,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     const response = await this.apiJson("/api/graph/subgraph", {
       method: "POST",
       body: JSON.stringify({
-        paths: roots.map((root: string) => this.parseGlobalId(root)),
+        globalIds: roots.map((root: string) => this.parseGlobalId(root)),
         maxDepth: this.readNumber("#subgraph-depth", 1),
         includeDisconnectedRoots: (this.document.querySelector("#subgraph-include-disconnected") as HTMLInputElement).checked
       })
@@ -1472,7 +1472,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   return (await this.apiJson("/api/graph/subgraph", {
     method: "POST",
     body: JSON.stringify({
-      paths: roots.map(root => this.parseGlobalId(root)),
+      globalIds: roots.map(root => this.parseGlobalId(root)),
       maxDepth
     })
   })) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
