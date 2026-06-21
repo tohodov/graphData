@@ -108,7 +108,7 @@ export class GraphProjection {
     const primitiveNodes = [...nodes];
     const visibleNodeIds = new Set(
       primitiveNodes
-        .filter(node => node.showed !== false)
+        .filter(node => node.showed === true)
         .map(node => node.name)
     );
     return {

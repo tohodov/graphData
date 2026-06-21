@@ -18,7 +18,7 @@ export class GraphNode {
   attributes: Record<string, string>;
   edges: GraphEdge[];
   collapsed: boolean;
-  showed: boolean;
+  showed: boolean | undefined;
   position: GraphPoint | null;
   constructor({
     globalId,
@@ -28,7 +28,7 @@ export class GraphNode {
     attributes = {},
     edges = [],
     collapsed = false,
-    showed = true,
+    showed,
     position = null
   }: {
     globalId?: string;
@@ -38,7 +38,7 @@ export class GraphNode {
     attributes?: Record<string, string>;
     edges?: any[];
     collapsed?: boolean;
-    showed?: boolean;
+    showed?: boolean | undefined;
     position?: GraphPoint | null;
   }) {
     this.globalId = globalId ?? name;
@@ -48,7 +48,7 @@ export class GraphNode {
     this.attributes = { ...(attributes ?? {}) };
     this.edges = edges.map(edge => GraphEdge.from(edge));
     this.collapsed = Boolean(collapsed);
-    this.showed = showed !== false;
+    this.showed = showed;
     this.position = normalizePoint(position);
   }
 
@@ -69,7 +69,7 @@ export class GraphNode {
     this.attributes = { ...next.attributes };
     this.edges = GraphEdge.mergeMany(this.edges, next.edges);
     this.collapsed = this.collapsed || next.collapsed;
-    this.showed = this.showed || next.showed;
+    this.showed = this.showed === true || next.showed === true ? true : (this.showed === false || next.showed === false ? false : undefined);
     this.position = next.position ?? this.position;
     return this;
   }

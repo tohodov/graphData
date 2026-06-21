@@ -364,7 +364,7 @@ export class GraphViewer {
   this.setBusy(true);
   try {
     const expansion = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(name)}`));
-    this.storeNodeExpansion(expansion, fromName, { select });
+    this.storeNodeExpansion(expansion, fromName, { select, showed: true });
 
     this.render();
     this.renderTypeControls();
@@ -388,7 +388,7 @@ export class GraphViewer {
     const expansion = this.normalizeNodeResponse(await this.apiJson(
       `/api/graph/nodes/${encodeURIComponent(anchorName)}/neighbor/${encodeURIComponent(neighborLocalId)}`));
     const alreadyLoaded = this.graph.loaded.has(expansion.name);
-    this.storeNodeExpansion(expansion, anchorName, { select: false, showed: false });
+      this.storeNodeExpansion(expansion, anchorName, { select: false, showed: undefined });
     this.revealLoadedNode(expansion.name, anchorName, { select: true });
 
     if (alreadyLoaded) {
@@ -406,8 +406,7 @@ export class GraphViewer {
   const select = options.select ?? true;
   const incoming = GraphNode.from(expansion);
   const existing = this.graph.loaded.get(incoming.name);
-  const shouldShow = options.showed !== false
-    || Boolean(existing && existing.showed !== false && this.graph.positions.has(incoming.name));
+  const shouldShow = options.showed !== undefined ? options.showed : (existing ? existing.showed : undefined);
   incoming.showed = shouldShow;
   const stored = existing ? this.mergeNodeResponses(existing, incoming) : incoming;
   stored.showed = shouldShow;
@@ -1861,7 +1860,7 @@ export class GraphViewer {
   }
 
   selectedNodeObjects(graph = null): any[] {
-  const nodes: any[] = graph?.nodes ?? [...this.graph.loaded.values()].filter(node => node.showed !== false);
+  const nodes: any[] = graph?.nodes ?? [...this.graph.loaded.values()].filter(node => node.showed  === true);
   const nodesByName = new Map<string, any>(nodes.map(node => [node.name, node]));
   return [...this.graph.selectedNames]
     .map(name => nodesByName.get(name))
@@ -1948,7 +1947,8 @@ export class GraphViewer {
   const expansion = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(globalId)}`));
   const incoming = GraphNode.from(expansion);
   const existing = this.graph.loaded.get(incoming.name);
-  const showed = existing ? existing.showed !== false : false;
+  const showed = existing ? existing.showed : undefined;
+  incoming.showed = showed;
   const stored = existing ? this.mergeNodeResponses(existing, incoming) : incoming;
   stored.showed = showed;
   this.graph.loaded.set(incoming.name, stored);
@@ -2522,7 +2522,7 @@ export class GraphViewer {
 
   refreshEdgeAngles() {
   for (const node of this.graph.loaded.values()) {
-    if (node.showed === false) {
+    if (node.showed !== true) {
       continue;
     }
 
