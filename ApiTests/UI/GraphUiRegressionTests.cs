@@ -713,11 +713,10 @@ public sealed class GraphUiRegressionTests {
 
             globalThis.__result = events.length === 1
               && events[0].reason === "basis-rule-change"
-              && events[0].physicalGraph.nodes.length === 2
-              && events[0].primitiveGraph.nodes.length === 2
-              && events[0].primitiveGraph === events[0].physicalGraph
+              && events[0].projectionGraph === graph
               && events[0].intermediateGraph === graph
-              && model.physicalGraph().edges.length === 1
+              && model.primitiveNodeCount() === 2
+              && model.primitiveEdgeCount() === 1
               && model.intermediateGraph === graph;
             """);
 
@@ -725,7 +724,7 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
-    public void GraphModel_PhysicalGraphKeepsHiddenLoadedNodes() {
+    public void GraphModel_PrimitiveCacheKeepsHiddenLoadedNodes() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
             ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
@@ -749,12 +748,44 @@ public sealed class GraphUiRegressionTests {
             }));
 
             const graph = model.rebuildProjection({ emit: true, reason: "cache" });
-            const physical = model.physicalGraph();
+            const cachedNames = [...model.primitiveNodeViews()].map(node => node.name);
 
-            globalThis.__result = physical.nodes.length === 2
-              && physical.nodes.some(node => node.name === "graphdata/types/nodes/HiddenType")
+            globalThis.__result = model.primitiveNodeCount() === 2
+              && cachedNames.some(name => name === "graphdata/types/nodes/HiddenType")
               && graph.nodes.length === 1
               && graph.nodes[0].name === "root";
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void GraphModel_LoadedMapPublishesPrimitiveGraphEvents() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            const events = [];
+            model.onPrimitiveGraphChanged(event => events.push(event));
+            model.batchPrimitiveChanges("load-batch", () => {
+              model.loaded.set("a", new GraphNode({ globalId: "a" }));
+              model.loaded.set("b", new GraphNode({ globalId: "b" }));
+            });
+            model.loaded.delete("b");
+            model.loaded.clear();
+
+            globalThis.__result = events.length === 3
+              && events[0].kind === "batch"
+              && events[0].reason === "load-batch"
+              && events[0].changes.length === 2
+              && events[1].kind === "node-delete"
+              && events[2].kind === "cache-clear"
+              && model.primitiveRevision === 3;
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
@@ -1271,7 +1302,7 @@ public sealed class GraphUiRegressionTests {
             viewer.refreshEdgeAngles();
 
             globalThis.__result = root.edges.length === 4
-              && viewer.graph.physicalGraph().edges.length === 4
+              && viewer.graph.primitiveEdgeCount() === 4
               && !viewer.graph.positions.has("root/b")
               && control?.kind === "expand"
               && control?.text === "+"
@@ -1670,11 +1701,19 @@ public sealed class GraphUiRegressionTests {
             };
             globalThis.GraphProjection = class GraphProjection {
               constructor(model) { this.model = model; }
+              projectFromCache() {
+                return {
+                  nodes: [...this.model.primitiveNodeViews()],
+                  edges: [...this.model.primitiveEdgeViews()]
+                };
+              }
               project(physical) { return physical; }
               rank(graph) { return graph; }
               relations() { return []; }
+              relationsFromCache() { return []; }
               portEndpoint() { return null; }
               nodeTypeAssignments() { return new Map(); }
+              nodeTypeAssignmentsFromCache() { return new Map(); }
             };
             globalThis.GraphNode = class GraphNode {
               static from(node) { return node; }

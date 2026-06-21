@@ -10,8 +10,16 @@ export class GraphProjection {
     this.model = model;
   }
 
+  projectFromCache(): any {
+    return this.projectFromIterables(this.model.primitiveNodeViews(), this.model.primitiveEdgeViews());
+  }
+
   project(physical: any): any {
-    const source = this.visiblePrimitiveGraph(physical);
+    return this.projectFromIterables(physical?.nodes ?? [], physical?.edges ?? []);
+  }
+
+  projectFromIterables(nodes: Iterable<any>, edges: Iterable<any>): any {
+    const source = this.visiblePrimitiveGraph(nodes, edges);
     if (!this.hasBasisRules()) {
       return this.rank(source);
     }
@@ -96,17 +104,26 @@ export class GraphProjection {
       || (this.model.schema.edgeTypes?.size ?? 0) > 0;
   }
 
-  visiblePrimitiveGraph(physical: any): any {
+  visiblePrimitiveGraph(nodes: Iterable<any>, edges: Iterable<any>): any {
+    const primitiveNodes = [...nodes];
     const visibleNodeIds = new Set(
-      (physical.nodes ?? [])
+      primitiveNodes
         .filter(node => node.showed !== false)
         .map(node => node.name)
     );
     return {
-      nodes: (physical.nodes ?? []).filter(node => visibleNodeIds.has(node.name)),
-      edges: (physical.edges ?? []).filter(edge =>
+      nodes: primitiveNodes.filter(node => visibleNodeIds.has(node.name)),
+      edges: [...edges].filter(edge =>
         visibleNodeIds.has(edge.sourceGlobalId) || visibleNodeIds.has(edge.targetGlobalId))
     };
+  }
+
+  relationsFromCache(): any[] {
+    return this.relations(this.visiblePrimitiveGraph(this.model.primitiveNodeViews(), this.model.primitiveEdgeViews()));
+  }
+
+  nodeTypeAssignmentsFromCache(): Map<string, GraphType> {
+    return this.nodeTypeAssignments(this.visiblePrimitiveGraph(this.model.primitiveNodeViews(), this.model.primitiveEdgeViews()));
   }
 
   shouldCollapseRelation(relation: any): boolean {

@@ -137,6 +137,7 @@ export class GraphViewer {
       renderInspector: graph => this.renderInspector(graph),
       formatRank: value => GraphType.formatRank(value)
     });
+    this.graph.onProjectionRebuilt(event => this.dispatchProjectionRebuilt(event));
   }
 
   async start() {
@@ -321,11 +322,13 @@ export class GraphViewer {
   this.graph.rootName = name;
   this.graph.selectedName = name;
   const basisNodes = this.cachedBasisNodes();
-  this.graph.loaded.clear();
-  this.graph.parentByNode.clear();
-  this.graph.positions.clear();
-  this.graph.velocities.clear();
-  this.restoreBasisNodes(basisNodes);
+  this.graph.batchPrimitiveChanges("load-root-reset", () => {
+    this.graph.loaded.clear();
+    this.graph.parentByNode.clear();
+    this.graph.positions.clear();
+    this.graph.velocities.clear();
+    this.restoreBasisNodes(basisNodes);
+  });
   await this.loadNode(name, null);
   const url = new URL(this.window.location.href);
   url.searchParams.set("globalId", this.graph.rootName ?? name);
@@ -732,14 +735,16 @@ export class GraphViewer {
   }
 
   storeBasisGraphNodes(basisGraph) {
-  for (const node of basisGraph.nodes.values()) {
-    const existing = this.graph.loaded.get(node.name);
-    const stored = existing ? this.mergeNodeResponses(existing, node) : GraphNode.from(node);
-    this.graph.loaded.set(stored.name, stored);
-    if (!existing && !this.graph.positions.has(stored.name)) {
-      this.seedPosition(stored.name, this.graph.rootName, this.graph.visibleNodeCount());
+  this.graph.batchPrimitiveChanges("basis-graph-loaded", () => {
+    for (const node of basisGraph.nodes.values()) {
+      const existing = this.graph.loaded.get(node.name);
+      const stored = existing ? this.mergeNodeResponses(existing, node) : GraphNode.from(node);
+      this.graph.loaded.set(stored.name, stored);
+      if (!existing && !this.graph.positions.has(stored.name)) {
+        this.seedPosition(stored.name, this.graph.rootName, this.graph.visibleNodeCount());
+      }
     }
-  }
+  });
 
   this.refreshEdgeAngles();
 
@@ -801,27 +806,26 @@ export class GraphViewer {
   }
 
   rebuildProjectionFromBasis(reason) {
-  this.graph.rebuildProjection({ emit: true, reason });
-  this.dispatchProjectionRebuilt(reason);
+  void this.graph.requestProjectionRebuild(reason);
   this.render();
   this.renderProjectionSummary();
 
   }
 
-  dispatchProjectionRebuilt(reason) {
+  dispatchProjectionRebuilt(event) {
   const CustomEventCtor = (this.window as any)?.CustomEvent;
   if (typeof CustomEventCtor !== "function") {
     return;
   }
 
-  const physicalGraph = this.graph.physicalGraph();
   this.document.dispatchEvent(new CustomEventCtor("graph-projection-rebuilt", {
     detail: {
-      reason,
-      revision: this.graph.projectionRevision,
-      physicalGraph,
-      primitiveGraph: physicalGraph,
-      intermediateGraph: this.graph.intermediateGraph
+      reason: event.reason,
+      revision: event.revision,
+      primitiveRevision: event.primitiveRevision,
+      changes: event.changes ?? [],
+      projectionGraph: event.projectionGraph,
+      intermediateGraph: event.intermediateGraph
     }
   }));
 
@@ -1248,11 +1252,6 @@ export class GraphViewer {
 
   loadSubgraphIntoViewer(response, roots, options: any = {}) {
   const basisNodes = this.cachedBasisNodes();
-  this.graph.loaded.clear();
-  this.graph.parentByNode.clear();
-  this.graph.positions.clear();
-  this.graph.velocities.clear();
-  this.restoreBasisNodes(basisNodes);
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
   const edgesByNode = new Map();
@@ -1267,12 +1266,19 @@ export class GraphViewer {
   this.graph.rootName = roots[0] ?? nodes[0]?.name ?? null;
   this.graph.selectedName = options.selectRoot === false ? null : this.graph.rootName;
 
-  nodes.forEach((node, index) => {
-    this.graph.loaded.set(node.name, GraphNode.from({
-      ...node,
-      edges: this.mergeEdges(node.edges, edgesByNode.get(node.name) ?? [])
-    }));
-    this.seedSubgraphPosition(node.name, index, nodes.length);
+  this.graph.batchPrimitiveChanges("subgraph-loaded", () => {
+    this.graph.loaded.clear();
+    this.graph.parentByNode.clear();
+    this.graph.positions.clear();
+    this.graph.velocities.clear();
+    this.restoreBasisNodes(basisNodes);
+    nodes.forEach((node, index) => {
+      this.graph.loaded.set(node.name, GraphNode.from({
+        ...node,
+        edges: this.mergeEdges(node.edges, edgesByNode.get(node.name) ?? [])
+      }));
+      this.seedSubgraphPosition(node.name, index, nodes.length);
+    });
   });
 
   this.refreshEdgeAngles();
@@ -1298,14 +1304,16 @@ export class GraphViewer {
     });
   });
 
-  nodes.forEach((node, index) => {
-    const expansion = GraphNode.from({
-      ...node,
-      edges: this.mergeEdges(node.edges, edgesByNode.get(node.name) ?? [])
-    });
-    this.storeNodeExpansion(expansion, options.fromName ?? null, {
-      select: select && index === 0,
-      showed: options.showed ?? true
+  this.graph.batchPrimitiveChanges("subgraph-merged", () => {
+    nodes.forEach((node, index) => {
+      const expansion = GraphNode.from({
+        ...node,
+        edges: this.mergeEdges(node.edges, edgesByNode.get(node.name) ?? [])
+      });
+      this.storeNodeExpansion(expansion, options.fromName ?? null, {
+        select: select && index === 0,
+        showed: options.showed ?? true
+      });
     });
   });
   this.renderTypeControls();
@@ -1333,10 +1341,12 @@ export class GraphViewer {
   }
 
   removeLocalRelationSubgraph(relationId) {
-  [...this.graph.loaded.keys()]
-    .filter(name => name === relationId || GraphId.isChildOf(name, relationId))
-    .sort((left, right) => right.length - left.length)
-    .forEach(name => this.removeLocalNode(name, false, true));
+  this.graph.batchPrimitiveChanges("relation-subgraph-removed", () => {
+    [...this.graph.loaded.keys()]
+      .filter(name => name === relationId || GraphId.isChildOf(name, relationId))
+      .sort((left, right) => right.length - left.length)
+      .forEach(name => this.removeLocalNode(name, false, true));
+  });
 
   }
 
@@ -1351,6 +1361,7 @@ export class GraphViewer {
   }
   this.graph.removeSelectedEdge(key);
   this.refreshEdgeAngles();
+  this.graph.notifyPrimitiveChanged("edge-removed", { key });
 
   }
 
@@ -1450,6 +1461,7 @@ export class GraphViewer {
     }
   }
   this.refreshEdgeAngles();
+  this.graph.notifyPrimitiveChanged("node-visibility-change", { name });
 
   if (selectFallback && wasSelected) {
     this.graph.selectedName = this.graph.loaded.keys().next().value ?? null;
@@ -2311,8 +2323,7 @@ export class GraphViewer {
 
   renderRelationList() {
   this.typedEdgeList.replaceChildren();
-  const graph = this.graph.physicalGraph();
-  const relations = this.graph.discoverRelationInstances(graph);
+  const relations = this.graph.discoverRelationInstances();
   const summary = this.document.createElement("div");
   summary.className = "result-summary";
   summary.textContent = `Инстансы связей в загруженном графе: ${relations.length}`;
@@ -2339,15 +2350,14 @@ export class GraphViewer {
   }
 
   renderProjectionSummary() {
-  const physical = this.graph.physicalGraph();
-  const relations = this.graph.discoverRelationInstances(physical);
+  const relations = this.graph.discoverRelationInstances();
   const graph = this.graph.visibleGraph();
   const projectedRelations = graph.edges.filter(edge => edge.projected).length;
   const rankedNodes = graph.nodes.filter(node => Number.isFinite(node.viewRank));
   const topRank = rankedNodes.length === 0
     ? ""
     : ` Топ rank: ${GraphType.formatRank(Math.max(...rankedNodes.map(node => node.viewRank)))}.`;
-  this.projectionSummary.textContent = `Проекция по типам: ${graph.nodes.length} узлов, ${graph.edges.length} связей. Внутренний граф: ${physical.nodes.length} узлов, ${physical.edges.length} связей. Видимых типизированных конструкций: ${relations.length}, свернутых: ${projectedRelations}.${topRank}`;
+  this.projectionSummary.textContent = `Проекция по типам: ${graph.nodes.length} узлов, ${graph.edges.length} связей. Кэш посещенных элементов: ${this.graph.primitiveNodeCount()} узлов, ${this.graph.primitiveEdgeCount()} связей. Видимых типизированных конструкций: ${relations.length}, свернутых: ${projectedRelations}.${topRank}`;
 
   }
 

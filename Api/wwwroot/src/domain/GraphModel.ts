@@ -114,12 +114,91 @@ class GraphNodePositionMap {
   }
 }
 
+type PrimitiveGraphChange = {
+  kind: string;
+  reason?: string;
+  name?: string;
+  node?: GraphNode;
+  changes?: PrimitiveGraphChange[];
+};
+
+class EventedGraphNodeMap extends Map<string, GraphNode> {
+  private readonly owner: GraphModel;
+  private batchDepth = 0;
+  private batchedChanges: PrimitiveGraphChange[] = [];
+  private batchReason = "primitive-graph-change";
+
+  constructor(owner: GraphModel) {
+    super();
+    this.owner = owner;
+  }
+
+  set(name: string, node: GraphNode | any): this {
+    const rich = GraphNode.from(node);
+    super.set(name, rich);
+    this.changed({ kind: "node-upsert", reason: "node-upsert", name, node: rich });
+    return this;
+  }
+
+  delete(name: string): boolean {
+    const removed = super.delete(name);
+    if (removed) {
+      this.changed({ kind: "node-delete", reason: "node-delete", name });
+    }
+    return removed;
+  }
+
+  clear(): void {
+    super.clear();
+    this.changed({ kind: "cache-clear", reason: "cache-clear" });
+  }
+
+  batch<T>(reason: string, action: () => T): T {
+    const previousReason = this.batchReason;
+    this.batchDepth += 1;
+    this.batchReason = reason || previousReason;
+    try {
+      return action();
+    } finally {
+      this.batchDepth -= 1;
+      if (this.batchDepth === 0) {
+        const changes = this.batchedChanges;
+        this.batchedChanges = [];
+        const batchReason = this.batchReason;
+        this.batchReason = previousReason;
+        if (changes.length > 0) {
+          this.owner.recordPrimitiveGraphChange({
+            kind: "batch",
+            reason: batchReason,
+            changes
+          });
+        }
+      } else {
+        this.batchReason = previousReason;
+      }
+    }
+  }
+
+  manual(change: PrimitiveGraphChange): void {
+    this.changed(change);
+  }
+
+  private changed(change: PrimitiveGraphChange): void {
+    if (this.batchDepth > 0) {
+      this.batchedChanges.push(change);
+      return;
+    }
+
+    this.owner.recordPrimitiveGraphChange(change);
+  }
+}
+
 export class GraphModel {
   rootName: string | null;
   _selectedName: string | null;
   selectedNames: Set<string>;
   selectedEdgeKeys: Set<string>;
-  loaded: Map<string, GraphNode>;
+  loaded: EventedGraphNodeMap;
   parentByNode: Map<string, string>;
   positions: GraphNodePositionMap;
   velocities: Map<string, { x: number; y: number }>;
@@ -131,14 +210,20 @@ export class GraphModel {
   busy: boolean;
   schema: any;
   intermediateGraph: any;
+  projectionDirty: boolean;
   projectionRevision: number;
+  primitiveRevision: number;
+  primitiveListeners: Set<(event: any) => void>;
   projectionListeners: Set<(event: any) => void>;
+  queuedProjectionPromise: Promise<any> | null;
+  queuedProjectionReason: string;
+  queuedProjectionChanges: PrimitiveGraphChange[];
   constructor() {
     this.rootName = null;
     this._selectedName = null;
     this.selectedNames = new Set();
     this.selectedEdgeKeys = new Set();
-    this.loaded = new Map();
+    this.loaded = new EventedGraphNodeMap(this);
     this.parentByNode = new Map();
     this.positions = new GraphNodePositionMap(this.loaded);
     this.velocities = new Map();
@@ -149,8 +234,14 @@ export class GraphModel {
     this.searchAbort = null;
     this.busy = false;
     this.intermediateGraph = { nodes: [], edges: [] };
+    this.projectionDirty = true;
     this.projectionRevision = 0;
+    this.primitiveRevision = 0;
+    this.primitiveListeners = new Set();
     this.projectionListeners = new Set();
+    this.queuedProjectionPromise = null;
+    this.queuedProjectionReason = "projection";
+    this.queuedProjectionChanges = [];
     this.schema = {
       defaultBasis: { ...defaultBasis },
       basis: { ...defaultBasis },
@@ -205,14 +296,21 @@ export class GraphModel {
   }
 
   resetGraph() {
-    this.rootName = null;
-    this.selectedName = null;
-    this.loaded.clear();
-    this.parentByNode.clear();
-    this.positions.clear();
-    this.velocities.clear();
-    this.intermediateGraph = { nodes: [], edges: [] };
-    this.rebuildProjection({ reason: "reset" });
+    this.batchPrimitiveChanges("reset", () => {
+      this.rootName = null;
+      this.selectedName = null;
+      this.loaded.clear();
+      this.parentByNode.clear();
+      this.positions.clear();
+      this.velocities.clear();
+      this.intermediateGraph = { nodes: [], edges: [] };
+      this.projectionDirty = true;
+    });
+  }
+
+  onPrimitiveGraphChanged(listener: (event: any) => void): () => void {
+    this.primitiveListeners.add(listener);
+    return () => this.primitiveListeners.delete(listener);
   }
 
   onProjectionRebuilt(listener: (event: any) => void): () => void {
@@ -220,13 +318,69 @@ export class GraphModel {
     return () => this.projectionListeners.delete(listener);
   }
 
-  emitProjectionRebuilt(reason: string): void {
-    const physicalGraph = this.physicalGraph();
+  recordPrimitiveGraphChange(change: PrimitiveGraphChange): void {
+    this.primitiveRevision += 1;
+    this.projectionDirty = true;
+    const event = {
+      ...change,
+      reason: change.reason ?? change.kind,
+      primitiveRevision: this.primitiveRevision
+    };
+    this.primitiveListeners.forEach(listener => listener(event));
+    this.queuedProjectionChanges.push(change);
+    void this.requestProjectionRebuild(event.reason);
+  }
+
+  notifyPrimitiveChanged(reason: string, extra: Record<string, unknown> = {}): void {
+    this.loaded.manual({ kind: "manual-change", reason, ...extra });
+  }
+
+  batchPrimitiveChanges<T>(reason: string, action: () => T): T {
+    return this.loaded.batch(reason, action);
+  }
+
+  async requestProjectionRebuild(reason = "projection"): Promise<any> {
+    this.queuedProjectionReason = reason;
+    this.projectionDirty = true;
+    if (this.queuedProjectionPromise) {
+      return this.queuedProjectionPromise;
+    }
+
+    this.queuedProjectionPromise = new Promise(resolve => {
+      this.scheduleAsync(() => {
+        const changes = this.queuedProjectionChanges;
+        this.queuedProjectionChanges = [];
+        const graph = this.projectionDirty
+          ? this.rebuildProjectionNow({ emit: false, reason: this.queuedProjectionReason })
+          : this.intermediateGraph;
+        this.emitProjectionRebuilt(this.queuedProjectionReason, changes);
+        this.queuedProjectionPromise = null;
+        resolve(graph);
+      });
+    });
+    return this.queuedProjectionPromise;
+  }
+
+  async whenProjectionSettled(): Promise<any> {
+    return this.queuedProjectionPromise ?? this.intermediateGraph;
+  }
+
+  private scheduleAsync(callback: () => void): void {
+    if (typeof queueMicrotask === "function") {
+      queueMicrotask(callback);
+      return;
+    }
+
+    void Promise.resolve().then(callback);
+  }
+
+  emitProjectionRebuilt(reason: string, changes: PrimitiveGraphChange[] = []): void {
     const event = {
       reason,
       revision: this.projectionRevision,
-      physicalGraph,
-      primitiveGraph: physicalGraph,
+      primitiveRevision: this.primitiveRevision,
+      changes,
+      projectionGraph: this.intermediateGraph,
       intermediateGraph: this.intermediateGraph
     };
     this.projectionListeners.forEach(listener => listener(event));
@@ -373,38 +527,60 @@ export class GraphModel {
     return this.loaded.get(globalId)?.displayName ?? globalId;
   }
 
-  physicalGraph(): any {
-    const nodes = new Map();
-    const edges = new Map();
-
-    for (const node of this.loaded.values()) {
-      nodes.set(node.name, node.toViewNode());
-      node.edges.forEach(edge => {
-        if (!edges.has(edge.key)) {
-          edges.set(edge.key, edge.toViewEdge(this.edgeEndpointNodes(edge)));
-        }
-      });
+  visibleGraph(): any {
+    if (this.projectionDirty) {
+      this.rebuildProjectionNow({ emit: false, reason: "visible-graph" });
     }
 
-    return { nodes: [...nodes.values()], edges: [...edges.values()] };
-  }
-
-  visibleGraph(): any {
-    return this.withEdgeControls(this.rebuildProjection());
-  }
-
-  projectedGraph(physical: any = this.physicalGraph()): any {
-    return new GraphProjection(this).project(physical);
+    return this.withEdgeControls(this.intermediateGraph);
   }
 
   rebuildProjection(options: any = {}): any {
-    const physical = this.physicalGraph();
-    this.intermediateGraph = this.projectedGraph(physical);
+    return this.rebuildProjectionNow(options);
+  }
+
+  rebuildProjectionNow(options: any = {}): any {
+    this.intermediateGraph = new GraphProjection(this).projectFromCache();
+    this.projectionDirty = false;
     this.projectionRevision += 1;
     if (options.emit === true) {
       this.emitProjectionRebuilt(options.reason ?? "projection");
     }
     return this.intermediateGraph;
+  }
+
+  *primitiveNodeViews(): IterableIterator<any> {
+    for (const node of this.loaded.values()) {
+      yield node.toViewNode();
+    }
+  }
+
+  *primitiveEdgeViews(): IterableIterator<any> {
+    const emitted = new Set<string>();
+    for (const node of this.loaded.values()) {
+      for (const edge of node.edges ?? []) {
+        const normalized = GraphEdge.from(edge);
+        if (!emitted.has(normalized.key)) {
+          emitted.add(normalized.key);
+          yield normalized.toViewEdge(this.edgeEndpointNodes(normalized));
+        }
+      }
+    }
+  }
+
+  primitiveNodeCount(): number {
+    return this.loaded.size;
+  }
+
+  primitiveEdgeCount(): number {
+    const keys = new Set<string>();
+    for (const node of this.loaded.values()) {
+      for (const edge of node.edges ?? []) {
+        keys.add(GraphEdge.from(edge).key);
+      }
+    }
+
+    return keys.size;
   }
 
   withEdgeControls(graph: any): any {
@@ -458,6 +634,7 @@ export class GraphModel {
     if (matches.length === 0 && typeof edge !== "string") {
       edge.collapsed = true;
       this.setProjectedRelationCollapsed(edge, true);
+      this.notifyPrimitiveChanged("edge-collapse", { key });
       return;
     }
 
@@ -465,6 +642,7 @@ export class GraphModel {
       match.collapsed = true;
     });
     this.setProjectedRelationCollapsed(edge, true);
+    this.notifyPrimitiveChanged("edge-collapse", { key });
   }
 
   expandEdge(edge: GraphEdge | string | any): void {
@@ -477,6 +655,7 @@ export class GraphModel {
     if (matches.length === 0 && typeof edge !== "string") {
       edge.collapsed = false;
       this.setProjectedRelationCollapsed(edge, false);
+      this.notifyPrimitiveChanged("edge-expand", { key });
       return;
     }
 
@@ -484,6 +663,7 @@ export class GraphModel {
       match.collapsed = false;
     });
     this.setProjectedRelationCollapsed(edge, false);
+    this.notifyPrimitiveChanged("edge-expand", { key });
   }
 
   isEdgeCollapsed(edge: GraphEdge | string | any): boolean {
@@ -552,16 +732,20 @@ export class GraphModel {
     return new GraphProjection(this).rank(graph);
   }
 
-  discoverRelationInstances(physical: any = this.physicalGraph()): any[] {
-    return new GraphProjection(this).relations(physical);
+  discoverRelationInstances(physical: any = null): any[] {
+    return physical
+      ? new GraphProjection(this).relations(physical)
+      : new GraphProjection(this).relationsFromCache();
   }
 
   getPortEndpoint(portGlobalId: string, edgesByNode: Map<string, any[]>, relationGlobalId: string): string | null {
     return new GraphProjection(this).portEndpoint(portGlobalId, edgesByNode, relationGlobalId);
   }
 
-  nodeTypeAssignments(physical: any = this.physicalGraph()): Map<string, any> {
-    return new GraphProjection(this).nodeTypeAssignments(physical);
+  nodeTypeAssignments(physical: any = null): Map<string, any> {
+    return physical
+      ? new GraphProjection(this).nodeTypeAssignments(physical)
+      : new GraphProjection(this).nodeTypeAssignmentsFromCache();
   }
 
   isSchemaRoot(globalId: string): boolean {
