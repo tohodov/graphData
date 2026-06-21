@@ -720,10 +720,10 @@ export class WebGpuGraphCanvas {
     };
   }
 
-  buildRenderMemory(graph) {
-    const nodes = graph.nodes.filter(node => this.positions.has(node.name));
-    const nodeIndexByName = new Map(nodes.map((node, index) => [node.name, index]));
-    const edgeMap = new Map();
+  buildRenderMemory(graph: import("../domain/GraphModel.js").ProjectedGraph): import("./GraphRenderer.js").GraphRenderMemory {
+    const nodes = graph.nodes.filter(node => this.positions.has(node.name ?? ""));
+    const nodeIndexByName = new Map<string, number>(nodes.map((node, index) => [node.name ?? "", index]));
+    const edgeMap = new Map<string, import("../domain/GraphModel.js").ProjectedGraphEdge & { sourceIndex?: number; targetIndex?: number }>();
 
     graph.edges.forEach(edge => {
       if (edge.collapsed) {

@@ -5,12 +5,6 @@ import { GraphProjection } from "./GraphProjection.js";
 import type { GraphType } from "./GraphType.js";
 import type { GraphEdgeSnapshot, GraphEdgeControlSnapshot } from "./GraphEdge.js";
 
-interface PositionableNode extends GraphNode {
-  position?: GraphPoint | null;
-  hasPosition?: () => boolean;
-  setPosition?: (p: GraphPoint) => void;
-  clearPosition?: () => void;
-}
 
 class GraphNodePositionMap {
   private readonly nodes: Map<string, GraphNode>;
@@ -94,31 +88,31 @@ class GraphNodePositionMap {
   }
 
   private nodePosition(node: GraphNode): GraphPoint | null {
-    const position = (node as PositionableNode).position;
+    const position = (node as GraphNode).position;
     return position && Number.isFinite(position.x) && Number.isFinite(position.y)
       ? position
       : null;
   }
 
   private nodeHasPosition(node: GraphNode): boolean {
-    return typeof (node as PositionableNode).hasPosition === "function"
-      ? (node as PositionableNode).hasPosition!()
+    return typeof (node as GraphNode).hasPosition === "function"
+      ? (node as GraphNode).hasPosition!()
       : this.nodePosition(node) !== null;
   }
 
   private setNodePosition(node: GraphNode, position: GraphPoint): void {
-    if (typeof (node as PositionableNode).setPosition === "function") {
-      (node as PositionableNode).setPosition!(position);
+    if (typeof (node as GraphNode).setPosition === "function") {
+      (node as GraphNode).setPosition!(position);
     } else {
-      (node as PositionableNode).position = { x: position.x, y: position.y };
+      (node as GraphNode).position = { x: position.x, y: position.y };
     }
   }
 
   private clearNodePosition(node: GraphNode): void {
-    if (typeof (node as PositionableNode).clearPosition === "function") {
-      (node as PositionableNode).clearPosition!();
+    if (typeof (node as GraphNode).clearPosition === "function") {
+      (node as GraphNode).clearPosition!();
     } else {
-      (node as PositionableNode).position = null;
+      (node as GraphNode).position = null;
     }
   }
 }
@@ -231,6 +225,7 @@ export type ProjectedGraphEdge = {
   viewRank?: number;
   viewRankReason?: string;
   selected?: boolean;
+  controls?: import("./GraphEdge.js").GraphEdgeControlSnapshot[];
 };
 
 export type ProjectedGraph = {
@@ -315,11 +310,11 @@ export class GraphModel {
   }
 
   applyUiSettings(settings: Record<string, unknown> | null | undefined): void {
-    const basis = GraphModel.readBasis(settings?.basis ?? settings?.systemNodeIds, this.schema.defaultBasis);
+    const basis = GraphModel.readBasis((settings?.basis ?? settings?.systemNodeIds) as Record<string, unknown>, this.schema.defaultBasis);
     this.schema.defaultBasis = { ...basis };
     this.schema.basis = { ...basis };
-    this.schema.systemNodeIds = { ...(settings?.systemNodeIds ?? {}) };
-    this.schema.baseTypeIds = { ...(settings?.baseTypeIds ?? {}) };
+    this.schema.systemNodeIds = { ...((settings?.systemNodeIds as Record<string, string>) ?? {}) };
+    this.schema.baseTypeIds = { ...((settings?.baseTypeIds as Record<string, string>) ?? {}) };
   }
 
   defaultBasis(): { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string } {
@@ -611,20 +606,20 @@ export class GraphModel {
     return this.intermediateGraph;
   }
 
-  *primitiveNodeViews(): IterableIterator<Record<string, unknown>> {
+  *primitiveNodeViews(): IterableIterator<GraphNode> {
     for (const node of this.loaded.values()) {
-      yield node.toViewNode();
+      yield node.toViewNode() as unknown as GraphNode;
     }
   }
 
-  *primitiveEdgeViews(): IterableIterator<Record<string, unknown>> {
+  *primitiveEdgeViews(): IterableIterator<GraphEdge> {
     const emitted = new Set<string>();
     for (const node of this.loaded.values()) {
       for (const edge of node.edges ?? []) {
         const normalized = GraphEdge.from(edge);
         if (!emitted.has(normalized.key)) {
           emitted.add(normalized.key);
-          yield normalized.toViewEdge(this.edgeEndpointNodes(normalized));
+          yield normalized.toViewEdge(this.edgeEndpointNodes(normalized)) as unknown as GraphEdge;
         }
       }
     }
@@ -735,7 +730,7 @@ export class GraphModel {
 
     const relationGlobalId = this.projectedRelationGlobalId(edge);
     if (relationGlobalId) {
-      return Boolean((this.loaded.get(relationGlobalId) as Record<string, unknown>)?.collapsed);
+      return Boolean(this.loaded.get(relationGlobalId)?.collapsed);
     }
 
     const key = this.edgeKey(edge);
@@ -774,7 +769,7 @@ export class GraphModel {
       return;
     }
 
-    const relation = this.loaded.get(relationGlobalId) as Record<string, unknown>;
+    const relation = this.loaded.get(relationGlobalId);
     if (relation) {
       relation.collapsed = collapsed;
     }
@@ -794,17 +789,17 @@ export class GraphModel {
     return new GraphProjection(this).rank(graph);
   }
 
-  discoverRelationInstances(physical: ProjectedGraph | null = null): GraphNode[] {
+  discoverRelationInstances(physical: ProjectedGraph | null = null): import("./GraphProjection.js").RelationInstance[] {
     return physical
       ? new GraphProjection(this).relations(physical)
       : new GraphProjection(this).relationsFromCache();
   }
 
-  getPortEndpoint(portGlobalId: string, edgesByNode: Map<string, GraphEdge[]>, relationGlobalId: string): string | null {
+  getPortEndpoint(portGlobalId: string, edgesByNode: Map<string, ProjectedGraphEdge[]>, relationGlobalId: string): string | null {
     return new GraphProjection(this).portEndpoint(portGlobalId, edgesByNode, relationGlobalId);
   }
 
-  nodeTypeAssignments(physical: ProjectedGraph | null = null): Map<string, string[]> {
+  nodeTypeAssignments(physical: ProjectedGraph | null = null): Map<string, GraphType> {
     return physical
       ? new GraphProjection(this).nodeTypeAssignments(physical)
       : new GraphProjection(this).nodeTypeAssignmentsFromCache();
@@ -831,7 +826,7 @@ export class GraphModel {
       return node.displayName;
     }
 
-    const value = node.attributes?.[nodeType.infoAttribute];
+    const value = node.attributes?.[(nodeType as GraphType).infoAttribute];
     return value ? node.displayName + " · " + value : node.displayName;
   }
 }

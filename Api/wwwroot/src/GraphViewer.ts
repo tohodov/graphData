@@ -24,6 +24,19 @@ type GraphViewerDependencies = {
   api?: GraphApi;
 };
 
+export type GraphViewerOptions = {
+  silent?: boolean;
+  select?: boolean;
+  preserveBusy?: boolean;
+  selectRoot?: boolean;
+  showed?: boolean;
+  parentGlobalId?: string;
+  typeGlobalId?: string;
+  relationLocalId?: string;
+  relationGlobalId?: string;
+  fromName?: string;
+};
+
 export class GraphViewer {
   document: Document;
   window: Window;
@@ -220,7 +233,7 @@ export class GraphViewer {
   async loadUiSettings() {
     try {
       const settings = await this.apiJson("/api/ui/settings");
-      this.graph.applyUiSettings(settings);
+      this.graph.applyUiSettings(settings as Record<string, unknown>);
     } catch (error) {
       this.setStatus(`Не удалось загрузить настройки UI: ${error.message}`);
     }
@@ -391,7 +404,7 @@ export class GraphViewer {
   this.setBusy(true);
   this.setEmptyState("Загрузка корней...");
   try {
-    const response = await this.loadSubgraphForRoots([], 0);
+    const response = (await this.loadSubgraphForRoots([], 1)) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
     const nodes = response.nodes ?? [];
     this.loadSubgraphIntoViewer(response, [], { selectRoot: false });
     this.renderSubgraphResults(response);
@@ -409,7 +422,7 @@ export class GraphViewer {
 
   }
 
-  async loadNode(name: string, fromName: string | null = null, options: { silent?: boolean; select?: boolean } = {}) {
+  async loadNode(name: string, fromName: string | null = null, options: GraphViewerOptions = {}) {
   const select = options.select ?? true;
   this.setBusy(true);
   try {
@@ -452,7 +465,7 @@ export class GraphViewer {
 
   }
 
-  storeNodeExpansion(expansion: import("./domain/GraphNode.js").GraphNodeSnapshot, fromName: string | null = null, options: { silent?: boolean; select?: boolean } = {}) {
+  storeNodeExpansion(expansion: import("./domain/GraphNode.js").GraphNodeSnapshot, fromName: string | null = null, options: GraphViewerOptions = {}) {
   const select = options.select ?? true;
   const incoming = GraphNode.from(expansion);
   const existing = this.graph.loaded.get(incoming.name);
@@ -497,7 +510,7 @@ export class GraphViewer {
 
   }
 
-  async createNode(name: string, options: { silent?: boolean } = {}) {
+  async createNode(name: string, options: GraphViewerOptions = {}) {
   const parentGlobalId = options.parentGlobalId || null;
   const typeGlobalId = options.typeGlobalId || "";
   this.setBusy(true);
@@ -591,7 +604,7 @@ export class GraphViewer {
 
   }
 
-  async connectNodes(sourceGlobalId: string, targetGlobalId: string, options: { silent?: boolean; relationGlobalId?: string; typeGlobalId?: string } = {}) {
+  async connectNodes(sourceGlobalId: string, targetGlobalId: string, options: GraphViewerOptions = {}) {
   const typeGlobalId = options.typeGlobalId || "";
   this.setBusy(true);
   try {
@@ -704,7 +717,7 @@ export class GraphViewer {
 
   }
 
-  async refreshTypes(options: { silent?: boolean } = {}) {
+  async refreshTypes(options: GraphViewerOptions = {}) {
   if (!options.preserveBusy) {
     this.setBusy(true);
   }
@@ -1003,7 +1016,7 @@ export class GraphViewer {
 
   }
 
-  async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge, typeGlobalId: string, options: { silent?: boolean } = {}) {
+  async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { sourceGlobalId: string; targetGlobalId: string; relationGlobalId: string | null }, typeGlobalId: string, options: GraphViewerOptions = {}) {
   const relationRoot = this.getBasis().relationRoot?.trim();
   return this.apiJson("/api/graph/edges/type", {
     method: "PUT",
@@ -1286,7 +1299,7 @@ export class GraphViewer {
         maxDepth: this.readNumber("#subgraph-depth", 1),
         includeDisconnectedRoots: (this.document.querySelector("#subgraph-include-disconnected") as HTMLInputElement).checked
       })
-    });
+    }) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
     this.loadSubgraphIntoViewer(response, roots);
     this.renderSubgraphResults(response);
     this.renderTypeControls();
@@ -1299,7 +1312,7 @@ export class GraphViewer {
 
   }
 
-  loadSubgraphIntoViewer(response: { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[]; edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }, roots: string[], options: { silent?: boolean } = {}) {
+  loadSubgraphIntoViewer(response: { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[]; edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }, roots: string[], options: GraphViewerOptions = {}) {
   const basisNodes = this.cachedBasisNodes();
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
@@ -1338,7 +1351,7 @@ export class GraphViewer {
 
   }
 
-  mergeSubgraphIntoViewer(response: { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[]; edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }, options: { silent?: boolean; select?: boolean } = {}) {
+  mergeSubgraphIntoViewer(response: { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[]; edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }, options: GraphViewerOptions = {}) {
   const select = options.select ?? false;
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
@@ -1446,7 +1459,7 @@ export class GraphViewer {
 
   }
 
-  async loadSubgraphForRoots(roots, maxDepth = 1) {
+  async loadSubgraphForRoots(roots: string[], maxDepth = 1): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
   return this.apiJson("/api/graph/subgraph", {
     method: "POST",
     body: JSON.stringify({
@@ -1559,7 +1572,7 @@ export class GraphViewer {
 
   }
 
-  revealLoadedNode(name: string, fromName: string | null = null, options: { silent?: boolean } = {}) {
+  revealLoadedNode(name: string, fromName: string | null = null, options: GraphViewerOptions = {}) {
   const node = this.graph.loaded.get(name);
   if (!node) {
     return false;
@@ -1909,9 +1922,9 @@ export class GraphViewer {
 
   }
 
-  selectedNodeObjects(graph: import("./domain/GraphModel.js").ProjectedGraph | null = null): import("./domain/GraphNode.js").GraphNode[] {
-  const nodes: import("./domain/GraphNode.js").GraphNode[] = graph?.nodes ?? [...this.graph.loaded.values()].filter(node => node.showed  === true);
-  const nodesByName = new Map<string, import("./domain/GraphNode.js").GraphNode>(nodes.map(node => [node.name, node]));
+  selectedNodeObjects(graph: import("./domain/GraphModel.js").ProjectedGraph | null = null): (import("./domain/GraphModel.js").ProjectedGraphNode | import("./domain/GraphNode.js").GraphNode)[] {
+  const nodes = graph?.nodes ?? [...this.graph.loaded.values()].filter(node => node.showed  === true);
+  const nodesByName = new Map<string, import("./domain/GraphModel.js").ProjectedGraphNode | import("./domain/GraphNode.js").GraphNode>(nodes.map(node => [node.name ?? "", node] as const));
   return [...this.graph.selectedNames]
     .map(name => nodesByName.get(name))
     .filter(Boolean);
@@ -1923,10 +1936,10 @@ export class GraphViewer {
 
   }
 
-  selectedEdgeObjects(graph: import("./domain/GraphModel.js").ProjectedGraph | null = null): import("./domain/GraphEdge.js").GraphEdge[] {
+  selectedEdgeObjects(graph: import("./domain/GraphModel.js").ProjectedGraph | null = null): (import("./domain/GraphModel.js").ProjectedGraphEdge | import("./domain/GraphEdge.js").GraphEdge)[] {
   const source = graph ?? this.graph.visibleGraph();
-  const edges: import("./domain/GraphEdge.js").GraphEdge[] = source.edges ?? [];
-  const edgesByKey = new Map<string, import("./domain/GraphEdge.js").GraphEdge>(edges.map(edge => [edge.key, edge]));
+  const edges = source.edges ?? [];
+  const edgesByKey = new Map<string, import("./domain/GraphModel.js").ProjectedGraphEdge | import("./domain/GraphEdge.js").GraphEdge>(edges.map(edge => [edge.key ?? "", edge] as const));
   return [...this.graph.selectedEdgeKeys]
     .map(key => edgesByKey.get(key))
     .filter(Boolean);

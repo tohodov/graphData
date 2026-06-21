@@ -53,7 +53,7 @@ export class GraphType {
     this.attributes = { ...(options.attributes ?? {}) };
   }
 
-  static fromNode(node: Record<string, unknown>, fallbackElement = "node"): GraphType {
+  static fromNode(node: import("./GraphNode.js").GraphNodeSnapshot, fallbackElement = "node"): GraphType {
     const fallbackRank = fallbackElement === "edge" ? 30 : 50;
     return new GraphType({
       globalId: node.globalId,

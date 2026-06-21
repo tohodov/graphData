@@ -8,8 +8,8 @@ export type GraphView = {
 
 export type GraphRenderMemory = {
   graph: ProjectedGraph;
-  nodes: Record<string, unknown>[];
-  edges: Record<string, unknown>[];
+  nodes: import("../domain/GraphModel.js").ProjectedGraphNode[];
+  edges: (import("../domain/GraphModel.js").ProjectedGraphEdge & { sourceIndex?: number; targetIndex?: number })[];
   nodeIndexByName: Map<string, number>;
   nodeCount: number;
   edgeCount: number;

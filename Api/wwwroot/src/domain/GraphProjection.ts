@@ -31,7 +31,7 @@ export class GraphProjection {
     return this.projectFromIterables(physical?.nodes ?? [], physical?.edges ?? []);
   }
 
-  projectFromIterables(nodes: Iterable<Record<string, unknown>>, edges: Iterable<Record<string, unknown>>): ProjectedGraph {
+  projectFromIterables(nodes: Iterable<import("./GraphModel.js").ProjectedGraphNode | import("./GraphNode.js").GraphNode>, edges: Iterable<import("./GraphModel.js").ProjectedGraphEdge | import("./GraphEdge.js").GraphEdge>): ProjectedGraph {
     const source = this.visiblePrimitiveGraph(nodes, edges);
     if (!this.hasBasisRules()) {
       return this.rank(source);
@@ -117,16 +117,16 @@ export class GraphProjection {
       || (this.model.schema.edgeTypes?.size ?? 0) > 0;
   }
 
-  visiblePrimitiveGraph(nodes: Iterable<Record<string, unknown>>, edges: Iterable<Record<string, unknown>>): ProjectedGraph {
-    const primitiveNodes = [...nodes];
+  visiblePrimitiveGraph(nodes: Iterable<import("./GraphModel.js").ProjectedGraphNode | import("./GraphNode.js").GraphNode>, edges: Iterable<import("./GraphModel.js").ProjectedGraphEdge | import("./GraphEdge.js").GraphEdge>): ProjectedGraph {
+    const primitiveNodes = [...nodes] as import("./GraphModel.js").ProjectedGraphNode[];
     const visibleNodeIds = new Set(
       primitiveNodes
         .filter(node => node.showed === true)
-        .map(node => node.name)
+        .map(node => node.name ?? "")
     );
     return {
-      nodes: primitiveNodes.filter(node => visibleNodeIds.has(node.name)),
-      edges: [...edges].filter(edge =>
+      nodes: primitiveNodes.filter(node => visibleNodeIds.has(node.name ?? "")),
+      edges: ([...edges] as import("./GraphModel.js").ProjectedGraphEdge[]).filter(edge =>
         visibleNodeIds.has(edge.sourceGlobalId) || visibleNodeIds.has(edge.targetGlobalId))
     };
   }
@@ -195,7 +195,7 @@ export class GraphProjection {
 
   relations(physical: ProjectedGraph): RelationInstance[] {
     const nodesByName = new Map(physical.nodes.map(node => [node.name, node]));
-    const edgesByNode = new Map();
+    const edgesByNode = new Map<string, import("./GraphModel.js").ProjectedGraphEdge[]>();
     physical.edges.forEach(edge => {
       if (!edgesByNode.has(edge.sourceGlobalId)) edgesByNode.set(edge.sourceGlobalId, []);
       if (!edgesByNode.has(edge.targetGlobalId)) edgesByNode.set(edge.targetGlobalId, []);
@@ -251,7 +251,7 @@ export class GraphProjection {
       .filter(relation => relation.sourceGlobalId && relation.targetGlobalId);
   }
 
-  portEndpoint(portGlobalId: string, edgesByNode: Map<string, Record<string, unknown>[]>, relationGlobalId: string): string | null {
+  portEndpoint(portGlobalId: string, edgesByNode: Map<string, import("./GraphModel.js").ProjectedGraphEdge[]>, relationGlobalId: string): string | null {
     const edges = edgesByNode.get(portGlobalId) ?? [];
     const edge = edges.find(item => item.sourceGlobalId !== relationGlobalId && item.targetGlobalId !== relationGlobalId)
       ?? edges.find(item => item.sourceGlobalId !== portGlobalId || item.targetGlobalId !== relationGlobalId);
