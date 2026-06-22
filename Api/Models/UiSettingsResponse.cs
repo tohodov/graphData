@@ -30,10 +30,10 @@ public sealed record UiBaseTypeIdsResponse
 
     public required string NodeInstance { get; init; }
 
-    // Compatibility name for UI code that still treats relation node types as edge projection types.
-    public required string EdgeType { get; init; }
+    public required string Connection { get; init; }
 
-    public required string Relation { get; init; }
+    // Compatibility name for UI code that treats typed connection node types as edge projection types.
+    public required string EdgeType { get; init; }
 
     public required string Endpoint { get; init; }
 

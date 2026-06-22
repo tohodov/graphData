@@ -692,7 +692,7 @@ export class GraphViewer {
 
     await this.upsertGraphType(basis.nodeTypeRoot, "Type", "Type", "#334155", "node", false, 90);
     await this.upsertGraphType(basis.nodeTypeRoot, "Instance", "Instance", "#0f766e", "node", false, 70);
-    await this.upsertGraphType(basis.nodeTypeRoot, "Relation", "Relation", "#7c2d12", "edge", true, 60);
+    await this.upsertGraphType(basis.nodeTypeRoot, "Connection", "Connection", "#7c2d12", "edge", true, 60);
     await this.upsertGraphType(basis.nodeTypeRoot, "Endpoint", "Endpoint", "#0f766e", "node", false, 45);
     await this.upsertGraphType(basis.nodeTypeRoot, "Port", "Port", "#0f766e", "node", false, 45);
 
@@ -833,10 +833,11 @@ export class GraphViewer {
     return "node";
   }
 
-  if (path === baseTypeIds.edgeType || path === baseTypeIds.relation) {
+  if (path === baseTypeIds.edgeType || path === baseTypeIds.connection || path === baseTypeIds.relation) {
     return "edge";
   }
   if (this.hasBasisEdge(edgePairs, path, baseTypeIds.edgeType)
+      || this.hasBasisEdge(edgePairs, path, baseTypeIds.connection)
       || this.hasBasisEdge(edgePairs, path, baseTypeIds.relation)) {
     return "edge";
   }

@@ -6,7 +6,7 @@ namespace GraphData.Core.Services;
 
 public sealed class GraphStorageInitializer
 {
-    private const string RuntimeTypesVersion = "5";
+    private const string RuntimeTypesVersion = "6";
 
     private readonly IGraphStorage _storage;
     private readonly GraphRuntimeTypeCatalog _runtimeTypes;
@@ -65,14 +65,19 @@ public sealed class GraphStorageInitializer
             subgraph.GetNode(type.TypeId);
             if (type.TypeId != GraphBaseTypeIds.NodeType)
                 subgraph.Connect(type.TypeId, GraphBaseTypeIds.NodeType);
-            if (type.EdgeTypeDescriptor is not null && type.TypeId != GraphBaseTypeIds.Relation)
-                subgraph.Connect(type.TypeId, GraphBaseTypeIds.Relation);
 
-            if (type.EdgeTypeDescriptor is null
-                || !_runtimeTypes.TryCreateEdgeTypeDefinition(type.TypeId, out var edgeDefinition))
+            if (type.NodeTypeDescriptor is null
+                || !_runtimeTypes.TryCreateNodeTypeDefinition(
+                    type.TypeId,
+                    NodeType.FromState(subgraph.GetNode(type.TypeId).State),
+                    out var nodeTypeDefinition)
+                || !TypedEdgeDefinition.TryCreate(nodeTypeDefinition, out var typedEdgeDefinition))
                 continue;
 
-            foreach (var endpoint in edgeDefinition.Endpoints) {
+            if (type.TypeId != GraphBaseTypeIds.Connection)
+                subgraph.Connect(type.TypeId, GraphBaseTypeIds.Connection);
+
+            foreach (var endpoint in typedEdgeDefinition.Endpoints) {
                 var endpointId = new InternalId(type.TypeId.Concat([new NodeLocalId(endpoint.Name)]));
                 subgraph.GetNode(endpointId);
                 if (endpoint.NodeTypeId is { } nodeTypeId)

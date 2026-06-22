@@ -427,7 +427,7 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
-    public void GraphModel_ProjectedEdgeStateIsStoredOnRelationObject() {
+    public void GraphModel_ProjectedEdgeStateIsStoredOnTypedEdgeNode() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
             ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
@@ -443,14 +443,14 @@ public sealed class GraphUiRegressionTests {
               }
             });
 
-            const typeId = "graphdata/types/nodes/Relation";
+            const typeId = "graphdata/types/nodes/Connection";
             const relationId = "r1";
             const sourcePortId = relationId + "/source";
             const targetPortId = relationId + "/target";
             const typePortId = relationId + "/type";
             model.schema.edgeTypes.set(typeId, {
               path: typeId,
-              label: "Relation",
+              label: "Connection",
               visible: true,
               collapsed: true
             });
@@ -494,7 +494,7 @@ public sealed class GraphUiRegressionTests {
             }));
             model.putNode(new GraphNode({
               globalId: typeId,
-              displayName: "Relation",
+              displayName: "Connection",
               edges: []
             }));
 
@@ -611,7 +611,7 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
-    public void GraphProjection_LeavesRelationPrimitiveWhenEdgeTypeIsExpanded() {
+    public void GraphProjection_LeavesTypedEdgePrimitiveWhenEdgeTypeIsExpanded() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
             ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
@@ -854,7 +854,7 @@ public sealed class GraphUiRegressionTests {
               },
               baseTypeIds: {
                 nodeInstance: "backend/types/nodes/Instance",
-                edgeType: "backend/types/nodes/Relation"
+                edgeType: "backend/types/nodes/Connection"
               }
             });
 
@@ -864,7 +864,7 @@ public sealed class GraphUiRegressionTests {
               && model.defaultBasis().relationRoot === ""
               && model.schema.systemNodeIds.graphDataRoot === "backend/root"
               && model.schema.baseTypeIds.nodeInstance === "backend/types/nodes/Instance"
-              && model.schema.baseTypeIds.edgeType === "backend/types/nodes/Relation";
+              && model.schema.baseTypeIds.edgeType === "backend/types/nodes/Connection";
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());

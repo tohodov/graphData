@@ -352,12 +352,12 @@ public sealed class GraphControllerTests {
     }
 
     [TestMethod]
-    public async Task ChangeEdgeTypeAsync_CreatesRelationSubgraphForBasicEdgeAndReturnsIt() {
+    public async Task ChangeEdgeTypeAsync_CreatesTypedEdgeSubgraphForBasicEdgeAndReturnsIt() {
         await using var scope = TestGraphStorageScope.Create();
         await new GraphStorageInitializer(scope.Storage).InitializeAsync();
         var newType = (await scope.Storage.Create(new("new-type"), GraphSystemNodeIds.NodeTypeRoot)).Value!;
         await scope.Storage.Connect(newType.GlobalId, GraphBaseTypeIds.NodeType);
-        await scope.Storage.Connect(newType.GlobalId, GraphBaseTypeIds.Relation);
+        await scope.Storage.Connect(newType.GlobalId, GraphBaseTypeIds.Connection);
         var source = (await scope.Storage.Create(new("source"))).Value!;
         var target = (await scope.Storage.Create(new("target"))).Value!;
         await scope.Storage.Connect(source.GlobalId, target.GlobalId);
@@ -367,7 +367,7 @@ public sealed class GraphControllerTests {
             Node1InternalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             Node2InternalId = target.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = newType.GlobalId.Select(static segment => segment.ToString()).ToArray(),
-            RelationLocalId = "relation-1"
+            TypedEdgeLocalId = "typed-edge-1"
         });
 
         var ok = result.Result as OkObjectResult;
@@ -375,8 +375,8 @@ public sealed class GraphControllerTests {
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
 
-        var relation = response.Nodes.Single(node => node.InternalId == "relation-1");
-        Assert.AreEqual("relation-1", relation.InternalId);
+        var relation = response.Nodes.Single(node => node.InternalId == "typed-edge-1");
+        Assert.AreEqual("typed-edge-1", relation.InternalId);
         Assert.AreEqual(0, relation.Attributes.Count);
 
         var returnedIds = response.Nodes.Select(static node => node.InternalId).ToHashSet(StringComparer.Ordinal);
@@ -393,15 +393,15 @@ public sealed class GraphControllerTests {
         Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, source.GlobalId.ToString()))));
         Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, target.GlobalId.ToString()))));
 
-        var storedRelation = (await scope.Storage.Get(new NodePath("relation-1"))).Value!;
+        var storedRelation = (await scope.Storage.Get(new NodePath("typed-edge-1"))).Value!;
         Assert.AreEqual(0, storedRelation.Attributes.Count);
 
         var replacementType = (await scope.Storage.Create(new("replacement-type"), GraphSystemNodeIds.NodeTypeRoot)).Value!;
         await scope.Storage.Connect(replacementType.GlobalId, GraphBaseTypeIds.NodeType);
-        await scope.Storage.Connect(replacementType.GlobalId, GraphBaseTypeIds.Relation);
+        await scope.Storage.Connect(replacementType.GlobalId, GraphBaseTypeIds.Connection);
         await scope.Storage.Update(storedRelation.GlobalId, new Dictionary<string, string> { ["note"] = "user note" });
         var retyped = await controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
-            RelationGlobalId = storedRelation.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            TypedEdgeGlobalId = storedRelation.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = replacementType.GlobalId.Select(static segment => segment.ToString()).ToArray()
         });
         Assert.IsInstanceOfType(retyped.Result, typeof(OkObjectResult));

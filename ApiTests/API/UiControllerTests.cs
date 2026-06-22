@@ -20,7 +20,8 @@ public sealed class UiControllerTests
         Assert.AreEqual(GraphSystemNodeIds.NodeTypeRoot.ToString(), settings.Basis.NodeTypeRoot);
         Assert.AreEqual(GraphSystemNodeIds.RuntimeTypesInitializer.ToString(), settings.SystemNodeIds.RuntimeTypesInitializer);
         Assert.AreEqual(GraphBaseTypeIds.NodeInstance.ToString(), settings.BaseTypeIds.NodeInstance);
-        Assert.AreEqual(GraphBaseTypeIds.Relation.ToString(), settings.BaseTypeIds.EdgeType);
+        Assert.AreEqual(GraphBaseTypeIds.Connection.ToString(), settings.BaseTypeIds.Connection);
+        Assert.AreEqual(GraphBaseTypeIds.Connection.ToString(), settings.BaseTypeIds.EdgeType);
         Assert.AreEqual(GraphBaseTypeIds.Endpoint.ToString(), settings.BaseTypeIds.Endpoint);
         Assert.AreEqual(GraphBaseTypeIds.Port.ToString(), settings.BaseTypeIds.Port);
     }

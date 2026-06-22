@@ -33,7 +33,7 @@ public sealed class GraphElementDslTests
 
         Assert.AreEqual(GraphBaseTypeIds.NodeInstance, InstanceNode.StaticTypeId);
         Assert.AreEqual(GraphBaseTypeIds.NodeType, new InternalId("graphdata", "types", "nodes", "Type"));
-        Assert.AreEqual(GraphBaseTypeIds.Relation, new InternalId("graphdata", "types", "nodes", "Relation"));
+        Assert.AreEqual(GraphBaseTypeIds.Connection, new InternalId("graphdata", "types", "nodes", "Connection"));
         Assert.AreEqual(GraphBaseTypeIds.Endpoint, new InternalId("graphdata", "types", "nodes", "Endpoint"));
         Assert.AreEqual(GraphBaseTypeIds.Port, new InternalId("graphdata", "types", "nodes", "Port"));
         Assert.AreEqual(typeNode.GlobalId, typeState.GlobalId);

@@ -28,11 +28,11 @@ public sealed class GraphStorageInitializerTests
         AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphSystemNodeIds.NodeTypeRoot));
         AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.NodeType));
         AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.NodeInstance));
-        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.Relation));
+        AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.Connection));
         AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.Endpoint));
         AssertNoAttributes(await GetRequiredAsync(scope.Storage, GraphBaseTypeIds.Port));
         await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.NodeInstance, GraphBaseTypeIds.NodeType);
-        await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.Relation, GraphBaseTypeIds.NodeType);
+        await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.Connection, GraphBaseTypeIds.NodeType);
         await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.Endpoint, GraphBaseTypeIds.NodeType);
         await AssertConnectedAsync(scope.Storage, GraphBaseTypeIds.Port, GraphBaseTypeIds.NodeType);
 
@@ -47,7 +47,7 @@ public sealed class GraphStorageInitializerTests
             new[] {
                 GraphBaseTypeIds.NodeType,
                 GraphBaseTypeIds.NodeInstance,
-                GraphBaseTypeIds.Relation,
+                GraphBaseTypeIds.Connection,
                 GraphBaseTypeIds.Endpoint,
                 GraphBaseTypeIds.Port
             },
@@ -180,7 +180,7 @@ public sealed class GraphStorageInitializerTests
     {
         var subgraph = (await service.GetSubgraph([GraphSystemNodeIds.RuntimeTypesInitializer], 2)).Value!;
         Assert.IsTrue(
-            subgraph.Nodes.Any(node => node.GlobalId.ToString().StartsWith($"{GraphSystemNodeIds.RuntimeTypesInitializer}/5/", StringComparison.Ordinal)),
+            subgraph.Nodes.Any(node => node.GlobalId.ToString().StartsWith($"{GraphSystemNodeIds.RuntimeTypesInitializer}/6/", StringComparison.Ordinal)),
             "Expected runtime type initializer completion marker node.");
     }
 

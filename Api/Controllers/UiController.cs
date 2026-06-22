@@ -25,8 +25,8 @@ public sealed class UiController : ControllerBase
             {
                 NodeType = GraphBaseTypeIds.NodeType.ToString(),
                 NodeInstance = GraphBaseTypeIds.NodeInstance.ToString(),
-                EdgeType = GraphBaseTypeIds.Relation.ToString(),
-                Relation = GraphBaseTypeIds.Relation.ToString(),
+                Connection = GraphBaseTypeIds.Connection.ToString(),
+                EdgeType = GraphBaseTypeIds.Connection.ToString(),
                 Endpoint = GraphBaseTypeIds.Endpoint.ToString(),
                 Port = GraphBaseTypeIds.Port.ToString()
             },

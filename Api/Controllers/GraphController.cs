@@ -71,9 +71,9 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
             (InternalId?)request.Node1InternalId,
             (InternalId?)request.Node2InternalId,
             new InternalId(request.TypeGlobalId),
-            (InternalId?)request.RelationGlobalId,
-            (InternalId?)request.RelationParentGlobalId,
-            (NodeLocalId?)request.RelationLocalId);
+            (InternalId?)(request.TypedEdgeGlobalId ?? request.RelationGlobalId),
+            (InternalId?)(request.TypedEdgeParentGlobalId ?? request.RelationParentGlobalId),
+            (NodeLocalId?)(request.TypedEdgeLocalId ?? request.RelationLocalId));
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 

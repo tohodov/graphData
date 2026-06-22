@@ -20,7 +20,7 @@ Open it at `/`.
 The viewer treats the graph as a lazily loaded neighborhood rather than a fully
 materialized database snapshot. Loading a node from the backend also returns its
 incident edges. Each edge response carries enough endpoint metadata to draw the
-relation immediately, even when the node on the other end has not been loaded as
+connection immediately, even when the node on the other end has not been loaded as
 a full node expansion yet.
 
 The initial no-query screen uses `POST /api/graph/subgraph` with an empty

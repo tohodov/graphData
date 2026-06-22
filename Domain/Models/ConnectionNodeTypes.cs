@@ -1,6 +1,6 @@
 namespace GraphData.Core.Models;
 
-public sealed class RelationNodeType : NodeType
+public sealed class ConnectionNodeType : NodeType
 {
     public override void Define(NodeTypeBuilder type)
     {
