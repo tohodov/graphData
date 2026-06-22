@@ -55,31 +55,31 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
 
     [HttpPost("connections")]
     public async Task<ActionResult<OperationResponse>> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
-        var result = await graph.ConnectNodesAsync(new NodePath(request.SourceGlobalId), new NodePath(request.TargetGlobalId));
+        var result = await graph.ConnectNodesAsync(new InternalId(request.Node1InternalId), new InternalId(request.Node2InternalId));
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
     }
 
     [HttpPut("nodes/type")]
     public async Task<ActionResult<SubgraphResponse>> AssignNodeTypeAsync([FromBody] AssignNodeTypeRequest request) {
-        var result = await graph.AssignNodeTypeAsync(new NodePath(request.InternalId), new NodePath(request.TypeGlobalId));
+        var result = await graph.AssignNodeTypeAsync(new InternalId(request.InternalId), new InternalId(request.TypeGlobalId));
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
     [HttpPut("edges/type")]
     public async Task<ActionResult<SubgraphResponse>> ChangeEdgeTypeAsync([FromBody] ChangeEdgeTypeRequest request) {
         var result = await graph.ChangeEdgeTypeAsync(
-            (NodePath?)request.SourceGlobalId,
-            (NodePath?)request.TargetGlobalId,
-            new NodePath(request.TypeGlobalId),
-            (NodePath?)request.RelationGlobalId,
-            (NodePath?)request.RelationParentGlobalId,
+            (InternalId?)request.Node1InternalId,
+            (InternalId?)request.Node2InternalId,
+            new InternalId(request.TypeGlobalId),
+            (InternalId?)request.RelationGlobalId,
+            (InternalId?)request.RelationParentGlobalId,
             (NodeLocalId?)request.RelationLocalId);
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
     [HttpPost("subgraph")]
     public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request) {
-        var result = await graph.GetSubgraph(request.GlobalIds.Select(x => new NodePath(x)), request.MaxDepth);
+        var result = await graph.GetSubgraph(request.Paths.Select(x => new NodePath(x)), request.MaxDepth);
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 

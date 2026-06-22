@@ -10,8 +10,8 @@ export type RelationInstance = {
   relationGlobalId: string;
   displayName: string;
   collapsed: boolean;
-  node1Path: string | null;
-  node2Path: string | null;
+  node1InternalId: string | null;
+  node2InternalId: string | null;
   type: GraphType | null | undefined;
   portGlobalIds: string[];
   physicalEdgeKeys: Set<string>;
@@ -79,25 +79,25 @@ export class GraphProjection {
     }
 
     const physicalEdges = source.edges.filter(edge => {
-      const sourceVisible = visibleNodeIds.has(edge.node1Path);
-      const targetVisible = visibleNodeIds.has(edge.node2Path);
+      const sourceVisible = visibleNodeIds.has(edge.node1InternalId);
+      const targetVisible = visibleNodeIds.has(edge.node2InternalId);
       return (sourceVisible || targetVisible)
-        && !hidden.has(edge.node1Path)
-        && !hidden.has(edge.node2Path)
-        && !hiddenPhysicalEdges.has(edge.key ?? GraphEdge.keyFor(edge.node1Path, edge.node2Path));
+        && !hidden.has(edge.node1InternalId)
+        && !hidden.has(edge.node2InternalId)
+        && !hiddenPhysicalEdges.has(edge.key ?? GraphEdge.keyFor(edge.node1InternalId, edge.node2InternalId));
     });
 
     const projectedEdges = collapsedRelations
-      .filter(relation => visibleNodeIds.has(relation.node1Path ?? "") && visibleNodeIds.has(relation.node2Path ?? ""))
+      .filter(relation => visibleNodeIds.has(relation.node1InternalId ?? "") && visibleNodeIds.has(relation.node2InternalId ?? ""))
       .filter(relation => relation.type?.visible !== false)
       .map(relation => {
         const key = "projected:" + relation.relationGlobalId;
         return {
           key,
-          node1Path: relation.node1Path ?? "",
-          node2Path: relation.node2Path ?? "",
-          node1LocalId: GraphId.localId(relation.node1Path ?? ""),
-          node2LocalId: GraphId.localId(relation.node2Path ?? ""),
+          node1InternalId: relation.node1InternalId ?? "",
+          node2InternalId: relation.node2InternalId ?? "",
+          node1LocalId: GraphId.localId(relation.node1InternalId ?? ""),
+          node2LocalId: GraphId.localId(relation.node2InternalId ?? ""),
           relationGlobalId: relation.relationGlobalId,
           typeGlobalId: relation.type?.path,
           label: relation.type?.labelVisible === false ? "" : relation.type?.label ?? relation.displayName,
@@ -121,13 +121,13 @@ export class GraphProjection {
     const primitiveNodes = [...nodes] as import("./GraphModel.js").ProjectedGraphNode[];
     const visibleNodeIds = new Set(
       primitiveNodes
-        .filter(node => node.showed === true)
+        .filter(node => node.showed !== false)
         .map(node => node.name ?? "")
     );
     return {
       nodes: primitiveNodes.filter(node => visibleNodeIds.has(node.name ?? "")),
       edges: ([...edges] as import("./GraphModel.js").ProjectedGraphEdge[]).filter(edge =>
-        visibleNodeIds.has(edge.node1Path) || visibleNodeIds.has(edge.node2Path))
+        visibleNodeIds.has(edge.node1InternalId) || visibleNodeIds.has(edge.node2InternalId))
     };
   }
 
@@ -153,12 +153,12 @@ export class GraphProjection {
       const edgeType = edge.typeGlobalId ? this.model.schema.edgeTypes.get(edge.typeGlobalId) : null;
       const basisWeight = GraphType.readRank(edge.typeRank ?? edgeType?.rank, edge.projected ? 35 : 8);
       const rank = GraphType.roundRank(basisWeight);
-      const sourceStats = nodeStats.get(edge.node1Path);
-      const targetStats = nodeStats.get(edge.node2Path);
+      const sourceStats = nodeStats.get(edge.node1InternalId);
+      const targetStats = nodeStats.get(edge.node2InternalId);
       if (sourceStats) sourceStats.weightedDegree += basisWeight;
       if (targetStats) targetStats.weightedDegree += basisWeight;
-      if (this.model.selectedName === edge.node1Path && targetStats) targetStats.focusBoost += Math.min(25, basisWeight * 0.35);
-      if (this.model.selectedName === edge.node2Path && sourceStats) sourceStats.focusBoost += Math.min(25, basisWeight * 0.35);
+      if (this.model.selectedName === edge.node1InternalId && targetStats) targetStats.focusBoost += Math.min(25, basisWeight * 0.35);
+      if (this.model.selectedName === edge.node2InternalId && sourceStats) sourceStats.focusBoost += Math.min(25, basisWeight * 0.35);
       return {
         ...edge,
         viewRank: rank,
@@ -197,10 +197,10 @@ export class GraphProjection {
     const nodesByName = new Map(physical.nodes.map(node => [node.name, node]));
     const edgesByNode = new Map<string, import("./GraphModel.js").ProjectedGraphEdge[]>();
     physical.edges.forEach(edge => {
-      if (!edgesByNode.has(edge.node1Path)) edgesByNode.set(edge.node1Path, []);
-      if (!edgesByNode.has(edge.node2Path)) edgesByNode.set(edge.node2Path, []);
-      edgesByNode.get(edge.node1Path)!.push(edge);
-      edgesByNode.get(edge.node2Path)!.push(edge);
+      if (!edgesByNode.has(edge.node1InternalId)) edgesByNode.set(edge.node1InternalId, []);
+      if (!edgesByNode.has(edge.node2InternalId)) edgesByNode.set(edge.node2InternalId, []);
+      edgesByNode.get(edge.node1InternalId)!.push(edge);
+      edgesByNode.get(edge.node2InternalId)!.push(edge);
     });
 
     return physical.nodes
@@ -211,61 +211,61 @@ export class GraphProjection {
 
         const incident = edgesByNode.get(node.name ?? "") ?? [];
         return incident.some(edge => {
-          const otherId = edge.node1Path === node.name ? edge.node2Path : edge.node1Path;
+          const otherId = edge.node1InternalId === node.name ? edge.node2InternalId : edge.node1InternalId;
           return this.model.schema.edgeTypes.has(otherId);
         });
       })
       .map(relation => {
         const incident = edgesByNode.get(relation.name ?? "") ?? [];
         const ports = incident
-          .map(edge => nodesByName.get(edge.node1Path === relation.name ? edge.node2Path : edge.node1Path))
+          .map(edge => nodesByName.get(edge.node1InternalId === relation.name ? edge.node2InternalId : edge.node1InternalId))
           .filter(Boolean);
         const typePort = ports.find(port => port?.attributes?.[graphRoleAttribute] === "type")
           ?? ports.find(port => port && this.model.schema.edgeTypes.has(port.name ?? ""));
         const endpointPorts = ports.filter(port => port !== typePort);
         const sourcePort = endpointPorts.find(port => port?.attributes?.[graphRoleAttribute] === "source") ?? endpointPorts[0];
         const targetPort = endpointPorts.find(port => port?.attributes?.[graphRoleAttribute] === "target") ?? endpointPorts.find(port => port !== sourcePort);
-        const node1Path = sourcePort ? this.portEndpoint(sourcePort.name ?? "", edgesByNode, relation.name ?? "") : null;
-        const node2Path = targetPort ? this.portEndpoint(targetPort.name ?? "", edgesByNode, relation.name ?? "") : null;
+        const node1InternalId = sourcePort ? this.portEndpoint(sourcePort.name ?? "", edgesByNode, relation.name ?? "") : null;
+        const node2InternalId = targetPort ? this.portEndpoint(targetPort.name ?? "", edgesByNode, relation.name ?? "") : null;
         const typeGlobalId = typePort?.attributes?.[graphRoleAttribute] === "type"
           ? this.portEndpoint(typePort.name ?? "", edgesByNode, relation.name ?? "")
           : typePort?.name;
         const type = typeGlobalId ? this.model.schema.edgeTypes.get(typeGlobalId) : null;
-        const physicalEdgeKeys = new Set(incident.map(edge => edge.key ?? GraphEdge.keyFor(edge.node1Path, edge.node2Path)));
+        const physicalEdgeKeys = new Set(incident.map(edge => edge.key ?? GraphEdge.keyFor(edge.node1InternalId, edge.node2InternalId)));
         for (const port of ports) {
           for (const edge of edgesByNode.get(port?.name ?? "") ?? []) {
-            physicalEdgeKeys.add(edge.key ?? GraphEdge.keyFor(edge.node1Path, edge.node2Path));
+            physicalEdgeKeys.add(edge.key ?? GraphEdge.keyFor(edge.node1InternalId, edge.node2InternalId));
           }
         }
         return {
           relationGlobalId: relation.name ?? "",
           displayName: relation.displayName ?? "",
           collapsed: Boolean(relation.collapsed),
-          node1Path,
-          node2Path,
+          node1InternalId,
+          node2InternalId,
           type,
           portGlobalIds: ports.map(port => port?.name ?? ""),
           physicalEdgeKeys
         };
       })
-      .filter(relation => relation.node1Path && relation.node2Path);
+      .filter(relation => relation.node1InternalId && relation.node2InternalId);
   }
 
   portEndpoint(portGlobalId: string, edgesByNode: Map<string, import("./GraphModel.js").ProjectedGraphEdge[]>, relationGlobalId: string): string | null {
     const edges = edgesByNode.get(portGlobalId) ?? [];
-    const edge = edges.find(item => item.node1Path !== relationGlobalId && item.node2Path !== relationGlobalId)
-      ?? edges.find(item => item.node1Path !== portGlobalId || item.node2Path !== relationGlobalId);
+    const edge = edges.find(item => item.node1InternalId !== relationGlobalId && item.node2InternalId !== relationGlobalId)
+      ?? edges.find(item => item.node1InternalId !== portGlobalId || item.node2InternalId !== relationGlobalId);
     if (!edge) return null;
-    return edge.node1Path === portGlobalId ? edge.node2Path : edge.node1Path;
+    return edge.node1InternalId === portGlobalId ? edge.node2InternalId : edge.node1InternalId;
   }
 
   nodeTypeAssignments(physical: ProjectedGraph): Map<string, GraphType> {
     const result = new Map();
     for (const edge of physical.edges) {
-      const sourceType = this.model.schema.nodeTypes.get(edge.node1Path);
-      const targetType = this.model.schema.nodeTypes.get(edge.node2Path);
-      if (sourceType && !targetType) result.set(edge.node2Path, sourceType);
-      else if (targetType && !sourceType) result.set(edge.node1Path, targetType);
+      const sourceType = this.model.schema.nodeTypes.get(edge.node1InternalId);
+      const targetType = this.model.schema.nodeTypes.get(edge.node2InternalId);
+      if (sourceType && !targetType) result.set(edge.node2InternalId, sourceType);
+      else if (targetType && !sourceType) result.set(edge.node1InternalId, targetType);
     }
     return result;
   }

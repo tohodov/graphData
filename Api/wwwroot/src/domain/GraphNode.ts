@@ -53,9 +53,9 @@ export class GraphNode {
     position = null
   }: GraphNodeSnapshot) {
     this.internalId = internalId ?? globalId ?? name ?? "";
-    this.path = path ?? globalId ?? name ?? "";
-    this.name = this.path;
-    this.localId = localId ?? GraphId.localId(this.path);
+    this.path = path ?? internalId ?? globalId ?? name ?? "";
+    this.name = this.internalId;
+    this.localId = localId ?? GraphId.localId(this.internalId);
     this.displayName = displayName ?? this.localId;
     this.attributes = { ...(attributes ?? {}) };
     this.edges = edges.map(edge => GraphEdge.from(edge));

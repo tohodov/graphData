@@ -210,8 +210,8 @@ export type ProjectedGraphNode = import("./GraphNode.js").GraphNodeSnapshot & {
 
 export type ProjectedGraphEdge = {
   key?: string;
-  node1Path: string;
-  node2Path: string;
+  node1InternalId: string;
+  node2InternalId: string;
   node1LocalId?: string;
   node2LocalId?: string;
   relationGlobalId?: string;
@@ -522,7 +522,7 @@ export class GraphModel {
   removeSelectedEdgesConnectedTo(name: string): void {
     for (const key of [...this.selectedEdgeKeys]) {
       const edge = this.findEdgeObjects(key)[0];
-      if (!edge || edge.node1Path === name || edge.node2Path === name) {
+      if (!edge || edge.node1InternalId === name || edge.node2InternalId === name) {
         this.selectedEdgeKeys.delete(key);
       }
     }
@@ -674,10 +674,10 @@ export class GraphModel {
   edgeEndpointNodes(edge: GraphEdge | GraphEdgeSnapshot): Record<string, unknown> {
     const normalized = GraphEdge.from(edge);
     return {
-      node1: this.loaded.get(normalized.node1Path) ?? null,
-      node2: this.loaded.get(normalized.node2Path) ?? null,
-      node1Positioned: this.positions.has(normalized.node1Path),
-      node2Positioned: this.positions.has(normalized.node2Path)
+      node1: this.loaded.get(normalized.node1InternalId) ?? null,
+      node2: this.loaded.get(normalized.node2InternalId) ?? null,
+      node1Positioned: this.positions.has(normalized.node1InternalId),
+      node2Positioned: this.positions.has(normalized.node2InternalId)
     };
   }
 
@@ -737,7 +737,7 @@ export class GraphModel {
     return Boolean(key && this.findEdgeObjects(key).some(match => match.collapsed));
   }
 
-  edgeKey(edge: GraphEdge | string | { key?: string; node1Path?: string; node2Path?: string; }): string {
+  edgeKey(edge: GraphEdge | string | { key?: string; node1InternalId?: string; node2InternalId?: string; }): string {
     if (typeof edge === "string") {
       return edge;
     }
@@ -747,7 +747,7 @@ export class GraphModel {
     }
 
     const normalized = GraphEdge.from(edge);
-    return normalized.node1Path && normalized.node2Path ? normalized.key : "";
+    return normalized.node1InternalId && normalized.node2InternalId ? normalized.key : "";
   }
 
   findEdgeObjects(key: string): GraphEdge[] {

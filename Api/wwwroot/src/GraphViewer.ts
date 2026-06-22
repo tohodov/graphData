@@ -331,14 +331,14 @@ export class GraphViewer {
     this.connectForm.addEventListener("submit", event => {
       event.preventDefault();
       const selectedNodeNames = this.selectedNodeNames();
-      const node1Path = selectedNodeNames.length === 1 ? selectedNodeNames[0] : null;
-      const node2Path = this.connectTargetName.value.trim();
-      if (!node1Path || !node2Path) {
+      const node1InternalId = selectedNodeNames.length === 1 ? selectedNodeNames[0] : null;
+      const node2InternalId = this.connectTargetName.value.trim();
+      if (!node1InternalId || !node2InternalId) {
         this.setStatus("Выберите ровно один узел и укажите цель связи");
         return;
       }
 
-      void this.connectNodes(node1Path, node2Path, {
+      void this.connectNodes(node1InternalId, node2InternalId, {
         typeGlobalId: this.connectEdgeType.value,
         relationLocalId: this.connectEdgeName.value.trim()
       });
@@ -470,7 +470,12 @@ export class GraphViewer {
   const select = options.select ?? true;
   const incoming = GraphNode.from(expansion);
   const existing = this.graph.loaded.get(incoming.name);
-  const shouldShow = options.showed !== undefined ? options.showed : (existing ? existing.showed : undefined);
+  const keepExistingVisible = existing?.showed === true && this.graph.positions.has(existing.name);
+  const shouldShow = keepExistingVisible
+    ? true
+    : options.showed !== undefined
+      ? options.showed
+      : existing?.showed;
   incoming.showed = shouldShow;
   const stored = existing ? this.mergeNodeResponses(existing, incoming) : incoming;
   stored.showed = shouldShow;
@@ -605,28 +610,28 @@ export class GraphViewer {
 
   }
 
-  async connectNodes(node1Path: string, node2Path: string, options: GraphViewerOptions = {}) {
+  async connectNodes(node1InternalId: string, node2InternalId: string, options: GraphViewerOptions = {}) {
   const typeGlobalId = options.typeGlobalId || "";
   this.setBusy(true);
   try {
     if (typeGlobalId) {
       const subgraph = await this.changeGraphEdgeType({
-        node1Path,
-        node2Path,
+        node1InternalId,
+        node2InternalId,
         relationGlobalId: null
       }, typeGlobalId, { relationLocalId: options.relationLocalId || "" });
       this.mergeSubgraphIntoViewer(subgraph, { select: false });
-      this.graph.selectedName = node1Path;
+      this.graph.selectedName = node1InternalId;
       this.selectReturnedRelationEdges(subgraph);
     } else {
-      await this.connectGraphNodes(node1Path, node2Path);
-      await this.loadNode(node1Path, null, { select: true });
+      await this.connectGraphNodes(node1InternalId, node2InternalId);
+      await this.loadNode(node1InternalId, null, { select: true });
     }
     this.connectTargetName.value = "";
     this.connectEdgeName.value = "";
     this.render();
     this.renderTypeControls();
-    this.setStatus(`Связаны "${this.displayName(node1Path)}" и "${this.displayName(node2Path)}"`);
+    this.setStatus(`Связаны "${this.displayName(node1InternalId)}" и "${this.displayName(node2InternalId)}"`);
   } catch (error) {
     this.setStatus((error as Error).message);
   } finally {
@@ -635,12 +640,12 @@ export class GraphViewer {
 
   }
 
-  async connectGraphNodes(node1Path: string, node2Path: string) {
+  async connectGraphNodes(node1InternalId: string, node2InternalId: string) {
   await this.apiJson("/api/graph/connections", {
     method: "POST",
     body: JSON.stringify({
-      node1Path: this.parseGlobalId(node1Path),
-      node2Path: this.parseGlobalId(node2Path)
+      node1InternalId: this.parseGlobalId(node1InternalId),
+      node2InternalId: this.parseGlobalId(node2InternalId)
     }),
     expectJson: false
   });
@@ -779,8 +784,8 @@ export class GraphViewer {
   const edgePairs = new Set<string>();
   const addEdgePair = (edge: any) => {
     const normalized = this.normalizeEdgeResponse(edge);
-    if (normalized.node1Path && normalized.node2Path) {
-      edgePairs.add(GraphEdge.keyFor(normalized.node1Path, normalized.node2Path));
+    if (normalized.node1InternalId && normalized.node2InternalId) {
+      edgePairs.add(GraphEdge.keyFor(normalized.node1InternalId, normalized.node2InternalId));
     }
   };
 
@@ -998,7 +1003,7 @@ export class GraphViewer {
     for (const edge of edges) {
       const subgraph = await this.changeGraphEdgeType(edge, typeGlobalId);
       this.graph.removeSelectedEdge(edge.key ?? "");
-      this.removeLocalEdge(edge.node1Path ?? "", edge.node2Path ?? "");
+      this.removeLocalEdge(edge.node1InternalId ?? "", edge.node2InternalId ?? "");
       if (edge.relationGlobalId) {
         this.removeLocalRelationSubgraph(edge.relationGlobalId);
       }
@@ -1017,14 +1022,14 @@ export class GraphViewer {
 
   }
 
-async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { node1Path: string; node2Path: string; relationGlobalId: string | null, relationLocalId?: string }, typeGlobalId: string, options: GraphViewerOptions = {}): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
+async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { node1InternalId: string; node2InternalId: string; relationGlobalId: string | null, relationLocalId?: string }, typeGlobalId: string, options: GraphViewerOptions = {}): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
   const relationRoot = this.getBasis().relationRoot?.trim();
   return (await this.apiJson("/api/graph/edges/type", {
     method: "PUT",
     body: JSON.stringify({
       relationGlobalId: edge.relationGlobalId ? this.parseGlobalId(edge.relationGlobalId) : null,
-      node1Path: edge.node1Path ? this.parseGlobalId(edge.node1Path) : null,
-      node2Path: edge.node2Path ? this.parseGlobalId(edge.node2Path) : null,
+      node1InternalId: edge.node1InternalId ? this.parseGlobalId(edge.node1InternalId) : null,
+      node2InternalId: edge.node2InternalId ? this.parseGlobalId(edge.node2InternalId) : null,
       typeGlobalId: this.parseGlobalId(typeGlobalId),
       relationParentGlobalId: relationRoot ? this.parseGlobalId(relationRoot) : null,
       relationLocalId: options.relationLocalId || (edge as any).relationLocalId || null
@@ -1319,7 +1324,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
   const edgesByNode = new Map();
   edges.forEach(edge => {
-    [edge.node1Path, edge.node2Path].forEach(name => {
+    [edge.node1InternalId, edge.node2InternalId].forEach(name => {
       if (!edgesByNode.has(name)) {
         edgesByNode.set(name, []);
       }
@@ -1359,7 +1364,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   const edgesByNode = new Map();
 
   edges.forEach(edge => {
-    [edge.node1Path, edge.node2Path].forEach(name => {
+    [edge.node1InternalId, edge.node2InternalId].forEach(name => {
       if (!edgesByNode.has(name)) {
         edgesByNode.set(name, []);
       }
@@ -1413,12 +1418,12 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
-  removeLocalEdge(node1Path: string, node2Path: string) {
-  if (!node1Path || !node2Path) {
+  removeLocalEdge(node1InternalId: string, node2InternalId: string) {
+  if (!node1InternalId || !node2InternalId) {
     return;
   }
 
-  const key = GraphEdge.keyFor(node1Path, node2Path);
+  const key = GraphEdge.keyFor(node1InternalId, node2InternalId);
   for (const node of this.graph.loaded.values()) {
     node.edges = (node.edges ?? []).filter(edge => edge.key !== key);
   }
@@ -1442,10 +1447,10 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   const relationIds = new Set<string>();
   const edgeTypeIds = new Set(this.graph.schema.edgeTypes.keys());
   for (const edge of response.edges ?? []) {
-    if (edgeTypeIds.has(edge.node1Path) && !this.graph.isSchemaRoot(edge.node2Path)) {
-      relationIds.add(edge.node2Path);
-    } else if (edgeTypeIds.has(edge.node2Path) && !this.graph.isSchemaRoot(edge.node1Path)) {
-      relationIds.add(edge.node1Path);
+    if (edgeTypeIds.has(edge.node1InternalId) && !this.graph.isSchemaRoot(edge.node2InternalId)) {
+      relationIds.add(edge.node2InternalId);
+    } else if (edgeTypeIds.has(edge.node2InternalId) && !this.graph.isSchemaRoot(edge.node1InternalId)) {
+      relationIds.add(edge.node1InternalId);
     }
   }
 
@@ -1528,7 +1533,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   if (pruneEdges) {
     for (const expansion of this.graph.loaded.values()) {
       expansion.edges = (expansion.edges ?? [])
-        .filter(edge => edge.node1Path !== name && edge.node2Path !== name);
+        .filter(edge => edge.node1InternalId !== name && edge.node2InternalId !== name);
     }
   }
   this.refreshEdgeAngles();
@@ -1600,7 +1605,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   collapseEdge(edge: any, anchorName: string) {
-  const otherName = edge.node1Path === anchorName ? edge.node2Path : edge.node1Path;
+  const otherName = edge.node1InternalId === anchorName ? edge.node2InternalId : edge.node1InternalId;
   const childName = this.graph.treeChildNameForEdge(edge, anchorName);
 
   if (childName) {
@@ -1798,8 +1803,8 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   details.className = "selection-details";
   const relationId = this.edgeEditableNodeId(edge);
   details.append(this.createDetailsList([
-    ["Источник", this.edgeEndpointDisplayName(edge, edge.node1Path)],
-    ["Цель", this.edgeEndpointDisplayName(edge, edge.node2Path)],
+    ["Источник", this.edgeEndpointDisplayName(edge, edge.node1InternalId)],
+    ["Цель", this.edgeEndpointDisplayName(edge, edge.node2InternalId)],
     ["Тип", edge.typeGlobalId ? this.displayName(edge.typeGlobalId) : "физическая связь"],
     ["Инстанс связи", relationId || "-"],
     ["Rank", edge.viewRank === undefined ? "-" : GraphType.formatRank(edge.viewRank)]
@@ -1881,8 +1886,8 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   edgeSelectionTitle(edge: any) {
-  const source = this.edgeEndpointDisplayName(edge, edge.node1Path);
-  const target = this.edgeEndpointDisplayName(edge, edge.node2Path);
+  const source = this.edgeEndpointDisplayName(edge, edge.node1InternalId);
+  const target = this.edgeEndpointDisplayName(edge, edge.node2InternalId);
   return edge.directed ? `${source} -> ${target}` : `${source} - ${target}`;
 
   }
@@ -2409,7 +2414,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       const open = this.document.createElement("button");
       open.type = "button";
       open.className = "result-row type-open-button";
-      open.textContent = `${relation.type?.label ?? "связь"}: ${this.displayName(relation.node1Path ?? "")} -> ${this.displayName(relation.node2Path ?? "")}`;
+      open.textContent = `${relation.type?.label ?? "связь"}: ${this.displayName(relation.node1InternalId ?? "")} -> ${this.displayName(relation.node2InternalId ?? "")}`;
       open.title = relation.relationGlobalId;
       open.addEventListener("click", () => {
         this.graph.selectedName = relation.relationGlobalId;
@@ -2596,7 +2601,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   refreshEdgeAngles() {
   for (const node of this.graph.loaded.values()) {
-    if (node.showed !== true) {
+    if (node.showed === false) {
       continue;
     }
 

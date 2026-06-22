@@ -248,7 +248,7 @@ export class HtmlCanvasRenderer implements GraphRenderer {
 
   edgeKey(edge: any) {
     return edge?.key
-      ?? `${edge?.node1Path ?? ""}\0${edge?.node2Path ?? ""}\0${edge?.relationGlobalId ?? edge?.typeGlobalId ?? ""}`;
+      ?? `${edge?.node1InternalId ?? ""}\0${edge?.node2InternalId ?? ""}\0${edge?.relationGlobalId ?? edge?.typeGlobalId ?? ""}`;
   }
 }
 

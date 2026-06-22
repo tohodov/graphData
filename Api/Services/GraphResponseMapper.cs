@@ -32,7 +32,7 @@ public static class GraphResponseMapper
         return new NodeResponse
         {
             LocalId = node.LocalId.ToString(),
-            GlobalId = node.GlobalId.ToString(),
+            InternalId = node.GlobalId.ToString(),
             Attributes = new Dictionary<string, string>(node.Attributes),
             Edges = edges?.ToArray() ?? node.Edges.Select(edge => ToNodeEdgeResponse(node, edge)).ToArray()
         };
@@ -80,17 +80,17 @@ public static class GraphResponseMapper
     {
         return new EdgeResponse
         {
-            SourceLocalId = source.LocalId.ToString(),
-            SourceGlobalId = source.GlobalId.ToString(),
-            TargetLocalId = target.LocalId.ToString(),
-            TargetGlobalId = target.GlobalId.ToString()
+            Node1LocalId = source.LocalId.ToString(),
+            Node1InternalId = source.GlobalId.ToString(),
+            Node2LocalId = target.LocalId.ToString(),
+            Node2InternalId = target.GlobalId.ToString()
         };
     }
 
-    private static string EdgeKey(string sourceGlobalId, string targetGlobalId)
+    private static string EdgeKey(string node1InternalId, string node2InternalId)
     {
-        return string.Compare(sourceGlobalId, targetGlobalId, StringComparison.OrdinalIgnoreCase) <= 0
-            ? $"{sourceGlobalId}\0{targetGlobalId}"
-            : $"{targetGlobalId}\0{sourceGlobalId}";
+        return string.Compare(node1InternalId, node2InternalId, StringComparison.OrdinalIgnoreCase) <= 0
+            ? $"{node1InternalId}\0{node2InternalId}"
+            : $"{node2InternalId}\0{node1InternalId}";
     }
 }

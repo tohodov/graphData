@@ -2,8 +2,6 @@ import type { GraphNode } from "./GraphNode.js";
 
 export type GraphEdgeSnapshot = {
   node1InternalId?: string;
-  node2Path?: string;
-  node1Path?: string;
   sourceGlobalId?: string;
   node2InternalId?: string;
   targetGlobalId?: string;
@@ -130,9 +128,7 @@ class GraphEdgeControl {
 
 export class GraphEdge {
   node1InternalId: string;
-  node1Path: string;
   node2InternalId: string;
-  node2Path: string;
   node1LocalId: string | null;
   node2LocalId: string | null;
   neighborLocalId: string | null;
@@ -155,10 +151,8 @@ export class GraphEdge {
   key: string;
   constructor({
     node1InternalId = "",
-    node1Path = "",
     sourceGlobalId = "",
     node2InternalId = "",
-    node2Path = "",
     targetGlobalId = "",
     node1LocalId = null,
     sourceLocalId = null,
@@ -185,9 +179,7 @@ export class GraphEdge {
     node2Positioned = false
   }: GraphEdgeSnapshot) {
     this.node1InternalId = node1InternalId || sourceGlobalId;
-    this.node1Path = node1Path || sourceGlobalId;
     this.node2InternalId = node2InternalId || targetGlobalId;
-    this.node2Path = node2Path || targetGlobalId;
     this.node1LocalId = node1LocalId || sourceLocalId;
     this.node2LocalId = node2LocalId || targetLocalId;
     this.neighborLocalId = neighborLocalId;
@@ -207,7 +199,7 @@ export class GraphEdge {
     this.node2 = node2 ?? targetNode ?? null;
     this.node1Positioned = Boolean(node1Positioned);
     this.node2Positioned = Boolean(node2Positioned);
-    this.key = GraphEdge.keyFor(node1InternalId, node2InternalId, relationGlobalId ?? typeGlobalId ?? "");
+    this.key = GraphEdge.keyFor(this.node1InternalId, this.node2InternalId, relationGlobalId ?? typeGlobalId ?? "");
   }
 
   static fromApi(edge: GraphEdgeSnapshot | null | undefined): GraphEdge {
@@ -245,20 +237,20 @@ export class GraphEdge {
   }
 
   connects(path: string): boolean {
-    return this.node1Path === path || this.node2Path === path;
+    return this.node1InternalId === path || this.node2InternalId === path;
     
   }
 
   otherEndpoint(anchorPath: string): string {
-    return this.node1Path === anchorPath ? this.node2Path : this.node1Path;
+    return this.node1InternalId === anchorPath ? this.node2InternalId : this.node1InternalId;
     
   }
 
   endpointDisplayName(path: string, displayName: (path: string) => string): string {
-    if (this.node1Path === path) {
+    if (this.node1InternalId === path) {
       return this.node1LocalId ?? displayName(path);
     }
-    if (this.node2Path === path) {
+    if (this.node2InternalId === path) {
       return this.node2LocalId ?? displayName(path);
     }
     return displayName(path);
@@ -268,12 +260,12 @@ neighborLocalIdFor(anchorPath: string): string | null {
     if (this.neighborLocalId) {
       return this.neighborLocalId;
     }
-    return this.node1Path === anchorPath ? this.node2LocalId : this.node1LocalId;
+    return this.node1InternalId === anchorPath ? this.node2LocalId : this.node1LocalId;
   }
 
 endpointNode(path: string): GraphNode | null {
-    if (this.node1Path === path) return this.node1;
-    if (this.node2Path === path) return this.node2;
+    if (this.node1InternalId === path) return this.node1;
+    if (this.node2InternalId === path) return this.node2;
     return null;
   }
 
@@ -287,8 +279,8 @@ endpointNode(path: string): GraphNode | null {
   }
 
 endpointPositioned(path: string): boolean {
-    if (this.node1Path === path) return this.node1Positioned;
-    if (this.node2Path === path) return this.node2Positioned;
+    if (this.node1InternalId === path) return this.node1Positioned;
+    if (this.node2InternalId === path) return this.node2Positioned;
     return false;
   }
 
@@ -309,7 +301,7 @@ endpointPositioned(path: string): boolean {
   }
 
   controls(context: GraphEdgeControlContext): GraphEdgeControlSnapshot[] {
-    return [this.node1Path, this.node2Path]
+    return [this.node1InternalId, this.node2InternalId]
       .map(anchorName => this.endpointControl(anchorName, context))
       .filter((control): control is GraphEdgeControl => control !== null);
   }
@@ -341,8 +333,6 @@ endpointPositioned(path: string): boolean {
 
   toViewEdge(extra: Record<string, unknown> = {}): Record<string, unknown> {
     return {
-      node1Path: this.node1Path,
-      node2Path: this.node2Path,
       key: this.key,
       node1InternalId: this.node1InternalId,
       node2InternalId: this.node2InternalId,

@@ -19,10 +19,10 @@ public sealed class GraphUiRegressionTests {
         engine.Execute(
             """
             const edge = new GraphEdge({
-              sourceGlobalId: "a",
-              targetGlobalId: "b",
-              sourceLocalId: "a",
-              targetLocalId: "b"
+              node1InternalId: "a",
+              node2InternalId: "b",
+              node1LocalId: "a",
+              node2LocalId: "b"
             });
             const model = new GraphModel();
             model.loaded.set("a", {
@@ -51,10 +51,10 @@ public sealed class GraphUiRegressionTests {
               && !model.isEdgeCollapsed(edge);
             model.collapseEdge(edge);
             const replacement = GraphEdge.mergeMany([edge], [new GraphEdge({
-              sourceGlobalId: "a",
-              targetGlobalId: "b",
-              sourceLocalId: "a",
-              targetLocalId: "b"
+              node1InternalId: "a",
+              node2InternalId: "b",
+              node1LocalId: "a",
+              node2LocalId: "b"
             })])[0];
             const mergePreservesObjectState = replacement.collapsed === true;
 
@@ -73,10 +73,10 @@ public sealed class GraphUiRegressionTests {
         engine.Execute(
             """
             const edge = new GraphEdge({
-              sourceGlobalId: "a",
-              targetGlobalId: "b",
-              sourceLocalId: "a",
-              targetLocalId: "b-local"
+              node1InternalId: "a",
+              node2InternalId: "b",
+              node1LocalId: "a",
+              node2LocalId: "b-local"
             });
 
             function loadedNode(name, edges) {
@@ -123,16 +123,16 @@ public sealed class GraphUiRegressionTests {
         engine.Execute(
             """
             const edge = new GraphEdge({
-              sourceGlobalId: "a",
-              targetGlobalId: "b",
-              sourceLocalId: "a",
-              targetLocalId: "b"
+              node1InternalId: "a",
+              node2InternalId: "b",
+              node1LocalId: "a",
+              node2LocalId: "b"
             });
             const otherEdge = new GraphEdge({
-              sourceGlobalId: "b",
-              targetGlobalId: "c",
-              sourceLocalId: "b",
-              targetLocalId: "c"
+              node1InternalId: "b",
+              node2InternalId: "c",
+              node1LocalId: "b",
+              node2LocalId: "c"
             });
             const model = new GraphModel();
             model.loaded.set("a", { name: "a", edges: [edge] });
@@ -233,10 +233,10 @@ public sealed class GraphUiRegressionTests {
         engine.Execute(
             """
             const edge = new GraphEdge({
-              sourceGlobalId: "a",
-              targetGlobalId: "b",
-              sourceLocalId: "a",
-              targetLocalId: "b-local"
+              node1InternalId: "a",
+              node2InternalId: "b",
+              node1LocalId: "a",
+              node2LocalId: "b-local"
             });
             const model = new GraphModel();
             model.rootName = "a";
@@ -267,10 +267,10 @@ public sealed class GraphUiRegressionTests {
             viewer.refreshEdgeAngles();
             const before = model.visibleGraph();
             const control = before.edges[0].controls[0];
-            const beforeSourceNodeName = before.edges[0].sourceNode?.name;
-            const beforeTargetNodeName = before.edges[0].targetNode?.name;
-            const beforeSourceVisible = before.edges[0].sourceNode?.showed !== false;
-            const beforeTargetVisible = before.edges[0].targetNode?.showed !== false;
+            const beforeSourceNodeName = before.edges[0].node1?.name;
+            const beforeTargetNodeName = before.edges[0].node2?.name;
+            const beforeSourceVisible = before.edges[0].node1?.showed !== false;
+            const beforeTargetVisible = before.edges[0].node2?.showed !== false;
             viewer.handleEdgeControl(before.edges[0], control);
             const after = model.visibleGraph();
             const position = model.positions.get("b");
@@ -318,10 +318,10 @@ public sealed class GraphUiRegressionTests {
         engine.Execute(
             """
             const edge = new GraphEdge({
-              sourceGlobalId: "root",
-              targetGlobalId: "root/types",
-              sourceLocalId: "root",
-              targetLocalId: "types",
+              node1InternalId: "root",
+              node2InternalId: "root/types",
+              node1LocalId: "root",
+              node2LocalId: "types",
               neighborLocalId: "types"
             });
             const model = new GraphModel();
@@ -361,23 +361,26 @@ public sealed class GraphUiRegressionTests {
             const graph = model.visibleGraph();
             const control = graph.edges[0].controls[0];
 
-            globalThis.__result = root.showed === true
-              && types.showed === false
-              && model.positions.has("root")
-              && root.position === model.positions.get("root")
-              && !model.positions.has("root/types")
-              && types.position === null
-              && graph.nodes.length === 1
-              && graph.nodes[0].name === "root"
-              && graph.edges.length === 1
-              && control.action === "load-neighbor"
-              && control.anchorName === "root"
-              && control.otherName === "root/types"
-              && control.neighborLocalId === "types"
-              && Number.isFinite(control.angle);
+            globalThis.__debug = {
+              rootShowed: root.showed === true,
+              typesHidden: types.showed === false,
+              rootPositioned: model.positions.has("root"),
+              rootOwnsPosition: root.position === model.positions.get("root"),
+              typesUnpositioned: !model.positions.has("root/types"),
+              typesOwnsNoPosition: types.position === null,
+              oneNode: graph.nodes.length === 1,
+              rootRendered: graph.nodes[0].name === "root",
+              oneEdge: graph.edges.length === 1,
+              loadControl: control.action === "load-neighbor",
+              controlAnchor: control.anchorName === "root",
+              controlTarget: control.otherName === "root/types",
+              neighborLocalId: control.neighborLocalId === "types",
+              finiteAngle: Number.isFinite(control.angle)
+            };
+            globalThis.__result = Object.values(globalThis.__debug).every(Boolean);
             """);
 
-        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean(), engine.Evaluate("JSON.stringify(__debug)").AsString());
     }
 
     [TestMethod]
@@ -392,10 +395,10 @@ public sealed class GraphUiRegressionTests {
             """
             const model = new GraphModel();
             const edge = new GraphEdge({
-              sourceGlobalId: "root",
-              targetGlobalId: "root/child",
-              sourceLocalId: "root",
-              targetLocalId: "child",
+              node1InternalId: "root",
+              node2InternalId: "root/child",
+              node1LocalId: "root",
+              node2LocalId: "child",
               neighborLocalId: "child"
             });
             model.rootName = "root";
@@ -413,8 +416,8 @@ public sealed class GraphUiRegressionTests {
             globalThis.__result = graph.nodes.length === 1
               && graph.nodes[0].name === "root"
               && graph.edges.length === 1
-              && graph.edges[0].sourceGlobalId === "root"
-              && graph.edges[0].targetGlobalId === "root/child"
+              && graph.edges[0].node1InternalId === "root"
+              && graph.edges[0].node2InternalId === "root/child"
               && control?.action === "load-neighbor"
               && control?.anchorName === "root"
               && control?.neighborLocalId === "child";
@@ -446,7 +449,7 @@ public sealed class GraphUiRegressionTests {
             const targetPortId = relationId + "/target";
             const typePortId = relationId + "/type";
             model.schema.edgeTypes.set(typeId, {
-              globalId: typeId,
+              path: typeId,
               label: "Relation",
               visible: true,
               collapsed: true
@@ -455,34 +458,34 @@ public sealed class GraphUiRegressionTests {
             model.putNode(new GraphNode({
               globalId: "a",
               displayName: "A",
-              edges: [{ sourceGlobalId: "a", targetGlobalId: sourcePortId }]
+              edges: [{ node1InternalId: "a", node2InternalId: sourcePortId }]
             }));
             model.putNode(new GraphNode({
               globalId: sourcePortId,
               displayName: "source",
               attributes: { [graphRoleAttribute]: "source" },
-              edges: [{ sourceGlobalId: sourcePortId, targetGlobalId: relationId }]
+              edges: [{ node1InternalId: sourcePortId, node2InternalId: relationId }]
             }));
             model.putNode(new GraphNode({
               globalId: relationId,
               displayName: "R",
               attributes: { [graphKindAttribute]: "edge-instance", [graphElementAttribute]: "edge" },
               edges: [
-                { sourceGlobalId: relationId, targetGlobalId: targetPortId },
-                { sourceGlobalId: relationId, targetGlobalId: typePortId }
+                { node1InternalId: relationId, node2InternalId: targetPortId },
+                { node1InternalId: relationId, node2InternalId: typePortId }
               ]
             }));
             model.putNode(new GraphNode({
               globalId: targetPortId,
               displayName: "target",
               attributes: { [graphRoleAttribute]: "target" },
-              edges: [{ sourceGlobalId: targetPortId, targetGlobalId: "b" }]
+              edges: [{ node1InternalId: targetPortId, node2InternalId: "b" }]
             }));
             model.putNode(new GraphNode({
               globalId: typePortId,
               displayName: "type",
               attributes: { [graphRoleAttribute]: "type" },
-              edges: [{ sourceGlobalId: typePortId, targetGlobalId: typeId }]
+              edges: [{ node1InternalId: typePortId, node2InternalId: typeId }]
             }));
             model.putNode(new GraphNode({
               globalId: "b",
@@ -551,7 +554,7 @@ public sealed class GraphUiRegressionTests {
             const targetPortId = relationId + "/target";
             const typePortId = relationId + "/type";
             model.schema.edgeTypes.set(typeId, {
-              globalId: typeId,
+              path: typeId,
               label: "DependsOn",
               directed: true,
               collapsed: true,
@@ -562,30 +565,30 @@ public sealed class GraphUiRegressionTests {
             model.putNode(new GraphNode({
               globalId: "a",
               displayName: "A",
-              edges: [{ sourceGlobalId: "a", targetGlobalId: sourcePortId }]
+              edges: [{ node1InternalId: "a", node2InternalId: sourcePortId }]
             }));
             model.putNode(new GraphNode({
               globalId: sourcePortId,
               attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "source" },
-              edges: [{ sourceGlobalId: sourcePortId, targetGlobalId: relationId }]
+              edges: [{ node1InternalId: sourcePortId, node2InternalId: relationId }]
             }));
             model.putNode(new GraphNode({
               globalId: relationId,
               attributes: { [graphKindAttribute]: "edge-instance", [graphElementAttribute]: "edge" },
               edges: [
-                { sourceGlobalId: relationId, targetGlobalId: targetPortId },
-                { sourceGlobalId: relationId, targetGlobalId: typePortId }
+                { node1InternalId: relationId, node2InternalId: targetPortId },
+                { node1InternalId: relationId, node2InternalId: typePortId }
               ]
             }));
             model.putNode(new GraphNode({
               globalId: targetPortId,
               attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "target" },
-              edges: [{ sourceGlobalId: targetPortId, targetGlobalId: "b" }]
+              edges: [{ node1InternalId: targetPortId, node2InternalId: "b" }]
             }));
             model.putNode(new GraphNode({
               globalId: typePortId,
               attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "type" },
-              edges: [{ sourceGlobalId: typePortId, targetGlobalId: typeId }]
+              edges: [{ node1InternalId: typePortId, node2InternalId: typeId }]
             }));
             model.putNode(new GraphNode({
               globalId: "b",
@@ -593,7 +596,7 @@ public sealed class GraphUiRegressionTests {
               edges: []
             }));
             model.putNode(new GraphNode({
-              globalId: typeId,
+              path: typeId,
               displayName: "DependsOn",
               edges: []
             }));
@@ -630,7 +633,7 @@ public sealed class GraphUiRegressionTests {
             const targetPortId = relationId + "/target";
             const typePortId = relationId + "/type";
             model.schema.edgeTypes.set(typeId, {
-              globalId: typeId,
+              path: typeId,
               label: "DependsOn",
               collapsed: false,
               visible: true
@@ -639,30 +642,30 @@ public sealed class GraphUiRegressionTests {
             model.putNode(new GraphNode({
               globalId: "a",
               displayName: "A",
-              edges: [{ sourceGlobalId: "a", targetGlobalId: sourcePortId }]
+              edges: [{ node1InternalId: "a", node2InternalId: sourcePortId }]
             }));
             model.putNode(new GraphNode({
               globalId: sourcePortId,
               attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "source" },
-              edges: [{ sourceGlobalId: sourcePortId, targetGlobalId: relationId }]
+              edges: [{ node1InternalId: sourcePortId, node2InternalId: relationId }]
             }));
             model.putNode(new GraphNode({
               globalId: relationId,
               attributes: { [graphKindAttribute]: "edge-instance", [graphElementAttribute]: "edge" },
               edges: [
-                { sourceGlobalId: relationId, targetGlobalId: targetPortId },
-                { sourceGlobalId: relationId, targetGlobalId: typePortId }
+                { node1InternalId: relationId, node2InternalId: targetPortId },
+                { node1InternalId: relationId, node2InternalId: typePortId }
               ]
             }));
             model.putNode(new GraphNode({
               globalId: targetPortId,
               attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "target" },
-              edges: [{ sourceGlobalId: targetPortId, targetGlobalId: "b" }]
+              edges: [{ node1InternalId: targetPortId, node2InternalId: "b" }]
             }));
             model.putNode(new GraphNode({
               globalId: typePortId,
               attributes: { [graphKindAttribute]: "edge-port", [graphRoleAttribute]: "type" },
-              edges: [{ sourceGlobalId: typePortId, targetGlobalId: typeId }]
+              edges: [{ node1InternalId: typePortId, node2InternalId: typeId }]
             }));
             model.putNode(new GraphNode({ globalId: "b", displayName: "B", edges: [] }));
             model.putNode(new GraphNode({ globalId: typeId, displayName: "DependsOn", edges: [] }));
@@ -690,10 +693,10 @@ public sealed class GraphUiRegressionTests {
         engine.Execute(
             """
             const edge = new GraphEdge({
-              sourceGlobalId: "a",
-              targetGlobalId: "b",
-              sourceLocalId: "a",
-              targetLocalId: "b"
+              node1InternalId: "a",
+              node2InternalId: "b",
+              node1LocalId: "a",
+              node2LocalId: "b"
             });
             const model = new GraphModel();
             model.loaded.set("a", {
@@ -808,10 +811,10 @@ public sealed class GraphUiRegressionTests {
               }
             });
             const edge = new GraphEdge({
-              sourceGlobalId: "root",
-              targetGlobalId: "graphdata/types/nodes",
-              sourceLocalId: "root",
-              targetLocalId: "Types"
+              node1InternalId: "root",
+              node2InternalId: "graphdata/types/nodes",
+              node1LocalId: "root",
+              node2LocalId: "Types"
             });
             model.putNode(new GraphNode({
               globalId: "root",
@@ -937,8 +940,8 @@ public sealed class GraphUiRegressionTests {
             const memory = canvas.buildRenderMemory({
               nodes: [{ name: "a" }, { name: "b" }],
               edges: [
-                { key: "collapsed", sourceGlobalId: "a", targetGlobalId: "b", collapsed: true },
-                { key: "visible", sourceGlobalId: "b", targetGlobalId: "a" }
+                { key: "collapsed", node1InternalId: "a", node2InternalId: "b", collapsed: true },
+                { key: "visible", node1InternalId: "b", node2InternalId: "a" }
               ]
             });
 
@@ -962,10 +965,10 @@ public sealed class GraphUiRegressionTests {
 
             const withoutEdge = runSimulationWith([]);
             const collapsedEdge = runSimulationWith([
-              { key: "collapsed", sourceGlobalId: "a", targetGlobalId: "b", collapsed: true }
+              { key: "collapsed", node1InternalId: "a", node2InternalId: "b", collapsed: true }
             ]);
             const visibleEdge = runSimulationWith([
-              { key: "visible", sourceGlobalId: "a", targetGlobalId: "b" }
+              { key: "visible", node1InternalId: "a", node2InternalId: "b" }
             ]);
 
             globalThis.__result = memory.edgeCount === 1
@@ -988,10 +991,10 @@ public sealed class GraphUiRegressionTests {
         engine.Execute(
             """
             const edge = new GraphEdge({
-              sourceGlobalId: "a",
-              targetGlobalId: "b",
-              sourceLocalId: "a",
-              targetLocalId: "b-local"
+              node1InternalId: "a",
+              node2InternalId: "b",
+              node1LocalId: "a",
+              node2LocalId: "b-local"
             });
 
             function makeViewer(loadedNames) {
@@ -1086,10 +1089,10 @@ public sealed class GraphUiRegressionTests {
             """
             const model = new GraphModel();
             const edge = new GraphEdge({
-              sourceGlobalId: "a",
-              targetGlobalId: "b",
-              sourceLocalId: "a",
-              targetLocalId: "b"
+              node1InternalId: "a",
+              node2InternalId: "b",
+              node1LocalId: "a",
+              node2LocalId: "b"
             });
 
             function loadedNode(name, displayName, edges) {
@@ -1166,10 +1169,10 @@ public sealed class GraphUiRegressionTests {
             """
             const model = new GraphModel();
             const edge = new GraphEdge({
-              sourceGlobalId: "root",
-              targetGlobalId: "child",
-              sourceLocalId: "root",
-              targetLocalId: "child"
+              node1InternalId: "root",
+              node2InternalId: "child",
+              node1LocalId: "root",
+              node2LocalId: "child"
             });
 
             function loadedNode(name, displayName, edges) {
@@ -1258,10 +1261,10 @@ public sealed class GraphUiRegressionTests {
                 localId: "root",
                 globalId: "root",
                 edges: ["a", "b", "c", "d"].map(name => ({
-                  sourceGlobalId: "root",
-                  targetGlobalId: "root/" + name,
-                  sourceLocalId: "root",
-                  targetLocalId: name,
+                  node1InternalId: "root",
+                  node2InternalId: "root/" + name,
+                  node1LocalId: "root",
+                  node2LocalId: name,
                   neighborLocalId: name
                 }))
               }],
@@ -1284,10 +1287,10 @@ public sealed class GraphUiRegressionTests {
               localId: "a",
               globalId: "root/a",
               edges: [{
-                sourceGlobalId: "root",
-                targetGlobalId: "root/a",
-                sourceLocalId: "root",
-                targetLocalId: "a",
+                node1InternalId: "root",
+                node2InternalId: "root/a",
+                node1LocalId: "root",
+                node2LocalId: "a",
                 neighborLocalId: "root"
               }]
             }), "root", { select: false });
@@ -1296,7 +1299,7 @@ public sealed class GraphUiRegressionTests {
               x: loadedPosition.x - rootPosition.x,
               y: loadedPosition.y - rootPosition.y
             };
-            const rootEdge = root.edges.find(item => item.targetGlobalId === "root/a");
+            const rootEdge = root.edges.find(item => item.node2InternalId === "root/a");
             const angleAfterLoad = rootEdge.controlAngle;
             viewer.graph.positions.set("root/a", { x: rootPosition.x + 204, y: rootPosition.y });
             viewer.refreshEdgeAngles();
@@ -1353,7 +1356,7 @@ public sealed class GraphUiRegressionTests {
             };
             const fragment = { append(button) { buttons.push(button); } };
             const rect = { width: 500, height: 500 };
-            const edge = { key: "ab", sourceGlobalId: "a", targetGlobalId: "b" };
+            const edge = { key: "ab", node1InternalId: "a", node2InternalId: "b" };
             const control = { key: "ab\\0a\\0load-neighbor", action: "load-neighbor", kind: "expand", text: "+", title: "expand", angle: 0, anchorName: "a", otherName: "b" };
             const nodesByName = new Map([["a", { name: "a", viewRadius: 34 }]]);
 
@@ -1439,18 +1442,18 @@ public sealed class GraphUiRegressionTests {
                 { name: "d", viewRadius: 10 }
               ],
               edges: [
-                { key: "ab", sourceGlobalId: "a", targetGlobalId: "b" },
-                { key: "cd", sourceGlobalId: "c", targetGlobalId: "d" }
+                { key: "ab", node1InternalId: "a", node2InternalId: "b" },
+                { key: "cd", node1InternalId: "c", node2InternalId: "d" }
               ]
             };
 
             let selected = null;
             canvas.callbacks = {
-              selectGraphElements(nodeNames, edgeKeys, options) {
+              selectGraphElements(nodeNames, edgeKeys, append) {
                 selected = {
                   nodeNames: [...nodeNames],
                   edgeKeys: [...edgeKeys],
-                  append: options.append
+                  append
                 };
               }
             };

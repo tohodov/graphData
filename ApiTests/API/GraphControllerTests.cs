@@ -28,15 +28,15 @@ public sealed class GraphControllerTests {
         var request = JsonSerializer.Deserialize<ConnectNodesRequest>(
             """
             {
-              "sourceGlobalId": [ "Small_Arms_Web_KG", "Weapons", "AK_47" ],
-              "targetGlobalId": [ "Small_Arms_Web_KG", "Categories", "Assault_Rifle" ]
+              "node1InternalId": [ "Small_Arms_Web_KG", "Weapons", "AK_47" ],
+              "node2InternalId": [ "Small_Arms_Web_KG", "Categories", "Assault_Rifle" ]
             }
             """,
             GraphJsonSerializerOptions.Create());
 
         Assert.IsNotNull(request);
-        Assert.AreEqual("Small_Arms_Web_KG/Weapons/AK_47", string.Join("/", request.SourceGlobalId));
-        Assert.AreEqual("Small_Arms_Web_KG/Categories/Assault_Rifle", string.Join("/", request.TargetGlobalId));
+        Assert.AreEqual("Small_Arms_Web_KG/Weapons/AK_47", string.Join("/", request.Node1InternalId));
+        Assert.AreEqual("Small_Arms_Web_KG/Categories/Assault_Rifle", string.Join("/", request.Node2InternalId));
     }
 
     [TestMethod]
@@ -55,13 +55,13 @@ public sealed class GraphControllerTests {
         var response = ok.Value as NodeResponse;
         Assert.IsNotNull(response);
         Assert.AreEqual(first.LocalId.ToString(), response.LocalId);
-        Assert.AreEqual(first.GlobalId.ToString(), response.GlobalId);
+        Assert.AreEqual(first.GlobalId.ToString(), response.InternalId);
         Assert.AreEqual("root", response.Attributes["kind"]);
 
         var edge = response.Edges.Single();
         Assert.AreEqual(second.LocalId.ToString(), edge.NeighborLocalId);
-        Assert.AreEqual(first.LocalId.ToString(), edge.SourceLocalId);
-        Assert.AreEqual(second.LocalId.ToString(), edge.TargetLocalId);
+        Assert.AreEqual(first.LocalId.ToString(), edge.Node1LocalId);
+        Assert.AreEqual(second.LocalId.ToString(), edge.Node2LocalId);
     }
 
     [TestMethod]
@@ -78,7 +78,7 @@ public sealed class GraphControllerTests {
 
         var response = ok.Value as NodeResponse;
         Assert.IsNotNull(response);
-        Assert.AreEqual(actions.GlobalId.ToString(), response.GlobalId);
+        Assert.AreEqual(actions.GlobalId.ToString(), response.InternalId);
         Assert.AreEqual(actions.LocalId.ToString(), response.LocalId);
         Assert.AreEqual("child", response.Attributes["kind"]);
     }
@@ -100,7 +100,7 @@ public sealed class GraphControllerTests {
 
         var response = ok.Value as NodeResponse;
         Assert.IsNotNull(response);
-        Assert.AreEqual(gasOperated.GlobalId.ToString(), response.GlobalId);
+        Assert.AreEqual(gasOperated.GlobalId.ToString(), response.InternalId);
     }
 
     [TestMethod]
@@ -152,7 +152,7 @@ public sealed class GraphControllerTests {
         var response = created.Value as NodeResponse;
         Assert.IsNotNull(response);
         Assert.AreEqual("new node", response.LocalId);
-        Assert.AreEqual("new node", response.GlobalId);
+        Assert.AreEqual("new node", response.InternalId);
         Assert.AreEqual("demo", response.Attributes["kind"]);
     }
 
@@ -173,7 +173,7 @@ public sealed class GraphControllerTests {
         var response = created.Value as NodeResponse;
         Assert.IsNotNull(response);
         Assert.AreEqual("child", response.LocalId);
-        Assert.AreEqual("parent/child", response.GlobalId);
+        Assert.AreEqual("parent/child", response.InternalId);
 
         var stored = await scope.Storage.Get(new NodePath("parent","child"));
         Assert.IsNotNull(stored);
@@ -193,7 +193,7 @@ public sealed class GraphControllerTests {
         var response = ok.Value as NodeResponse;
         Assert.IsNotNull(response);
         Assert.AreEqual(child.LocalId.ToString(), response.LocalId);
-        Assert.AreEqual(child.GlobalId.ToString(), response.GlobalId);
+        Assert.AreEqual(child.GlobalId.ToString(), response.InternalId);
     }
 
     [TestMethod]
@@ -236,8 +236,8 @@ public sealed class GraphControllerTests {
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
-            SourceGlobalId = [source.LocalId.ToString()],
-            TargetGlobalId = ["target:name"]
+            Node1InternalId = [source.LocalId.ToString()],
+            Node2InternalId = ["target:name"]
         });
 
         var badRequest = result.Result as BadRequestObjectResult;
@@ -255,8 +255,8 @@ public sealed class GraphControllerTests {
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
-            SourceGlobalId = ["small_arms_test_graph"],
-            TargetGlobalId = ["small_arms_test_graph", "weapons"]
+            Node1InternalId = ["small_arms_test_graph"],
+            Node2InternalId = ["small_arms_test_graph", "weapons"]
         });
 
         Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
@@ -278,8 +278,8 @@ public sealed class GraphControllerTests {
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
-            SourceGlobalId = ["small_arms_test_graph", "weapons"],
-            TargetGlobalId = ["small_arms_test_graph", "categories"]
+            Node1InternalId = ["small_arms_test_graph", "weapons"],
+            Node2InternalId = ["small_arms_test_graph", "categories"]
         });
 
         Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
@@ -310,8 +310,8 @@ public sealed class GraphControllerTests {
         var controller = CreateController(new ConnectThrowingGraphStorage(scope.Storage));
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
-            SourceGlobalId = [source.LocalId.ToString()],
-            TargetGlobalId = [target.LocalId.ToString()]
+            Node1InternalId = [source.LocalId.ToString()],
+            Node2InternalId = [target.LocalId.ToString()]
         });
 
         var objectResult = result.Result as ObjectResult;
@@ -341,8 +341,8 @@ public sealed class GraphControllerTests {
         Assert.IsNotNull(ok);
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
-        Assert.IsTrue(response.Nodes.Any(node => node.GlobalId == ak47.GlobalId.ToString()));
-        Assert.IsTrue(response.Nodes.Any(node => node.GlobalId == weaponType.GlobalId.ToString()));
+        Assert.IsTrue(response.Nodes.Any(node => node.InternalId == ak47.GlobalId.ToString()));
+        Assert.IsTrue(response.Nodes.Any(node => node.InternalId == weaponType.GlobalId.ToString()));
 
         var storedNode = (await scope.Storage.Get(ak47.GlobalId)).Value!;
         Assert.IsFalse(storedNode.Attributes.ContainsKey("graph.typeName"));
@@ -364,8 +364,8 @@ public sealed class GraphControllerTests {
         var controller = CreateController(scope.Storage);
 
         var result = await controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
-            SourceGlobalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),
-            TargetGlobalId = target.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            Node1InternalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            Node2InternalId = target.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = newType.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             RelationLocalId = "relation-1"
         });
@@ -375,23 +375,23 @@ public sealed class GraphControllerTests {
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
 
-        var relation = response.Nodes.Single(node => node.GlobalId == "relation-1");
-        Assert.AreEqual("relation-1", relation.GlobalId);
+        var relation = response.Nodes.Single(node => node.InternalId == "relation-1");
+        Assert.AreEqual("relation-1", relation.InternalId);
         Assert.AreEqual(0, relation.Attributes.Count);
 
-        var returnedIds = response.Nodes.Select(static node => node.GlobalId).ToHashSet(StringComparer.Ordinal);
+        var returnedIds = response.Nodes.Select(static node => node.InternalId).ToHashSet(StringComparer.Ordinal);
         Assert.IsTrue(returnedIds.Contains(source.GlobalId.ToString()));
         Assert.IsTrue(returnedIds.Contains(target.GlobalId.ToString()));
         Assert.IsTrue(returnedIds.Contains(newType.GlobalId.ToString()));
 
         var endpointPorts = response.Nodes
-            .Where(node => GraphIdIsChildOf(node.GlobalId, relation.GlobalId) && node.GlobalId != relation.GlobalId)
+            .Where(node => GraphIdIsChildOf(node.InternalId, relation.InternalId) && node.InternalId != relation.InternalId)
             .ToArray();
         Assert.AreEqual(2, endpointPorts.Length);
-        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, relation.GlobalId, newType.GlobalId.ToString())));
-        Assert.IsTrue(endpointPorts.All(port => response.Edges.Any(edge => HasEndpoints(edge, port.GlobalId, GraphBaseTypeIds.Port.ToString()))));
-        Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.GlobalId, source.GlobalId.ToString()))));
-        Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.GlobalId, target.GlobalId.ToString()))));
+        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, relation.InternalId, newType.GlobalId.ToString())));
+        Assert.IsTrue(endpointPorts.All(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, GraphBaseTypeIds.Port.ToString()))));
+        Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, source.GlobalId.ToString()))));
+        Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, target.GlobalId.ToString()))));
 
         var storedRelation = (await scope.Storage.Get(new NodePath("relation-1"))).Value!;
         Assert.AreEqual(0, storedRelation.Attributes.Count);
@@ -421,7 +421,7 @@ public sealed class GraphControllerTests {
 
         var controller = CreateController(scope.Storage);
         var result = await controller.GetSubgraphAsync(new SubgraphRequest {
-            GlobalIds = [[first.LocalId]],
+            Paths = [[first.LocalId]],
             MaxDepth = 1
         });
 
@@ -433,8 +433,8 @@ public sealed class GraphControllerTests {
         CollectionAssert.AreEquivalent(new[] { "1", "2" }, response.Nodes.Select(static node => node.LocalId).ToArray());
 
         var edge = response.Edges.Single();
-        Assert.AreEqual(first.LocalId.ToString(), edge.SourceLocalId);
-        Assert.AreEqual(second.LocalId.ToString(), edge.TargetLocalId);
+        Assert.AreEqual(first.LocalId.ToString(), edge.Node1LocalId);
+        Assert.AreEqual(second.LocalId.ToString(), edge.Node2LocalId);
         Assert.IsFalse(response.Edges.Any(edge => HasEndpoints(edge, second.GlobalId.ToString(), third.GlobalId.ToString())));
 
         var firstNode = response.Nodes.Single(static node => node.LocalId == "1");
@@ -456,7 +456,7 @@ public sealed class GraphControllerTests {
 
         var controller = CreateController(scope.Storage);
         var result = await controller.GetSubgraphAsync(new SubgraphRequest {
-            GlobalIds = [["root", "weapons", "ak_47"]],
+            Paths = [["root", "weapons", "ak_47"]],
             MaxDepth = 1
         });
 
@@ -467,14 +467,14 @@ public sealed class GraphControllerTests {
         Assert.IsNotNull(response);
         CollectionAssert.AreEquivalent(
             new[] { ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString(), weapons.GlobalId.ToString() },
-            response.Nodes.Select(static node => node.GlobalId).ToArray());
+            response.Nodes.Select(static node => node.InternalId).ToArray());
 
         Assert.AreEqual(2, response.Edges.Count);
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString())));
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, weapons.GlobalId.ToString(), ak47.GlobalId.ToString())));
 
-        var ak47Node = response.Nodes.Single(node => node.GlobalId == ak47.GlobalId.ToString());
-        var assaultRifleNode = response.Nodes.Single(node => node.GlobalId == assaultRifle.GlobalId.ToString());
+        var ak47Node = response.Nodes.Single(node => node.InternalId == ak47.GlobalId.ToString());
+        var assaultRifleNode = response.Nodes.Single(node => node.InternalId == assaultRifle.GlobalId.ToString());
         Assert.IsTrue(ak47Node.Edges.Any(edge => HasEndpoints(edge, ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString())));
         Assert.IsTrue(ak47Node.Edges.Any(edge => HasEndpoints(edge, weapons.GlobalId.ToString(), ak47.GlobalId.ToString())));
         Assert.IsTrue(assaultRifleNode.Edges.Any(edge => HasEndpoints(edge, categories.GlobalId.ToString(), assaultRifle.GlobalId.ToString())));
@@ -489,7 +489,7 @@ public sealed class GraphControllerTests {
 
         var controller = CreateController(scope.Storage);
         var result = await controller.GetSubgraphAsync(new SubgraphRequest {
-            GlobalIds = [["root"]],
+            Paths = [["root"]],
             MaxDepth = 2
         });
 
@@ -500,7 +500,7 @@ public sealed class GraphControllerTests {
         Assert.IsNotNull(response);
         CollectionAssert.AreEquivalent(
             new[] { root.GlobalId.ToString(), weapons.GlobalId.ToString(), ak47.GlobalId.ToString() },
-            response.Nodes.Select(static node => node.GlobalId).ToArray());
+            response.Nodes.Select(static node => node.InternalId).ToArray());
         Assert.AreEqual(2, response.Edges.Count);
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, root.GlobalId.ToString(), weapons.GlobalId.ToString())));
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, weapons.GlobalId.ToString(), ak47.GlobalId.ToString())));
@@ -515,7 +515,7 @@ public sealed class GraphControllerTests {
 
         var controller = CreateController(scope.Storage);
         var result = await controller.GetSubgraphAsync(new SubgraphRequest {
-            GlobalIds = [],
+            Paths = [],
             MaxDepth = 0
         });
 
@@ -526,11 +526,11 @@ public sealed class GraphControllerTests {
         Assert.IsNotNull(response);
         CollectionAssert.AreEquivalent(
             new[] { firstRoot.GlobalId.ToString(), secondRoot.GlobalId.ToString() },
-            response.Nodes.Select(static node => node.GlobalId).ToArray());
+            response.Nodes.Select(static node => node.InternalId).ToArray());
         Assert.AreEqual(0, response.Edges.Count);
 
-        var firstNode = response.Nodes.Single(node => node.GlobalId == firstRoot.GlobalId.ToString());
-        var secondNode = response.Nodes.Single(node => node.GlobalId == secondRoot.GlobalId.ToString());
+        var firstNode = response.Nodes.Single(node => node.InternalId == firstRoot.GlobalId.ToString());
+        var secondNode = response.Nodes.Single(node => node.InternalId == secondRoot.GlobalId.ToString());
         Assert.IsTrue(firstNode.Edges.Any(edge => HasEndpoints(edge, firstRoot.GlobalId.ToString(), child.GlobalId.ToString())));
         Assert.AreEqual(0, secondNode.Edges.Count);
     }
@@ -544,7 +544,7 @@ public sealed class GraphControllerTests {
 
         var controller = CreateController(scope.Storage);
         var result = await controller.GetSubgraphAsync(new SubgraphRequest {
-            GlobalIds = [[]],
+            Paths = [[]],
             MaxDepth = 0
         });
 
@@ -555,7 +555,7 @@ public sealed class GraphControllerTests {
         Assert.IsNotNull(response);
         CollectionAssert.AreEquivalent(
             new[] { firstRoot.GlobalId.ToString(), secondRoot.GlobalId.ToString() },
-            response.Nodes.Select(static node => node.GlobalId).ToArray());
+            response.Nodes.Select(static node => node.InternalId).ToArray());
     }
 
     [TestMethod]
@@ -667,8 +667,8 @@ public sealed class GraphControllerTests {
     }
 
     private static bool HasEndpoints(EdgeResponse edge, string left, string right) =>
-        (edge.SourceGlobalId == left && edge.TargetGlobalId == right) ||
-        (edge.SourceGlobalId == right && edge.TargetGlobalId == left);
+        (edge.Node1InternalId == left && edge.Node2InternalId == right) ||
+        (edge.Node1InternalId == right && edge.Node2InternalId == left);
 
     private static bool GraphIdIsChildOf(string globalId, string parentGlobalId) =>
         globalId.StartsWith(parentGlobalId + "/", StringComparison.Ordinal);
