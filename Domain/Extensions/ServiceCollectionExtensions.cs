@@ -11,7 +11,7 @@ public static class ServiceCollectionExtensions
         Action<GraphRuntimeTypeOptions>? configureRuntimeTypes = null) {
         var runtimeTypeOptions = new GraphRuntimeTypeOptions();
         configureRuntimeTypes?.Invoke(runtimeTypeOptions);
-        services.AddSingleton(GraphRuntimeTypeCatalog.Create(runtimeTypeOptions));
+        services.AddSingleton(GraphSchemaRegistry.Create(runtimeTypeOptions));
         services.AddScoped<GraphSearchService>(static provider =>
             new GraphSearchService(provider.GetRequiredService<IGraphStorage>()));
         services.AddScoped<GraphService>(static provider =>
@@ -19,12 +19,8 @@ public static class ServiceCollectionExtensions
                 provider.GetRequiredService<IGraphStorage>(),
                 provider.GetRequiredService<GraphSearchService>(),
                 provider.GetRequiredService<ICancellationTokenAccessor>(),
-                provider.GetRequiredService<GraphRuntimeTypeCatalog>()
+                provider.GetRequiredService<GraphSchemaRegistry>()
             ));
-        services.AddTransient<GraphStorageInitializer>(static provider =>
-            new GraphStorageInitializer(
-                provider.GetRequiredService<IGraphStorage>(),
-                provider.GetRequiredService<GraphRuntimeTypeCatalog>()));
         return services;
     }
 }

@@ -6,11 +6,12 @@ internal interface IGraphStorage {
         var decoded = Uri.UnescapeDataString(value);
         var segments = decoded
             .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(static segment => segment);
+            .Select(static segment => segment)
+            .Select(x => new NodeLocalId(x));
         return new InternalId(segments);
     }
 
-    InternalId Root => new InternalId(new string[0]); //TODO узел
+    InternalId Root => new InternalId(); //TODO узел
 
     Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null);
     Task<ServiceResult<NodeState>> Get(NodeRef path);
@@ -59,4 +60,5 @@ internal interface IGraphStorage {
     Task<ServiceResult> Connect(NodeRef sourcePath, NodeRef targetPath);
     Task<ServiceResult> Disconnect(NodeRef sourcePath, NodeRef targetPath);
     Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node);
+    IAsyncEnumerable<NodeState> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other);
 }

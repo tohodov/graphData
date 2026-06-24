@@ -44,5 +44,5 @@ builder.Services
     .WithToolsFromAssembly(serializerOptions: GraphJsonSerializerOptions.Create());
 
 var app = builder.Build();
-await app.Services.GetRequiredService<GraphStorageInitializer>().InitializeAsync();
+await app.Services.GetRequiredService<GraphService>().InitializeAsync();
 await app.RunAsync();

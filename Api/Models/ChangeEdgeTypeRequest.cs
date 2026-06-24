@@ -1,22 +1,27 @@
 namespace GraphData.Api.Models;
 
-public sealed class ChangeEdgeTypeRequest
-{
-    public string[]? TypedEdgeGlobalId { get; init; }
+public sealed class ChangeEdgeTypeRequest {
+    [Obsolete("удалить", true)]
+    public string[]? TypedEdgeGlobalId { get; init; }//TODO удалить
 
-    public string[]? RelationGlobalId { get; init; }
+    [Obsolete("удалить", true)]
+    public string[]? RelationGlobalId { get; init; }//TODO удалить
 
-    public string[]? Node1InternalId { get; init; }
+    public required string[] Node1InternalId { get; init; }
 
-    public string[]? Node2InternalId { get; init; }
+    public required string[] Node2InternalId { get; init; }
 
     public required string[] TypeGlobalId { get; init; }
 
-    public string[]? TypedEdgeParentGlobalId { get; init; }
+    [Obsolete("удалить", true)]
+    public string[]? TypedEdgeParentGlobalId { get; init; }//TODO удалить
 
-    public string[]? RelationParentGlobalId { get; init; }
+    [Obsolete("удалить", true)]
+    public string[]? RelationParentGlobalId { get; init; }//TODO удалить
 
-    public string? TypedEdgeLocalId { get; init; }
+    [Obsolete("удалить", true)]
+    public string? TypedEdgeLocalId { get; init; }//TODO удалить
 
-    public string? RelationLocalId { get; init; }
+    [Obsolete("удалить", true)]
+    public string? RelationLocalId { get; init; }//TODO удалить
 }

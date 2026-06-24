@@ -2,27 +2,15 @@ global using InternalId = Abstractions.NodeRef.InternalId;
 global using NodePath = Abstractions.NodeRef.NodePath;
 using Abstractions;
 
-namespace GraphData.Core.Models;
-
 public class Edge {
-    private readonly EdgeState? _state;
-
-    internal EdgeState State => _state ?? throw new InvalidOperationException(
-        $"Edge '{GetType().Name}' is a type descriptor and is not bound to a graph edge.");
-
-    protected Edge() {
-    }
-
-    public Edge(Node node1, Node node2, InternalId? typeId = null)
-        : this(new EdgeState(node1.State, node2.State, typeId)) {
-    }
-
-    internal Edge(EdgeState state) {
-        _state = state;
-    }
+    internal EdgeState State;
 
     public virtual Node Node1 => new(State.Node1);
     public virtual Node Node2 => new(State.Node2);
 
-    public virtual InternalId? TypeId => State.TypeId; //TODO удалить
+    internal Edge(EdgeState state) {
+        State = state;
+    }
+    public Edge(Node node1, Node node2) : this(new EdgeStateReferenced(node1.State, node2.State)) { }
+
 }

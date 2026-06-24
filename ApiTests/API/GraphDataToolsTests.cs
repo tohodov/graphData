@@ -20,7 +20,7 @@ public sealed class GraphDataToolsTests
         var second = (await scope.Storage.Create(new NodeLocalId("2"))).Value!;
         await scope.Storage.Connect(first.GlobalId, second.GlobalId);
 
-        var tools = new GraphDataTools(new GraphService(scope.Storage, new GraphSearchService(scope.Storage), new CancellationTokensAccessorMock()));
+        var tools = new GraphDataTools(new global::GraphData.Core.Services.GraphService(scope.Storage, new GraphSearchService(scope.Storage), new CancellationTokensAccessorMock(), GraphSchemaRegistry.Create()));
         var json = await tools.GetNode(["1"]);
 
         using var document = JsonDocument.Parse(json);

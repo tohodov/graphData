@@ -1,28 +1,17 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using Abstractions;
 using GraphData.Api.Controllers;
 using GraphData.Api.Models;
 using GraphData.Api.Runtime;
-using GraphData.Core.Models;
-using GraphData.Core.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Storage;
 
 namespace GraphData.Tests.Api;
 
 [RelevantTestClass]
-public sealed class GraphControllerTests {
+public sealed class GraphControllerTests : ControllerTests {
     [TestMethod]
     public void ConnectNodesRequest_DeserializesJsonGlobalIdArrays() {
         var request = JsonSerializer.Deserialize<ConnectNodesRequest>(
@@ -41,13 +30,11 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task GetNodeAsync_ReturnsNodeWithNeighborEdges() {
-        await using var scope = TestGraphStorageScope.Create();
-        var first = (await scope.Storage.Create(new("1"), attributes: new Dictionary<string, string> { ["kind"] = "root" })).Value!;
-        var second = (await scope.Storage.Create(new("2"), attributes: new Dictionary<string, string> { ["kind"] = "leaf" })).Value!;
-        await scope.Storage.Connect(first.GlobalId, second.GlobalId);
+        var first = (await Storage.Create(new("1"), attributes: new Dictionary<string, string> { ["kind"] = "root" })).Value!;
+        var second = (await Storage.Create(new("2"), attributes: new Dictionary<string, string> { ["kind"] = "leaf" })).Value!;
+        await Storage.Connect(first.GlobalId, second.GlobalId);
 
-        var controller = CreateController(scope.Storage);
-        var result = await controller.GetNodeAsync([first.LocalId]);
+        var result = await Controller.GetNodeAsync([first.LocalId]);
 
         var ok = result.Result as OkObjectResult;
         Assert.IsNotNull(ok);
@@ -66,12 +53,10 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task GetNeighborNodeAsync_ReturnsNeighborByLocalId() {
-        await using var scope = TestGraphStorageScope.Create();
-        var root = (await scope.Storage.Create(new("root"))).Value!;
-        var actions = (await scope.Storage.Create(new("actions"), root.GlobalId, new Dictionary<string, string> { ["kind"] = "child" })).Value!;
-        var controller = CreateController(scope.Storage);
+        var root = (await Storage.Create(new("root"))).Value!;
+        var actions = (await Storage.Create(new("actions"), root.GlobalId, new Dictionary<string, string> { ["kind"] = "child" })).Value!;
 
-        var result = await controller.GetNeighborNodeAsync(root.GlobalId.ToString(), actions.LocalId.ToString());
+        var result = await Controller.GetNeighborNodeAsync(root.GlobalId.ToString(), actions.LocalId.ToString());
 
         var ok = result.Result as OkObjectResult;
         Assert.IsNotNull(ok);
@@ -85,13 +70,11 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task GetNeighborNodeAsync_DecodesNestedGlobalIdRouteSegment() {
-        await using var scope = TestGraphStorageScope.Create();
-        var root = (await scope.Storage.Create(new("Small_Arms_Web_KG"))).Value!;
-        var actions = (await scope.Storage.Create(new("Actions"), root.GlobalId)).Value!;
-        var gasOperated = (await scope.Storage.Create(new("Gas_Operated"), actions.GlobalId)).Value!;
-        var controller = CreateController(scope.Storage);
+        var root = (await Storage.Create(new("Small_Arms_Web_KG"))).Value!;
+        var actions = (await Storage.Create(new("Actions"), root.GlobalId)).Value!;
+        var gasOperated = (await Storage.Create(new("Gas_Operated"), actions.GlobalId)).Value!;
 
-        var result = await controller.GetNeighborNodeAsync(
+        var result = await Controller.GetNeighborNodeAsync(
             Uri.EscapeDataString(actions.GlobalId.ToString()),
             gasOperated.LocalId.ToString());
 
@@ -105,11 +88,9 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task GetNeighborNodeAsync_ReturnsNotFoundForMissingNeighbor() {
-        await using var scope = TestGraphStorageScope.Create();
-        var root = (await scope.Storage.Create(new("root"))).Value!;
-        var controller = CreateController(scope.Storage);
+        var root = (await Storage.Create(new("root"))).Value!;
 
-        var result = await controller.GetNeighborNodeAsync(root.GlobalId.ToString(), "missing");
+        var result = await Controller.GetNeighborNodeAsync(root.GlobalId.ToString(), "missing");
 
         Assert.IsInstanceOfType(result.Result, typeof(NotFoundResult));
     }
@@ -127,20 +108,14 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task GetNodeAsync_ReturnsNotFoundForMissingNode() {
-        await using var scope = TestGraphStorageScope.Create();
-        var controller = CreateController(scope.Storage);
-
-        var result = await controller.GetNodeAsync(["missing"]);
+        var result = await Controller.GetNodeAsync(["missing"]);
 
         Assert.IsInstanceOfType(result.Result, typeof(NotFoundResult));
     }
 
     [TestMethod]
     public async Task CreateNodeAsync_ReturnsCreatedNodeWithLocation() {
-        await using var scope = TestGraphStorageScope.Create();
-        var controller = CreateController(scope.Storage);
-
-        var result = await controller.CreateNodeAsync(new CreateNodeRequest {
+        var result = await Controller.CreateNodeAsync(new CreateNodeRequest {
             LocalId = "new node",
             Attributes = new Dictionary<string, string> { ["kind"] = "demo" }
         });
@@ -158,11 +133,9 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task CreateNodeAsync_CreatesChildWhenParentGlobalIdIsProvided() {
-        await using var scope = TestGraphStorageScope.Create();
-        var parent = (await scope.Storage.Create(new("parent"))).Value!;
-        var controller = CreateController(scope.Storage);
+        var parent = (await Storage.Create(new("parent"))).Value!;
 
-        var result = await controller.CreateNodeAsync(new CreateNodeRequest {
+        var result = await Controller.CreateNodeAsync(new CreateNodeRequest {
             LocalId = "child",
             ParentPath = [parent.LocalId]
         });
@@ -175,18 +148,16 @@ public sealed class GraphControllerTests {
         Assert.AreEqual("child", response.LocalId);
         Assert.AreEqual("parent/child", response.InternalId);
 
-        var stored = await scope.Storage.Get(new NodePath("parent","child"));
+        var stored = await Storage.Get(new NodePath("parent", "child"));
         Assert.IsNotNull(stored);
     }
 
     [TestMethod]
     public async Task GetNodeAsync_ResolvesChildByGlobalIdSegments() {
-        await using var scope = TestGraphStorageScope.Create();
-        var parent = (await scope.Storage.Create(new("parent"))).Value!;
-        var child = (await scope.Storage.Create(new("child"), parent.GlobalId)).Value!;
-        var controller = CreateController(scope.Storage);
+        var parent = (await Storage.Create(new("parent"))).Value!;
+        var child = (await Storage.Create(new("child"), parent.GlobalId)).Value!;
 
-        var result = await controller.GetNodeAsync(["parent", "child"]);
+        var result = await Controller.GetNodeAsync(["parent", "child"]);
 
         var ok = result.Result as OkObjectResult;
         Assert.IsNotNull(ok);
@@ -198,10 +169,7 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task CreateNodeAsync_ReturnsBadRequestForInvalidNodeName() {
-        await using var scope = TestGraphStorageScope.Create();
-        var controller = CreateController(scope.Storage);
-
-        var result = await controller.CreateNodeAsync(new CreateNodeRequest {
+        var result = await Controller.CreateNodeAsync(new CreateNodeRequest {
             LocalId = "KG Test: Ручное стрелковое оружие"
         });
 
@@ -210,15 +178,12 @@ public sealed class GraphControllerTests {
         var message = badRequest.Value as string;
         Assert.IsNotNull(message);
         StringAssert.Contains(message, "invalid character ':'");
-        StringAssert.Contains(message, NodeNameValidator.AllowedSegmentCharactersDescription);
+        StringAssert.Contains(message, global::Storage.NodeNameValidator.AllowedSegmentCharactersDescription);
     }
 
     [TestMethod]
     public async Task CreateNodeAsync_ReturnsBadRequestForReservedNodeNameSegment() {
-        await using var scope = TestGraphStorageScope.Create();
-        var controller = CreateController(scope.Storage);
-
-        var result = await controller.CreateNodeAsync(new CreateNodeRequest {
+        var result = await Controller.CreateNodeAsync(new CreateNodeRequest {
             LocalId = "CON"
         });
 
@@ -231,11 +196,9 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task ConnectNodesAsync_ReturnsBadRequestForInvalidTargetName() {
-        await using var scope = TestGraphStorageScope.Create();
-        var source = (await scope.Storage.Create(new("source"))).Value!;
-        var controller = CreateController(scope.Storage);
+        var source = (await Storage.Create(new("source"))).Value!;
 
-        var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
+        var result = await Controller.ConnectNodesAsync(new ConnectNodesRequest {
             Node1InternalId = [source.LocalId.ToString()],
             Node2InternalId = ["target:name"]
         });
@@ -249,19 +212,17 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task ConnectNodesAsync_ReturnsNoContentForExistingHierarchyConnectionWithSymLinkStorage() {
-        await using var scope = SymLinkGraphStorageScope.Create();
-        var root = (await scope.Storage.Create(new("small_arms_test_graph"))).Value!;
-        await scope.Storage.Create(new("weapons"), root.GlobalId);
-        var controller = CreateController(scope.Storage);
+        var root = (await Storage.Create(new("small_arms_test_graph"))).Value!;
+        await Storage.Create(new("weapons"), root.GlobalId);
 
-        var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
+        var result = await Controller.ConnectNodesAsync(new ConnectNodesRequest {
             Node1InternalId = ["small_arms_test_graph"],
             Node2InternalId = ["small_arms_test_graph", "weapons"]
         });
 
         Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
 
-        var rootPath = Path.Combine(scope.RootPath, "small_arms_test_graph");
+        var rootPath = Path.Combine(StorageOptions.RootPath, "small_arms_test_graph");
         var childPath = Path.Combine(rootPath, "weapons");
         Assert.IsTrue(Directory.Exists(childPath));
         Assert.IsFalse(File.GetAttributes(childPath).HasFlag(FileAttributes.ReparsePoint));
@@ -271,43 +232,40 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task ConnectNodesAsync_ConnectsNestedSiblingsWithSymLinkStorage() {
-        await using var scope = SymLinkGraphStorageScope.Create();
-        var root = (await scope.Storage.Create(new("small_arms_test_graph"))).Value!;
-        var weapons = (await scope.Storage.Create(new("weapons"), root.GlobalId)).Value!;
-        var categories = (await scope.Storage.Create(new("categories"), root.GlobalId)).Value!;
-        var controller = CreateController(scope.Storage);
+        var root = (await Storage.Create(new("small_arms_test_graph"))).Value!;
+        var weapons = (await Storage.Create(new("weapons"), root.GlobalId)).Value!;
+        var categories = (await Storage.Create(new("categories"), root.GlobalId)).Value!;
 
-        var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
+        var result = await Controller.ConnectNodesAsync(new ConnectNodesRequest {
             Node1InternalId = ["small_arms_test_graph", "weapons"],
             Node2InternalId = ["small_arms_test_graph", "categories"]
         });
 
         Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
 
-        weapons = (await scope.Storage.Get(new NodePath("small_arms_test_graph", "weapons"))).Value!;
-        categories = (await scope.Storage.Get(new NodePath("small_arms_test_graph", "categories"))).Value!;
+        weapons = (await Storage.Get(new NodePath("small_arms_test_graph", "weapons"))).Value!;
+        categories = (await Storage.Get(new NodePath("small_arms_test_graph", "categories"))).Value!;
 
-        var weaponLinkPath = Path.Combine(scope.RootPath, "small_arms_test_graph", "weapons", "categories");
-        var categoryLinkPath = Path.Combine(scope.RootPath, "small_arms_test_graph", "categories", "weapons");
+        var weaponLinkPath = Path.Combine(StorageOptions.RootPath, "small_arms_test_graph", "weapons", "categories");
+        var categoryLinkPath = Path.Combine(StorageOptions.RootPath, "small_arms_test_graph", "categories", "weapons");
         Assert.IsTrue(File.GetAttributes(weaponLinkPath).HasFlag(FileAttributes.ReparsePoint));
         Assert.IsTrue(File.GetAttributes(categoryLinkPath).HasFlag(FileAttributes.ReparsePoint));
-        Assert.IsFalse(Directory.EnumerateFileSystemEntries(Path.Combine(scope.RootPath, "small_arms_test_graph", "weapons"))
+        Assert.IsFalse(Directory.EnumerateFileSystemEntries(Path.Combine(StorageOptions.RootPath, "small_arms_test_graph", "weapons"))
             .Any(path => Path.GetFileName(path).StartsWith(".graphdata-node-", StringComparison.OrdinalIgnoreCase)));
-        Assert.IsFalse(Directory.EnumerateFileSystemEntries(Path.Combine(scope.RootPath, "small_arms_test_graph", "categories"))
+        Assert.IsFalse(Directory.EnumerateFileSystemEntries(Path.Combine(StorageOptions.RootPath, "small_arms_test_graph", "categories"))
             .Any(path => Path.GetFileName(path).StartsWith(".graphdata-node-", StringComparison.OrdinalIgnoreCase)));
 
-        var weaponConnections = (await scope.Storage.GetConnectedNodesAsync(weapons)).Value!;
-        var categoryConnections = (await scope.Storage.GetConnectedNodesAsync(categories)).Value!;
+        var weaponConnections = (await Storage.GetConnectedNodesAsync(weapons)).Value!;
+        var categoryConnections = (await Storage.GetConnectedNodesAsync(categories)).Value!;
         Assert.IsTrue(weaponConnections.Any(node => node.LocalId == categories.LocalId));
         Assert.IsTrue(categoryConnections.Any(node => node.LocalId == weapons.LocalId));
     }
 
     [TestMethod]
     public async Task ConnectNodesAsync_ReturnsInternalErrorDetailsWhenConnectFails() {
-        await using var scope = TestGraphStorageScope.Create();
-        var source = (await scope.Storage.Create(new("source"))).Value!;
-        var target = (await scope.Storage.Create(new("target"))).Value!;
-        var controller = CreateController(new ConnectThrowingGraphStorage(scope.Storage));
+        var source = (await Storage.Create(new("source"))).Value!;
+        var target = (await Storage.Create(new("target"))).Value!;
+        var controller = CreateController(new ConnectThrowingGraphStorage(Storage));
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
             Node1InternalId = [source.LocalId.ToString()],
@@ -325,14 +283,10 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task AssignNodeTypeAsync_ConnectsNodeToTypeThroughDslValidator() {
-        await using var scope = TestGraphStorageScope.Create();
-        await CreatePathAsync(scope.Storage, GraphBaseTypeIds.NodeType);
-        var weaponType = (await scope.Storage.Create(new("Weapon"), GraphSystemNodeIds.NodeTypeRoot)).Value!;
-        await scope.Storage.Connect(weaponType.GlobalId, GraphBaseTypeIds.NodeType);
-        var ak47 = (await scope.Storage.Create(new("ak-47"))).Value!;
-        var controller = CreateController(scope.Storage);
+        var weaponType = (await Storage.Create(new("Weapon"), Core.Models.GraphSystemNodeIds.NodeTypeRoot)).Value!;
+        var ak47 = (await Storage.Create(new("ak-47"))).Value!;
 
-        var result = await controller.AssignNodeTypeAsync(new AssignNodeTypeRequest {
+        var result = await Controller.AssignNodeTypeAsync(new AssignNodeTypeRequest {
             InternalId = ak47.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = weaponType.GlobalId.Select(static segment => segment.ToString()).ToArray()
         });
@@ -344,30 +298,24 @@ public sealed class GraphControllerTests {
         Assert.IsTrue(response.Nodes.Any(node => node.InternalId == ak47.GlobalId.ToString()));
         Assert.IsTrue(response.Nodes.Any(node => node.InternalId == weaponType.GlobalId.ToString()));
 
-        var storedNode = (await scope.Storage.Get(ak47.GlobalId)).Value!;
+        var storedNode = (await Storage.Get(ak47.GlobalId)).Value!;
         Assert.IsFalse(storedNode.Attributes.ContainsKey("graph.typeName"));
 
-        var connected = (await scope.Storage.GetConnectedNodesAsync(storedNode)).Value!;
+        var connected = (await Storage.GetConnectedNodesAsync(storedNode)).Value!;
         Assert.IsTrue(connected.Any(node => node.GlobalId == weaponType.GlobalId));
     }
 
     [TestMethod]
     public async Task ChangeEdgeTypeAsync_CreatesTypedEdgeSubgraphForBasicEdgeAndReturnsIt() {
-        await using var scope = TestGraphStorageScope.Create();
-        await new GraphStorageInitializer(scope.Storage).InitializeAsync();
-        var newType = (await scope.Storage.Create(new("new-type"), GraphSystemNodeIds.NodeTypeRoot)).Value!;
-        await scope.Storage.Connect(newType.GlobalId, GraphBaseTypeIds.NodeType);
-        await scope.Storage.Connect(newType.GlobalId, GraphBaseTypeIds.Connection);
-        var source = (await scope.Storage.Create(new("source"))).Value!;
-        var target = (await scope.Storage.Create(new("target"))).Value!;
-        await scope.Storage.Connect(source.GlobalId, target.GlobalId);
-        var controller = CreateController(scope.Storage);
+        var newType = (await Storage.Create(new("new-type"), Core.Models.GraphSystemNodeIds.NodeTypeRoot)).Value!;
+        var source = (await Storage.Create(new("source"))).Value!;
+        var target = (await Storage.Create(new("target"))).Value!;
+        await Storage.Connect(source.GlobalId, target.GlobalId);
 
-        var result = await controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
+        var result = await Controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
             Node1InternalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             Node2InternalId = target.GlobalId.Select(static segment => segment.ToString()).ToArray(),
-            TypeGlobalId = newType.GlobalId.Select(static segment => segment.ToString()).ToArray(),
-            TypedEdgeLocalId = "typed-edge-1"
+            TypeGlobalId = newType.GlobalId.Select(static segment => segment.ToString()).ToArray()
         });
 
         var ok = result.Result as OkObjectResult;
@@ -389,38 +337,34 @@ public sealed class GraphControllerTests {
             .ToArray();
         Assert.AreEqual(2, endpointPorts.Length);
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, relation.InternalId, newType.GlobalId.ToString())));
-        Assert.IsTrue(endpointPorts.All(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, GraphBaseTypeIds.Port.ToString()))));
         Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, source.GlobalId.ToString()))));
         Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, target.GlobalId.ToString()))));
 
-        var storedRelation = (await scope.Storage.Get(new NodePath("typed-edge-1"))).Value!;
+        var storedRelation = (await Storage.Get(new NodePath("typed-edge-1"))).Value!;
         Assert.AreEqual(0, storedRelation.Attributes.Count);
 
-        var replacementType = (await scope.Storage.Create(new("replacement-type"), GraphSystemNodeIds.NodeTypeRoot)).Value!;
-        await scope.Storage.Connect(replacementType.GlobalId, GraphBaseTypeIds.NodeType);
-        await scope.Storage.Connect(replacementType.GlobalId, GraphBaseTypeIds.Connection);
-        await scope.Storage.Update(storedRelation.GlobalId, new Dictionary<string, string> { ["note"] = "user note" });
-        var retyped = await controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
-            TypedEdgeGlobalId = storedRelation.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+        var replacementType = (await Storage.Create(new("replacement-type"), Core.Models.GraphSystemNodeIds.NodeTypeRoot)).Value!;
+        await Storage.Update(storedRelation.GlobalId, new Dictionary<string, string> { ["note"] = "user note" });
+        var retyped = await Controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
+            Node1InternalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            Node2InternalId = target.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = replacementType.GlobalId.Select(static segment => segment.ToString()).ToArray()
         });
         Assert.IsInstanceOfType(retyped.Result, typeof(OkObjectResult));
 
-        var sourceConnections = (await scope.Storage.GetConnectedNodesAsync(source)).Value!;
+        var sourceConnections = (await Storage.GetConnectedNodesAsync(source)).Value!;
         Assert.IsFalse(sourceConnections.Any(node => node.GlobalId == target.GlobalId));
     }
 
     [TestMethod]
     public async Task GetSubgraphAsync_ReturnsNodeEdgesForLazyExpansionAndTopLevelEdgesForLoadedNodes() {
-        await using var scope = TestGraphStorageScope.Create();
-        var first = (await scope.Storage.Create(new("1"))).Value!;
-        var second = (await scope.Storage.Create(new("2"))).Value!;
-        var third = (await scope.Storage.Create(new("3"))).Value!;
-        await scope.Storage.Connect(first.GlobalId, second.GlobalId);
-        await scope.Storage.Connect(second.GlobalId, third.GlobalId);
+        var first = (await Storage.Create(new("1"))).Value!;
+        var second = (await Storage.Create(new("2"))).Value!;
+        var third = (await Storage.Create(new("3"))).Value!;
+        await Storage.Connect(first.GlobalId, second.GlobalId);
+        await Storage.Connect(second.GlobalId, third.GlobalId);
 
-        var controller = CreateController(scope.Storage);
-        var result = await controller.GetSubgraphAsync(new SubgraphRequest {
+        var result = await Controller.GetSubgraphAsync(new SubgraphRequest {
             Paths = [[first.LocalId]],
             MaxDepth = 1
         });
@@ -446,16 +390,14 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task GetSubgraphAsync_ReturnsNestedNeighborEdgesWithGlobalIds() {
-        await using var scope = TestGraphStorageScope.Create();
-        var root = (await scope.Storage.Create(new("root"))).Value!;
-        var weapons = (await scope.Storage.Create(new("weapons"), root.GlobalId)).Value!;
-        var categories = (await scope.Storage.Create(new("categories"), root.GlobalId)).Value!;
-        var ak47 = (await scope.Storage.Create(new("ak_47"), weapons.GlobalId)).Value!;
-        var assaultRifle = (await scope.Storage.Create(new("assault_rifle"), categories.GlobalId)).Value!;
-        await scope.Storage.Connect(ak47.GlobalId, assaultRifle.GlobalId);
+        var root = (await Storage.Create(new("root"))).Value!;
+        var weapons = (await Storage.Create(new("weapons"), root.GlobalId)).Value!;
+        var categories = (await Storage.Create(new("categories"), root.GlobalId)).Value!;
+        var ak47 = (await Storage.Create(new("ak_47"), weapons.GlobalId)).Value!;
+        var assaultRifle = (await Storage.Create(new("assault_rifle"), categories.GlobalId)).Value!;
+        await Storage.Connect(ak47.GlobalId, assaultRifle.GlobalId);
 
-        var controller = CreateController(scope.Storage);
-        var result = await controller.GetSubgraphAsync(new SubgraphRequest {
+        var result = await Controller.GetSubgraphAsync(new SubgraphRequest {
             Paths = [["root", "weapons", "ak_47"]],
             MaxDepth = 1
         });
@@ -482,13 +424,11 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task GetSubgraphAsync_TraverseHierarchyEdges() {
-        await using var scope = TestGraphStorageScope.Create();
-        var root = (await scope.Storage.Create(new("root"))).Value!;
-        var weapons = (await scope.Storage.Create(new("weapons"), root.GlobalId)).Value!;
-        var ak47 = (await scope.Storage.Create(new("ak_47"), weapons.GlobalId)).Value!;
+        var root = (await Storage.Create(new("root"))).Value!;
+        var weapons = (await Storage.Create(new("weapons"), root.GlobalId)).Value!;
+        var ak47 = (await Storage.Create(new("ak_47"), weapons.GlobalId)).Value!;
 
-        var controller = CreateController(scope.Storage);
-        var result = await controller.GetSubgraphAsync(new SubgraphRequest {
+        var result = await Controller.GetSubgraphAsync(new SubgraphRequest {
             Paths = [["root"]],
             MaxDepth = 2
         });
@@ -508,13 +448,11 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task GetSubgraphAsync_EmptyGlobalIdsReturnTopLevelRoots() {
-        await using var scope = TestGraphStorageScope.Create();
-        var firstRoot = (await scope.Storage.Create(new("first"))).Value!;
-        var secondRoot = (await scope.Storage.Create(new("second"))).Value!;
-        var child = (await scope.Storage.Create(new("child"), firstRoot.GlobalId)).Value!;
+        var firstRoot = (await Storage.Create(new("first"))).Value!;
+        var secondRoot = (await Storage.Create(new("second"))).Value!;
+        var child = (await Storage.Create(new("child"), firstRoot.GlobalId)).Value!;
 
-        var controller = CreateController(scope.Storage);
-        var result = await controller.GetSubgraphAsync(new SubgraphRequest {
+        var result = await Controller.GetSubgraphAsync(new SubgraphRequest {
             Paths = [],
             MaxDepth = 0
         });
@@ -537,13 +475,11 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task GetSubgraphAsync_EmptyGlobalIdSelectorReturnsTopLevelRoots() {
-        await using var scope = TestGraphStorageScope.Create();
-        var firstRoot = (await scope.Storage.Create(new("first"))).Value!;
-        var secondRoot = (await scope.Storage.Create(new("second"))).Value!;
-        await scope.Storage.Create(new("child"), firstRoot.GlobalId);
+        var firstRoot = (await Storage.Create(new("first"))).Value!;
+        var secondRoot = (await Storage.Create(new("second"))).Value!;
+        await Storage.Create(new("child"), firstRoot.GlobalId);
 
-        var controller = CreateController(scope.Storage);
-        var result = await controller.GetSubgraphAsync(new SubgraphRequest {
+        var result = await Controller.GetSubgraphAsync(new SubgraphRequest {
             Paths = [[]],
             MaxDepth = 0
         });
@@ -560,13 +496,11 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task SearchNodesAsync_ReturnsVariableBindings() {
-        await using var scope = TestGraphStorageScope.Create();
-        var first = (await scope.Storage.Create(new("1"), attributes: new Dictionary<string, string> { ["id"] = "source" })).Value!;
-        var second = (await scope.Storage.Create(new("2"), attributes: new Dictionary<string, string> { ["id"] = "Y" })).Value!;
-        await scope.Storage.Connect(first.GlobalId, second.GlobalId);
+        var first = (await Storage.Create(new("1"), attributes: new Dictionary<string, string> { ["id"] = "source" })).Value!;
+        var second = (await Storage.Create(new("2"), attributes: new Dictionary<string, string> { ["id"] = "Y" })).Value!;
+        await Storage.Connect(first.GlobalId, second.GlobalId);
 
-        var controller = CreateController(scope.Storage);
-        var matches = await SearchNodesAsync(controller, new NodeSearchQueryRequest {
+        var matches = await SearchNodesAsync(Controller, new NodeSearchQueryRequest {
             Return = ["n", "x"],
             Where = new AllNodeSearchExpressionRequest {
                 Expressions = [
@@ -592,13 +526,11 @@ public sealed class GraphControllerTests {
 
     [TestMethod]
     public async Task SearchNodesAsync_WritesNdjsonMatches() {
-        await using var scope = TestGraphStorageScope.Create();
-        var first = (await scope.Storage.Create(new("1"))).Value!;
-        var second = (await scope.Storage.Create(new("2"), attributes: new Dictionary<string, string> { ["id"] = "Y" })).Value!;
-        await scope.Storage.Connect(first.GlobalId, second.GlobalId);
+        var first = (await Storage.Create(new("1"))).Value!;
+        var second = (await Storage.Create(new("2"), attributes: new Dictionary<string, string> { ["id"] = "Y" })).Value!;
+        await Storage.Connect(first.GlobalId, second.GlobalId);
 
-        var controller = CreateController(scope.Storage);
-        var matches = await SearchNodesAsync(controller, new NodeSearchQueryRequest {
+        var matches = await SearchNodesAsync(Controller, new NodeSearchQueryRequest {
             Return = ["n", "x"],
             Where = new AllNodeSearchExpressionRequest {
                 Expressions = [
@@ -620,17 +552,7 @@ public sealed class GraphControllerTests {
         Assert.AreEqual(second.LocalId.ToString(), streamed.Bindings["x"].LocalId);
     }
 
-    private static GraphController CreateController(IGraphStorage storage) {
-        var controller = new GraphController(new GraphService(storage, new GraphSearchService(storage), new CancellationTokensAccessorMock()));
-        controller.ControllerContext = new ControllerContext {
-            HttpContext = new DefaultHttpContext()
-        };
-        controller.ControllerContext.HttpContext.Response.Body = new MemoryStream();
-        return controller;
-    }
-
-    private static async Task CreatePathAsync(IGraphStorage storage, InternalId id)
-    {
+    private static async Task CreatePathAsync(IGraphStorage storage, InternalId id) {
         var segments = id.ToArray();
         NodePath? parent = null;
         for (var index = 0; index < segments.Length; index++) {
@@ -646,15 +568,15 @@ public sealed class GraphControllerTests {
     }
 
     private static async Task<IReadOnlyCollection<NodeSearchMatchResponse>> SearchNodesAsync(
-        GraphController controller,
+        GraphController Controller,
         NodeSearchQueryRequest query) {
-        var result = await controller.SearchNodesAsync(query, CancellationToken.None);
+        var result = await Controller.SearchNodesAsync(query, CancellationToken.None);
 
         Assert.IsInstanceOfType(result.Result, typeof(EmptyResult));
-        StringAssert.Contains(controller.Response.ContentType, "application/x-ndjson");
+        StringAssert.Contains(Controller.Response.ContentType, "application/x-ndjson");
 
-        controller.Response.Body.Position = 0;
-        using var reader = new StreamReader(controller.Response.Body, Encoding.UTF8, leaveOpen: true);
+        Controller.Response.Body.Position = 0;
+        using var reader = new StreamReader(Controller.Response.Body, Encoding.UTF8, leaveOpen: true);
         var content = await reader.ReadToEndAsync();
 
         return content
@@ -673,57 +595,6 @@ public sealed class GraphControllerTests {
     private static bool GraphIdIsChildOf(string globalId, string parentGlobalId) =>
         globalId.StartsWith(parentGlobalId + "/", StringComparison.Ordinal);
 
-    private sealed class SymLinkGraphStorageScope : IAsyncDisposable {
-        private readonly string _rootPath;
-
-        private SymLinkGraphStorageScope(string rootPath) {
-            _rootPath = rootPath;
-            Storage = new SymLinkGraphStorage(
-                Options.Create(new NtfsGraphStorageOptions { RootPath = rootPath }),
-                new CancellationTokensAccessorMock(),
-                NullLogger<SymLinkGraphStorage>.Instance);
-        }
-
-        public IGraphStorage Storage { get; }
-
-        public string RootPath => _rootPath;
-
-        public static SymLinkGraphStorageScope Create() {
-            var rootPath = Path.Combine(
-                Path.GetTempPath(),
-                "GraphDataTests",
-                "SymLinkApi",
-                Guid.NewGuid().ToString("N"));
-            return new SymLinkGraphStorageScope(rootPath);
-        }
-
-        public ValueTask DisposeAsync() {
-            DeleteDirectoryWithoutFollowingLinks(new DirectoryInfo(_rootPath));
-            return ValueTask.CompletedTask;
-        }
-
-        private static void DeleteDirectoryWithoutFollowingLinks(DirectoryInfo directory) {
-            if (!directory.Exists) {
-                return;
-            }
-
-            foreach (var entry in directory.EnumerateFileSystemInfos()) {
-                if ((entry.Attributes & FileAttributes.ReparsePoint) != 0) {
-                    entry.Delete();
-                    continue;
-                }
-
-                if (entry is DirectoryInfo childDirectory) {
-                    DeleteDirectoryWithoutFollowingLinks(childDirectory);
-                } else {
-                    entry.Delete();
-                }
-            }
-
-            directory.Delete();
-        }
-    }
-
     private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage {
         public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null) =>
             inner.Create(name, parent, attributes);
@@ -740,6 +611,9 @@ public sealed class GraphControllerTests {
 
         public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node) =>
             inner.GetConnectedNodesAsync(node);
+
+        public IAsyncEnumerable<NodeState> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] others) =>
+            inner.GetCommonIntersection(first, second, others);
     }
 
     private sealed class AmbiguousNeighborGraphStorage : IGraphStorage {
@@ -749,13 +623,17 @@ public sealed class GraphControllerTests {
             _root = root;
         }
 
+        public IAsyncEnumerable<NodeState> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] others) {
+            throw new NotImplementedException();
+        }
+
         public static IGraphStorage Create() {
             var root = new StaticNode(new("root"), new("root"));
             var first = new StaticNode(new("same"), new("left", "same"));
             var second = new StaticNode(new("same"), new("right", "same"));
             root.EdgeSnapshot = [
-                new EdgeState(root, first),
-                new EdgeState(root, second)
+                new EdgeStateReferenced(root, first),
+                new EdgeStateReferenced(root, second)
             ];
 
             return new AmbiguousNeighborGraphStorage(root);

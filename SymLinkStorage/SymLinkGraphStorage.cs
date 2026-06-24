@@ -8,7 +8,7 @@ namespace Storage;
 internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public NodeRef.InternalId Root => new NodeRef.InternalId(new string[0]);
+    public NodeRef.InternalId Root => new NodeRef.InternalId();
 
     internal readonly DirectoryInfo root;
     readonly NtfsGraphStorageOptions options;
@@ -145,6 +145,11 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
 
             await Task.Yield();
         }
+    }
+
+    public IAsyncEnumerable<NodeState> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) {
+        //TODO реализовать возврат общих узлов
+        throw new NotImplementedException();
     }
 
     internal NodeFileSystem? GetInternal(NodeFileSystem? parent, NodeLocalId nodeId) {

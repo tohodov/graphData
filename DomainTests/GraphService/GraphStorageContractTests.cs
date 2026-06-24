@@ -14,7 +14,7 @@ public abstract partial class GraphStorageContractTests {
     [TestInitialize]
     public async Task TestInitializeAsync() {//TODO переписать на конструктор
         Storage = (IGraphStorage)await CreateStorageAsync();
-        Service = new GraphService(Storage, new(Storage), new CancellationTokensAccessorMock());
+        Service = new GraphService(Storage, new(Storage), new CancellationTokensAccessorMock(), GraphSchemaRegistry.Create());
     }
 
     [TestCleanup]
@@ -356,7 +356,7 @@ partial class GraphStorageContractTests {
         var secondRoot = (await Storage.Create(new("second"))).Value!;
         await Storage.Create(new("child"), firstRoot.GlobalId);
 
-        var subgraph = (await Service.GetSubgraph([new InternalId(Array.Empty<string>())], 0)).Value!;
+        var subgraph = (await Service.GetSubgraph([new InternalId()], 0)).Value!;
 
         CollectionAssert.AreEquivalent(
             new[] { firstRoot.GlobalId, secondRoot.GlobalId },
@@ -368,11 +368,8 @@ partial class GraphStorageContractTests {
     [TestMethod]
     public async Task AddSubgraph_ShouldPersistVirtualNodesAndConnections() {
         var catalog = new Node(new InternalId("catalog"));
-        var weapon = new Node(
-            new InternalId("catalog", "ak-47"),
-            new Dictionary<string, string> {
-                ["displayName"] = "AK-47"
-            });
+        var weapon = new Node(new InternalId("catalog", "ak-47"));
+        weapon.Attributes["displayName"] = "AK-47";
         var weaponType = new Node(new InternalId("graphdata", "types", "nodes", "Weapon"));
 
         catalog.Nodes.Add(weapon);
@@ -400,12 +397,9 @@ partial class GraphStorageContractTests {
             attributes: new Dictionary<string, string> {
                 ["color"] = "#123456"
             });
-        var catalog = new Node(
-            new InternalId("catalog"),
-            new Dictionary<string, string> {
-                ["color"] = "#abcdef",
-                ["generated"] = "true"
-            });
+        var catalog = new Node(new InternalId("catalog"));
+        catalog.Attributes["color"] = "#abcdef";
+        catalog.Attributes["generated"] = "true";
 
         var result = await Service.AddSubgraph(catalog);
 

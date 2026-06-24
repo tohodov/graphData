@@ -1,16 +1,17 @@
 ﻿namespace Abstractions;
 
-internal class EdgeState
-{
-    protected EdgeState() { } //TODO подумать над иерархией
+internal abstract class EdgeState {
+    public abstract NodeState Node1 { get; }
+    public abstract NodeState Node2 { get; }
 
-    public EdgeState(NodeState first, NodeState second, InternalId? type = null) {
+    protected EdgeState() { }
+}
+internal class EdgeStateReferenced : EdgeState {
+    public override NodeState Node1 { get; }
+    public override NodeState Node2 { get; }
+
+    public EdgeStateReferenced(NodeState first, NodeState second) {
         Node1 = first;
         Node2 = second;
-        TypeId = type;
     }
-
-    public virtual NodeState Node1 { get; }
-    public virtual NodeState Node2 { get; }
-    public virtual InternalId? TypeId { get; }
 }

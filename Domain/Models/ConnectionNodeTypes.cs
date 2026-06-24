@@ -1,17 +1,19 @@
+using Abstractions;
+
 namespace GraphData.Core.Models;
 
-public sealed class ConnectionNodeType : NodeType
+public sealed class ConnectionNodeType : NodeType //TODO удалить
 {
-    public override void Define(NodeTypeBuilder type)
-    {
-        type.Abstract();
+    internal ConnectionNodeType(NodeState state) : base(state) {
     }
 }
 
-public sealed class EndpointNodeType : NodeType
-{
+public sealed class EndpointNodeType : NodeType {
+    internal EndpointNodeType(NodeState state) : base(state) {
+    }
 }
 
-public sealed class PortNodeType : NodeType
-{
+public sealed class PortNodeType : NodeType {
+    internal PortNodeType(NodeState state) : base(state) {
+    }
 }

@@ -55,25 +55,22 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
 
     [HttpPost("connections")]
     public async Task<ActionResult<OperationResponse>> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
-        var result = await graph.ConnectNodesAsync(new InternalId(request.Node1InternalId), new InternalId(request.Node2InternalId));
+        var result = await graph.ConnectNodesAsync(new InternalId(request.Node1InternalId.Select(x => new NodeLocalId(x))), new InternalId(request.Node2InternalId.Select(x => new NodeLocalId(x))));
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
     }
 
     [HttpPut("nodes/type")]
     public async Task<ActionResult<SubgraphResponse>> AssignNodeTypeAsync([FromBody] AssignNodeTypeRequest request) {
-        var result = await graph.AssignNodeTypeAsync(new InternalId(request.InternalId), new InternalId(request.TypeGlobalId));
+        var result = await graph.AssignNodeTypeAsync(new InternalId(request.InternalId.Select(x => new NodeLocalId(x))), new InternalId(request.TypeGlobalId.Select(x => new NodeLocalId(x))));
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
     [HttpPut("edges/type")]
     public async Task<ActionResult<SubgraphResponse>> ChangeEdgeTypeAsync([FromBody] ChangeEdgeTypeRequest request) {
         var result = await graph.ChangeEdgeTypeAsync(
-            (InternalId?)request.Node1InternalId,
-            (InternalId?)request.Node2InternalId,
-            new InternalId(request.TypeGlobalId),
-            (InternalId?)(request.TypedEdgeGlobalId ?? request.RelationGlobalId),
-            (InternalId?)(request.TypedEdgeParentGlobalId ?? request.RelationParentGlobalId),
-            (NodeLocalId?)(request.TypedEdgeLocalId ?? request.RelationLocalId));
+            new InternalId(request.Node1InternalId.Select(x => new NodeLocalId(x))),
+            new InternalId(request.Node2InternalId.Select(x => new NodeLocalId(x))),
+            new InternalId(request.TypeGlobalId.Select(x => new NodeLocalId(x))));
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 

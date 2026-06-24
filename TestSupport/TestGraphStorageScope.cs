@@ -12,7 +12,13 @@ internal sealed class TestGraphStorageScope : IAsyncDisposable
 {
     private readonly NtfsGraphStorageOptions _options;
 
-    private TestGraphStorageScope(NtfsGraphStorageOptions options)
+    public static TestGraphStorageScope Create() {
+        return new TestGraphStorageScope(new NtfsGraphStorageOptions {
+            RootPath = Path.Combine(Path.GetTempPath(), "GraphDataTests", Guid.NewGuid().ToString("N"))
+        });
+    }
+
+    public TestGraphStorageScope(NtfsGraphStorageOptions options)
     {
         _options = options;
         Storage = new SymLinkGraphStorage(
@@ -21,24 +27,12 @@ internal sealed class TestGraphStorageScope : IAsyncDisposable
             NullLogger<SymLinkGraphStorage>.Instance);
     }
 
-    public IGraphStorage Storage { get; }
-
-    public static TestGraphStorageScope Create()
-    {
-        var options = new NtfsGraphStorageOptions {
-            RootPath = Path.Combine(Path.GetTempPath(), "GraphDataTests", Guid.NewGuid().ToString("N"))
-        };
-
-        return new TestGraphStorageScope(options);
-    }
+    internal IGraphStorage Storage { get; }
 
     public ValueTask DisposeAsync()
     {
         if (!string.IsNullOrWhiteSpace(_options.RootPath) && Directory.Exists(_options.RootPath))
-        {
             Directory.Delete(_options.RootPath, recursive: true);
-        }
-
-        return ValueTask.CompletedTask;
+        return ValueTask.CompletedTask;//TODO проверить
     }
 }

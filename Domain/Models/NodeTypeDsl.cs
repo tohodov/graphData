@@ -42,12 +42,11 @@ public sealed record NodeSlotDefinition(
     public void EnsureSatisfiedBy(InstanceNode instance)
     {
         var allowedTypeIds = AllowedTypeIds.ToHashSet();
-        var count = instance.NeighborInstances.Count(neighbor =>
-            neighbor.AssignedTypes.Any(type => allowedTypeIds.Contains(type.GlobalId)));
-
+        var count = instance.Nodes.OfType<InstanceNode>().Count(neighbor => allowedTypeIds.Contains(neighbor.Type.GlobalId));
+        //TODO это всё не работает, нужно переписывать
+        throw new NotImplementedException();
         if (!Cardinality.Contains(count))
-            throw new InvalidOperationException(
-                $"Slot '{Name}' expects {Cardinality} linked nodes, but found {count}.");
+            throw new InvalidOperationException($"Slot '{Name}' expects {Cardinality} linked nodes, but found {count}.");
     }
 }
 
@@ -73,16 +72,6 @@ public sealed record NodeTypeDefinition(
 {
     public void EnsureSatisfiedBy(InstanceNode instance)
     {
-        if (IsAbstract)
-            throw new InvalidOperationException($"Node type '{Type.GlobalId}' is abstract.");
-
-        if (instance.AssignedTypes.Count != 1)
-            throw new InvalidOperationException($"Node '{instance.GlobalId}' must have exactly one node type.");
-
-        var assignedType = instance.AssignedTypes.Single();
-        if (assignedType.GlobalId != Type.GlobalId)
-            throw new InvalidOperationException($"Node '{instance.GlobalId}' has another node type.");
-
         foreach (var slot in Slots)
             slot.EnsureSatisfiedBy(instance);
     }

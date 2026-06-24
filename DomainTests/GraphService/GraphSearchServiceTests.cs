@@ -11,18 +11,17 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 namespace GraphData.Tests.Search;
 
 [RelevantTestClass]
-public sealed class GraphSearchServiceTests
+public sealed class GraphSearchServiceTests : StorageTests
 {
     [TestMethod]
     public async Task Search_ShouldFindVerticesWithoutEdges()
     {
-        await using var scope = TestGraphStorageScope.Create();
-        var isolated = (await scope.Storage.Create(new("isolated"))).Value!;
-        var connected = (await scope.Storage.Create(new("connected"))).Value!;
-        var neighbor = (await scope.Storage.Create(new("neighbor"))).Value!;
-        await scope.Storage.Connect(connected.GlobalId, neighbor.GlobalId);
+        var isolated = (await Storage.Create(new("isolated"))).Value!;
+        var connected = (await Storage.Create(new("connected"))).Value!;
+        var neighbor = (await Storage.Create(new("neighbor"))).Value!;
+        await Storage.Connect(connected.GlobalId, neighbor.GlobalId);
 
-        var matches = await Search(scope.Storage, new NodeSearchQuery
+        var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
             Where = All(
@@ -38,11 +37,10 @@ public sealed class GraphSearchServiceTests
     [TestMethod]
     public async Task Search_ShouldNotReturnIgnoredSelfConnectionsAsEdges()
     {
-        await using var scope = TestGraphStorageScope.Create();
-        var node = (await scope.Storage.Create(new("self"))).Value!;
-        await scope.Storage.Connect(node.GlobalId, node.GlobalId);
+        var node = (await Storage.Create(new("self"))).Value!;
+        await Storage.Connect(node.GlobalId, node.GlobalId);
 
-        var matches = await Search(scope.Storage, new NodeSearchQuery
+        var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
             Where = Connected("x", "x")
@@ -54,11 +52,10 @@ public sealed class GraphSearchServiceTests
     [TestMethod]
     public async Task Search_ShouldTreatZeroLengthPathAsSelfRelationWhenRequested()
     {
-        await using var scope = TestGraphStorageScope.Create();
-        var first = (await scope.Storage.Create(new("first"))).Value!;
-        var second = (await scope.Storage.Create(new("second"))).Value!;
+        var first = (await Storage.Create(new("first"))).Value!;
+        var second = (await Storage.Create(new("second"))).Value!;
 
-        var matches = await Search(scope.Storage, new NodeSearchQuery
+        var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
             Where = new NodePathSearchExpression
@@ -79,27 +76,26 @@ public sealed class GraphSearchServiceTests
     [TestMethod]
     public async Task Search_ShouldReturnMatchingVerticesWithoutImplicitRanking()
     {
-        await using var scope = TestGraphStorageScope.Create();
-        var hub = (await scope.Storage.Create(new("hub"))).Value!;
-        var mid = (await scope.Storage.Create(new("mid"))).Value!;
-        var h1 = (await scope.Storage.Create(new("h1"))).Value!;
-        var h2 = (await scope.Storage.Create(new("h2"))).Value!;
-        var h3 = (await scope.Storage.Create(new("h3"))).Value!;
-        var h4 = (await scope.Storage.Create(new("h4"))).Value!;
-        var m1 = (await scope.Storage.Create(new("m1"))).Value!;
-        var m2 = (await scope.Storage.Create(new("m2"))).Value!;
+        var hub = (await Storage.Create(new("hub"))).Value!;
+        var mid = (await Storage.Create(new("mid"))).Value!;
+        var h1 = (await Storage.Create(new("h1"))).Value!;
+        var h2 = (await Storage.Create(new("h2"))).Value!;
+        var h3 = (await Storage.Create(new("h3"))).Value!;
+        var h4 = (await Storage.Create(new("h4"))).Value!;
+        var m1 = (await Storage.Create(new("m1"))).Value!;
+        var m2 = (await Storage.Create(new("m2"))).Value!;
 
         foreach (var node in new[] { h1, h2, h3, h4 })
         {
-            await scope.Storage.Connect(hub.GlobalId, node.GlobalId);
+            await Storage.Connect(hub.GlobalId, node.GlobalId);
         }
 
         foreach (var node in new[] { m1, m2 })
         {
-            await scope.Storage.Connect(mid.GlobalId, node.GlobalId);
+            await Storage.Connect(mid.GlobalId, node.GlobalId);
         }
 
-        var matches = await Search(scope.Storage, new NodeSearchQuery
+        var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
             Where = Node("x"),
@@ -114,22 +110,21 @@ public sealed class GraphSearchServiceTests
     [TestMethod]
     public async Task Search_ShouldFindVerticesDirectlyConnectedToEveryAnchor()
     {
-        await using var scope = TestGraphStorageScope.Create();
-        var a = (await scope.Storage.Create("a")).Value!;
-        var b = (await scope.Storage.Create("b")).Value!;
-        var c = (await scope.Storage.Create("c")).Value!;
-        var target = (await scope.Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
-        var partial = (await scope.Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var a = (await Storage.Create("a")).Value!;
+        var b = (await Storage.Create("b")).Value!;
+        var c = (await Storage.Create("c")).Value!;
+        var target = (await Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var partial = (await Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
 
         foreach (var anchor in new[] { a, b, c })
         {
-            await scope.Storage.Connect(target.GlobalId, anchor.GlobalId);
+            await Storage.Connect(target.GlobalId, anchor.GlobalId);
         }
 
-        await scope.Storage.Connect(partial.GlobalId, a.GlobalId);
-        await scope.Storage.Connect(partial.GlobalId, b.GlobalId);
+        await Storage.Connect(partial.GlobalId, a.GlobalId);
+        await Storage.Connect(partial.GlobalId, b.GlobalId);
 
-        var matches = await Search(scope.Storage, new NodeSearchQuery
+        var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
             Where = All(
@@ -147,20 +142,19 @@ public sealed class GraphSearchServiceTests
     [TestMethod]
     public async Task Search_ShouldFindVerticesConnectedToEveryAnchorWithinThreeSteps()
     {
-        await using var scope = TestGraphStorageScope.Create();
-        var a = (await scope.Storage.Create("anchor-a")).Value!;
-        var b = (await scope.Storage.Create("anchor-b")).Value!;
-        var target = (await scope.Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
-        var tooFar = (await scope.Storage.Create("too-far", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
-        var partial = (await scope.Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var a = (await Storage.Create("anchor-a")).Value!;
+        var b = (await Storage.Create("anchor-b")).Value!;
+        var target = (await Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var tooFar = (await Storage.Create("too-far", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var partial = (await Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
 
-        await ConnectPath(scope.Storage, target, "target-a-1", "target-a-2", a);
-        await ConnectPath(scope.Storage, target, "target-b-1", b);
-        await ConnectPath(scope.Storage, tooFar, "far-a-1", "far-a-2", "far-a-3", a);
-        await ConnectPath(scope.Storage, tooFar, "far-b-1", b);
-        await ConnectPath(scope.Storage, partial, "partial-a-1", a);
+        await ConnectPath(Storage, target, "target-a-1", "target-a-2", a);
+        await ConnectPath(Storage, target, "target-b-1", b);
+        await ConnectPath(Storage, tooFar, "far-a-1", "far-a-2", "far-a-3", a);
+        await ConnectPath(Storage, tooFar, "far-b-1", b);
+        await ConnectPath(Storage, partial, "partial-a-1", a);
 
-        var matches = await Search(scope.Storage, new NodeSearchQuery
+        var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
             Where = All(
@@ -177,17 +171,16 @@ public sealed class GraphSearchServiceTests
     [TestMethod]
     public async Task Search_ShouldFindVerticesConnectedToAnyAnchor()
     {
-        await using var scope = TestGraphStorageScope.Create();
-        var a = (await scope.Storage.Create("a")).Value!;
-        var b = (await scope.Storage.Create("b")).Value!;
-        var first = (await scope.Storage.Create("first", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
-        var second = (await scope.Storage.Create("second", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
-        await scope.Storage.Create("unrelated", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
+        var a = (await Storage.Create("a")).Value!;
+        var b = (await Storage.Create("b")).Value!;
+        var first = (await Storage.Create("first", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var second = (await Storage.Create("second", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        await Storage.Create("unrelated", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
 
-        await scope.Storage.Connect(first.GlobalId, a.GlobalId);
-        await scope.Storage.Connect(second.GlobalId, b.GlobalId);
+        await Storage.Connect(first.GlobalId, a.GlobalId);
+        await Storage.Connect(second.GlobalId, b.GlobalId);
 
-        var matches = await Search(scope.Storage, new NodeSearchQuery
+        var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
             Where = All(
@@ -209,14 +202,13 @@ public sealed class GraphSearchServiceTests
     [TestMethod]
     public async Task Search_ShouldFindDescendantsWithinHierarchyDepth()
     {
-        await using var scope = TestGraphStorageScope.Create();
-        var root = (await scope.Storage.Create("weapons")).Value!;
-        var pistols = (await scope.Storage.Create("pistols", root.GlobalId)).Value!;
-        var revolvers = (await scope.Storage.Create("revolvers", pistols.GlobalId)).Value!;
-        await scope.Storage.Create("smith-wesson", revolvers.GlobalId);
-        await scope.Storage.Create("vehicles");
+        var root = (await Storage.Create("weapons")).Value!;
+        var pistols = (await Storage.Create("pistols", root.GlobalId)).Value!;
+        var revolvers = (await Storage.Create("revolvers", pistols.GlobalId)).Value!;
+        await Storage.Create("smith-wesson", revolvers.GlobalId);
+        await Storage.Create("vehicles");
 
-        var matches = await Search(scope.Storage, new NodeSearchQuery
+        var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
             Where = new NodeDescendantSearchExpression
@@ -235,15 +227,14 @@ public sealed class GraphSearchServiceTests
     [TestMethod]
     public async Task Search_ShouldCombineTextAndAttributePredicates()
     {
-        await using var scope = TestGraphStorageScope.Create();
-        var match = (await scope.Storage.Create(
+        var match = (await Storage.Create(
             "alpha",
             attributes: new Dictionary<string, string>
             {
                 ["kind"] = "weapon",
                 ["description"] = "steel frame"
             })).Value!;
-        await scope.Storage.Create(
+        await Storage.Create(
             "beta",
             attributes: new Dictionary<string, string>
             {
@@ -251,7 +242,7 @@ public sealed class GraphSearchServiceTests
                 ["description"] = "polymer"
             });
 
-        var matches = await Search(scope.Storage, new NodeSearchQuery
+        var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
             Where = All(
@@ -271,11 +262,10 @@ public sealed class GraphSearchServiceTests
     [TestMethod]
     public async Task SearchStream_ShouldYieldMatchesAsAsyncEnumerable()
     {
-        await using var scope = TestGraphStorageScope.Create();
-        var first = (await scope.Storage.Create("first")).Value!;
-        var second = (await scope.Storage.Create("second")).Value!;
+        var first = (await Storage.Create("first")).Value!;
+        var second = (await Storage.Create("second")).Value!;
 
-        var service = new GraphSearchService(scope.Storage);
+        var service = new GraphSearchService(Storage);
         var matches = new List<NodeSearchMatch>();
         await foreach (var match in service.SearchNodesStreamAsync(new NodeSearchQuery
         {
@@ -449,6 +439,34 @@ public sealed class GraphSearchServiceTests
 
         public Task<ServiceResult> Disconnect(NodeRef sourcePath, NodeRef targetPath) =>
             throw new NotSupportedException();
+
+        Task<ServiceResult<NodeState>> IGraphStorage.Create(NodeLocalId name, NodeRef? parent, IDictionary<string, string>? attributes) {
+            throw new NotImplementedException();
+        }
+
+        Task<ServiceResult<NodeState>> IGraphStorage.Get(NodeRef path) {
+            throw new NotImplementedException();
+        }
+
+        Task<ServiceResult> IGraphStorage.Delete(NodeRef path) {
+            throw new NotImplementedException();
+        }
+
+        Task<ServiceResult> IGraphStorage.Connect(NodeRef sourcePath, NodeRef targetPath) {
+            throw new NotImplementedException();
+        }
+
+        Task<ServiceResult> IGraphStorage.Disconnect(NodeRef sourcePath, NodeRef targetPath) {
+            throw new NotImplementedException();
+        }
+
+        Task<ServiceResult<IReadOnlyCollection<NodeState>>> IGraphStorage.GetConnectedNodesAsync(NodeState node) {
+            throw new NotImplementedException();
+        }
+
+        IAsyncEnumerable<NodeState> IGraphStorage.GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) {
+            throw new NotImplementedException();
+        }
     }
 
     private sealed class StreamingProbeNode : NodeState

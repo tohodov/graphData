@@ -10,4 +10,5 @@ public static class GraphSystemNodeIds
     public static InternalId StorageRoot { get; } = new("graphdata", "storage");
     public static InternalId InitializerRoot { get; } = new("graphdata", "storage", "initializers");
     public static InternalId RuntimeTypesInitializer { get; } = new("graphdata", "storage", "initializers", "runtime-types");
+    public static InternalId InstanceRoot { get; set; } = new("graphdata", "instances");
 }

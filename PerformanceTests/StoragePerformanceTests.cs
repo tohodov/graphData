@@ -24,7 +24,7 @@ public sealed class StoragePerformanceTests {
 
         const string scenario = "storage-operations";
         await using var scope = PerformanceStorageScope.Create(storageKind, scenario);
-        var service = new GraphData.Core.Services.GraphService(scope.Storage, new GraphSearchService(scope.Storage), new CancellationTokensAccessorMock());
+        var service = new GraphService(scope.Storage, new GraphSearchService(scope.Storage), new CancellationTokensAccessorMock(), GraphSchemaRegistry.Create());
         AssertStorageRoot(scope, scenario);
 
         var run = new PerformanceRun(storageKind.ToString(), graph, scenario, scope.RootPath);
@@ -182,7 +182,7 @@ public sealed class StoragePerformanceTests {
 
         const string scenario = "subgraph-random-reads";
         await using var scope = PerformanceStorageScope.Create(storageKind, scenario);
-        var service = new GraphData.Core.Services.GraphService(scope.Storage, new GraphSearchService(scope.Storage), new CancellationTokensAccessorMock());
+        var service = new GraphService(scope.Storage, new GraphSearchService(scope.Storage), new CancellationTokensAccessorMock(), GraphSchemaRegistry.Create());
         AssertStorageRoot(scope, scenario);
 
         var run = new PerformanceRun(storageKind.ToString(), graph, scenario, scope.RootPath);

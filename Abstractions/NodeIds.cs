@@ -24,13 +24,14 @@ public readonly struct NodeLocalId : IEquatable<NodeLocalId>, IComparable<NodeLo
     public static implicit operator NodeLocalId?(string? id) => id == null ? null : new(id);
 
     public int CompareTo(NodeLocalId other) => string.Compare(value, other.value, StringComparison.Ordinal);
+
+    internal static NodeLocalId Random() => new NodeLocalId(Guid.NewGuid().ToString());//TODO переписать на создание Id внутри где можно проверить занятость
 }
 public abstract class NodeRef {
     public sealed class InternalId : NodeRef, IEnumerable<NodeLocalId>, IEquatable<InternalId> {
         readonly ImmutableArray<NodeLocalId> segments;
         readonly int hashCode;
 
-        public InternalId(params IEnumerable<string> segments) : this(CreateSegments(segments.Select(x => new NodeLocalId(x)))) { }
         public InternalId(params IEnumerable<NodeLocalId> segments) : this(CreateSegments(segments)) { }
         public InternalId(ImmutableArray<NodeLocalId> segments) {
             if (segments.IsDefault)
@@ -83,7 +84,7 @@ public abstract class NodeRef {
             });
         }
 
-        public static explicit operator InternalId?(string[]? path) => path is null ? null : new InternalId(path);
+        public static explicit operator InternalId?(string[]? path) => path is null ? null : new InternalId(path.Select(x => new NodeLocalId(x)));
         public static bool operator ==(InternalId left, InternalId? right) => left.Equals(right);
         public static bool operator !=(InternalId left, InternalId? right) => !left.Equals(right);
 

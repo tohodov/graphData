@@ -27,7 +27,8 @@ internal sealed class NodeFileSystem : NodeState {
         GetRelativePath(storageRootPath, FolderPath)
             .Split(DirectorySeparatorChar, AltDirectorySeparatorChar)
             .Where(static part => part is not "." and not "")
-            .Select(SymLinkGraphStorage.NormalizeNodeName));
+            .Select(SymLinkGraphStorage.NormalizeNodeName)
+            .Select(x => new NodeLocalId(x)));
     public override ICollection<EdgeState> Edges { get; }
     public override ILazyCollection<NodeState> Nodes { get; }
     public override IDictionary<string, string> Attributes {

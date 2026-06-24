@@ -17,7 +17,7 @@ builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorag
 
 var app = builder.Build();
 
-await app.Services.GetRequiredService<GraphStorageInitializer>().InitializeAsync();
+await app.Services.GetRequiredService<GraphService>().InitializeAsync();
 
 if (app.Environment.IsDevelopment())
 {

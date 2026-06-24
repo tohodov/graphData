@@ -32,9 +32,9 @@ public sealed record TypedEdgeDefinition(
                 continue;
 
             var instance = endpointInstances[index];
-            if (!instance.AssignedTypes.Any(type => type.GlobalId == nodeTypeId))
-                throw new InvalidOperationException(
-                    $"Endpoint '{definition.Name}' expects node type '{nodeTypeId}', but node '{instance.GlobalId}' has another type.");
+            throw new NotImplementedException(); //TODO я не понимаю
+            //if (!instance.AssignedTypes.Any(type => type.GlobalId == nodeTypeId))
+            //    throw new InvalidOperationException($"Endpoint '{definition.Name}' expects node type '{nodeTypeId}', but node '{instance.GlobalId}' has another type.");
         }
     }
 
