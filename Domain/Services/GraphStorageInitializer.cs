@@ -16,15 +16,17 @@ public class GraphStorageInitializer {
 
     public async Task InitializeAsync() {
         var checkResult = await service.GetNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer).ConfigureAwait(false);
-        if (checkResult.Status != ServiceResultStatus.NotFound)
+        if (checkResult.Status == ServiceResultStatus.NotFound) {
+            var storageStateNode = (Node)await service.GetNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer);
+            storageStateNode.Nodes.Clear();
+            storageStateNode.Nodes.Add(new Node(new NodeLocalId(RuntimeTypesVersion)));
+            storageStateNode.Nodes.Add(new Node(new NodeLocalId(schemaRegistry.Fingerprint)));
+            var result = await service.AddSubgraph(service.Root).ConfigureAwait(false);
+            if (result.Status != ServiceResultStatus.Ok)
+                throw new Exception(result.Error);
+        } else if (checkResult.Status == ServiceResultStatus.Ok)
             return;
-
-        var storageStateNode = (Node)await service.GetNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer);
-        storageStateNode.Nodes.Clear();
-        storageStateNode.Nodes.Add(new Node(new NodeLocalId(RuntimeTypesVersion)));
-        storageStateNode.Nodes.Add(new Node(new NodeLocalId(schemaRegistry.Fingerprint)));
-        var result = await service.AddSubgraph(service.Root).ConfigureAwait(false);
-        if (result.Status != ServiceResultStatus.Ok)
-            throw new Exception(result.Error);
+        else
+            throw new Exception(checkResult.Error);
     }
 }
