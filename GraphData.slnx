@@ -14,6 +14,7 @@
   <Folder Name="/Tests/">
     <Project Path="Tests/ApiTests/ApiTests.csproj" />
     <Project Path="Tests/DomainTests/DomainTests.csproj" />
+    <Project Path="Tests/McpTests/McpTests.csproj" />
     <Project Path="Tests/PerformanceTests/PerformanceTests.csproj" />
   </Folder>
   <Folder Name="/Tests/RelevantTests/">
@@ -24,9 +25,9 @@
     <Project Path="Tests/RelevantTests/src/RelevantTests.MSTestAdapter/RelevantTests.MSTestAdapter.csproj" />
     <Project Path="Tests/RelevantTests/src/RelevantTests.UsageAnalyzer/RelevantTests.UsageAnalyzer.csproj" />
   </Folder>
-  <Project Path="Api/0_Api.csproj" />
-  <Project Path="Mcp/0_Mcp.csproj" />
-  <Project Path="Domain/1_ Domain.csproj" />
-  <Project Path="SymLinkStorage/1_SymLinkStorage.csproj" />
   <Project Path="Abstractions/Abstractions.csproj" />
+  <Project Path="Api/0_Api.csproj" />
+  <Project Path="Domain/1_ Domain.csproj" />
+  <Project Path="Mcp/0_Mcp.csproj" />
+  <Project Path="SymLinkStorage/1_SymLinkStorage.csproj" />
 </Solution>

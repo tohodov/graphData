@@ -13,7 +13,8 @@ partial class GraphStorageContractTests {
         node.Attributes["extra"] = "value";
         node.Attributes.Remove("created");
 
-        var retrieved = (await Storage.Get(node.GlobalId)).Value!;
+        var retrieved = await Storage.Get(node.GlobalId);
+        Assert.IsNotNull(retrieved);
         Assert.AreEqual("updated", retrieved.Attributes["type"]);
         Assert.AreEqual("value", retrieved.Attributes["extra"]);
         Assert.IsFalse(retrieved.Attributes.ContainsKey("created"));

@@ -5,10 +5,10 @@ using Microsoft.Extensions.Options;
 
 namespace Storage;
 
-internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
+internal sealed class SymLinkGraphStorage : IGraphStorage {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public NodeRef.InternalId Root => new NodeRef.InternalId();
+    public NodeState Root { get; }
 
     internal readonly DirectoryInfo root;
     readonly NtfsGraphStorageOptions options;
@@ -22,17 +22,18 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
         root = new DirectoryInfo(Path.GetFullPath(this.options.RootPath));
         if (!root.Exists)
             root.Create();
+        Root = new NodeFileSystem(new(), root, this);
     }
 
-    public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeRef? path = null, IDictionary<string, string>? attributes = null) {
+    public Task<NodeState> Create(NodeLocalId name, NodeRef? path = null, IDictionary<string, string>? attributes = null) {
         if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
-            return Task.FromResult(ServiceResult<NodeState>.BadRequest(validationError));
+            throw new Exception(validationError);
 
         var parentNode = path != null
             ? FindNode(path)
             : null;
         if (path != null && parentNode is null)
-            return Task.FromResult(ServiceResult<NodeState>.NotFound($"Parent node '{path}' was not found."));
+            throw new Exception($"Parent node '{path}' was not found.");
 
         NodeFileSystem node;
         if (parentNode is null)
@@ -43,80 +44,64 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
         if (attributes != null)
             node.WriteMetadata(attributes);
 
-        return Task.FromResult(ServiceResult<NodeState>.Ok(node));
+        return Task.FromResult<NodeState>(node);
     }
 
-    public Task<ServiceResult<NodeState>> Get(NodeRef path) {
-        var node = FindNode(path);
-        return Task.FromResult(node is null
-            ? ServiceResult<NodeState>.NotFound()
-            : ServiceResult<NodeState>.Ok(node));
+    public Task<NodeState?> Get(NodeRef path) {
+        return Task.FromResult<NodeState?>(FindNode(path));
     }
 
-    public Task<ServiceResult> Delete(NodeRef path) {
-        var node = FindNode(path);
-        if (node is null)
-            return Task.FromResult(ServiceResult.NotFound());
+    public Task Delete(NodeState node) => Delete((NodeFileSystem)node);
+    Task Delete(NodeFileSystem node) {
         var connections = GetConnectedNodes(node);
         foreach (var connection in connections)
             DeleteLinkIfExists(Path.Combine(GetNodePath(connection), GetLinkName(node.LocalId)));
         DeleteDirectoryWithoutFollowingLinks(node.GetInfo());
-
-        return Task.FromResult(ServiceResult.Ok());
+        return Task.FromResult(true);
+    }
+    public Task Delete(NodeRef path) {
+        var node = FindNode(path);
+        if (node is null)
+            return Task.FromResult(false);
+        return Delete(node);
     }
 
-    public Task<ServiceResult> Connect(NodeRef leftPath, NodeRef rightPath) {
+    public Task Connect(NodeRef leftPath, NodeRef rightPath) {
         if (leftPath.Equals(rightPath))
-            return Task.FromResult(ServiceResult.BadRequest("SourcePath and TargetPath must be different."));
+            throw new Exception("SourcePath and TargetPath must be different.");
         if (!TryValidateNodeRef(leftPath, "Source node path", out var validationError))
-            return Task.FromResult(ServiceResult.BadRequest(validationError));
+            throw new Exception(validationError);
         if (!TryValidateNodeRef(rightPath, "Target node path", out validationError))
-            return Task.FromResult(ServiceResult.BadRequest(validationError));
+            throw new Exception(validationError);
 
         var left = FindNode(leftPath);
         var right = FindNode(rightPath);
         if (left is null || right is null)
-            return Task.FromResult(ServiceResult.NotFound());
-
-        try {
-            ConnectNodes(left, right);
-        } catch (Exception ex) {
-            return Task.FromResult(ServiceResult.InternalServerError(ex.ToString()));
-        }
-
-        return Task.FromResult(ServiceResult.Ok());
+            return Task.FromResult(false);
+        return Task.FromResult(ConnectNodes(left, right));
     }
 
-    public Task<ServiceResult> Disconnect(NodeRef leftPath, NodeRef rightPath) {
+    public async Task Disconnect(NodeRef leftPath, NodeRef rightPath) {
         if (leftPath.Equals(rightPath))
-            return Task.FromResult(ServiceResult.BadRequest("SourcePath and TargetPath must be different."));
+            throw new Exception("SourcePath and TargetPath must be different.");
         if (!TryValidateNodeRef(leftPath, "Source node path", out var validationError))
-            return Task.FromResult(ServiceResult.BadRequest(validationError));
+            throw new Exception(validationError);
         if (!TryValidateNodeRef(rightPath, "Target node path", out validationError))
-            return Task.FromResult(ServiceResult.BadRequest(validationError));
+            throw new Exception(validationError);
 
         var left = FindNode(leftPath);
         var right = FindNode(rightPath);
         if (left is null || right is null)
-            return Task.FromResult(ServiceResult.NotFound());
+            return;
 
         if (IsHierarchyConnection(left.FolderPath, right.FolderPath))
-            return Task.FromResult(ServiceResult.BadRequest("Hierarchy connections cannot be disconnected."));
+            throw new Exception("Hierarchy connections cannot be disconnected."); //TODO сделать переподключение
 
         DeleteLinkIfExists(Path.Combine(GetNodePath(left), GetLinkName(right.LocalId)));
         DeleteLinkIfExists(Path.Combine(GetNodePath(right), GetLinkName(left.LocalId)));
 
         left.InvalidateGraphCache();
         right.InvalidateGraphCache();
-        return Task.FromResult(ServiceResult.Ok());
-    }
-
-    public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node) {
-        var nodePath = GetNodePath(node);
-        if (!Directory.Exists(nodePath))
-            return Task.FromResult(ServiceResult<IReadOnlyCollection<NodeState>>.NotFound());
-
-        return Task.FromResult(ServiceResult<IReadOnlyCollection<NodeState>>.Ok(GetConnectedNodes(node)));
     }
 
     public async IAsyncEnumerable<NodeState> EnumerateNodesAsync(
@@ -198,15 +183,16 @@ internal sealed class SymLinkGraphStorage : IGraphStorage, IGraphNodeStream {
         return true;
     }
 
-    private void ConnectNodes(NodeFileSystem left, NodeFileSystem right) {
+    private bool ConnectNodes(NodeFileSystem left, NodeFileSystem right) {
         if (left.LocalId == right.LocalId)
-            return;
+            return false;
         if (IsHierarchyConnection(left.FolderPath, right.FolderPath))
-            return;
+            return false;
         var sourcePath = GetNodePath(left);
         var targetPath = GetNodePath(right);
         CreateLinkIfMissing(sourcePath, targetPath, right.LocalId);
         CreateLinkIfMissing(targetPath, sourcePath, left.LocalId);
+        return true;
     }
 
     private IReadOnlyCollection<NodeState> GetConnectedNodes(NodeState node) {

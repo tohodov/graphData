@@ -916,19 +916,13 @@ public sealed class GraphSearchService {
 
     private sealed class SearchGraph {
         private readonly IGraphStorage _storage;
-        private readonly IGraphNodeStream _nodeStream;
         private readonly CancellationToken _cancellationToken;
         private readonly Dictionary<string, Node> _nodesByName = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, Node[]> _connectionsByName = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, NodeDistance[]> _reachableCache = new(StringComparer.OrdinalIgnoreCase);
 
         public SearchGraph(IGraphStorage storage, CancellationToken cancellationToken) {
-            if (storage is not IGraphNodeStream nodeStream) {
-                throw new NotSupportedException("The configured graph storage provider does not expose a node stream.");
-            }
-
             _storage = storage;
-            _nodeStream = nodeStream;
             _cancellationToken = cancellationToken;
         }
 
@@ -936,16 +930,13 @@ public sealed class GraphSearchService {
 
         public async Task<Node?> TryGetNodeAsync(string name) {
             var normalizedName = NormalizeNodeName(name);
-            if (_nodesByName.TryGetValue(normalizedName, out var node)) {
+            if (_nodesByName.TryGetValue(normalizedName, out var node))
                 return node;
-            }
-
             var result = await _storage.Get(new NodePath(normalizedName.Split('/', StringSplitOptions.RemoveEmptyEntries))).ConfigureAwait(false);
-            if (result.Status != ServiceResultStatus.Ok || result.Value is null) {
+            if (result is null)
                 return null;
-            }
 
-            return Remember(new Node(result.Value));
+            return Remember(new Node(result));
         }
 
         public async Task<int> GetDegreeAsync(Node node) {
@@ -996,24 +987,16 @@ public sealed class GraphSearchService {
         }
 
         private async IAsyncEnumerable<Node> EnumerateNodesAsync() {
-            await foreach (var node in _nodeStream.EnumerateNodesAsync(_cancellationToken).WithCancellation(_cancellationToken).ConfigureAwait(false)) {
+            await foreach (var node in _storage.EnumerateNodesAsync(_cancellationToken).WithCancellation(_cancellationToken).ConfigureAwait(false)) {
                 yield return Remember(new Node(node));
             }
         }
 
         private async Task<Node[]> GetConnectionsAsync(Node node) {
             var key = NormalizeNodeName(node.LocalId);
-            if (_connectionsByName.TryGetValue(key, out var cached)) {
+            if (_connectionsByName.TryGetValue(key, out var cached))
                 return cached;
-            }
-
-            var connectedResult = await _storage.GetConnectedNodesAsync(node.State).ConfigureAwait(false);
-            if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null) {
-                throw new InvalidOperationException(connectedResult.Error ?? $"Failed to read connections for node '{node.LocalId}'.");
-            }
-
-            var connections = connectedResult.Value
-                .Select(static state => new Node(state))
+            var connections = node.Nodes
                 .Select(Remember)
                 .OrderBy(static connection => connection.LocalId)
                 .ToArray();

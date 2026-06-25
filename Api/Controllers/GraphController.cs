@@ -26,7 +26,13 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
 
     [HttpGet("nodes/{globalId}/neighbor/{localId}")]
     public async Task<ActionResult<NodeResponse>> GetNeighborNodeAsync([FromRoute] string globalId, [FromRoute] string localId) {
-        var result = await graph.GetNeighborNodeAsync(globalId, localId);
+        var decoded = Uri.UnescapeDataString(globalId);
+        var segments = decoded
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(static segment => segment)
+            .Select(x => new NodeLocalId(x));
+        var internalId = new InternalId(segments);
+        var result = await graph.GetNeighborNodeAsync(internalId, localId);
         return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 

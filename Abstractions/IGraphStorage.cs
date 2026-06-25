@@ -1,64 +1,47 @@
 namespace Abstractions;
 
 internal interface IGraphStorage {
+    NodeState Root { get; }
 
-    InternalId DeserializeGlobalId(string value) {
-        var decoded = Uri.UnescapeDataString(value);
-        var segments = decoded
-            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select(static segment => segment)
-            .Select(x => new NodeLocalId(x));
-        return new InternalId(segments);
-    }
-
-    InternalId Root => new InternalId(); //TODO узел
-
-    Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null);
-    Task<ServiceResult<NodeState>> Get(NodeRef path);
-    async Task<ServiceResult<NodeState>> GetNeighbor(NodeRef path, NodeLocalId localId) {
-        var result = await Get(path);
-        if (result.Status != ServiceResultStatus.Ok || result.Value is null)
-            return ServiceResult<NodeState>.From(result);
-
-        var node = result.Value;
+    Task<NodeState> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null);
+    Task<NodeState?> Get(NodeRef path);
+    async Task<NodeState?> Get(NodeRef parent, NodeLocalId nodeId) {
+        var node = await Get(parent);
+        if (node is null)
+            return null;
         var matches = node.Edges
             .Select(edge => edge.Node1.GlobalId == node.GlobalId ? edge.Node2 : edge.Node1)
-            .Where(neighbor => neighbor.GlobalId != node.GlobalId && neighbor.LocalId == localId)
+            .Where(neighbor => neighbor.GlobalId != node.GlobalId && neighbor.LocalId == nodeId)
             .DistinctBy(static neighbor => neighbor.GlobalId)
             .Take(2)
             .ToArray();
-
         return matches.Length switch {
-            0 => ServiceResult<NodeState>.NotFound(),
-            1 => ServiceResult<NodeState>.Ok(matches[0]),
-            _ => ServiceResult<NodeState>.Conflict($"More than one neighbor with LocalId '{localId}' was found for node '{path}'.")
+            0 => null,
+            1 => matches[0],
+            _ => throw new Exception("")
         };
     }
-    async Task<ServiceResult<IAsyncEnumerable<NodeState>>> GetNeighbors(NodeRef path) {
-        var result = await Get(path);
-        if (result.Status != ServiceResultStatus.Ok || result.Value is null)
-            return ServiceResult<IAsyncEnumerable<NodeState>>.NotFound();
-        var node = result.Value;
-        var enumerable = node.Nodes;
-        var asyncEnumerable = enumerable.ToAsyncEnumerable();//TODO IAsyncEnumerable
-        return ServiceResult<IAsyncEnumerable<NodeState>>.Ok(asyncEnumerable);
+    async IAsyncEnumerable<NodeState> GetNeighbors(NodeState node) {//TODO вывернуть наоборот чтобы это метод юзался в node.Nodes
+        foreach (var neighbor in node.Nodes)//TODO IAsyncEnumerable
+            yield return neighbor;
     }
-    async Task<ServiceResult> Update(NodeRef path, IDictionary<string, string> attributes) {
-        var result = await Get(path);
-        if (result.Status != ServiceResultStatus.Ok || result.Value is null)
-            return ServiceResult.From(result);
-
-        try {
-            result.Value.Attributes = attributes.ToDictionary();
-        } catch (Exception ex) {
-            return ServiceResult.InternalServerError(ex.ToString());
-        }
-
-        return ServiceResult.Ok();
+    async IAsyncEnumerable<NodeState> GetNeighbors(NodeRef path) {
+        var node = await Get(path);
+        if (node is null)
+            yield break;
+        foreach (var neighbor in node.Nodes)//TODO IAsyncEnumerable
+            yield return neighbor;
     }
-    Task<ServiceResult> Delete(NodeRef path);
-    Task<ServiceResult> Connect(NodeRef sourcePath, NodeRef targetPath);
-    Task<ServiceResult> Disconnect(NodeRef sourcePath, NodeRef targetPath);
-    Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node);
+    async Task Update(NodeRef path, IDictionary<string, string> attributes) {
+        var node = await Get(path);
+        if (node is null)
+            return;
+        node.Attributes = attributes.ToDictionary();
+    }
+    Task Delete(NodeState node);
+    Task Delete(NodeRef path);
+    Task Connect(NodeRef sourcePath, NodeRef targetPath);
+    Task Disconnect(NodeRef sourcePath, NodeRef targetPath);
     IAsyncEnumerable<NodeState> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other);
+    IAsyncEnumerable<NodeState> EnumerateNodesAsync(CancellationToken cancellationToken = default);
 }

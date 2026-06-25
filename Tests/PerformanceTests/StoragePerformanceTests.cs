@@ -31,7 +31,7 @@ public sealed class StoragePerformanceTests {
         var nodesByName = new Dictionary<NodeRef.InternalId, NodeState>();
 
         await run.MeasureEachAsync("create", graph.Nodes, async node => {
-            nodesByName[node.Path] = (await scope.Storage.Create(node.Path.Last(), attributes: node.Attributes).ConfigureAwait(false)).Value!;
+            nodesByName[node.Path] = await scope.Storage.Create(node.Path.Last(), attributes: node.Attributes).ConfigureAwait(false);
         }).ConfigureAwait(false);
 
         await run.MeasureEachAsync("connect", graph.Edges, async edge => {
@@ -48,11 +48,12 @@ public sealed class StoragePerformanceTests {
 
         await run.MeasureEachAsync("get", sampleNodeNames, async name => {
             var node = await scope.Storage.Get(name).ConfigureAwait(false);
-            PerformanceAssert.IsNotNull(node);
+            if (node is null)
+                throw new PerformanceAssertionException("Expected value to be non-null.");
         }).ConfigureAwait(false);
 
         await run.MeasureEachAsync("get-connected", sampleNodes, async node => {
-            await scope.Storage.GetConnectedNodesAsync(node).ConfigureAwait(false);
+            await scope.Storage.GetNeighbors(node).ToArrayAsync();
         }).ConfigureAwait(false);
 
         await run.MeasureEachAsync("update", sampleNodeNames, async name => {
@@ -64,16 +65,12 @@ public sealed class StoragePerformanceTests {
             await scope.Storage.Update(name, attributes).ConfigureAwait(false);
         }).ConfigureAwait(false);
 
-        if (scope.Storage is IGraphNodeStream nodeStream) {
-            await run.MeasureAsync("stream-nodes", graph.NodeCount, async () => {
-                var count = 0;
-                await foreach (var _ in nodeStream.EnumerateNodesAsync().ConfigureAwait(false)) {
-                    count++;
-                }
-
-                PerformanceAssert.AreEqual(graph.NodeCount, count);
-            }).ConfigureAwait(false);
-        }
+        await run.MeasureAsync("stream-nodes", graph.NodeCount, async () => {
+            var count = 0;
+            await foreach (var _ in scope.Storage.EnumerateNodesAsync().ConfigureAwait(false))
+                count++;
+            PerformanceAssert.AreEqual(graph.NodeCount, count);
+        }).ConfigureAwait(false);
 
         await run.MeasureAsync("subgraph-depth-2", 1, async () => {
             var subgraph = (await service.GetSubgraph([graph.Nodes[0].Path], 2).ConfigureAwait(false)).Value!;
@@ -140,17 +137,14 @@ public sealed class StoragePerformanceTests {
                 .Select(_ => Task.Run(async () => {
                     while (true) {
                         var index = Interlocked.Increment(ref nextIndex);
-                        if (index >= workItems.Count) {
+                        if (index >= workItems.Count)
                             break;
-                        }
-
                         try {
-                            var node = (await scope.Storage.Get(workItems[index]).ConfigureAwait(false)).Value!;
-                            PerformanceAssert.IsNotNull(node);
-
-                            if (index % 3 == 0) {
-                                await scope.Storage.GetConnectedNodesAsync(node).ConfigureAwait(false);
-                            }
+                            var node = await scope.Storage.Get(workItems[index]).ConfigureAwait(false);
+                            if (node is null)
+                                throw new PerformanceAssertionException("Expected value to be non-null.");
+                            if (index % 3 == 0)
+                                await scope.Storage.GetNeighbors(node).ToArrayAsync();
                         } catch (Exception ex) {
                             errors.Enqueue(ex);
                             break;
@@ -216,7 +210,7 @@ public sealed class StoragePerformanceTests {
     private static async Task<Dictionary<NodeRef.InternalId, NodeState>> PopulateGraphAsync(IGraphStorage storage, GeneratedGraph graph) {
         var nodesByName = new Dictionary<NodeRef.InternalId, NodeState>();
         foreach (var node in graph.Nodes) {
-            nodesByName[node.Path] = (await storage.Create(node.Path.Single(), attributes: node.Attributes).ConfigureAwait(false)).Value!;
+            nodesByName[node.Path] = await storage.Create(node.Path.Single(), attributes: node.Attributes).ConfigureAwait(false);
         }
 
         foreach (var edge in graph.Edges) {

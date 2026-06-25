@@ -10,14 +10,12 @@ using GraphData.Tests;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using static GraphData.Tests.GraphService.NodeTypeDslTests;
 
-public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
-{
+public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
     static Assembly[] todoDelete = [typeof(ManufacturedByConnectionNodeType).Assembly];
     protected override Assembly[] Assemblies => todoDelete;
 
     [TestMethod]
-    public async Task GraphService_ChangeEdgeTypeAsync_CreatesMetadataFreeTypedEdgeSubgraph()
-    {
+    public async Task GraphService_ChangeEdgeTypeAsync_CreatesMetadataFreeTypedEdgeSubgraph() {
         var weapon = await Service.CreateNode<EdgeWeaponNodeType>(new("ak-47"));
         Assert.AreEqual(ServiceResultStatus.Ok, weapon.Status, weapon.Error);
         var manufacturer = await Service.CreateNode<EdgeManufacturerNodeType>(new("kalashnikov"));
@@ -30,13 +28,16 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
 
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
         var relationId = new InternalId("manufactured-by-1");
-        var relation = await GetRequiredAsync(relationId);
+        var relation = await Storage.Get(relationId);
+        Assert.IsNotNull(relation);
         AssertMetadataFree(relation);
 
         var weaponEndpointId = new InternalId("manufactured-by-1", EndpointInstanceLocalId(nameof(ManufacturedByConnectionNodeType.Weapon)));
         var manufacturerEndpointId = new InternalId("manufactured-by-1", EndpointInstanceLocalId(nameof(ManufacturedByConnectionNodeType.Manufacturer)));
-        var weaponEndpoint = await GetRequiredAsync(weaponEndpointId);
-        var manufacturerEndpoint = await GetRequiredAsync(manufacturerEndpointId);
+        var weaponEndpoint = await Storage.Get(weaponEndpointId);
+        Assert.IsNotNull(weaponEndpoint);
+        var manufacturerEndpoint = await Storage.Get(manufacturerEndpointId);
+        Assert.IsNotNull(manufacturerEndpoint);
         AssertMetadataFree(weaponEndpoint);
         AssertMetadataFree(manufacturerEndpoint);
 
@@ -46,18 +47,18 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
         var weaponEndpointSpec = await GetEndpointSpecAsync(weaponEndpointId, relationId, weapon.Value.GlobalId);
         var manufacturerEndpointSpec = await GetEndpointSpecAsync(manufacturerEndpointId, relationId, manufacturer.Value.GlobalId);
 
-        await AssertConnectedAsync(relationId, edgeTypeId);
-        await AssertConnectedAsync(edgeTypeId, Service.TypesRoot.GlobalId);
-        await AssertConnectedAsync(weaponEndpointId, Service.TypesRoot.GlobalId);
-        await AssertConnectedAsync(manufacturerEndpointId, Service.TypesRoot.GlobalId);
-        await AssertConnectedAsync(weaponEndpointId, weapon.Value.GlobalId);
-        await AssertConnectedAsync(weaponEndpointId, weaponEndpointSpec.GlobalId);
-        await AssertConnectedAsync(manufacturerEndpointId, manufacturer.Value.GlobalId);
-        await AssertConnectedAsync(manufacturerEndpointId, manufacturerEndpointSpec.GlobalId);
-        await AssertConnectedAsync(weaponEndpointSpec.GlobalId, weaponNodeTypeId);
-        await AssertConnectedAsync(manufacturerEndpointSpec.GlobalId, manufacturerNodeTypeId);
+        Assert.IsTrue(relation.Nodes.Any(node => node.GlobalId == edgeTypeId));
+        Assert.IsTrue((await Storage.Get(edgeTypeId))!.Nodes.Any(node => node.GlobalId == Service.TypesRoot.GlobalId));
+        await AssertConnected(weaponEndpointId, Service.TypesRoot.GlobalId);
+        await AssertConnected(manufacturerEndpointId, Service.TypesRoot.GlobalId);
+        await AssertConnected(weaponEndpointId, weapon.Value.GlobalId);
+        await AssertConnected(weaponEndpointId, weaponEndpointSpec.GlobalId);
+        await AssertConnected(manufacturerEndpointId, manufacturer.Value.GlobalId);
+        await AssertConnected(manufacturerEndpointId, manufacturerEndpointSpec.GlobalId);
+        await AssertConnected(weaponEndpointSpec.GlobalId, weaponNodeTypeId);
+        await AssertConnected(manufacturerEndpointSpec.GlobalId, manufacturerNodeTypeId);
 
-        var weaponConnections = (await Storage.GetConnectedNodesAsync((await Storage.Get(weapon.Value.GlobalId)).Value!)).Value!;
+        var weaponConnections = await Storage.GetNeighbors(weapon.Value.GlobalId).ToArrayAsync();
         Assert.IsFalse(weaponConnections.Any(node => node.GlobalId == manufacturer.Value.GlobalId));
 
         var returnedIds = result.Value!.Nodes.Select(static node => node.GlobalId).ToArray();
@@ -73,16 +74,17 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
                 manufacturerEndpointSpec.GlobalId
             },
             returnedIds);
+        async Task AssertConnected(NodeRef first, InternalId second) => Assert.IsTrue((await Storage.Get(first))!.Nodes.Any(node => node.GlobalId == second));
     }
 
     [TestMethod]
-    public async Task GraphService_GetTypedEdgeDefinitionAsync_DiscoversRichEndpointMembers()
-    {
+    public async Task GraphService_GetTypedEdgeDefinitionAsync_DiscoversRichEndpointMembers() {
         var result = await Service.GetTypedEdgeDefinitionAsync<ShipmentConnectionNodeType>();
 
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
         var definition = result.Value!;
-        var typeState = await GetRequiredAsync(definition.TypeId);
+        var typeState = await Storage.Get(definition.TypeId);
+        Assert.IsNotNull(typeState);
         AssertMetadataFree(typeState);
         var weaponNodeTypeId = await GetNodeTypeIdAsync<EdgeWeaponNodeType>(Service);
         var manufacturerNodeTypeId = await GetNodeTypeIdAsync<EdgeManufacturerNodeType>(Service);
@@ -97,23 +99,22 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
 
     [TestMethod]
     public async Task GraphService_AssignNodeTypeAsync_UsesRegisteredNodeTypeDescriptor() {
-        var ak47 = (await Storage.Create(new("ak-47"))).Value!;
+        var ak47 = await Storage.Create(new("ak-47"));
 
         var invalid = await Service.AssignNodeTypeAsync<WeaponNodeType>(ak47.GlobalId);
 
         Assert.AreEqual(ServiceResultStatus.BadRequest, invalid.Status);
         StringAssert.Contains(invalid.Error, "Manufacturer");
         var weaponTypeId = await GetNodeTypeIdAsync<WeaponNodeType>(Service);
-        var invalidConnections = (await Storage.GetConnectedNodesAsync((await Storage.Get(ak47.GlobalId)).Value!)).Value!;
-        Assert.IsFalse(invalidConnections.Any(node => node.GlobalId == weaponTypeId));
+        Assert.IsFalse(ak47.Nodes.Any(node => node.GlobalId == weaponTypeId));
 
         var country = await Service.CreateNode<CountryNodeType>(new("ussr"));
         Assert.AreEqual(ServiceResultStatus.Ok, country.Status, country.Error);
-        var manufacturer = (await Storage.Create(new("kalashnikov"), attributes: new Dictionary<string, string> {
+        var manufacturer = await Storage.Create(new("kalashnikov"), attributes: new Dictionary<string, string> {
             [nameof(ManufacturerNodeType.LegalName)] = "Kalashnikov Concern",
             [nameof(ManufacturerNodeType.FoundedYear)] = "1807",
             [nameof(ManufacturerNodeType.IsActive)] = "true"
-        })).Value!;
+        });
         await Service.ConnectNodesAsync(manufacturer.GlobalId, country.Value!.GlobalId);
         var assignManufacturer = await Service.AssignNodeTypeAsync<ManufacturerNodeType>(manufacturer.GlobalId);
         Assert.AreEqual(ServiceResultStatus.Ok, assignManufacturer.Status, assignManufacturer.Error);
@@ -122,8 +123,7 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
         var valid = await Service.AssignNodeTypeAsync<WeaponNodeType>(ak47.GlobalId);
 
         Assert.AreEqual(ServiceResultStatus.Ok, valid.Status, valid.Error);
-        var validConnections = (await Storage.GetConnectedNodesAsync((await Storage.Get(ak47.GlobalId)).Value!)).Value!;
-        Assert.IsTrue(validConnections.Any(node => node.GlobalId == weaponTypeId));
+        Assert.IsTrue(ak47.Nodes.Any(node => node.GlobalId == weaponTypeId));
     }
 
     [TestMethod]
@@ -161,21 +161,21 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
     public async Task NodeTypeDefinition_EnforcesRequiredTypedSlot() {
         var weaponTypeState = await Storage.Create("weapon-type", Service.TypesRoot.GlobalId);
         var manufacturerTypeState = await Storage.Create("manufacturer-type", Service.TypesRoot.GlobalId);
-        var weaponType = await Service.GetTypeNode(weaponTypeState.Value!.GlobalId)!;
-        var manufacturerType = await Service.GetTypeNode(manufacturerTypeState.Value!.GlobalId)!;
+        var weaponType = await Service.GetTypeNode(weaponTypeState.GlobalId)!;
+        var manufacturerType = await Service.GetTypeNode(manufacturerTypeState.GlobalId)!;
         var builder = new NodeTypeBuilder(weaponType!, type => new InternalId());
         var definition = builder.RequiresSlot("manufacturer", manufacturerType!).Build();
-        var ak47 = (await Storage.Create(new("ak-47"))).Value!;
+        var ak47 = await Storage.Create(new("ak-47"));
         await Storage.Connect(ak47.GlobalId, weaponType!.GlobalId);
 
-        var invalid = new InstanceNode((await Storage.Get(ak47.GlobalId)).Value!, weaponType);
+        var invalid = new InstanceNode(ak47, weaponType);
 
         Assert.ThrowsException<InvalidOperationException>(() => definition.EnsureSatisfiedBy(invalid));
 
-        var manufacturer = (await Storage.Create(new("kalashnikov"))).Value!;
+        var manufacturer = await Storage.Create(new("kalashnikov"));
         await Storage.Connect(manufacturer.GlobalId, manufacturerType!.GlobalId);
         await Storage.Connect(ak47.GlobalId, manufacturer.GlobalId);
-        var valid = new InstanceNode((await Storage.Get(ak47.GlobalId)).Value!, weaponType);
+        var valid = new InstanceNode(ak47, weaponType);
 
         definition.EnsureSatisfiedBy(valid);
     }
@@ -183,10 +183,10 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
     [TestMethod]
     public async Task GraphService_AssignNodeTypeAsync_UsesGraphTypeTopologyInsteadOfInternalIdShape() {
         var arbitraryType = await Service.CreateNode("weapon-type");
-        var pathShapedNonType = (await Storage.Create(new("Fake"), GraphSystemNodeIds.NodeTypeRoot)).Value!;
-        var ak47 = (await Storage.Create(new("ak-47"))).Value!;
-        var m16 = (await Storage.Create(new("m16"))).Value!;
-        var fnFal = (await Storage.Create(new("fn-fal"))).Value!;
+        var pathShapedNonType = await Storage.Create(new("Fake"), GraphSystemNodeIds.NodeTypeRoot);
+        var ak47 = await Storage.Create(new("ak-47"));
+        var m16 = await Storage.Create(new("m16"));
+        var fnFal = await Storage.Create(new("fn-fal"));
 
         var arbitraryResult = await Service.AssignNodeTypeAsync(ak47.GlobalId, arbitraryType.Value!.GlobalId);
         var pathShapedResult = await Service.AssignNodeTypeAsync(m16.GlobalId, pathShapedNonType.GlobalId);
@@ -203,54 +203,33 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
         $"endpoint-{endpointName}";
 
     private static async Task<InternalId> GetTypedEdgeTypeIdAsync<TNodeType>(GraphData.Core.Services.GraphService Service)
-        where TNodeType : NodeType
-    {
+        where TNodeType : NodeType {
         var result = await Service.GetTypedEdgeDefinitionAsync<TNodeType>();
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
         return result.Value!.TypeId;
     }
 
     private static async Task<InternalId> GetNodeTypeIdAsync<TNodeType>(GraphData.Core.Services.GraphService Service)
-        where TNodeType : NodeType
-    {
+        where TNodeType : NodeType {
         var result = await Service.GetNodeTypeDefinitionAsync<TNodeType>();
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
         return result.Value!.Type.GlobalId;
     }
 
-    private async Task<NodeState> GetRequiredAsync(InternalId id)
-    {
-        var result = await Storage.Get(id);
-        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
-        Assert.IsNotNull(result.Value);
-        return result.Value;
-    }
-
-    private static void AssertMetadataFree(NodeState node)
-    {
+    private static void AssertMetadataFree(NodeState node) {
         Assert.AreEqual(0, node.Attributes.Count);
         Assert.IsFalse(node.Attributes.ContainsKey("Service.kind"));
         Assert.IsFalse(node.Attributes.ContainsKey("Service.role"));
         Assert.IsFalse(node.Attributes.ContainsKey("Service.typeName"));
     }
 
-    private async Task AssertConnectedAsync(InternalId sourceId, InternalId targetId)
-    {
-        var source = await GetRequiredAsync(sourceId);
-        var connected = (await Storage.GetConnectedNodesAsync(source)).Value!;
-        Assert.IsTrue(
-            connected.Any(node => node.GlobalId == targetId),
-            $"Expected '{sourceId}' to be connected to '{targetId}'.");
-    }
-
     private async Task<NodeState> GetEndpointSpecAsync(
         InternalId endpointInstanceId,
         InternalId relationId,
-        InternalId endpointNodeId)
-    {
-        var endpoint = await GetRequiredAsync(endpointInstanceId);
-        var connected = (await Storage.GetConnectedNodesAsync(endpoint)).Value!;
-        var spec = connected.Single(node =>
+        InternalId endpointNodeId) {
+        var endpoint = await Storage.Get(endpointInstanceId);
+        Assert.IsNotNull(endpoint);
+        var spec = endpoint.Nodes.Single(node =>
             node.GlobalId != relationId
             && node.GlobalId != endpointNodeId
             /*&& node.GlobalId != GraphBaseTypeIds.Endpoint*/);
@@ -263,8 +242,7 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
         Type clrType,
         NodeSlotCardinality cardinality,
         InternalId? nodeTypeId = null,
-        bool isCollection = false)
-    {
+        bool isCollection = false) {
         var endpoint = definition.Endpoints.Single(value => value.Name == name);
         Assert.AreEqual(clrType, endpoint.ClrType);
         Assert.AreEqual(cardinality, endpoint.Cardinality);
@@ -282,8 +260,7 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
         }
     }
 
-    private sealed class ManufacturedByConnectionNodeType : NodeType
-    {
+    private sealed class ManufacturedByConnectionNodeType : NodeType {
         public EdgeWeaponNodeType Weapon = null!;
         public EdgeManufacturerNodeType Manufacturer = null!;
 
@@ -291,8 +268,7 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests
         }
     }
 
-    private sealed class ShipmentConnectionNodeType : NodeType
-    {
+    private sealed class ShipmentConnectionNodeType : NodeType {
         public EdgeWeaponNodeType Weapon = null!;
         public Node Counterparty = null!;
         public Node? OptionalWaypoint = null;

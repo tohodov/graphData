@@ -5,9 +5,8 @@ using Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
 using GraphData.Mcp.Tools;
+using GraphData.Tests;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-
-namespace GraphData.Tests.Mcp;
 
 [RelevantTestClass]
 public sealed class GraphDataToolsTests
@@ -16,11 +15,11 @@ public sealed class GraphDataToolsTests
     public async Task GetNode_ReturnsApiNodeShapeWithoutSerializingNodeCycles()
     {
         await using var scope = TestGraphStorageScope.Create();
-        var first = (await scope.Storage.Create(new NodeLocalId("1"))).Value!;
-        var second = (await scope.Storage.Create(new NodeLocalId("2"))).Value!;
+        var first = await scope.Storage.Create(new NodeLocalId("1"));
+        var second = await scope.Storage.Create(new NodeLocalId("2"));
         await scope.Storage.Connect(first.GlobalId, second.GlobalId);
 
-        var tools = new GraphDataTools(new global::GraphData.Core.Services.GraphService(scope.Storage, new GraphSearchService(scope.Storage), new CancellationTokensAccessorMock(), GraphSchemaRegistry.Create()));
+        var tools = new GraphDataTools(new GraphService(scope.Storage, new GraphSearchService(scope.Storage), new CancellationTokensAccessorMock(), GraphSchemaRegistry.Create()));
         var json = await tools.GetNode(["1"]);
 
         using var document = JsonDocument.Parse(json);

@@ -38,6 +38,15 @@ internal sealed class NodeFileSystem : NodeState {
         }
     }
 
+    public NodeFileSystem(NodeLocalId id, DirectoryInfo info, SymLinkGraphStorage storage) {
+        this.storage = storage;
+        folderPath = ResolveDirectoryPath(info.FullName);
+        LocalId = id;
+        parentPath = GetDirectoryName(folderPath) ?? "";
+        storageRootPath = storage.root.FullName;
+        Edges = new LiveEdgeCollection(this);
+        Nodes = new LiveNodeCollection(this);
+    }
     public NodeFileSystem(DirectoryInfo info, SymLinkGraphStorage storage) {
         this.storage = storage;
         folderPath = ResolveDirectoryPath(info.FullName);
@@ -110,7 +119,7 @@ internal sealed class NodeFileSystem : NodeState {
     }
 
     internal void ConnectTo(NodeState target) {
-        ThrowIfFailed(storage.Connect(GlobalId, target.GlobalId).GetAwaiter().GetResult());
+        storage.Connect(GlobalId, target.GlobalId).GetAwaiter().GetResult();
         InvalidateGraphCache();
         if (target is NodeFileSystem fileSystemState)
             fileSystemState.InvalidateGraphCache();
@@ -119,8 +128,7 @@ internal sealed class NodeFileSystem : NodeState {
     internal bool DisconnectFrom(NodeState target) {
         if (!ReadNodes().Any(node => node.GlobalId == target.GlobalId))
             return false;
-
-        ThrowIfFailed(storage.Disconnect(GlobalId, target.GlobalId).GetAwaiter().GetResult());
+        storage.Disconnect(GlobalId, target.GlobalId).GetAwaiter().GetResult();
         InvalidateGraphCache();
         if (target is NodeFileSystem fileSystemState)
             fileSystemState.InvalidateGraphCache();
@@ -130,13 +138,6 @@ internal sealed class NodeFileSystem : NodeState {
     internal void InvalidateGraphCache() {
         edgeSnapshot = null;
         nodeSnapshot = null;
-    }
-
-    static void ThrowIfFailed(ServiceResult result) {
-        if (result.Status == ServiceResultStatus.Ok)
-            return;
-
-        throw new InvalidOperationException(result.Error ?? $"Graph operation failed with status '{result.Status}'.");
     }
 
     IEnumerable<EdgeState> GetEdges() {

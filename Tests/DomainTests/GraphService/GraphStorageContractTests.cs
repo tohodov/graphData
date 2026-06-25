@@ -44,7 +44,7 @@ public abstract partial class GraphStorageContractTests {
             { "type", "test" },
             { "created", DateTime.UtcNow.ToString("O") }
         });
-        return result.Value!;
+        return result;
     }
 }
 [TestCategory(nameof(IGraphStorage.Create))]
@@ -52,7 +52,7 @@ partial class GraphStorageContractTests {
     [TestMethod]
     public async Task ShouldPersistMetadata() {
         var created = await CreateNode();
-        var retrieved = (await Storage.Get(created.GlobalId)).Value!;
+        var retrieved = await Storage.Get(created.GlobalId);
 
         Assert.IsNotNull(retrieved);
         Assert.AreEqual(created.LocalId, retrieved.LocalId);
@@ -64,7 +64,7 @@ partial class GraphStorageContractTests {
 partial class GraphStorageContractTests {
     [TestMethod]
     public async Task Search_ShouldFindTextMatchBelowHierarchyAncestor() {
-        var pistols = (await Storage.Create(new("pistols"))).Value!;
+        var pistols = await Storage.Create(new("pistols"));
         await Storage.Create(new("double-action revolvers"), pistols.GlobalId);
         await Storage.Create(new("rifles"));
 
@@ -95,10 +95,10 @@ partial class GraphStorageContractTests {
 
     [TestMethod]
     public async Task Search_ShouldFindNodesConnectedToAllAnchors() {
-        var america = (await Storage.Create(new("america"))).Value!;
-        var assaultRifles = (await Storage.Create(new("assault rifles"))).Value!;
-        var m16 = (await Storage.Create(new("m16"))).Value!;
-        var unrelated = (await Storage.Create(new("unrelated"))).Value!;
+        var america = await Storage.Create(new("america"));
+        var assaultRifles = await Storage.Create(new("assault rifles"));
+        var m16 = await Storage.Create(new("m16"));
+        var unrelated = await Storage.Create(new("unrelated"));
 
         await Storage.Connect(america.GlobalId, m16.GlobalId);
         await Storage.Connect(assaultRifles.GlobalId, m16.GlobalId);
@@ -129,13 +129,13 @@ partial class GraphStorageContractTests {
 
     [TestMethod]
     public async Task Search_ShouldReturnSolutionsForVariableConnectedToAttributeMatch() {
-        var source = (await Storage.Create(new("source"))).Value!;
-        var marker = (await Storage.Create(new("marker"), attributes: new Dictionary<string, string> {
+        var source = await Storage.Create(new("source"));
+        var marker = await Storage.Create(new("marker"), attributes: new Dictionary<string, string> {
             ["id"] = "Y"
-        })).Value!;
-        var unrelated = (await Storage.Create(new("unrelated"), attributes: new Dictionary<string, string> {
+        });
+        var unrelated = await Storage.Create(new("unrelated"), attributes: new Dictionary<string, string> {
             ["id"] = "Y"
-        })).Value!;
+        });
 
         await Storage.Connect(source.GlobalId, marker.GlobalId);
 
@@ -166,9 +166,9 @@ partial class GraphStorageContractTests {
 
     [TestMethod]
     public async Task Search_ShouldFindIsolatedNodesWithNegatedExistentialRelation() {
-        var isolated = (await Storage.Create(new("isolated"))).Value!;
-        var connected = (await Storage.Create(new("connected"))).Value!;
-        var neighbor = (await Storage.Create(new("neighbor"))).Value!;
+        var isolated = await Storage.Create(new("isolated"));
+        var connected = await Storage.Create(new("connected"));
+        var neighbor = await Storage.Create(new("neighbor"));
 
         await Storage.Connect(connected.GlobalId, neighbor.GlobalId);
 
@@ -200,8 +200,7 @@ partial class GraphStorageContractTests {
     [TestMethod]
     public async Task NodeMissing() {
         var result = await Storage.Get(new InternalId(Guid.NewGuid().ToString()));
-        Assert.AreEqual(ServiceResultStatus.NotFound, result.Status);
-        Assert.IsNull(result.Value);
+        Assert.IsNull(result);
     }
 }
 [TestCategory(nameof(IGraphStorage.Update))]
@@ -213,7 +212,7 @@ partial class GraphStorageContractTests {
         attributes["type"] = "updated";
         attributes["extra"] = "value";
         node.Attributes = attributes;
-        var retrieved = (await Storage.Get(node.GlobalId)).Value!;
+        var retrieved = await Storage.Get(node.GlobalId);
         Assert.IsNotNull(retrieved);
         CollectionAssert.AreEquivalent(attributes.ToList(), retrieved.Attributes.ToList());
     }
@@ -232,10 +231,9 @@ partial class GraphStorageContractTests {
         await Storage.Delete(second.GlobalId);
 
         var deleted = await Storage.Get(second.GlobalId);
-        Assert.AreEqual(ServiceResultStatus.NotFound, deleted.Status);
-        Assert.IsNull(deleted.Value);
-        Assert.IsFalse((await Storage.GetConnectedNodesAsync(first)).Value!.Any(x => x.LocalId == second.LocalId));
-        Assert.IsFalse((await Storage.GetConnectedNodesAsync(third)).Value!.Any(x => x.LocalId == second.LocalId));
+        Assert.IsNull(deleted);
+        Assert.IsFalse(first.Nodes.Any(x => x.LocalId == second.LocalId));
+        Assert.IsFalse(third.Nodes.Any(x => x.LocalId == second.LocalId));
     }
 }
 [TestCategory(nameof(IGraphStorage.Connect))]
@@ -247,37 +245,29 @@ partial class GraphStorageContractTests {
 
         await Storage.Connect(first.GlobalId, second.GlobalId);
 
-        var firstConnections = (await Storage.GetConnectedNodesAsync(first)).Value!;
-        var secondConnections = (await Storage.GetConnectedNodesAsync(second)).Value!;
-
-        Assert.IsTrue(firstConnections.Any(x => x.LocalId == second.LocalId));
-        Assert.IsTrue(secondConnections.Any(x => x.LocalId == first.LocalId));
+        Assert.IsTrue(first.Nodes.Any(x => x.LocalId == second.LocalId));
+        Assert.IsTrue(second.Nodes.Any(x => x.LocalId == first.LocalId));
     }
     [TestMethod]
     public async Task ShouldReturnNestedConnectionsWithGlobalIds() {
-        var root = (await Storage.Create(new("root"))).Value!;
-        var leftParent = (await Storage.Create(new("left"), root.GlobalId)).Value!;
-        var rightParent = (await Storage.Create(new("right"), root.GlobalId)).Value!;
-        var left = (await Storage.Create(new("node-a"), leftParent.GlobalId)).Value!;
-        var right = (await Storage.Create(new("node-b"), rightParent.GlobalId)).Value!;
+        var root = await Storage.Create(new("root"));
+        var leftParent = await Storage.Create(new("left"), root.GlobalId);
+        var rightParent = await Storage.Create(new("right"), root.GlobalId);
+        var left = await Storage.Create(new("node-a"), leftParent.GlobalId);
+        var right = await Storage.Create(new("node-b"), rightParent.GlobalId);
 
         await Storage.Connect(left.GlobalId, right.GlobalId);
 
-        var connections = (await Storage.GetConnectedNodesAsync(left)).Value!;
-
-        Assert.IsTrue(connections.Any(node => node.GlobalId == right.GlobalId));
+        Assert.IsTrue(await Storage.GetNeighbors(left).AnyAsync(node => node.GlobalId == right.GlobalId));
     }
 
     [TestMethod]
     public async Task ShouldReturnHierarchyConnections() {
-        var parent = (await Storage.Create(new("parent"))).Value!;
-        var child = (await Storage.Create(new("child"), parent.GlobalId)).Value!;
+        var parent = await Storage.Create(new("parent"));
+        var child = await Storage.Create(new("child"), parent.GlobalId);
 
-        var parentConnections = (await Storage.GetConnectedNodesAsync(parent)).Value!;
-        var childConnections = (await Storage.GetConnectedNodesAsync(child)).Value!;
-
-        Assert.IsTrue(parentConnections.Any(node => node.GlobalId == child.GlobalId));
-        Assert.IsTrue(childConnections.Any(node => node.GlobalId == parent.GlobalId));
+        Assert.IsTrue(parent.Nodes.Any(node => node.GlobalId == child.GlobalId));
+        Assert.IsTrue(child.Nodes.Any(node => node.GlobalId == parent.GlobalId));
     }
 
     [TestMethod]
@@ -286,8 +276,7 @@ partial class GraphStorageContractTests {
 
         await Storage.Connect(node.GlobalId, node.GlobalId);
 
-        var connections = (await Storage.GetConnectedNodesAsync(node)).Value!.ToList();
-        CollectionAssert.DoesNotContain(connections, node);
+        CollectionAssert.DoesNotContain(node.Nodes.ToArray(), node);
     }
 }
 [TestCategory(nameof(GraphService.GetSubgraph))]
@@ -325,9 +314,9 @@ partial class GraphStorageContractTests {
 
     [TestMethod]
     public async Task ShouldTraverseHierarchy() {
-        var root = (await Storage.Create(new("root"))).Value!;
-        var weapons = (await Storage.Create(new("weapons"), root.GlobalId)).Value!;
-        var ak47 = (await Storage.Create(new("ak_47"), weapons.GlobalId)).Value!;
+        var root = await Storage.Create(new("root"));
+        var weapons = await Storage.Create(new("weapons"), root.GlobalId);
+        var ak47 = await Storage.Create(new("ak_47"), weapons.GlobalId);
 
         var subgraph = (await Service.GetSubgraph([root.GlobalId], 2)).Value!;
 
@@ -338,9 +327,9 @@ partial class GraphStorageContractTests {
 
     [TestMethod]
     public async Task EmptyQueryShouldStartFromTopLevelRoots() {
-        var firstRoot = (await Storage.Create(new("first"))).Value!;
-        var secondRoot = (await Storage.Create(new("second"))).Value!;
-        var child = (await Storage.Create(new("child"), firstRoot.GlobalId)).Value!;
+        var firstRoot = await Storage.Create(new("first"));
+        var secondRoot = await Storage.Create(new("second"));
+        var child = await Storage.Create(new("child"), firstRoot.GlobalId);
 
         var subgraph = (await Service.GetSubgraph([], 0)).Value!;
 
@@ -352,8 +341,8 @@ partial class GraphStorageContractTests {
 
     [TestMethod]
     public async Task EmptyNodeIdentifierShouldStartFromTopLevelRoots() {
-        var firstRoot = (await Storage.Create(new("first"))).Value!;
-        var secondRoot = (await Storage.Create(new("second"))).Value!;
+        var firstRoot = await Storage.Create(new("first"));
+        var secondRoot = await Storage.Create(new("second"));
         await Storage.Create(new("child"), firstRoot.GlobalId);
 
         var subgraph = (await Service.GetSubgraph([new InternalId()], 0)).Value!;
@@ -382,12 +371,12 @@ partial class GraphStorageContractTests {
             new[] { catalog.GlobalId, weapon.GlobalId, weaponType.GlobalId },
             result.Value!.Nodes.Select(static node => node.GlobalId).ToArray());
 
-        var persistedWeapon = (await Storage.Get(weapon.GlobalId)).Value!;
+        var persistedWeapon = await Storage.Get(weapon.GlobalId);
+        Assert.IsNotNull(persistedWeapon);
         Assert.AreEqual("AK-47", persistedWeapon.Attributes["displayName"]);
-        Assert.AreEqual(ServiceResultStatus.Ok, (await Storage.Get(GraphSystemNodeIds.NodeTypeRoot)).Status);
+        Assert.IsNotNull(await Storage.Get(GraphSystemNodeIds.NodeTypeRoot));
 
-        var connected = (await Storage.GetConnectedNodesAsync(persistedWeapon)).Value!;
-        Assert.IsTrue(connected.Any(node => node.GlobalId == weaponType.GlobalId));
+        Assert.IsTrue(persistedWeapon.Nodes.Any(node => node.GlobalId == weaponType.GlobalId));
     }
 
     [TestMethod]
@@ -404,7 +393,8 @@ partial class GraphStorageContractTests {
         var result = await Service.AddSubgraph(catalog);
 
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
-        var persisted = (await Storage.Get(catalog.GlobalId)).Value!;
+        var persisted = await Storage.Get(catalog.GlobalId);
+        Assert.IsNotNull(persisted);
         Assert.AreEqual("#123456", persisted.Attributes["color"]);
         Assert.IsFalse(persisted.Attributes.ContainsKey("generated"));
     }

@@ -22,28 +22,6 @@ public sealed class NodeTypeDslTests : StorageTests {
         Assert.AreEqual(isCollection, field.IsCollection);
     }
 
-    private static async Task CreatePathAsync(IGraphStorage storage, InternalId id) {
-        var segments = id.ToArray();
-        NodePath? parent = null;
-        for (var index = 0; index < segments.Length; index++) {
-            var current = new InternalId(segments.Take(index + 1));
-            var existing = await storage.Get(current);
-            if (existing.Status == ServiceResultStatus.NotFound) {
-                var create = await storage.Create(segments[index], parent);
-                Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
-            }
-
-            parent = current;
-        }
-    }
-
-    private static async Task<InternalId> GetNodeTypeIdAsync<TNodeType>(GraphData.Core.Services.GraphService graph)
-        where TNodeType : NodeType {
-        var result = await graph.GetNodeTypeDefinitionAsync<TNodeType>();
-        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
-        return result.Value!.Type.GlobalId;
-    }
-
     public sealed class WeaponNodeType : NodeType {
         public ManufacturerNodeType Manufacturer = null!;
 

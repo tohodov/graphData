@@ -1,4 +1,3 @@
-using System.Reflection;
 using Abstractions;
 using GraphData.Core.Models;
 
@@ -56,26 +55,19 @@ public sealed class GraphService {
         return CreateNode(localId, path, type.GlobalId, attributes);
     }
 
-    private async Task<ServiceResult<Node>> CreateNode(
-        NodeLocalId localId,
-        NodePath? path,
-        InternalId? typeId,
-        IDictionary<string, string>? attributes) {
-        var result = await storage.Create(localId, path, attributes);
-        if (result.Status != ServiceResultStatus.Ok || result.Value is null)
-            return ToNodeResult(result);
-
+    private async Task<ServiceResult<Node>> CreateNode(NodeLocalId localId, NodePath? path, InternalId? typeId, IDictionary<string, string>? attributes) {
+        var node = await storage.Create(localId, path, attributes);
         if (typeId is null)
-            return ToNodeResult(result);
+            return ToNodeResult(node);
 
-        var assign = await AssignNodeTypeAsync(result.Value.GlobalId, typeId).ConfigureAwait(false);
+        var assign = await AssignNodeTypeAsync(node.GlobalId, typeId).ConfigureAwait(false);
         if (assign.Status != ServiceResultStatus.Ok) {
-            await storage.Delete(result.Value.GlobalId).ConfigureAwait(false);
+            await storage.Delete(node.GlobalId).ConfigureAwait(false);
             return ServiceResult<Node>.From(assign);
         }
 
-        var reloaded = await storage.Get(result.Value.GlobalId).ConfigureAwait(false);
-        return ToNodeResult(reloaded);
+        var reloaded = await storage.Get(node.GlobalId).ConfigureAwait(false); //TODO проверить что перезагрузка не нужна и удалить
+        return ToNodeResult(reloaded ?? node);
     }
 
     public async Task<ServiceResult<Node>> GetNodeAsync(NodeRef globalId) {
@@ -83,21 +75,27 @@ public sealed class GraphService {
         return ToNodeResult(result);
     }
 
-    public async Task<ServiceResult<Node>> GetNeighborNodeAsync(string globalId, string localId) {
-        var result = await storage.GetNeighbor(storage.DeserializeGlobalId(globalId), new NodeLocalId(localId));
+    public async Task<ServiceResult<Node>> GetNeighborNodeAsync(InternalId internalId, NodeLocalId localId) {
+        var result = await storage.Get(internalId, localId);
         return ToNodeResult(result);
     }
 
-    public Task<ServiceResult> UpdateNodeAsync(NodeRef globalId, IDictionary<string, string> attributes) {
-        return storage.Update(globalId, attributes);
+    public async Task<ServiceResult> UpdateNodeAsync(NodeRef globalId, IDictionary<string, string> attributes) {
+        await storage.Update(globalId, attributes);
+        return ServiceResult.Ok();
     }
 
-    public Task<ServiceResult> DeleteNodeAsync(NodeRef globalId) {
-        return storage.Delete(globalId);
+    public async Task<ServiceResult> DeleteNodeAsync(NodeRef globalId) {
+        var node = await storage.Get(globalId);
+        if (node == null)
+            return ServiceResult.NotFound();
+        await storage.Delete(node);
+        return ServiceResult.Ok();
     }
 
-    public Task<ServiceResult> ConnectNodesAsync(NodeRef sourceGlobalId, NodeRef targetGlobalId) {
-        return storage.Connect(sourceGlobalId, targetGlobalId);
+    public async Task<ServiceResult> ConnectNodesAsync(NodeRef sourceGlobalId, NodeRef targetGlobalId) {
+        await storage.Connect(sourceGlobalId, targetGlobalId);
+        return ServiceResult.Ok();
     }
 
     public Task<ServiceResult<Subgraph>> AssignNodeTypeAsync<TNodeType>(NodePath nodeId) where TNodeType : NodeType {
@@ -108,41 +106,28 @@ public sealed class GraphService {
     }
 
     public async Task<ServiceResult<Subgraph>> AssignNodeTypeAsync(NodeRef nodeId, NodeRef typeId) {
-
-        var typeResult = await storage.Get(typeId).ConfigureAwait(false);
-        if (typeResult.Status != ServiceResultStatus.Ok || typeResult.Value is null)
-            return ServiceResult<Subgraph>.From(typeResult);
-        var typeNode = await GetTypeNode(typeResult.Value);
+        var type = await storage.Get(typeId).ConfigureAwait(false);
+        if (type is null)
+            return ServiceResult<Subgraph>.NotFound();
+        var typeNode = await GetTypeNode(type);
         if (typeNode == null)
             return ServiceResult<Subgraph>.BadRequest($"Node '{typeId}' is not a node type.");
 
-        var nodeResult = await storage.Get(nodeId).ConfigureAwait(false);
-        if (nodeResult.Status != ServiceResultStatus.Ok || nodeResult.Value is null)
-            return ServiceResult<Subgraph>.From(nodeResult);
+        var node = await storage.Get(nodeId).ConfigureAwait(false);
+        if (node is null)
+            return ServiceResult<Subgraph>.NotFound();
 
-        var alreadyAssigned = await IsConnectedAsync(nodeResult.Value, typeNode.GlobalId).ConfigureAwait(false);
-        if (alreadyAssigned.Status != ServiceResultStatus.Ok)
-            return ServiceResult<Subgraph>.From(alreadyAssigned);
-
-        if (!alreadyAssigned.Value) {
-            var connect = await storage.Connect(nodeId, typeId).ConfigureAwait(false);
-            if (connect.Status != ServiceResultStatus.Ok)
-                return ToSubgraphResult(connect);
-        }
+        var alreadyAssigned = node.Nodes.Any(neighbor => neighbor.GlobalId == typeNode.GlobalId);
+        if (!alreadyAssigned)
+            await storage.Connect(nodeId, typeId).ConfigureAwait(false);
 
         var reloadedNode = await storage.Get(nodeId).ConfigureAwait(false);
-        if (reloadedNode.Status != ServiceResultStatus.Ok || reloadedNode.Value is null)
-            return ServiceResult<Subgraph>.From(reloadedNode);
+        if (reloadedNode is null)
+            return ServiceResult<Subgraph>.NotFound();
 
         var node2 = new NodeType(typeNode);
-        try {
-            var definition = schemaRegistry.GetOrBuildDefinition(node2);
-            definition.EnsureSatisfiedBy(new InstanceNode(reloadedNode.Value, node2));
-        } catch (InvalidOperationException ex) {
-            if (!alreadyAssigned.Value)
-                await storage.Disconnect(nodeId, typeId).ConfigureAwait(false);
-            return ServiceResult<Subgraph>.BadRequest(ex.Message);
-        }
+        var definition = schemaRegistry.GetOrBuildDefinition(node2);
+        definition.EnsureSatisfiedBy(new InstanceNode(reloadedNode, node2));
 
         return await GetSubgraph([nodeId, typeId], 1).ConfigureAwait(false);
     }
@@ -152,7 +137,7 @@ public sealed class GraphService {
         NodeRef target,
         NodeRef typeId
     ) {
-        var typeResult = await storage.Get(typeId);
+        var typeResult = await GetNodeAsync(typeId);
         if (typeResult.Status != ServiceResultStatus.Ok || typeResult.Value is null)
             return ServiceResult<Subgraph>.From(typeResult);
         var type = typeResult.Value;
@@ -180,10 +165,10 @@ public sealed class GraphService {
             return ServiceResult<Subgraph>.NotFound();
         var endpointStates = new List<NodeState>(endpointIds.Count);
         foreach (var endpointId in endpointIds) {
-            var endpointResult = await storage.Get(endpointId).ConfigureAwait(false);
-            if (endpointResult.Status != ServiceResultStatus.Ok || endpointResult.Value is null)
-                return ServiceResult<Subgraph>.From(endpointResult);
-            endpointStates.Add(endpointResult.Value);
+            var endpoint = await storage.Get(endpointId).ConfigureAwait(false);
+            if (endpoint is null)
+                return ServiceResult<Subgraph>.NotFound();
+            endpointStates.Add(endpoint);
         }
         try {
             definition.EnsureSatisfiedBy(endpointStates.Select(state => new InstanceNode(state, type)).ToArray());
@@ -196,32 +181,17 @@ public sealed class GraphService {
             if (disconnect.Status != ServiceResultStatus.Ok)
                 return ToSubgraphResult(disconnect);
         }
-        var relationResult = await storage.Create(new NodeLocalId(Guid.NewGuid().ToString()), GetTypeNodeInternal<InstanceNode>().GlobalId).ConfigureAwait(false);
-        if (relationResult.Status != ServiceResultStatus.Ok || relationResult.Value is null)
-            return ServiceResult<Subgraph>.From(relationResult);
-
-        var relation = relationResult.Value;
-        var connectType = await storage.Connect(relation.GlobalId, type.GlobalId).ConfigureAwait(false);
-        if (connectType.Status != ServiceResultStatus.Ok)
-            return ToSubgraphResult(connectType);
+        var relation = await storage.Create(new NodeLocalId(Guid.NewGuid().ToString()), GetTypeNodeInternal<InstanceNode>().GlobalId).ConfigureAwait(false);
+        await storage.Connect(relation.GlobalId, type.GlobalId).ConfigureAwait(false);
 
         var ensureEndpointType = GetTypeNodeInternal<EndpointNodeType>();
 
         var endpoints = definition.Endpoints.ToArray();
         for (var index = 0; index < endpoints.Length; index++) {
             var endpoint = endpoints[index];
-            var endpointInstanceResult = await storage.Create(NodeLocalId.Random(), relation.GlobalId).ConfigureAwait(false);
-            if (endpointInstanceResult.Status != ServiceResultStatus.Ok || endpointInstanceResult.Value is null)
-                return ServiceResult<Subgraph>.From(endpointInstanceResult);
-
-            var endpointInstanceId = endpointInstanceResult.Value.GlobalId;
-            var connectEndpointType = await storage.Connect(endpointInstanceId, ensureEndpointType.GlobalId).ConfigureAwait(false);
-            if (connectEndpointType.Status != ServiceResultStatus.Ok)
-                return ToSubgraphResult(connectEndpointType);
-
-            var connectEndpoint = await storage.Connect(endpointInstanceId, GetTypeNodeInternal<EndpointNodeType>().GlobalId).ConfigureAwait(false);
-            if (connectEndpoint.Status != ServiceResultStatus.Ok)
-                return ToSubgraphResult(connectEndpoint);
+            var endpointInstance = await storage.Create(NodeLocalId.Random(), relation.GlobalId).ConfigureAwait(false);
+            await storage.Connect(endpointInstance.GlobalId, ensureEndpointType.GlobalId).ConfigureAwait(false);
+            await storage.Connect(endpointInstance.GlobalId, GetTypeNodeInternal<EndpointNodeType>().GlobalId).ConfigureAwait(false);
         }
 
         return await GetSubgraph([relation.GlobalId], 2).ConfigureAwait(false);
@@ -231,17 +201,16 @@ public sealed class GraphService {
 
         var roots = new List<NodeState>();
         if (!globalIds.Any())
-            roots.AddRange((await storage.Get(storage.Root)).Value!.Nodes);
+            roots.AddRange(storage.Root.Nodes);
         else
             foreach (var rootRef in globalIds) {
-                var rootsResult = await storage.Get(rootRef);
-                if (rootsResult.Status != ServiceResultStatus.Ok || rootsResult.Value is null)
-                    return ServiceResult<Subgraph>.From(rootsResult);
-                var node = rootsResult.Value;
-                if (node.GlobalId != storage.Root)
-                    roots.Add(node);
+                var root = await storage.Get(rootRef);
+                if (root is null)
+                    return ServiceResult<Subgraph>.NotFound();
+                if (root.GlobalId != storage.Root.GlobalId)
+                    roots.Add(root);
                 else
-                    roots.AddRange(node.Nodes);
+                    roots.AddRange(root.Nodes);
             }
 
         var visitedRequests = new HashSet<InternalId>();
@@ -260,12 +229,10 @@ public sealed class GraphService {
                 continue;
 
             var result = await storage.Get(path);
-            if (result.Status == ServiceResultStatus.NotFound)
+            if (result == null)
                 continue;
-            if (result.Status != ServiceResultStatus.Ok || result.Value is null)
-                return ServiceResult<Subgraph>.From(result);
 
-            var node = new Node(result.Value);
+            var node = new Node(result);
             if (!visitedNodes.Add(node.GlobalId))
                 continue;
 
@@ -273,11 +240,7 @@ public sealed class GraphService {
             if (depth >= maxDepth)
                 continue;
 
-            var connections = await storage.GetConnectedNodesAsync(result.Value);
-            if (connections.Status != ServiceResultStatus.Ok || connections.Value is null)
-                return ServiceResult<Subgraph>.From(connections);
-
-            foreach (var neighborId in connections.Value.Select(static x => x.GlobalId))
+            foreach (var neighborId in result.Nodes.Select(static x => x.GlobalId))
                 if (neighborId != node.GlobalId && discovered.Add(neighborId))
                     queue.Enqueue((neighborId, depth + 1));
         }
@@ -290,32 +253,21 @@ public sealed class GraphService {
     }
 
     public async Task<ServiceResult<Subgraph>> AddSubgraph(Node root) {
-        NodeState rootState;
-        try {
-            rootState = root.State;
-        } catch (InvalidOperationException ex) {
-            return ServiceResult<Subgraph>.BadRequest(ex.Message);
-        }
-
+        NodeState rootState = root.State;
         var definition = CollectSubgraph(rootState);
         var persistedNodes = new Dictionary<InternalId, NodeState>();
 
         foreach (var node in definition.Nodes.Values.OrderBy(static node => node.GlobalId.Count())) {
             cancellationTokens.Token.ThrowIfCancellationRequested();
-
-            var result = await EnsureSubgraphNodeAsync(node).ConfigureAwait(false);
-            if (result.Status != ServiceResultStatus.Ok || result.Value is null)
-                return ServiceResult<Subgraph>.From(result);
-
-            persistedNodes[result.Value.GlobalId] = result.Value;
+            var existing = await storage.Get(node.GlobalId).ConfigureAwait(false);
+            if (existing is null)
+                existing = await storage.Create(node.LocalId, node.GlobalId);//TODO тут неправильно сохраняется подграф, надо вероятно искать точки пересечения а не просто всё создавать
+            persistedNodes[node.GlobalId] = existing;
         }
 
         foreach (var edge in definition.Edges) {
             cancellationTokens.Token.ThrowIfCancellationRequested();
-
-            var connect = await storage.Connect(edge.SourceId, edge.TargetId).ConfigureAwait(false);
-            if (connect.Status != ServiceResultStatus.Ok)
-                return ToSubgraphResult(connect);
+            await storage.Connect(edge.SourceId, edge.TargetId).ConfigureAwait(false);
         }
 
         return ServiceResult<Subgraph>.Ok(new Subgraph {
@@ -338,7 +290,7 @@ public sealed class GraphService {
         var typeNode = await GetTypeNode(type);
         if (typeNode == null)
             return ServiceResult<NodeTypeDefinition>.NotFound();
-        
+
         var definition = schemaRegistry.GetOrBuildDefinition(typeNode);
         return ServiceResult<NodeTypeDefinition>.Ok(definition);
     }
@@ -352,7 +304,7 @@ public sealed class GraphService {
         var typeNode = await GetTypeNode(type);
         if (typeNode is null)
             return ServiceResult<TypedEdgeDefinition>.NotFound();
-            
+
         var nodeTypeDefinition = schemaRegistry.GetOrBuildDefinition(typeNode);
 
         return TypedEdgeDefinition.TryCreate(nodeTypeDefinition, out var definition)
@@ -360,10 +312,10 @@ public sealed class GraphService {
             : ServiceResult<TypedEdgeDefinition>.BadRequest($"CLR type '{typeof(TNodeType).FullName}' does not define a typed edge node type.");
     }
 
-    private static ServiceResult<Node> ToNodeResult(ServiceResult<NodeState> result) {
-        return result.Status == ServiceResultStatus.Ok && result.Value is not null
-            ? ServiceResult<Node>.Ok(new Node(result.Value))
-            : ServiceResult<Node>.From(result);
+    private static ServiceResult<Node> ToNodeResult(NodeState? result) {
+        return result is not null
+            ? ServiceResult<Node>.Ok(new Node(result))
+            : ServiceResult<Node>.NotFound();
     }
 
     private async Task<ServiceResult<TypedEdgeShape>> ResolveTypedEdgeShapeAsync(NodeState relation, IReadOnlyCollection<NodeState> connected) {
@@ -379,10 +331,6 @@ public sealed class GraphService {
         }
 
         foreach (var candidatePort in connected) {
-            var candidateConnections = await storage.GetConnectedNodesAsync(candidatePort).ConfigureAwait(false);
-            if (candidateConnections.Status != ServiceResultStatus.Ok || candidateConnections.Value is null)
-                return ServiceResult<TypedEdgeShape>.From(candidateConnections);
-
             var type = await storage.GetCommonIntersection(candidatePort.GlobalId, TypesRoot.GlobalId).FirstOrDefaultAsync();
             if (type is null)
                 continue;
@@ -398,36 +346,16 @@ public sealed class GraphService {
     }
 
     private async Task<ServiceResult> DisconnectBasicEdgeIfPresentAsync(NodeRef sourceId, InternalId targetId) {
-        var sourceResult = await storage.Get(sourceId);
-        if (sourceResult.Status != ServiceResultStatus.Ok || sourceResult.Value is null)
-            return ServiceResult.From(sourceResult);
-
-        var connectedResult = await storage.GetConnectedNodesAsync(sourceResult.Value);
-        if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null)
-            return ServiceResult.From(connectedResult);
-
-        return connectedResult.Value.Any(node => node.GlobalId == targetId)
-            ? await storage.Disconnect(sourceId, targetId)
-            : ServiceResult.Ok();
-    }
-
-    private async Task<ServiceResult<bool>> IsConnectedAsync(NodeState node, InternalId targetId) {
-        var connectedResult = await storage.GetConnectedNodesAsync(node).ConfigureAwait(false);
-        if (connectedResult.Status != ServiceResultStatus.Ok || connectedResult.Value is null)
-            return ServiceResult<bool>.From(connectedResult);
-
-        return ServiceResult<bool>.Ok(connectedResult.Value.Any(neighbor => neighbor.GlobalId == targetId));
+        var node = await storage.Get(sourceId);
+        if (node is null)
+            return ServiceResult.NotFound();
+        await storage.Disconnect(sourceId, targetId);
+        return ServiceResult.Ok();
     }
 
     private async Task<ServiceResult<Subgraph>> CreateBasicTypedEdgeSubgraphAsync(NodeRef sourceId, NodeRef targetId, NodeRef typeId) {
-        var relationResult = await storage.Create(new NodeLocalId(Guid.NewGuid().ToString()), typeId);
-        if (relationResult.Status != ServiceResultStatus.Ok || relationResult.Value is null)
-            return ServiceResult<Subgraph>.From(relationResult);
-
-        var relation = relationResult.Value;
-        var connectType = await storage.Connect(relation.GlobalId, typeId);
-        if (connectType.Status != ServiceResultStatus.Ok)
-            return ToSubgraphResult(connectType);
+        var relation = await storage.Create(new NodeLocalId(Guid.NewGuid().ToString()), typeId);
+        await storage.Connect(relation.GlobalId, typeId);
 
         var sourcePort = await CreatePortAsync(relation.GlobalId, SourcePortRole);
         if (sourcePort.Status != ServiceResultStatus.Ok || sourcePort.Value is null)
@@ -435,63 +363,15 @@ public sealed class GraphService {
         var targetPort = await CreatePortAsync(relation.GlobalId, TargetPortRole);
         if (targetPort.Status != ServiceResultStatus.Ok || targetPort.Value is null)
             return ServiceResult<Subgraph>.From(targetPort);
-
-        var connect = await storage.Connect(sourcePort.Value.GlobalId, sourceId);
-        if (connect.Status != ServiceResultStatus.Ok)
-            return ToSubgraphResult(connect);
-        connect = await storage.Connect(targetPort.Value.GlobalId, targetId);
-        if (connect.Status != ServiceResultStatus.Ok)
-            return ToSubgraphResult(connect);
-
+        await storage.Connect(sourcePort.Value.GlobalId, sourceId);
+        await storage.Connect(targetPort.Value.GlobalId, targetId);
         return await GetSubgraph([relation.GlobalId], 2);
     }
 
     private async Task<ServiceResult<NodeState>> CreatePortAsync(InternalId relationId, string role) {
         var port = await storage.Create(new NodeLocalId(Guid.NewGuid().ToString()), relationId).ConfigureAwait(false);
-        if (port.Status != ServiceResultStatus.Ok || port.Value is null)
-            return port;
-
-        var connectType = await storage.Connect(port.Value.GlobalId, GetTypeNodeInternal<PortNodeType>().GlobalId).ConfigureAwait(false);
-        if (connectType.Status != ServiceResultStatus.Ok)
-            return new ServiceResult<NodeState>(connectType.Status, Error: connectType.Error);
-
+        await storage.Connect(port.GlobalId, GetTypeNodeInternal<PortNodeType>().GlobalId).ConfigureAwait(false);
         return port;
-    }
-
-    private async Task<ServiceResult<NodeState>> EnsureSubgraphNodeAsync(NodeState node) => //TODO выглядит как бред
-        await EnsureSubgraphNodeAsync(
-            node.GlobalId,
-            node is VirtualNodeState virtualNode ? virtualNode.AttributeSnapshot() : null).ConfigureAwait(false);
-
-    private async Task<ServiceResult<NodeState>> EnsureSubgraphNodeAsync(
-        InternalId id,
-        IDictionary<string, string>? attributes) {
-        var existing = await storage.Get(id).ConfigureAwait(false);
-        if (existing.Status == ServiceResultStatus.Ok && existing.Value is not null)
-            return existing;
-        if (existing.Status != ServiceResultStatus.NotFound)
-            return existing;
-
-        var segments = id.ToArray();
-        if (segments.Length == 0)
-            return await storage.Get(storage.Root).ConfigureAwait(false);
-
-        InternalId? parentId = null;
-        if (segments.Length > 1) {
-            parentId = new InternalId(segments.Take(segments.Length - 1));
-            var parent = await EnsureSubgraphNodeAsync(parentId, null).ConfigureAwait(false);
-            if (parent.Status != ServiceResultStatus.Ok || parent.Value is null)
-                return ServiceResult<NodeState>.From(parent);
-        }
-
-        var create = await storage.Create(
-            segments[^1],
-            parentId,
-            attributes is null
-                ? null
-                : new Dictionary<string, string>(attributes, StringComparer.OrdinalIgnoreCase)).ConfigureAwait(false);
-
-        return create;
     }
 
     private static SubgraphDefinition CollectSubgraph(NodeState root) {

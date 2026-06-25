@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Abstractions;
@@ -16,9 +17,9 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldFindVerticesWithoutEdges()
     {
-        var isolated = (await Storage.Create(new("isolated"))).Value!;
-        var connected = (await Storage.Create(new("connected"))).Value!;
-        var neighbor = (await Storage.Create(new("neighbor"))).Value!;
+        var isolated = await Storage.Create(new("isolated"));
+        var connected = await Storage.Create(new("connected"));
+        var neighbor = await Storage.Create(new("neighbor"));
         await Storage.Connect(connected.GlobalId, neighbor.GlobalId);
 
         var matches = await Search(Storage, new NodeSearchQuery
@@ -37,7 +38,7 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldNotReturnIgnoredSelfConnectionsAsEdges()
     {
-        var node = (await Storage.Create(new("self"))).Value!;
+        var node = await Storage.Create(new("self"));
         await Storage.Connect(node.GlobalId, node.GlobalId);
 
         var matches = await Search(Storage, new NodeSearchQuery
@@ -52,8 +53,8 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldTreatZeroLengthPathAsSelfRelationWhenRequested()
     {
-        var first = (await Storage.Create(new("first"))).Value!;
-        var second = (await Storage.Create(new("second"))).Value!;
+        var first = await Storage.Create(new("first"));
+        var second = await Storage.Create(new("second"));
 
         var matches = await Search(Storage, new NodeSearchQuery
         {
@@ -76,14 +77,14 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldReturnMatchingVerticesWithoutImplicitRanking()
     {
-        var hub = (await Storage.Create(new("hub"))).Value!;
-        var mid = (await Storage.Create(new("mid"))).Value!;
-        var h1 = (await Storage.Create(new("h1"))).Value!;
-        var h2 = (await Storage.Create(new("h2"))).Value!;
-        var h3 = (await Storage.Create(new("h3"))).Value!;
-        var h4 = (await Storage.Create(new("h4"))).Value!;
-        var m1 = (await Storage.Create(new("m1"))).Value!;
-        var m2 = (await Storage.Create(new("m2"))).Value!;
+        var hub = await Storage.Create(new("hub"));
+        var mid = await Storage.Create(new("mid"));
+        var h1 = await Storage.Create(new("h1"));
+        var h2 = await Storage.Create(new("h2"));
+        var h3 = await Storage.Create(new("h3"));
+        var h4 = await Storage.Create(new("h4"));
+        var m1 = await Storage.Create(new("m1"));
+        var m2 = await Storage.Create(new("m2"));
 
         foreach (var node in new[] { h1, h2, h3, h4 })
         {
@@ -110,11 +111,11 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldFindVerticesDirectlyConnectedToEveryAnchor()
     {
-        var a = (await Storage.Create("a")).Value!;
-        var b = (await Storage.Create("b")).Value!;
-        var c = (await Storage.Create("c")).Value!;
-        var target = (await Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
-        var partial = (await Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var a = await Storage.Create("a");
+        var b = await Storage.Create("b");
+        var c = await Storage.Create("c");
+        var target = await Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
+        var partial = await Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
 
         foreach (var anchor in new[] { a, b, c })
         {
@@ -142,11 +143,11 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldFindVerticesConnectedToEveryAnchorWithinThreeSteps()
     {
-        var a = (await Storage.Create("anchor-a")).Value!;
-        var b = (await Storage.Create("anchor-b")).Value!;
-        var target = (await Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
-        var tooFar = (await Storage.Create("too-far", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
-        var partial = (await Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var a = await Storage.Create("anchor-a");
+        var b = await Storage.Create("anchor-b");
+        var target = await Storage.Create("target", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
+        var tooFar = await Storage.Create("too-far", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
+        var partial = await Storage.Create("partial", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
 
         await ConnectPath(Storage, target, "target-a-1", "target-a-2", a);
         await ConnectPath(Storage, target, "target-b-1", b);
@@ -171,10 +172,10 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldFindVerticesConnectedToAnyAnchor()
     {
-        var a = (await Storage.Create("a")).Value!;
-        var b = (await Storage.Create("b")).Value!;
-        var first = (await Storage.Create("first", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
-        var second = (await Storage.Create("second", attributes: new Dictionary<string, string> { ["role"] = "candidate" })).Value!;
+        var a = await Storage.Create("a");
+        var b = await Storage.Create("b");
+        var first = await Storage.Create("first", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
+        var second = await Storage.Create("second", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
         await Storage.Create("unrelated", attributes: new Dictionary<string, string> { ["role"] = "candidate" });
 
         await Storage.Connect(first.GlobalId, a.GlobalId);
@@ -202,9 +203,9 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldFindDescendantsWithinHierarchyDepth()
     {
-        var root = (await Storage.Create("weapons")).Value!;
-        var pistols = (await Storage.Create("pistols", root.GlobalId)).Value!;
-        var revolvers = (await Storage.Create("revolvers", pistols.GlobalId)).Value!;
+        var root = await Storage.Create("weapons");
+        var pistols = await Storage.Create("pistols", root.GlobalId);
+        var revolvers = await Storage.Create("revolvers", pistols.GlobalId);
         await Storage.Create("smith-wesson", revolvers.GlobalId);
         await Storage.Create("vehicles");
 
@@ -227,13 +228,13 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldCombineTextAndAttributePredicates()
     {
-        var match = (await Storage.Create(
+        var match = await Storage.Create(
             "alpha",
             attributes: new Dictionary<string, string>
             {
                 ["kind"] = "weapon",
                 ["description"] = "steel frame"
-            })).Value!;
+            });
         await Storage.Create(
             "beta",
             attributes: new Dictionary<string, string>
@@ -262,8 +263,8 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task SearchStream_ShouldYieldMatchesAsAsyncEnumerable()
     {
-        var first = (await Storage.Create("first")).Value!;
-        var second = (await Storage.Create("second")).Value!;
+        var first = await Storage.Create("first");
+        var second = await Storage.Create("second");
 
         var service = new GraphSearchService(Storage);
         var matches = new List<NodeSearchMatch>();
@@ -398,7 +399,7 @@ public sealed class GraphSearchServiceTests : StorageTests
             var next = segment switch
             {
                 NodeState node => node,
-                string name => (await storage.Create(new(name))).Value!,
+                string name => await storage.Create(new(name)),
                 _ => throw new ArgumentException("Path segment must be a node or a node name.", nameof(path))
             };
 
@@ -407,65 +408,24 @@ public sealed class GraphSearchServiceTests : StorageTests
         }
     }
 
-    private sealed class StreamingProbeStorage(params NodeState[] nodes) : IGraphStorage, IGraphNodeStream
+    private sealed class StreamingProbeStorage(params NodeState[] nodes) : IGraphStorage
     {
-        public async IAsyncEnumerable<NodeState> EnumerateNodesAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
-        {
-            foreach (var node in nodes)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
+        public Task Disconnect(NodeRef sourcePath, NodeRef targetPath) => throw new NotSupportedException();
+        Task<NodeState> IGraphStorage.Create(NodeLocalId name, NodeRef? parent, IDictionary<string, string>? attributes) => throw new NotImplementedException();
+        Task<NodeState?> IGraphStorage.Get(NodeRef path) => throw new NotImplementedException();
+        Task IGraphStorage.Delete(NodeRef path) => throw new NotImplementedException();
+        Task IGraphStorage.Connect(NodeRef sourcePath, NodeRef targetPath) => throw new NotImplementedException();
+        Task IGraphStorage.Disconnect(NodeRef sourcePath, NodeRef targetPath) => throw new NotImplementedException();
+        IAsyncEnumerable<NodeState> IGraphStorage.GetNeighbors(NodeRef path) => throw new NotImplementedException();
+        IAsyncEnumerable<NodeState> IGraphStorage.GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) => throw new NotImplementedException();
+        NodeState IGraphStorage.Root => throw new NotImplementedException();
+        Task IGraphStorage.Delete(NodeState node) => throw new NotImplementedException();
+
+        async IAsyncEnumerable<NodeState> IGraphStorage.EnumerateNodesAsync([EnumeratorCancellation] CancellationToken cancellationToken) {
+            foreach (var node in nodes) {
                 yield return node;
                 await Task.Yield();
             }
-        }
-
-        public Task<ServiceResult<IReadOnlyCollection<NodeState>>> GetConnectedNodesAsync(NodeState node)
-        {
-            return Task.FromResult(ServiceResult<IReadOnlyCollection<NodeState>>.Ok(Array.Empty<NodeState>()));
-        }
-
-        public Task<ServiceResult<NodeState>> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null) =>
-            throw new NotSupportedException();
-
-        public Task<ServiceResult<NodeState>> Get(NodeRef path) =>
-            throw new NotSupportedException();
-
-        public Task<ServiceResult> Delete(NodeRef path) =>
-            throw new NotSupportedException();
-
-        public Task<ServiceResult> Connect(NodeRef sourcePath, NodeRef targetPath) =>
-            throw new NotSupportedException();
-
-        public Task<ServiceResult> Disconnect(NodeRef sourcePath, NodeRef targetPath) =>
-            throw new NotSupportedException();
-
-        Task<ServiceResult<NodeState>> IGraphStorage.Create(NodeLocalId name, NodeRef? parent, IDictionary<string, string>? attributes) {
-            throw new NotImplementedException();
-        }
-
-        Task<ServiceResult<NodeState>> IGraphStorage.Get(NodeRef path) {
-            throw new NotImplementedException();
-        }
-
-        Task<ServiceResult> IGraphStorage.Delete(NodeRef path) {
-            throw new NotImplementedException();
-        }
-
-        Task<ServiceResult> IGraphStorage.Connect(NodeRef sourcePath, NodeRef targetPath) {
-            throw new NotImplementedException();
-        }
-
-        Task<ServiceResult> IGraphStorage.Disconnect(NodeRef sourcePath, NodeRef targetPath) {
-            throw new NotImplementedException();
-        }
-
-        Task<ServiceResult<IReadOnlyCollection<NodeState>>> IGraphStorage.GetConnectedNodesAsync(NodeState node) {
-            throw new NotImplementedException();
-        }
-
-        IAsyncEnumerable<NodeState> IGraphStorage.GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) {
-            throw new NotImplementedException();
         }
     }
 
