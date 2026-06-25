@@ -199,6 +199,121 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
         StringAssert.Contains(rootResult.Error, "not a node type");
     }
 
+    [TestMethod]
+    public async Task ShouldRespectDepth() {
+        var first = await Storage.Create("first");
+        var second = await Storage.Create("second");
+        var third = await Storage.Create("third");
+        var fourth = await Storage.Create("fourth");
+
+        await Storage.Connect(first.GlobalId, second.GlobalId);
+        await Storage.Connect(second.GlobalId, third.GlobalId);
+        await Storage.Connect(third.GlobalId, fourth.GlobalId);
+
+        var subgraph = (await Service.GetSubgraph([first.GlobalId], 2)).Value!;
+        var subgraphNodeIds = subgraph.Nodes.Select(static node => node.GlobalId).ToArray();
+
+        Assert.AreEqual(3, subgraph.Nodes.Count);
+        Assert.IsTrue(subgraphNodeIds.Contains(first.GlobalId));
+        Assert.IsTrue(subgraphNodeIds.Contains(second.GlobalId));
+        Assert.IsTrue(subgraphNodeIds.Contains(third.GlobalId));
+        Assert.IsFalse(subgraphNodeIds.Contains(fourth.GlobalId));
+
+        var children = subgraph.Nodes
+            .First(x => x.LocalId == first.LocalId)
+            .Edges
+            .SelectMany(x => new[] { x.Node1, x.Node2 })
+            .DistinctBy(static node => node.GlobalId)
+            .Where(node => node.GlobalId != first.GlobalId)
+            .ToArray();
+        Assert.IsTrue(children.Any(x => x.LocalId == second.LocalId));
+        Assert.IsFalse(children.Any(x => x.LocalId == third.LocalId));
+    }
+
+    [TestMethod]
+    public async Task ShouldTraverseHierarchy() {
+        var root = await Storage.Create(new("root"));
+        var weapons = await Storage.Create(new("weapons"), root.GlobalId);
+        var ak47 = await Storage.Create(new("ak_47"), weapons.GlobalId);
+
+        var subgraph = (await Service.GetSubgraph([root.GlobalId], 2)).Value!;
+
+        CollectionAssert.AreEquivalent(
+            new[] { root.GlobalId, weapons.GlobalId, ak47.GlobalId },
+            subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
+    }
+
+    [TestMethod]
+    public async Task EmptyQueryShouldStartFromTopLevelRoots() {
+        var firstRoot = await Storage.Create(new("first"));
+        var secondRoot = await Storage.Create(new("second"));
+        var child = await Storage.Create(new("child"), firstRoot.GlobalId);
+
+        var subgraph = (await Service.GetSubgraph([], 0)).Value!;
+
+        CollectionAssert.AreEquivalent(
+            new[] { firstRoot.GlobalId, secondRoot.GlobalId },
+            subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
+        CollectionAssert.DoesNotContain(subgraph.Nodes.Select(static node => node.GlobalId).ToArray(), child.GlobalId);
+    }
+
+    [TestMethod]
+    public async Task EmptyNodeIdentifierShouldStartFromTopLevelRoots() {
+        var firstRoot = await Storage.Create(new("first"));
+        var secondRoot = await Storage.Create(new("second"));
+        await Storage.Create(new("child"), firstRoot.GlobalId);
+
+        var subgraph = (await Service.GetSubgraph([new InternalId()], 0)).Value!;
+
+        CollectionAssert.AreEquivalent(
+            new[] { firstRoot.GlobalId, secondRoot.GlobalId },
+            subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
+    }
+    [TestMethod]
+    public async Task AddSubgraph_ShouldPersistVirtualNodesAndConnections() {
+        var catalog = new Node(new InternalId("catalog"));
+        var weapon = new Node(new InternalId("catalog", "ak-47"));
+        weapon.Attributes["displayName"] = "AK-47";
+        var weaponType = new Node(new InternalId("graphdata", "types", "nodes", "Weapon"));
+
+        catalog.Nodes.Add(weapon);
+        weapon.Nodes.Add(weaponType);
+
+        var result = await Service.AddSubgraph(catalog);
+
+        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
+        CollectionAssert.IsSubsetOf(
+            new[] { catalog.GlobalId, weapon.GlobalId, weaponType.GlobalId },
+            result.Value!.Nodes.Select(static node => node.GlobalId).ToArray());
+
+        var persistedWeapon = await Storage.Get(weapon.GlobalId);
+        Assert.IsNotNull(persistedWeapon);
+        Assert.AreEqual("AK-47", persistedWeapon.Attributes["displayName"]);
+        Assert.IsNotNull(await Storage.Get(GraphSystemNodeIds.NodeTypeRoot));
+
+        Assert.IsTrue(persistedWeapon.Nodes.Any(node => node.GlobalId == weaponType.GlobalId));
+    }
+
+    [TestMethod]
+    public async Task AddSubgraph_ShouldPreserveExistingNodeAttributes() {
+        await Storage.Create(
+            new("catalog"),
+            attributes: new Dictionary<string, string> {
+                ["color"] = "#123456"
+            });
+        var catalog = new Node(new InternalId("catalog"));
+        catalog.Attributes["color"] = "#abcdef";
+        catalog.Attributes["generated"] = "true";
+
+        var result = await Service.AddSubgraph(catalog);
+
+        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
+        var persisted = await Storage.Get(catalog.GlobalId);
+        Assert.IsNotNull(persisted);
+        Assert.AreEqual("#123456", persisted.Attributes["color"]);
+        Assert.IsFalse(persisted.Attributes.ContainsKey("generated"));
+    }
+
     private static string EndpointInstanceLocalId(string endpointName) =>
         $"endpoint-{endpointName}";
 

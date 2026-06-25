@@ -17,8 +17,11 @@ public class GraphStorageInitializer {
     public async Task InitializeAsync() {
         var checkResult = await service.GetNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer).ConfigureAwait(false);
         if (checkResult.Status == ServiceResultStatus.NotFound) {
-            var storageStateNode = (Node)await service.GetNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer);
-            storageStateNode.Nodes.Clear();
+            var storageStateNode = (Node?)await service.GetNodeAsync(GraphSystemNodeIds.InitializerRoot);
+            if (storageStateNode != null)
+                storageStateNode.Nodes.Clear();
+            else
+                storageStateNode = ((Node)await service.CreateNode(GraphSystemNodeIds.InitializerRoot))!;
             storageStateNode.Nodes.Add(new Node(new NodeLocalId(RuntimeTypesVersion)));
             storageStateNode.Nodes.Add(new Node(new NodeLocalId(schemaRegistry.Fingerprint)));
             var result = await service.AddSubgraph(service.Root).ConfigureAwait(false);

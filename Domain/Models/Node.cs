@@ -7,6 +7,7 @@ public class Node {
     public virtual InternalId GlobalId => State.GlobalId;
 
     public virtual ICollection<Edge> Edges => new EdgeCollection(State.Edges);
+    public virtual ICollection<Incidence> Incidences { get; } = new List<Incidence>();
     public virtual ICollection<Node> Nodes => new NodeCollection(State.Nodes);
 
     public virtual IDictionary<string, string> Attributes {
@@ -20,6 +21,10 @@ public class Node {
 
     internal Node(NodeState state) {
         State = state;
+    }
+
+    internal void Attach(Incidence incidence) {
+        Incidences.Add(incidence);
     }
 
     private sealed class NodeCollection(ICollection<NodeState> states) : ICollection<Node> {

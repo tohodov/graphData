@@ -38,7 +38,15 @@ public sealed class GraphService {
             // We just ensure the node exists in TypesRoot for eager sync.
         }
     }
-
+    public async Task<ServiceResult<Node>> CreateNode(NodeRef node, NodeType? type = null, IDictionary<string, string>? attributes = null) {
+        if (node is NodePath path) {
+            var localId = path.Last();
+            return await CreateNode(localId, new NodePath(path.Except([localId])), type?.GlobalId, attributes).ConfigureAwait(false);
+        } else if (node is InternalId id) {
+            var localId = id.Last();
+            return await CreateNode(localId, new InternalId(id.Except([localId])), type?.GlobalId, attributes).ConfigureAwait(false);
+        } else throw new NotImplementedException();//TODO надо переобдумать контракт GraphService
+    }
     public async Task<ServiceResult<Node>> CreateNode(NodeLocalId localId, NodePath? path = null, NodeType? type = null, IDictionary<string, string>? attributes = null) {
         return await CreateNode(localId, path, type?.GlobalId, attributes).ConfigureAwait(false);
     }

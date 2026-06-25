@@ -18,7 +18,7 @@ public abstract class StorageTests : IAsyncDisposable {
         Storage = scope.Storage;
     }
 
-    public ValueTask DisposeAsync() => scope.DisposeAsync();
+    public virtual ValueTask DisposeAsync() => scope.DisposeAsync();
 }
 public abstract class GraphServiceTests : StorageTests {
     public GraphService Service { get; }

@@ -28,5 +28,5 @@ public sealed record ServiceResult<T>(ServiceResultStatus Status, T? Value = def
     public static ServiceResult<T> From<TOther>(ServiceResult<TOther> result) => new(result.Status, Error: result.Error);
 
     public static implicit operator ServiceResult<T>(T value) => new(ServiceResultStatus.Ok, value);
-    public static explicit operator T(ServiceResult<T> result) => result.Value!;
+    public static explicit operator T?(ServiceResult<T> result) => result.Value;
 }
