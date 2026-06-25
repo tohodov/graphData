@@ -18,6 +18,9 @@
     <NpmExe Condition="'$(NpmExe)' == '' and Exists('$(ProgramFiles)\Microsoft Visual Studio\2022\Professional\$(VisualStudioNodeToolPath)\npm.cmd')">$(ProgramFiles)\Microsoft Visual Studio\2022\Professional\$(VisualStudioNodeToolPath)\npm.cmd</NpmExe>
     <NpmExe Condition="'$(NpmExe)' == '' and Exists('$(ProgramFiles)\Microsoft Visual Studio\2022\Enterprise\$(VisualStudioNodeToolPath)\npm.cmd')">$(ProgramFiles)\Microsoft Visual Studio\2022\Enterprise\$(VisualStudioNodeToolPath)\npm.cmd</NpmExe>
     <NpmExe Condition="'$(NpmExe)' == ''">npm</NpmExe>
+    <AssemblyName>Api</AssemblyName>
+    <AssemblyTitle>Api</AssemblyTitle>
+    <RootNamespace>Api</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,15 +29,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Domain\Domain.csproj" />
-    <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
+    <ProjectReference Include="..\Domain\1_ Domain.csproj" />
+    <ProjectReference Include="..\SymLinkStorage\1_SymLinkStorage.csproj" />
   </ItemGroup>
 
-  <Target Name="RestoreTypeScriptTooling"
-          BeforeTargets="BuildTypeScript"
-          Inputs="$(MSBuildProjectDirectory)\package.json"
-          Outputs="$(MSBuildProjectDirectory)\node_modules\.bin\tsc.cmd"
-          Condition="'$(DesignTimeBuild)' != 'true'">
+  <Target Name="RestoreTypeScriptTooling" BeforeTargets="BuildTypeScript" Inputs="$(MSBuildProjectDirectory)\package.json" Outputs="$(MSBuildProjectDirectory)\node_modules\.bin\tsc.cmd" Condition="'$(DesignTimeBuild)' != 'true'">
     <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="&quot;$(NpmExe)&quot; install --no-audit --no-fund --no-package-lock" />
   </Target>
 
@@ -43,35 +42,22 @@
       <TypeScriptCompilerOutput Remove="@(TypeScriptCompilerOutput)" />
       <EsbuildOutput Remove="@(EsbuildOutput)" />
     </ItemGroup>
-    <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
-          Command="&quot;$(NodeExe)&quot; &quot;node_modules\typescript\lib\tsc.js&quot; -p tsconfig.json"
-          ConsoleToMsBuild="true"
-          IgnoreExitCode="true"
-          StandardOutputImportance="High"
-          StandardErrorImportance="High">
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="&quot;$(NodeExe)&quot; &quot;node_modules\typescript\lib\tsc.js&quot; -p tsconfig.json" ConsoleToMsBuild="true" IgnoreExitCode="true" StandardOutputImportance="High" StandardErrorImportance="High">
       <Output TaskParameter="ConsoleOutput" ItemName="TypeScriptCompilerOutput" />
       <Output TaskParameter="ExitCode" PropertyName="TypeScriptExitCode" />
     </Exec>
-    <Error Condition="'$(TypeScriptExitCode)' != '0'"
-           Text="TypeScript compiler failed with exit code $(TypeScriptExitCode):%0A@(TypeScriptCompilerOutput, '%0A')" />
+    <Error Condition="'$(TypeScriptExitCode)' != '0'" Text="TypeScript compiler failed with exit code $(TypeScriptExitCode):%0A@(TypeScriptCompilerOutput, '%0A')" />
     <ItemGroup>
       <WgslSource Include="wwwroot\**\*.wgsl" />
     </ItemGroup>
     <MakeDir Directories="@(WgslSource->'$(MSBuildProjectDirectory)\obj\ts\%(RecursiveDir)')" />
-    <Copy SourceFiles="@(WgslSource)"
-          DestinationFiles="@(WgslSource->'$(MSBuildProjectDirectory)\obj\ts\%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(WgslSource)" DestinationFiles="@(WgslSource->'$(MSBuildProjectDirectory)\obj\ts\%(RecursiveDir)%(Filename)%(Extension)')" />
     <MakeDir Directories="$(MSBuildProjectDirectory)\wwwroot\js" />
-    <Exec WorkingDirectory="$(MSBuildProjectDirectory)"
-          Command="&quot;$(NodeExe)&quot; &quot;node_modules\esbuild\bin\esbuild&quot; obj/ts/main.js --bundle --sourcemap --loader:.wgsl=text --outfile=wwwroot/js/app.js"
-          ConsoleToMsBuild="true"
-          IgnoreExitCode="true"
-          StandardOutputImportance="High"
-          StandardErrorImportance="High">
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="&quot;$(NodeExe)&quot; &quot;node_modules\esbuild\bin\esbuild&quot; obj/ts/main.js --bundle --sourcemap --loader:.wgsl=text --outfile=wwwroot/js/app.js" ConsoleToMsBuild="true" IgnoreExitCode="true" StandardOutputImportance="High" StandardErrorImportance="High">
       <Output TaskParameter="ConsoleOutput" ItemName="EsbuildOutput" />
       <Output TaskParameter="ExitCode" PropertyName="EsbuildExitCode" />
     </Exec>
-    <Error Condition="'$(EsbuildExitCode)' != '0'"
-           Text="esbuild failed with exit code $(EsbuildExitCode):%0A@(EsbuildOutput, '%0A')" />
+    <Error Condition="'$(EsbuildExitCode)' != '0'" Text="esbuild failed with exit code $(EsbuildExitCode):%0A@(EsbuildOutput, '%0A')" />
   </Target>
 
 </Project>

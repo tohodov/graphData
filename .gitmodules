@@ -1,6 +1,6 @@
 [submodule "McpTracker"]
 	path = McpTracker
 	url = https://github.com/tohodov/McpTracker
-[submodule "TestImpactOnCoverage"]
-	path = TestImpactOnCoverage
+[submodule "Tests/RelevantTests"]
+	path = Tests/RelevantTests
 	url = https://github.com/tohodov/TestImpactOnCoverage

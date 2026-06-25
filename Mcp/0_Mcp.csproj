@@ -1,9 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\Api\Api.csproj" />
-    <ProjectReference Include="..\Domain\Domain.csproj" />
-    <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
+    <ProjectReference Include="..\Api\0_Api.csproj" />
+    <ProjectReference Include="..\Domain\1_ Domain.csproj" />
+    <ProjectReference Include="..\SymLinkStorage\1_SymLinkStorage.csproj" />
     <ProjectReference Include="..\McpTracker\Client\Client.csproj" />
   </ItemGroup>
 
@@ -33,6 +33,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <_GetChildProjectCopyToPublishDirectoryItems>false</_GetChildProjectCopyToPublishDirectoryItems>
+    <AssemblyName>Mcp</AssemblyName>
+    <AssemblyTitle>Mcp</AssemblyTitle>
+    <RootNamespace>Mcp</RootNamespace>
   </PropertyGroup>
 
 </Project>

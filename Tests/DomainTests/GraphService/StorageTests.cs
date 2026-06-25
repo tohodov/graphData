@@ -1,5 +1,6 @@
 using System.Reflection;
 using Abstractions;
+using Domain.Services;
 using GraphData.Core.Services;
 using GraphData.Tests;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -22,21 +23,23 @@ public abstract class StorageTests : IAsyncDisposable {
 public abstract class GraphServiceTests : StorageTests {
     public GraphService Service { get; }
     protected virtual Assembly[] Assemblies { get; } = [];
-    bool inited;
+    readonly GraphSchemaRegistry types;
+    GraphStorageInitializer? initializer = null;
 
     public GraphServiceTests() {
+        types = GraphSchemaRegistry.Create(Assemblies);
         Service = new GraphService(
             Storage,
             new GraphSearchService(Storage),
             new CancellationTokensAccessorMock(),
-            GraphSchemaRegistry.Create(Assemblies));
+            types);
     }
 
     [TestInitialize]
     public Task Init() {
-        if (inited)
+        if (initializer != null)
             throw new Exception("неправильный жизненный цикл теста");
-        inited = true;
-        return Service.InitializeAsync();
+        initializer = new GraphStorageInitializer(Service, types);
+        return initializer.InitializeAsync();
     }
 }

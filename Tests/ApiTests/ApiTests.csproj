@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-  <Import Project="..\TestImpactOnCoverage\src\RelevantTests.MSTest\build\RelevantTests.MSTest.props" />
+  <Import Project="..\RelevantTests\src\RelevantTests.MSTest\build\RelevantTests.MSTest.props" />
+  <Import Project="..\RelevantTests\src\RelevantTests.MSTest\build\RelevantTests.MSTest.targets" />
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows10.0.17763.0</TargetFramework>
@@ -33,13 +34,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Abstractions\Abstractions.csproj" />
-    <ProjectReference Include="..\Api\Api.csproj" />
+    <ProjectReference Include="..\..\Abstractions\Abstractions.csproj" />
+    <ProjectReference Include="..\..\Api\0_Api.csproj" />
+    <ProjectReference Include="..\..\Domain\1_ Domain.csproj" />
+    <ProjectReference Include="..\..\Mcp\0_Mcp.csproj" />
+    <ProjectReference Include="..\..\SymLinkStorage\1_SymLinkStorage.csproj" />
     <ProjectReference Include="..\DomainTests\DomainTests.csproj" />
-    <ProjectReference Include="..\Domain\Domain.csproj" />
-    <ProjectReference Include="..\Mcp\Mcp.csproj" />
-    <ProjectReference Include="..\SymLinkStorage\SymLinkStorage.csproj" />
-    <ProjectReference Include="..\TestImpactOnCoverage\src\RelevantTests.MSTest\RelevantTests.MSTest.csproj" />
+    <ProjectReference Include="..\RelevantTests\src\RelevantTests.MSTest\RelevantTests.MSTest.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -51,8 +52,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\TestSupport\TestGraphStorageScope.cs" Link="TestGraphStorageScope.cs" />
+    <Compile Include="..\TestGraphStorageScope.cs" Link="TestGraphStorageScope.cs" />
   </ItemGroup>
-
-  <Import Project="..\TestImpactOnCoverage\src\RelevantTests.MSTest\build\RelevantTests.MSTest.targets" />
 </Project>
