@@ -8,7 +8,6 @@ public sealed class GraphService {
     const string SourcePortRole = "source";
     const string TargetPortRole = "target";
     //TODO Graph
-    const string RuntimeTypesVersion = "6";
     public StorageRoot Root { get; }
     public NodeType TypesRoot { get; }
     public NodeType InstancesRoot { get; }
@@ -39,22 +38,6 @@ public sealed class GraphService {
             // Edge definitions for CLR types will be handled via SchemaRegistry during runtime
             // We just ensure the node exists in TypesRoot for eager sync.
         }
-    }
-
-    public async Task InitializeAsync(CancellationToken cancellationToken = default) {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var checkResult = await storage.Get(GraphSystemNodeIds.RuntimeTypesInitializer).ConfigureAwait(false);
-        if (checkResult.Status != ServiceResultStatus.NotFound)
-            throw new Exception($"read initializer marker");
-
-        var storageStateNode = (Node)await GetNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer);
-        storageStateNode.Nodes.Clear();
-        storageStateNode.Nodes.Add(new Node(new NodeLocalId(RuntimeTypesVersion)));
-        storageStateNode.Nodes.Add(new Node(new NodeLocalId(schemaRegistry.Fingerprint)));
-        var result = await AddSubgraph(Root).ConfigureAwait(false);
-        if (result.Status != ServiceResultStatus.Ok)
-            throw new Exception(result.Error);
     }
 
     public async Task<ServiceResult<Node>> CreateNode(NodeLocalId localId, NodePath? path = null, NodeType? type = null, IDictionary<string, string>? attributes = null) {

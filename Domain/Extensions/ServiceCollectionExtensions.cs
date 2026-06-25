@@ -1,4 +1,5 @@
 using Abstractions;
+using Domain.Services;
 using GraphData.Core.Services;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -21,6 +22,10 @@ public static class ServiceCollectionExtensions
                 provider.GetRequiredService<ICancellationTokenAccessor>(),
                 provider.GetRequiredService<GraphSchemaRegistry>()
             ));
+        services.AddTransient<GraphStorageInitializer>(static provider =>
+            new GraphStorageInitializer(
+                provider.GetRequiredService<GraphService>(),
+                provider.GetRequiredService<GraphSchemaRegistry>()));
         return services;
     }
 }

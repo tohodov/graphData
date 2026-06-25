@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Client;
+using Domain.Services;
 using GraphData.Api.Runtime;
 using GraphData.Core.Extensions;
 using GraphData.Core.Services;
@@ -44,5 +45,6 @@ builder.Services
     .WithToolsFromAssembly(serializerOptions: GraphJsonSerializerOptions.Create());
 
 var app = builder.Build();
-await app.Services.GetRequiredService<GraphService>().InitializeAsync();
+using (var scope = app.Services.CreateScope())
+    await scope.ServiceProvider.GetRequiredService<GraphStorageInitializer>().InitializeAsync();
 await app.RunAsync();

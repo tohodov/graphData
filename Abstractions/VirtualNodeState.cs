@@ -31,13 +31,11 @@ internal sealed class VirtualNodeState : NodeState {
             .DistinctBy(static node => node.GlobalId)
             .ToArray();
 
-    private void ConnectTo(NodeState target, InternalId? typeId = null) {
+    private void ConnectTo(NodeState target) {
         if (target.GlobalId == GlobalId)
             return;
         if (_edges.Any(edge => Connects(edge, GlobalId, target.GlobalId)))
             return;
-        //TODO создавать instanse Node для typeId
-        throw new NotImplementedException();
         var edge = new EdgeStateReferenced(this, target);
         AddEdgeDirect(edge);
         if (target is VirtualNodeState virtualTarget)

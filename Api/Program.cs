@@ -1,3 +1,4 @@
+using Domain.Services;
 using GraphData.Api.Runtime;
 using GraphData.Core.Extensions;
 using GraphData.Core.Services;
@@ -17,7 +18,8 @@ builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorag
 
 var app = builder.Build();
 
-await app.Services.GetRequiredService<GraphService>().InitializeAsync();
+using (var scope = app.Services.CreateScope())
+    await scope.ServiceProvider.GetRequiredService<GraphStorageInitializer>().InitializeAsync();
 
 if (app.Environment.IsDevelopment())
 {
