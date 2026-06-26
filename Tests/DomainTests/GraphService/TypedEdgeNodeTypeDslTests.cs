@@ -271,13 +271,14 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
     }
     [TestMethod]
     public async Task AddSubgraph_ShouldPersistVirtualNodesAndConnections() {
-        var catalog = new Node(new InternalId("catalog"));
-        var weapon = new Node(new InternalId("catalog", "ak-47"));
+        var catalog = new Node("catalog");
+        Service.Root.Nodes.Add(catalog);
+        var weapon = new Node("ak-47");
         weapon.Attributes["displayName"] = "AK-47";
-        var weaponType = new Node(new InternalId("graphdata", "types", "nodes", "Weapon"));
-
         catalog.Nodes.Add(weapon);
+        var weaponType = new Node("Weapon");
         weapon.Nodes.Add(weaponType);
+        Service.TypesRoot.Nodes.Add(weaponType);
 
         var result = await Service.AddSubgraph(catalog);
 
@@ -301,7 +302,7 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
             attributes: new Dictionary<string, string> {
                 ["color"] = "#123456"
             });
-        var catalog = new Node(new InternalId("catalog"));
+        var catalog = new Node("catalog");
         catalog.Attributes["color"] = "#abcdef";
         catalog.Attributes["generated"] = "true";
 

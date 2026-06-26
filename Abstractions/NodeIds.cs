@@ -10,6 +10,7 @@ namespace Abstractions;
 public readonly struct NodeLocalId : IEquatable<NodeLocalId>, IComparable<NodeLocalId> {
     readonly string value;
 
+    public NodeLocalId() : this(string.Empty) { }
     public NodeLocalId(string value) => this.value = value;
 
     public bool Equals(NodeLocalId other) => string.Equals(value, other.value, StringComparison.Ordinal);
@@ -28,10 +29,12 @@ public readonly struct NodeLocalId : IEquatable<NodeLocalId>, IComparable<NodeLo
     internal static NodeLocalId Random() => new NodeLocalId(Guid.NewGuid().ToString());//TODO переписать на создание Id внутри где можно проверить занятость
 }
 public abstract class NodeRef {
+    [Obsolete("не надо использовать ни для чего кроме дедупликации")]
     public sealed class InternalId : NodeRef, IEnumerable<NodeLocalId>, IEquatable<InternalId> {
         readonly ImmutableArray<NodeLocalId> segments;
         readonly int hashCode;
 
+        public InternalId() : this([]) { }
         public InternalId(params IEnumerable<NodeLocalId> segments) : this(CreateSegments(segments)) { }
         public InternalId(ImmutableArray<NodeLocalId> segments) {
             if (segments.IsDefault)
@@ -105,6 +108,7 @@ public abstract class NodeRef {
         readonly ImmutableArray<NodeLocalId> segments;
         readonly int hashCode;
 
+        public NodePath() : this(Array.Empty<NodeLocalId>()) { }
         public NodePath(params IEnumerable<string> segments) : this(CreateSegments(segments.Select(x => new NodeLocalId(x)))) { }
         public NodePath(params IEnumerable<NodeLocalId> segments) : this(CreateSegments(segments)) { }
         public NodePath(ImmutableArray<NodeLocalId> segments) {

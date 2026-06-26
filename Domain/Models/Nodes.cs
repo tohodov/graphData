@@ -6,7 +6,6 @@ public class NodeType : Node {
         : base(state) {
     }
     public NodeType(NodeLocalId id) : this(new VirtualNodeState(id)) { }
-    public NodeType(InternalId id) : this(new VirtualNodeState(id)) { }
 
     public static NodeLocalId CreateDefaultLocalId(Type type) {
         var name = type.Name;
@@ -28,6 +27,6 @@ public sealed class InstanceNode : NodeType {
 }
 
 public class StorageRoot : NodeType {
-    internal StorageRoot() : base(new VirtualNodeState(new InternalId())) { }
+    internal StorageRoot() : base(new VirtualNodeState(new NodeLocalId())) { }
     internal StorageRoot(NodeState state) : base(state) { }
 }

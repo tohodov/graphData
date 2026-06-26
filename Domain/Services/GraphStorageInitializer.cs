@@ -1,5 +1,4 @@
 ﻿using Abstractions;
-using GraphData.Core.Models;
 using GraphData.Core.Services;
 
 namespace Domain.Services;
@@ -15,21 +14,27 @@ public class GraphStorageInitializer {
     }
 
     public async Task InitializeAsync() {
-        var checkResult = await service.GetNodeAsync(GraphSystemNodeIds.RuntimeTypesInitializer).ConfigureAwait(false);
-        if (checkResult.Status == ServiceResultStatus.NotFound) {
-            var storageStateNode = (Node?)await service.GetNodeAsync(GraphSystemNodeIds.InitializerRoot);
-            if (storageStateNode != null)
-                storageStateNode.Nodes.Clear();
-            else
-                storageStateNode = ((Node)await service.CreateNode(GraphSystemNodeIds.InitializerRoot))!;
-            storageStateNode.Nodes.Add(new Node(new NodeLocalId(RuntimeTypesVersion)));
-            storageStateNode.Nodes.Add(new Node(new NodeLocalId(schemaRegistry.Fingerprint)));
-            var result = await service.AddSubgraph(service.Root).ConfigureAwait(false);
-            if (result.Status != ServiceResultStatus.Ok)
-                throw new Exception(result.Error);
-        } else if (checkResult.Status == ServiceResultStatus.Ok)
-            return;
-        else
-            throw new Exception(checkResult.Error);
+        var graphData = GetOrAdd(service.Root, "graphdata");
+        var storage = GetOrAdd(graphData, "storage");
+        var initializers = GetOrAdd(storage, "initializers");
+        var runtimeTypes = GetOrAdd(initializers, "runtime-types");//TODO сделать константой времени компиляции как service.TypesRoot
+
+        runtimeTypes.Nodes.Clear();
+        runtimeTypes.Nodes.Add(new Node(new NodeLocalId(RuntimeTypesVersion)));
+        runtimeTypes.Nodes.Add(new Node(new NodeLocalId(schemaRegistry.Fingerprint)));
+
+        var result = await service.AddSubgraph(service.Root).ConfigureAwait(false);
+        if (result.Status != ServiceResultStatus.Ok)
+            throw new Exception(result.Error);
     }
+
+    private static Node GetOrAdd(Node parent, NodeLocalId localId) {
+        var node = parent.Nodes.FirstOrDefault(node => node.LocalId == localId);
+        if (node is not null)
+            return node;
+        node = new Node(localId);
+        parent.Nodes.Add(node);
+        return node;
+    }
+
 }

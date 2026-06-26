@@ -17,6 +17,8 @@ public class Edge {
 
     protected TIncidence Attach<TIncidence>(TIncidence incidence)
         where TIncidence : Incidence {
+        if (Incidences.Contains(incidence))
+            return incidence;
         Incidences.Add(incidence);
         incidence.Node.Attach(incidence);
         return incidence;

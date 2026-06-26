@@ -1,31 +1,26 @@
 namespace Abstractions;
 
 internal sealed class VirtualNodeState : NodeState {
-    readonly NodeLocalId? localId = null;
-    readonly InternalId? internalId = null;
-    readonly List<EdgeState> _edges = [];
+    readonly List<EdgeState> edges = [];
 
-    internal VirtualNodeState(NodeLocalId id) : this() => localId = id;
-    internal VirtualNodeState(InternalId id) : this() => internalId = id;
+    internal VirtualNodeState(NodeLocalId id) : this() => LocalId = id;
     VirtualNodeState() {
         Edges = new VirtualEdgeCollection(this);
         Nodes = new VirtualNodeCollection(this);
         Attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
     }
 
-    public override NodeLocalId LocalId => localId ?? new NodeLocalId(Guid.NewGuid().ToString());
-    public override InternalId GlobalId => internalId ?? new InternalId(Guid.NewGuid().ToString());
+    public override NodeLocalId LocalId { get; }
+    public override InternalId GlobalId => field ??= new(LocalId, NodeLocalId.Random());//TODO кажется вообще не нужно для VirtualNode
     public override ICollection<EdgeState> Edges { get; }
     public override ILazyCollection<NodeState> Nodes { get; }
     public override IDictionary<string, string> Attributes { get; set; }
 
-    internal IDictionary<string, string> AttributeSnapshot() =>
-        new Dictionary<string, string>(Attributes, StringComparer.OrdinalIgnoreCase);
 
-    private IReadOnlyCollection<EdgeState> EdgeSnapshot() => _edges.ToArray();
+    private IReadOnlyCollection<EdgeState> EdgeSnapshot() => edges.ToArray();
 
     private IReadOnlyCollection<NodeState> NodeSnapshot() =>
-        _edges
+        edges
             .Select(edge => GetOtherEndpoint(edge, this))
             .Where(node => node.GlobalId != GlobalId)
             .DistinctBy(static node => node.GlobalId)
@@ -34,7 +29,7 @@ internal sealed class VirtualNodeState : NodeState {
     private void ConnectTo(NodeState target) {
         if (target.GlobalId == GlobalId)
             return;
-        if (_edges.Any(edge => Connects(edge, GlobalId, target.GlobalId)))
+        if (edges.Any(edge => Connects(edge, GlobalId, target.GlobalId)))
             return;
         var edge = new EdgeStateReferenced(this, target);
         AddEdgeDirect(edge);
@@ -55,10 +50,10 @@ internal sealed class VirtualNodeState : NodeState {
     }
 
     private void AddEdgeDirect(EdgeState edge) {
-        if (_edges.Any(existing => Connects(existing, edge.Node1.GlobalId, edge.Node2.GlobalId)))
+        if (edges.Any(existing => Connects(existing, edge.Node1.GlobalId, edge.Node2.GlobalId)))
             return;
 
-        _edges.Add(edge);
+        edges.Add(edge);
     }
 
     private bool RemoveEdge(EdgeState edge) {
@@ -67,7 +62,7 @@ internal sealed class VirtualNodeState : NodeState {
     }
 
     private bool RemoveEdgeDirect(InternalId first, InternalId second) {
-        var count = _edges.RemoveAll(edge => Connects(edge, first, second));
+        var count = edges.RemoveAll(edge => Connects(edge, first, second));
         return count > 0;
     }
 
@@ -141,14 +136,11 @@ internal sealed class VirtualNodeState : NodeState {
                 owner.DisconnectFrom(node);
         }
 
-        public bool Contains(EdgeState item) =>
-            owner.EdgeSnapshot().Any(edge => Connects(edge, item.Node1.GlobalId, item.Node2.GlobalId));
+        public bool Contains(EdgeState item) => owner.EdgeSnapshot().Any(edge => Connects(edge, item.Node1.GlobalId, item.Node2.GlobalId));
 
-        public void CopyTo(EdgeState[] array, int arrayIndex) =>
-            owner.EdgeSnapshot().ToArray().CopyTo(array, arrayIndex);
+        public void CopyTo(EdgeState[] array, int arrayIndex) => owner.EdgeSnapshot().ToArray().CopyTo(array, arrayIndex);
 
-        public IEnumerator<EdgeState> GetEnumerator() =>
-            owner.EdgeSnapshot().GetEnumerator();
+        public IEnumerator<EdgeState> GetEnumerator() => owner.EdgeSnapshot().GetEnumerator();
 
         public bool Remove(EdgeState item) => owner.RemoveEdge(item);
 

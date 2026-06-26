@@ -5,10 +5,11 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 public sealed class DslTests : GraphServiceTests {
     [TestMethod]
     public async Task LINQ_Traverse() {
-        var weaponType = await Service.CreateNode("weapon", Service.TypesRoot.GlobalId);
-        var node = ((Node)await Service.CreateNode("ak47", Service.TypesRoot.GlobalId))!;
-        await Service.CreateNode("m16", Service.TypesRoot.GlobalId);
-        await Service.CreateNode("mp5", Service.TypesRoot.GlobalId);
+        var weaponTypeBaseNode = ((Node)await Service.CreateNode("weapon", Service.TypesRoot.GlobalId))!;
+        var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
+        var node = ((Node)await Service.CreateNode("ak47", Service.Root.GlobalId, weaponType))!;
+        await Service.CreateNode("m16", Service.Root.GlobalId, weaponType);
+        await Service.CreateNode("mp5", Service.Root.GlobalId, weaponType);
 
         var type = node.Incidences
             .OfType<InstanceOf.InstanceEnd>()
@@ -18,8 +19,7 @@ public sealed class DslTests : GraphServiceTests {
 
         var metaType = type.Incidences
             .OfType<InstanceOf.InstanceEnd>()
-            .Select(x => x.Type)
-            .First();
+            .FirstOrDefault();
         Assert.IsNull(metaType);
 
         var instances = type.Incidences
