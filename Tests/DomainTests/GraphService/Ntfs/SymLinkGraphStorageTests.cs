@@ -1,5 +1,6 @@
 using System.IO;
 using System.Threading.Tasks;
+using Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 [RelevantTestClass]
@@ -35,5 +36,37 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
 
         Assert.AreEqual(Path.GetFullPath(expectedFirstTarget), new DirectoryInfo(firstLink).LinkTarget);
         Assert.AreEqual(Path.GetFullPath(expectedSecondTarget), new DirectoryInfo(secondLink).LinkTarget);
+    }
+
+    [TestMethod]
+    public async Task NodeNeighborsAsync_ShouldReflectFolderChangesAfterFirstRead()
+    {
+        var parent = await Storage.Create(new("parent"));
+        var first = await Storage.Create(new("first"), parent.GlobalId);
+        var secondPath = Path.Combine(StorageOptions.RootPath, parent.LocalId, "second");
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId },
+            await ReadNeighborLocalIdsAsync(parent));
+
+        Directory.CreateDirectory(secondPath);
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId, new NodeLocalId("second") },
+            await ReadNeighborLocalIdsAsync(parent));
+
+        Directory.Delete(secondPath);
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId },
+            await ReadNeighborLocalIdsAsync(parent));
+    }
+
+    private static async Task<NodeLocalId[]> ReadNeighborLocalIdsAsync(NodeBacking node)
+    {
+        var result = new List<NodeLocalId>();
+        await foreach (var neighbor in node.Nodes)
+            result.Add(neighbor.LocalId);
+        return result.ToArray();
     }
 }

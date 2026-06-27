@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Abstractions;
 using static System.IO.Path;
@@ -13,12 +14,6 @@ internal sealed class NodeFileSystem : NodeBacking {
     internal readonly SymLinkGraphStorage storage;
     EdgeBacking[]? edgeSnapshot;
     IReadOnlyCollection<EdgeBacking> EdgeSnapshot => edgeSnapshot ??= GetEdges().ToArray();
-    NodeBacking[]? nodeSnapshot2;
-    IReadOnlyCollection<NodeBacking> NodeSnapshot => nodeSnapshot2 ??= EdgeSnapshot//TODO переписать на постепенное чтение в LiveNodeCollection
-            .SelectMany(static edge => new[] { edge.Node1, edge.Node2 })
-            .Where(node => node.GlobalId != GlobalId)
-            .DistinctBy(static node => node.GlobalId)
-            .ToArray();
     IDictionary<string, string>? attributes;
     Dictionary<string, string>? attributesSnapshot;
 
@@ -114,7 +109,7 @@ internal sealed class NodeFileSystem : NodeBacking {
     }
 
     internal async Task DisconnectFrom(NodeBacking target) {
-        if (!NodeSnapshot.Any(node => node.GlobalId == target.GlobalId))
+        if (!await GetNeighborNodes().AnyAsync(node => node.GlobalId == target.GlobalId))
             return;
         await storage.Disconnect(GlobalId, target.GlobalId);
         InvalidateGraphCache();
@@ -125,7 +120,6 @@ internal sealed class NodeFileSystem : NodeBacking {
 
     internal void InvalidateGraphCache() {
         edgeSnapshot = null;
-        nodeSnapshot2 = null;
     }
 
     IEnumerable<EdgeBacking> GetEdges() {
@@ -140,6 +134,23 @@ internal sealed class NodeFileSystem : NodeBacking {
 
         foreach (var link in GetSymLinks())
             yield return new LinkEdgeFileSystemState(this, link);
+    }
+
+    async IAsyncEnumerable<NodeBacking> GetNeighborNodes([EnumeratorCancellation] CancellationToken cancellationToken = default) {
+        var seen = new HashSet<NodeBacking>();
+        foreach (var edge in GetEdges()) {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var first = edge.Node1;
+            if (!first.Equals(this) && seen.Add(first))
+                yield return first;
+
+            var second = edge.Node2;
+            if (!second.Equals(this) && seen.Add(second))
+                yield return second;
+
+            await Task.Yield();
+        }
     }
 
     IEnumerable<NodeFileSystem> GetChildNodes() {
@@ -271,12 +282,12 @@ internal sealed class NodeFileSystem : NodeBacking {
         }
         public Task Remove(NodeBacking item) => owner.DisconnectFrom(item);
         public async Task Clear() {
-            foreach (var node in owner.NodeSnapshot)
+            foreach (var node in await owner.GetNeighborNodes().ToArrayAsync())
                 await owner.DisconnectFrom(node);
         }
-        public async Task<bool> Contains(NodeBacking item) => owner.NodeSnapshot.Any(node => node.GlobalId == item.GlobalId);
+        public async Task<bool> Contains(NodeBacking item) => await owner.GetNeighborNodes().AnyAsync(node => node.GlobalId == item.GlobalId);
 
-        IAsyncEnumerator<NodeBacking> IAsyncEnumerable<NodeBacking>.GetAsyncEnumerator(CancellationToken t) => owner.NodeSnapshot.ToAsyncEnumerable().GetAsyncEnumerator(t);
+        IAsyncEnumerator<NodeBacking> IAsyncEnumerable<NodeBacking>.GetAsyncEnumerator(CancellationToken t) => owner.GetNeighborNodes(t).GetAsyncEnumerator(t);
     }
 
     sealed class LiveEdgeCollection(NodeFileSystem owner) : IAsyncCollection<EdgeBacking> {
