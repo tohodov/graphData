@@ -1,10 +1,18 @@
-﻿[*.cs]
+[*.cs]
 
 # CS8602: Разыменование вероятной пустой ссылки.
 dotnet_diagnostic.CS8602.severity = error
 
 # CS8604: Возможно, аргумент-ссылка, допускающий значение NULL.
 dotnet_diagnostic.CS8604.severity = error
+# CS8604: Возможно, аргумент-ссылка, допускающий значение NULL.
+dotnet_diagnostic.CS8603.severity = error
 
 # CS8618: свойство, не допускающий значения NULL, должен содержать значение, отличное от NULL, при выходе из конструктора. Рассмотрите возможность добавления модификатора "required" или объявления значения свойство, допускающего значение NULL.	
 dotnet_diagnostic.CS8618.severity = error
+
+# VSTHRD002: Avoid synchronous waits (Task.Result / Task.Wait)
+dotnet_diagnostic.VSTHRD002.severity = warning
+
+# VSTHRD002: Use "Async" suffix in names of methods that return an awaitable type
+dotnet_diagnostic.VSTHRD200.severity = none
