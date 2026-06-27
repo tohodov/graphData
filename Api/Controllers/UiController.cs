@@ -1,38 +1,25 @@
 using GraphData.Api.Models;
-using GraphData.Core.Models;
+using GraphData.Core.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GraphData.Api.Controllers;
 
 [ApiController]
 [Route("api/ui")]
-public sealed class UiController : ControllerBase
-{
+public sealed class UiController(GraphService graph) : ControllerBase {
     [HttpGet("settings")]
     public ActionResult<UiSettingsResponse> GetSettings() =>
-        new UiSettingsResponse
-        {
-            SystemNodeIds = new UiSystemNodeIdsResponse
-            {
-                GraphDataRoot = GraphSystemNodeIds.GraphDataRoot.ToString(),
-                TypeRoot = GraphSystemNodeIds.TypeRoot.ToString(),
-                NodeTypeRoot = GraphSystemNodeIds.NodeTypeRoot.ToString(),
-                StorageRoot = GraphSystemNodeIds.StorageRoot.ToString(),
-                InitializerRoot = GraphSystemNodeIds.InitializerRoot.ToString(),
-                RuntimeTypesInitializer = GraphSystemNodeIds.RuntimeTypesInitializer.ToString()
+        new UiSettingsResponse {
+            SystemNodeIds = new UiSystemNodeIdsResponse {
+                GraphDataRoot = graph.GraphDataRoot.GlobalId.ToString(),
+                TypeRoot = graph.TypeRoot.GlobalId.ToString(),
+                NodeTypeRoot = graph.TypesRoot.GlobalId.ToString(),
+                StorageRoot = graph.StorageRoot.GlobalId.ToString(),
+                InitializerRoot = graph.InitializersRoot.GlobalId.ToString(),
+                RuntimeTypesInitializer = graph.RuntimeTypesInitializer.GlobalId.ToString()
             },
-            BaseTypeIds = new UiBaseTypeIdsResponse
-            {
-                NodeType = "TODO",
-                NodeInstance = "TODO",
-                Connection = "TODO",
-                EdgeType = "TODO",
-                Endpoint = "TODO",
-                Port = "TODO"
-            },
-            Basis = new UiBasisResponse
-            {
-                NodeTypeRoot = GraphSystemNodeIds.NodeTypeRoot.ToString()
+            Basis = new UiBasisResponse {
+                NodeTypeRoot = graph.TypesRoot.GlobalId.ToString()
             }
         };
 }

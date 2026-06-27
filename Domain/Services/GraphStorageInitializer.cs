@@ -14,10 +14,7 @@ public class GraphStorageInitializer {
     }
 
     public async Task InitializeAsync() {
-        var graphData = GetOrAdd(service.Root, "graphdata");
-        var storage = GetOrAdd(graphData, "storage");
-        var initializers = GetOrAdd(storage, "initializers");
-        var runtimeTypes = GetOrAdd(initializers, "runtime-types");//TODO сделать константой времени компиляции как service.TypesRoot
+        var runtimeTypes = service.RuntimeTypesInitializer;
 
         runtimeTypes.Nodes.Clear();
         runtimeTypes.Nodes.Add(new Node(new NodeLocalId(RuntimeTypesVersion)));
@@ -27,14 +24,4 @@ public class GraphStorageInitializer {
         if (result.Status != ServiceResultStatus.Ok)
             throw new Exception(result.Error);
     }
-
-    private static Node GetOrAdd(Node parent, NodeLocalId localId) {
-        var node = parent.Nodes.FirstOrDefault(node => node.LocalId == localId);
-        if (node is not null)
-            return node;
-        node = new Node(localId);
-        parent.Nodes.Add(node);
-        return node;
-    }
-
 }

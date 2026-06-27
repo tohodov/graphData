@@ -283,7 +283,7 @@ public sealed class GraphControllerTests : ControllerTests {
 
     [TestMethod]
     public async Task AssignNodeTypeAsync_ConnectsNodeToTypeThroughDslValidator() {
-        var weaponType = await Storage.Create(new("Weapon"), Core.Models.GraphSystemNodeIds.NodeTypeRoot);
+        var weaponType = await Storage.Create(new("Weapon"), Service.TypesRoot.GlobalId);
         var ak47 = await Storage.Create(new("ak-47"));
 
         var result = await Controller.AssignNodeTypeAsync(new AssignNodeTypeRequest {
@@ -306,7 +306,7 @@ public sealed class GraphControllerTests : ControllerTests {
 
     [TestMethod]
     public async Task ChangeEdgeTypeAsync_CreatesTypedEdgeSubgraphForBasicEdgeAndReturnsIt() {
-        var newType = await Storage.Create(new("new-type"), Core.Models.GraphSystemNodeIds.NodeTypeRoot);
+        var newType = await Storage.Create(new("new-type"), Service.TypesRoot.GlobalId);
         var source = await Storage.Create(new("source"));
         var target = await Storage.Create(new("target"));
         await Storage.Connect(source.GlobalId, target.GlobalId);
@@ -343,7 +343,7 @@ public sealed class GraphControllerTests : ControllerTests {
         Assert.IsNotNull(storedRelation);
         Assert.AreEqual(0, storedRelation.Attributes.Count);
 
-        var replacementType = await Storage.Create(new("replacement-type"), Core.Models.GraphSystemNodeIds.NodeTypeRoot);
+        var replacementType = await Storage.Create(new("replacement-type"), Service.TypesRoot.GlobalId);
         await Storage.Update(storedRelation.GlobalId, new Dictionary<string, string> { ["note"] = "user note" });
         var retyped = await Controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
             Node1InternalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),
@@ -583,8 +583,8 @@ public sealed class GraphControllerTests : ControllerTests {
         public Task<NodeBacking> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null) => inner.Create(name, parent, attributes);
         public Task<NodeBacking?> Get(NodeRef query) => inner.Get(query);
         public Task Delete(NodeRef query) => inner.Delete(query);
-        public Task Connect(NodeRef sourcePath, NodeRef targetPath) => Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
-        public Task Disconnect(NodeRef sourcePath, NodeRef targetPath) => Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
+        public Task Connect(NodeRef sourcePath, NodeRef targetPath) => throw new InvalidOperationException("diagnostic connect failure");
+        public Task Disconnect(NodeRef sourcePath, NodeRef targetPath) => throw new InvalidOperationException("diagnostic connect failure");
         public IAsyncEnumerable<NodeBacking> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] others) => inner.GetCommonIntersection(first, second, others);
         public Task Delete(NodeBacking node) => inner.Delete(node);
         public IAsyncEnumerable<NodeBacking> EnumerateNodesAsync(CancellationToken cancellationToken = default) => inner.EnumerateNodesAsync(cancellationToken);

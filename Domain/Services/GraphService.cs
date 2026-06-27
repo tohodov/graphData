@@ -6,11 +6,15 @@ namespace GraphData.Core.Services;
 public sealed class GraphService {
     const string SourcePortRole = "source";
     const string TargetPortRole = "target";
-    //TODO Graph
+
     public StorageRoot Root { get; }
+    public Node GraphDataRoot { get; }
+    public Node TypeRoot { get; }
     public NodeType TypesRoot { get; }
     public NodeType InstancesRoot { get; }
-    //TODO Graph
+    public Node StorageRoot { get; }
+    public Node InitializersRoot { get; }
+    public Node RuntimeTypesInitializer { get; }
 
     readonly IGraphStorage storage;
     readonly GraphSearchService searchService;
@@ -29,14 +33,20 @@ public sealed class GraphService {
         this.schemaRegistry = schemaRegistry;
 
         Root = new StorageRoot();
-        var graphData = new Node("graphdata");
-        Root.Nodes.Add(graphData);
-        var types = new Node("types");
-        graphData.Nodes.Add(types);
+        GraphDataRoot = new Node("graphdata");
+        Root.Nodes.Add(GraphDataRoot);
+        TypeRoot = new Node("types");
+        GraphDataRoot.Nodes.Add(TypeRoot);
         TypesRoot = new NodeType("nodes");
-        types.Nodes.Add(TypesRoot);
+        TypeRoot.Nodes.Add(TypesRoot);
         InstancesRoot = new NodeType("instances");
-        graphData.Nodes.Add(InstancesRoot);
+        GraphDataRoot.Nodes.Add(InstancesRoot);
+        StorageRoot = new Node("storage");
+        GraphDataRoot.Nodes.Add(StorageRoot);
+        InitializersRoot = new Node("initializers");
+        StorageRoot.Nodes.Add(InitializersRoot);
+        RuntimeTypesInitializer = new Node("runtime-types");
+        InitializersRoot.Nodes.Add(RuntimeTypesInitializer);
         foreach (var type in schemaRegistry.Types)
             TypesRoot.Nodes.Add(new NodeType(type.Id));
     }
@@ -142,7 +152,7 @@ public sealed class GraphService {
             return ServiceResult<Subgraph>.NotFound();
 
         var node2 = new NodeType(typeNode);
-        var definition = schemaRegistry.GetOrBuildDefinition(node2);
+        var definition = schemaRegistry.GetOrBuildDefinition(node2, ResolveRuntimeTypeId);
         definition.EnsureSatisfiedBy(new InstanceNode(reloadedNode, node2));
         return await GetSubgraph([nodeId, typeId], 1).ConfigureAwait(false);
     }
@@ -303,7 +313,7 @@ public sealed class GraphService {
         if (typeNode == null)
             return ServiceResult<NodeTypeDefinition>.NotFound();
 
-        var definition = schemaRegistry.GetOrBuildDefinition(typeNode);
+        var definition = schemaRegistry.GetOrBuildDefinition(typeNode, ResolveRuntimeTypeId);
         return ServiceResult<NodeTypeDefinition>.Ok(definition);
     }
 
@@ -317,7 +327,7 @@ public sealed class GraphService {
         if (typeNode is null)
             return ServiceResult<TypedEdgeDefinition>.NotFound();
 
-        var nodeTypeDefinition = schemaRegistry.GetOrBuildDefinition(typeNode);
+        var nodeTypeDefinition = schemaRegistry.GetOrBuildDefinition(typeNode, ResolveRuntimeTypeId);
 
         return TypedEdgeDefinition.TryCreate(nodeTypeDefinition, out var definition)
             ? ServiceResult<TypedEdgeDefinition>.Ok(definition)
@@ -339,7 +349,18 @@ public sealed class GraphService {
             .Any(incidence => incidence.Type.GlobalId == type.GlobalId))
             return;
 
-        _ = new InstanceOf(new EdgeStateReferenced(instance.Backing, type.Backing), instance, type);
+        _ = new InstanceOf(new InMemoryEdgeBacking(instance.Backing, type.Backing), instance, type);
+    }
+
+    private InternalId ResolveRuntimeTypeId(Type type) {
+        var localId = schemaRegistry.GetNodeTypeId(type);
+        var typeNode = TypesRoot.Nodes
+            .OfType<NodeType>()
+            .FirstOrDefault(node => node.LocalId == localId);
+        if (typeNode is null)
+            throw new InvalidOperationException($"Runtime graph type '{type.FullName}' is not present in the graph service type root.");
+
+        return typeNode.GlobalId;
     }
 
     private async Task<ServiceResult> DisconnectBasicEdgeIfPresentAsync(NodeRef sourceId, InternalId targetId) {

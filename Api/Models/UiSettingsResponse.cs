@@ -4,8 +4,6 @@ public sealed record UiSettingsResponse
 {
     public required UiSystemNodeIdsResponse SystemNodeIds { get; init; }
 
-    public required UiBaseTypeIdsResponse BaseTypeIds { get; init; }
-
     public required UiBasisResponse Basis { get; init; }
 }
 
@@ -22,22 +20,6 @@ public sealed record UiSystemNodeIdsResponse
     public required string InitializerRoot { get; init; }
 
     public required string RuntimeTypesInitializer { get; init; }
-}
-
-public sealed record UiBaseTypeIdsResponse
-{
-    public required string NodeType { get; init; }
-
-    public required string NodeInstance { get; init; }
-
-    public required string Connection { get; init; }
-
-    // Compatibility name for UI code that treats typed connection node types as edge projection types.
-    public required string EdgeType { get; init; }
-
-    public required string Endpoint { get; init; }
-
-    public required string Port { get; init; }
 }
 
 public sealed record UiBasisResponse

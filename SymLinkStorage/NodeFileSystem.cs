@@ -1,5 +1,4 @@
-﻿using System.Collections;
-using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using Abstractions;
 using static System.IO.Path;
@@ -10,11 +9,10 @@ internal sealed class NodeFileSystem : NodeBacking {
     const string MetadataFileName = "node.json";
 
     readonly string parentPath;
-    readonly string storageRootPath;
     readonly string folderPath;
     internal readonly SymLinkGraphStorage storage;
     EdgeBacking[]? edgeSnapshot;
-    IReadOnlyCollection <EdgeBacking> EdgeSnapshot => edgeSnapshot ??= GetEdges().ToArray();
+    IReadOnlyCollection<EdgeBacking> EdgeSnapshot => edgeSnapshot ??= GetEdges().ToArray();
     NodeBacking[]? nodeSnapshot2;
     IReadOnlyCollection<NodeBacking> NodeSnapshot => nodeSnapshot2 ??= EdgeSnapshot//TODO переписать на постепенное чтение в LiveNodeCollection
             .SelectMany(static edge => new[] { edge.Node1, edge.Node2 })
@@ -26,11 +24,10 @@ internal sealed class NodeFileSystem : NodeBacking {
 
     public string FolderPath => folderPath; //TODO encapsulate
     public string MetadataPath => Combine(FolderPath, MetadataFileName);
-    internal string StorageRootPath => storageRootPath;
 
     public override NodeLocalId LocalId { get; }
     public override NodeRef.InternalId GlobalId => new NodeRef.InternalId(
-        GetRelativePath(storageRootPath, FolderPath)
+        GetRelativePath(storage.root.FullName, FolderPath)
             .Split(DirectorySeparatorChar, AltDirectorySeparatorChar)
             .Where(static part => part is not "." and not "")
             .Select(SymLinkGraphStorage.NormalizeNodeName)
@@ -49,7 +46,6 @@ internal sealed class NodeFileSystem : NodeBacking {
         folderPath = ResolveDirectoryPath(info.FullName);
         LocalId = id;
         parentPath = GetDirectoryName(folderPath) ?? "";
-        storageRootPath = storage.root.FullName;
         Edges = new LiveEdgeCollection(this);
         Nodes = new LiveNodeCollection(this);
     }
@@ -58,15 +54,13 @@ internal sealed class NodeFileSystem : NodeBacking {
         folderPath = ResolveDirectoryPath(info.FullName);
         LocalId = new NodeLocalId(new DirectoryInfo(folderPath).Name);
         parentPath = GetDirectoryName(folderPath) ?? "";
-        storageRootPath = storage.root.FullName;
         Edges = new LiveEdgeCollection(this);
         Nodes = new LiveNodeCollection(this);
     }
     public NodeFileSystem(NodeLocalId name, SymLinkGraphStorage storage) {
         this.storage = storage;
         LocalId = name;
-        storageRootPath = storage.root.FullName;
-        parentPath = this.storageRootPath;
+        parentPath = storage.root.FullName;
         folderPath = ResolveDirectoryPath(Combine(parentPath, name.ToString()));
         Edges = new LiveEdgeCollection(this);
         Nodes = new LiveNodeCollection(this);
@@ -74,7 +68,6 @@ internal sealed class NodeFileSystem : NodeBacking {
     public NodeFileSystem(NodeLocalId name, NodeFileSystem parent) {
         storage = parent.storage;
         LocalId = name;
-        storageRootPath = parent.storageRootPath;
         parentPath = parent.FolderPath;
         folderPath = ResolveDirectoryPath(Combine(parentPath, name.ToString()));
         Edges = new LiveEdgeCollection(this);
@@ -172,13 +165,9 @@ internal sealed class NodeFileSystem : NodeBacking {
 
     bool IsStorageRoot(string path) =>
         string.Equals(
-            NormalizeDirectoryPath(path),
-            NormalizeDirectoryPath(storageRootPath),
+            ResolveDirectoryPath(path).TrimEnd(DirectorySeparatorChar, AltDirectorySeparatorChar),
+            ResolveDirectoryPath(storage.root.FullName).TrimEnd(DirectorySeparatorChar, AltDirectorySeparatorChar),
             StringComparison.OrdinalIgnoreCase);
-
-    static string NormalizeDirectoryPath(string path) =>
-        ResolveDirectoryPath(path)
-            .TrimEnd(DirectorySeparatorChar, AltDirectorySeparatorChar);
 
     IEnumerable<SymLink> GetSymLinks() {
         var directory = new DirectoryInfo(FolderPath);

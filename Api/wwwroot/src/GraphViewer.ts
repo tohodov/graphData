@@ -824,24 +824,11 @@ export class GraphViewer {
     return null;
   }
 
-  const baseTypeIds = this.graph.schema.baseTypeIds ?? {};
   const element = node.attributes?.[graphElementAttribute];
   if (element === "edge" || element === "relation") {
     return "edge";
   }
   if (element === "node") {
-    return "node";
-  }
-
-  if (path === baseTypeIds.edgeType || path === baseTypeIds.connection || path === baseTypeIds.relation) {
-    return "edge";
-  }
-  if (this.hasBasisEdge(edgePairs, path, baseTypeIds.edgeType)
-      || this.hasBasisEdge(edgePairs, path, baseTypeIds.connection)
-      || this.hasBasisEdge(edgePairs, path, baseTypeIds.relation)) {
-    return "edge";
-  }
-  if (path === baseTypeIds.nodeType || this.hasBasisEdge(edgePairs, path, baseTypeIds.nodeType)) {
     return "node";
   }
 

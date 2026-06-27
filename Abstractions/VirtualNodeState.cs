@@ -9,7 +9,7 @@ internal sealed class VirtualNodeState : NodeBacking {
     }
 
     public override NodeLocalId LocalId { get; }
-    public override InternalId GlobalId => field ??= new(LocalId, NodeLocalId.Random());//TODO кажется вообще не нужно для VirtualNode
+    public override InternalId GlobalId => field ??= new(LocalId, NodeLocalId.Random());
     public override IAsyncCollection<EdgeBacking> Edges { get; }
     public override IAsyncCollection<NodeBacking> Nodes { get; }
     public override IDictionary<string, string> Attributes { get; set; }
@@ -19,7 +19,7 @@ internal sealed class VirtualNodeState : NodeBacking {
             return;
         if (await Edges.AnyAsync(edge => Connects(edge, GlobalId, target.GlobalId)))
             return;
-        var edge = new EdgeStateReferenced(this, target);
+        var edge = new InMemoryEdgeBacking(this, target);
         await AddEdgeDirect(edge);
         if (target is VirtualNodeState virtualTarget)
             await virtualTarget.AddEdgeDirect(edge);

@@ -33,6 +33,6 @@ internal sealed class TestGraphStorageScope : IAsyncDisposable
     {
         if (!string.IsNullOrWhiteSpace(_options.RootPath) && Directory.Exists(_options.RootPath))
             Directory.Delete(_options.RootPath, recursive: true);
-        return ValueTask.CompletedTask;//TODO проверить
+        return ValueTask.CompletedTask;
     }
 }

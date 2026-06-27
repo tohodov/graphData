@@ -96,25 +96,19 @@ public sealed class GraphSchemaRegistry
         throw new InvalidOperationException($"CLR type '{type.FullName}' is not a registered node type.");
     }
 
-    public InternalId ResolveTypeId(Type type)
-    {
-        var localId = GetNodeTypeId(type);
-        return new InternalId(GraphSystemNodeIds.NodeTypeRoot.Append(localId).ToArray());
-    }
-
-    public NodeTypeDefinition GetOrBuildDefinition(NodeType typeNode)
+    public NodeTypeDefinition GetOrBuildDefinition(NodeType typeNode, Func<Type, InternalId> resolveTypeId)
     {
         return _definitions.GetOrAdd(typeNode.GlobalId, id =>
         {
             var localId = typeNode.LocalId;
             if (TryGetClrType(localId, out var clrType))
             {
-                var builder = new NodeTypeBuilder(typeNode, ResolveTypeId);
-                NodeTypeFieldDiscovery.AddDiscoveredFields(clrType, builder, ResolveTypeId);
+                var builder = new NodeTypeBuilder(typeNode, resolveTypeId);
+                NodeTypeFieldDiscovery.AddDiscoveredFields(clrType, builder, resolveTypeId);
                 return builder.Build();
             }
 
-            var dynamicBuilder = new NodeTypeBuilder(typeNode, ResolveTypeId);
+            var dynamicBuilder = new NodeTypeBuilder(typeNode, resolveTypeId);
             return dynamicBuilder.Build();
         });
     }

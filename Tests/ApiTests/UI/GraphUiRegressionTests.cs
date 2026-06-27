@@ -852,26 +852,20 @@ public sealed class GraphUiRegressionTests {
                 graphDataRoot: "backend/root",
                 nodeTypeRoot: "backend/types/nodes"
               },
-              baseTypeIds: {
-                nodeInstance: "backend/types/nodes/Instance",
-                edgeType: "backend/types/nodes/Connection"
-              }
             });
 
             globalThis.__result = model.basis.nodeTypeRoot === "backend/types/nodes"
               && model.basis.edgeTypeRoot === ""
               && model.basis.relationRoot === ""
               && model.defaultBasis().relationRoot === ""
-              && model.schema.systemNodeIds.graphDataRoot === "backend/root"
-              && model.schema.baseTypeIds.nodeInstance === "backend/types/nodes/Instance"
-              && model.schema.baseTypeIds.edgeType === "backend/types/nodes/Connection";
+              && model.schema.systemNodeIds.graphDataRoot === "backend/root";
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
     }
 
     [TestMethod]
-    public void FrontendDefaults_DoNotHardcodeGraphSystemNodeIds()
+    public void FrontendDefaults_DoNotHardcodeSystemNodeIds()
     {
         var attributes = ReadUiFile("Api/wwwroot/src/domain/graphAttributes.ts");
         var html = ReadUiFile("Api/wwwroot/index.html");

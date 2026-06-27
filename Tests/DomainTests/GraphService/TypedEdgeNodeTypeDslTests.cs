@@ -184,14 +184,14 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
     [TestMethod]
     public async Task GraphService_AssignNodeTypeAsync_UsesGraphTypeTopologyInsteadOfInternalIdShape() {
         var arbitraryType = await Service.CreateNode("weapon-type");
-        var pathShapedNonType = await Storage.Create(new("Fake"), GraphSystemNodeIds.NodeTypeRoot);
+        var pathShapedNonType = await Storage.Create(new("Fake"), Service.TypesRoot.GlobalId);
         var ak47 = await Storage.Create(new("ak-47"));
         var m16 = await Storage.Create(new("m16"));
         var fnFal = await Storage.Create(new("fn-fal"));
 
         var arbitraryResult = await Service.AssignNodeTypeAsync(ak47.GlobalId, arbitraryType.Value!.GlobalId);
         var pathShapedResult = await Service.AssignNodeTypeAsync(m16.GlobalId, pathShapedNonType.GlobalId);
-        var rootResult = await Service.AssignNodeTypeAsync(fnFal.GlobalId, GraphSystemNodeIds.NodeTypeRoot);
+        var rootResult = await Service.AssignNodeTypeAsync(fnFal.GlobalId, Service.TypesRoot.GlobalId);
 
         Assert.AreEqual(ServiceResultStatus.Ok, arbitraryResult.Status, arbitraryResult.Error);
         Assert.AreEqual(ServiceResultStatus.BadRequest, pathShapedResult.Status);
@@ -291,7 +291,7 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
         var persistedWeapon = await Storage.Get(weapon.GlobalId);
         Assert.IsNotNull(persistedWeapon);
         Assert.AreEqual("AK-47", persistedWeapon.Attributes["displayName"]);
-        Assert.IsNotNull(await Storage.Get(GraphSystemNodeIds.NodeTypeRoot));
+        Assert.IsNotNull(await Storage.Get(Service.TypesRoot.GlobalId));
 
         Assert.IsTrue(await persistedWeapon.Nodes.AnyAsync(node => node.GlobalId == weaponType.GlobalId));
     }

@@ -31,7 +31,7 @@ public sealed class InstanceNode : NodeType {
     }
 
     private void AttachType() {
-        _ = new InstanceOf(new EdgeStateReferenced(Backing, Type.Backing), this, Type);
+        _ = new InstanceOf(new InMemoryEdgeBacking(Backing, Type.Backing), this, Type);//TODO переписать на явное поведение
     }
 }
 

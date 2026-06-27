@@ -131,8 +131,6 @@ public sealed class GraphDataTools(GraphService graph) {
             return ToJson(ToErrorResponse(ServiceResultStatus.BadRequest, $"Invalid query JSON: {ex.Message}"));
         } catch (ArgumentException ex) {
             return ToJson(ToErrorResponse(ServiceResultStatus.BadRequest, ex.Message));
-        } catch (NotSupportedException ex) {
-            return ToJson(ToErrorResponse(ServiceResultStatus.InternalServerError, ex.Message));
         }
     }
 
@@ -162,7 +160,6 @@ public sealed class GraphDataTools(GraphService graph) {
             ServiceResultStatus.BadRequest => "Request is invalid.",
             ServiceResultStatus.NotFound => "Resource was not found.",
             ServiceResultStatus.Conflict => "Request conflicts with the current graph state.",
-            ServiceResultStatus.InternalServerError => "Internal server error.",
             _ => "Operation failed."
         };
     }

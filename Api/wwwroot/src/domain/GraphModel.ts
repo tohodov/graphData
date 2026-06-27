@@ -245,7 +245,6 @@ export type GraphSchema = {
   defaultBasis: { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string };
   basis: { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string };
   systemNodeIds: Record<string, string>;
-  baseTypeIds: Record<string, string>;
   nodeTypes: Map<string, GraphType>;
   edgeTypes: Map<string, GraphType>;
 };
@@ -303,7 +302,6 @@ export class GraphModel {
       defaultBasis: { ...defaultBasis },
       basis: { ...defaultBasis },
       systemNodeIds: {},
-      baseTypeIds: {},
       nodeTypes: new Map(),
       edgeTypes: new Map()
     };
@@ -314,7 +312,6 @@ export class GraphModel {
     this.schema.defaultBasis = { ...basis };
     this.schema.basis = { ...basis };
     this.schema.systemNodeIds = { ...((settings?.systemNodeIds as Record<string, string>) ?? {}) };
-    this.schema.baseTypeIds = { ...((settings?.baseTypeIds as Record<string, string>) ?? {}) };
   }
 
   defaultBasis(): { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string } {

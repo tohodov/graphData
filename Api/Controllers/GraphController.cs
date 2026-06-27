@@ -132,7 +132,6 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
             ServiceResultStatus.BadRequest => BadRequest(result.Error),
             ServiceResultStatus.NotFound => NotFound(),
             ServiceResultStatus.Conflict => Conflict(result.Error),
-            ServiceResultStatus.InternalServerError => StatusCode(StatusCodes.Status500InternalServerError, result.Error),
             _ => StatusCode(StatusCodes.Status500InternalServerError)
         };
     }
@@ -147,7 +146,6 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
             ServiceResultStatus.BadRequest => BadRequest(error),
             ServiceResultStatus.NotFound => NotFound(),
             ServiceResultStatus.Conflict => Conflict(error),
-            ServiceResultStatus.InternalServerError => StatusCode(StatusCodes.Status500InternalServerError, error),
             _ => StatusCode(StatusCodes.Status500InternalServerError)
         };
     }

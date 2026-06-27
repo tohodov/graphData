@@ -13,7 +13,7 @@ public class Edge {
     internal Edge(EdgeBacking state) {
         Backing = state;
     }
-    public Edge(Node node1, Node node2) : this(new EdgeStateReferenced(node1.Backing, node2.Backing)) { }
+    public Edge(Node node1, Node node2) : this(new InMemoryEdgeBacking(node1.Backing, node2.Backing)) { }
 
     protected TIncidence Attach<TIncidence>(TIncidence incidence)
         where TIncidence : Incidence {
