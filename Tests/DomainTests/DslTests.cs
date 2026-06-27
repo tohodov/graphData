@@ -78,6 +78,74 @@ public sealed class DslTests : GraphServiceTests {
     }
 
     [TestMethod]
+    public async Task NodeNodes_ShouldReflectFolderChangesAfterFirstRead() {
+        var parent = (await Service.CreateNode("dsl-nodes-parent")).Value!;
+        var first = (await Service.CreateNode("first", parent.GlobalId)).Value!;
+        var secondPath = Path.Combine(StorageOptions.RootPath, parent.LocalId, "second");
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId },
+            ReadNodeLocalIds(parent));
+
+        Directory.CreateDirectory(secondPath);
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId, new NodeLocalId("second") },
+            ReadNodeLocalIds(parent));
+
+        Directory.Delete(secondPath);
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId },
+            ReadNodeLocalIds(parent));
+    }
+
+    [TestMethod]
+    public async Task NodeEdges_ShouldReflectFolderChangesAfterFirstRead() {
+        var parent = (await Service.CreateNode("dsl-edges-parent")).Value!;
+        var first = (await Service.CreateNode("first", parent.GlobalId)).Value!;
+        var secondPath = Path.Combine(StorageOptions.RootPath, parent.LocalId, "second");
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId },
+            ReadEdgeNeighborLocalIds(parent));
+
+        Directory.CreateDirectory(secondPath);
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId, new NodeLocalId("second") },
+            ReadEdgeNeighborLocalIds(parent));
+
+        Directory.Delete(secondPath);
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId },
+            ReadEdgeNeighborLocalIds(parent));
+    }
+
+    [TestMethod]
+    public async Task NodeIncidences_ShouldReflectDslTypeAttachmentsAfterFirstRead() {
+        var weaponTypeBaseNode = (await Service.CreateNode("dsl-incidence-weapon", Service.TypesRoot.GlobalId)).Value!;
+        var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
+
+        CollectionAssert.AreEquivalent(
+            Array.Empty<NodeLocalId>(),
+            ReadTypedInstanceLocalIds(weaponType));
+
+        var ak47 = (await Service.CreateNode("dsl-incidence-ak47", Service.Root.GlobalId, weaponType)).Value!;
+
+        CollectionAssert.AreEquivalent(
+            new[] { ak47.LocalId },
+            ReadTypedInstanceLocalIds(weaponType));
+
+        var m16 = (await Service.CreateNode("dsl-incidence-m16", Service.Root.GlobalId, weaponType)).Value!;
+
+        CollectionAssert.AreEquivalent(
+            new[] { ak47.LocalId, m16.LocalId },
+            ReadTypedInstanceLocalIds(weaponType));
+    }
+
+    [TestMethod]
     public async Task EdgesRemove_ShouldKeepHierarchyChildByMovingItThroughRemainingEdge() {
         var oldParent = new Node("old-parent");
         var child = new Node("child");
@@ -141,4 +209,20 @@ public sealed class DslTests : GraphServiceTests {
     private static bool Connects(Edge edge, Node first, Node second) =>
         edge.Node1.GlobalId == first.GlobalId && edge.Node2.GlobalId == second.GlobalId
         || edge.Node1.GlobalId == second.GlobalId && edge.Node2.GlobalId == first.GlobalId;
+
+    private static NodeLocalId[] ReadNodeLocalIds(Node node) =>
+        node.Nodes.Select(static child => child.LocalId).ToArray();
+
+    private static NodeLocalId[] ReadEdgeNeighborLocalIds(Node node) =>
+        node.Edges
+            .Select(edge => edge.Node1.GlobalId == node.GlobalId ? edge.Node2 : edge.Node1)
+            .Where(neighbor => neighbor.GlobalId != node.GlobalId)
+            .Select(static neighbor => neighbor.LocalId)
+            .ToArray();
+
+    private static NodeLocalId[] ReadTypedInstanceLocalIds(Node type) =>
+        type.Incidences
+            .OfType<InstanceOf.TypeEnd>()
+            .Select(static incidence => incidence.Instance.LocalId)
+            .ToArray();
 }
