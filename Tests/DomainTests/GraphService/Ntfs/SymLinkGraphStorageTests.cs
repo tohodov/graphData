@@ -62,11 +62,48 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
             await ReadNeighborLocalIdsAsync(parent));
     }
 
+    [TestMethod]
+    public async Task NodeEdgesAsync_ShouldReflectFolderChangesAfterFirstRead()
+    {
+        var parent = await Storage.Create(new("parent"));
+        var first = await Storage.Create(new("first"), parent.GlobalId);
+        var secondPath = Path.Combine(StorageOptions.RootPath, parent.LocalId, "second");
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId },
+            await ReadEdgeNeighborLocalIdsAsync(parent));
+
+        Directory.CreateDirectory(secondPath);
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId, new NodeLocalId("second") },
+            await ReadEdgeNeighborLocalIdsAsync(parent));
+
+        Directory.Delete(secondPath);
+
+        CollectionAssert.AreEquivalent(
+            new[] { first.LocalId },
+            await ReadEdgeNeighborLocalIdsAsync(parent));
+    }
+
     private static async Task<NodeLocalId[]> ReadNeighborLocalIdsAsync(NodeBacking node)
     {
         var result = new List<NodeLocalId>();
         await foreach (var neighbor in node.Nodes)
             result.Add(neighbor.LocalId);
+        return result.ToArray();
+    }
+
+    private static async Task<NodeLocalId[]> ReadEdgeNeighborLocalIdsAsync(NodeBacking node)
+    {
+        var result = new List<NodeLocalId>();
+        await foreach (var edge in node.Edges) {
+            var neighbor = edge.Node1.GlobalId == node.GlobalId
+                ? edge.Node2
+                : edge.Node1;
+            if (neighbor.GlobalId != node.GlobalId)
+                result.Add(neighbor.LocalId);
+        }
         return result.ToArray();
     }
 }

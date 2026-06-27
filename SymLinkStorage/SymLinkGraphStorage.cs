@@ -101,8 +101,6 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         var hierarchyChild = GetDirectHierarchyChild(left, right);
         if (hierarchyChild is not null) {
             await MoveNodeToConnectedNode(hierarchyChild.GlobalId);
-            left.InvalidateGraphCache();
-            right.InvalidateGraphCache();
             return;
         }
 
@@ -111,9 +109,6 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
 
         DeleteLinkIfExists(Path.Combine(GetNodePath(left), GetLinkName(right.LocalId)));
         DeleteLinkIfExists(Path.Combine(GetNodePath(right), GetLinkName(left.LocalId)));
-
-        left.InvalidateGraphCache();
-        right.InvalidateGraphCache();
     }
 
     public async IAsyncEnumerable<NodeBacking> EnumerateNodesAsync(
