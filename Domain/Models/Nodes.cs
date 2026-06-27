@@ -2,7 +2,7 @@
 using GraphData.Core.Models;
 
 public class NodeType : Node {
-    internal NodeType(NodeState state)
+    internal NodeType(NodeBacking state)
         : base(state) {
     }
     public NodeType(NodeLocalId id) : this(new VirtualNodeState(id)) { }
@@ -24,12 +24,12 @@ public sealed class InstanceNode : NodeType {
     internal InstanceNode(NodeLocalId id, NodeType type) : base(new VirtualNodeState(id)) {
         Type = type;
     }
-    internal InstanceNode(NodeState state, NodeType type) : base(state) {
+    internal InstanceNode(NodeBacking state, NodeType type) : base(state) {
         Type = type;
     }
 }
 
 public class StorageRoot : NodeType {
     internal StorageRoot() : base(new VirtualNodeState(new NodeLocalId())) { }
-    internal StorageRoot(NodeState state) : base(state) { }
+    internal StorageRoot(NodeBacking state) : base(state) { }
 }

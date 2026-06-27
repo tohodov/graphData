@@ -1,8 +1,6 @@
 namespace Abstractions;
 
-internal sealed class VirtualNodeState : NodeState {
-    readonly List<EdgeState> edges = [];
-
+internal sealed class VirtualNodeState : NodeBacking {
     internal VirtualNodeState(NodeLocalId id) : this() => LocalId = id;
     VirtualNodeState() {
         Edges = new VirtualEdgeCollection(this);
@@ -12,65 +10,49 @@ internal sealed class VirtualNodeState : NodeState {
 
     public override NodeLocalId LocalId { get; }
     public override InternalId GlobalId => field ??= new(LocalId, NodeLocalId.Random());//TODO кажется вообще не нужно для VirtualNode
-    public override ICollection<EdgeState> Edges { get; }
-    public override ILazyCollection<NodeState> Nodes { get; }
+    public override IAsyncCollection<EdgeBacking> Edges { get; }
+    public override IAsyncCollection<NodeBacking> Nodes { get; }
     public override IDictionary<string, string> Attributes { get; set; }
 
-
-    private IReadOnlyCollection<EdgeState> EdgeSnapshot() => edges.ToArray();
-
-    private IReadOnlyCollection<NodeState> NodeSnapshot() =>
-        edges
-            .Select(edge => GetOtherEndpoint(edge, this))
-            .Where(node => node.GlobalId != GlobalId)
-            .DistinctBy(static node => node.GlobalId)
-            .ToArray();
-
-    private void ConnectTo(NodeState target) {
+    private async Task ConnectTo(NodeBacking target) {
         if (target.GlobalId == GlobalId)
             return;
-        if (edges.Any(edge => Connects(edge, GlobalId, target.GlobalId)))
+        if (await Edges.AnyAsync(edge => Connects(edge, GlobalId, target.GlobalId)))
             return;
         var edge = new EdgeStateReferenced(this, target);
-        AddEdgeDirect(edge);
+        await AddEdgeDirect(edge);
         if (target is VirtualNodeState virtualTarget)
-            virtualTarget.AddEdgeDirect(edge);
+            await virtualTarget.AddEdgeDirect(edge);
     }
 
-    private bool DisconnectFrom(NodeState target) {
-        var removed = RemoveEdgeDirect(GlobalId, target.GlobalId);
+    private async Task DisconnectFrom(NodeBacking target) {
         if (target is VirtualNodeState virtualTarget)
-            virtualTarget.RemoveEdgeDirect(GlobalId, target.GlobalId);
-        return removed;
+            await Edges.Remove(await Edges.SingleAsync(x => x.Node1.GlobalId == target.GlobalId || x.Node2.GlobalId == target.GlobalId));
+        else
+            throw new NotImplementedException();
     }
 
-    private void AddEdge(EdgeState edge) {
+    private async Task AddEdge(EdgeBacking edge) {
         var other = GetOtherEndpoint(edge, this);
-        ConnectTo(other);
+        await ConnectTo(other);
     }
 
-    private void AddEdgeDirect(EdgeState edge) {
-        if (edges.Any(existing => Connects(existing, edge.Node1.GlobalId, edge.Node2.GlobalId)))
+    private async Task AddEdgeDirect(EdgeBacking edge) {
+        if (await Edges.AnyAsync(existing => Connects(existing, edge.Node1.GlobalId, edge.Node2.GlobalId)))
             return;
-
-        edges.Add(edge);
+        await Edges.Add(edge);
     }
 
-    private bool RemoveEdge(EdgeState edge) {
+    private async Task RemoveEdge(EdgeBacking edge) {
         var other = GetOtherEndpoint(edge, this);
-        return DisconnectFrom(other);
+        await DisconnectFrom(other);
     }
 
-    private bool RemoveEdgeDirect(InternalId first, InternalId second) {
-        var count = edges.RemoveAll(edge => Connects(edge, first, second));
-        return count > 0;
-    }
-
-    private static bool Connects(EdgeState edge, InternalId first, InternalId second) =>
+    private static bool Connects(EdgeBacking edge, InternalId first, InternalId second) =>
         edge.Node1.GlobalId == first && edge.Node2.GlobalId == second
         || edge.Node1.GlobalId == second && edge.Node2.GlobalId == first;
 
-    private static NodeState GetOtherEndpoint(EdgeState edge, NodeState owner) {
+    private static NodeBacking GetOtherEndpoint(EdgeBacking edge, NodeBacking owner) {
         if (edge.Node1.GlobalId == owner.GlobalId)
             return edge.Node2;
         if (edge.Node2.GlobalId == owner.GlobalId)
@@ -79,71 +61,44 @@ internal sealed class VirtualNodeState : NodeState {
         throw new InvalidOperationException($"Edge does not belong to node '{owner.GlobalId}'.");
     }
 
-    private sealed class VirtualNodeCollection(VirtualNodeState owner) : ILazyCollection<NodeState> {
-        public int Count => owner.NodeSnapshot().Count;
-        public bool IsReadOnly => false;
+    private sealed class VirtualNodeCollection(VirtualNodeState owner) : IAsyncCollection<NodeBacking> {
+        ICollection<NodeBacking> innerCollection = new List<NodeBacking>();
 
-        public void Add(NodeState item) => owner.ConnectTo(item);
-
-        public void Clear() {
-            foreach (var node in owner.NodeSnapshot())
-                owner.DisconnectFrom(node);
+        public Task Add(NodeBacking item) {
+            innerCollection.Add(item);
+            return owner.ConnectTo(item);
         }
-
-        public bool Contains(NodeState item) =>
-            owner.NodeSnapshot().Any(node => node.GlobalId == item.GlobalId);
-
-        public void CopyTo(NodeState[] array, int arrayIndex) =>
-            owner.NodeSnapshot().ToArray().CopyTo(array, arrayIndex);
-
-        public IEnumerator<NodeState> GetEnumerator() =>
-            owner.NodeSnapshot().GetEnumerator();
-
-        public bool Remove(NodeState item) => owner.DisconnectFrom(item);
-
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
-
-        public async IAsyncEnumerable<NodeState> Traverse() {
-            var visited = new HashSet<InternalId>();
-            var stack = new Stack<NodeState>();
-            stack.Push(owner);
-
-            while (stack.Count > 0) {
-                var node = stack.Pop();
-                if (!visited.Add(node.GlobalId))
-                    continue;
-
-                yield return node;
-
-                if (node is VirtualNodeState virtualNode)
-                    foreach (var neighbor in virtualNode.Nodes)
-                        if (!visited.Contains(neighbor.GlobalId))
-                            stack.Push(neighbor);
-
-                await Task.Yield();
-            }
+        public Task Remove(NodeBacking item) {
+            innerCollection.Remove(item);
+            return owner.DisconnectFrom(item);
         }
+        public async Task Clear() {
+            innerCollection.Clear();
+            await foreach (var node in owner.Nodes)
+                await owner.DisconnectFrom(node);
+        }
+        public async Task<bool> Contains(NodeBacking item) => innerCollection.Any(node => node.GlobalId == item.GlobalId);
+        IAsyncEnumerator<NodeBacking> IAsyncEnumerable<NodeBacking>.GetAsyncEnumerator(CancellationToken t) => innerCollection.ToAsyncEnumerable().GetAsyncEnumerator(t);
     }
 
-    private sealed class VirtualEdgeCollection(VirtualNodeState owner) : ICollection<EdgeState> {
-        public int Count => owner.EdgeSnapshot().Count;
-        public bool IsReadOnly => false;
+    private sealed class VirtualEdgeCollection(VirtualNodeState owner) : IAsyncCollection<EdgeBacking> {
+        ICollection<EdgeBacking> innerCollection = new List<EdgeBacking>();
 
-        public void Add(EdgeState item) => owner.AddEdge(item);
-
-        public void Clear() {
-            foreach (var node in owner.NodeSnapshot())
-                owner.DisconnectFrom(node);
+        public Task Add(EdgeBacking item) {
+            innerCollection.Add(item);
+            return owner.AddEdge(item);
         }
+        public Task Remove(EdgeBacking item) {
+            innerCollection.Remove(item);
+            return owner.RemoveEdge(item);
+        }
+        public async Task Clear() {
+            innerCollection.Clear();
+            await foreach (var node in owner.Nodes)
+                await owner.DisconnectFrom(node);
+        }
+        public async Task<bool> Contains(EdgeBacking item) => innerCollection.Any(edge => Connects(edge, item.Node1.GlobalId, item.Node2.GlobalId));
 
-        public bool Contains(EdgeState item) => owner.EdgeSnapshot().Any(edge => Connects(edge, item.Node1.GlobalId, item.Node2.GlobalId));
-
-        public void CopyTo(EdgeState[] array, int arrayIndex) => owner.EdgeSnapshot().ToArray().CopyTo(array, arrayIndex);
-
-        public IEnumerator<EdgeState> GetEnumerator() => owner.EdgeSnapshot().GetEnumerator();
-
-        public bool Remove(EdgeState item) => owner.RemoveEdge(item);
-
-        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+        IAsyncEnumerator<EdgeBacking> IAsyncEnumerable<EdgeBacking>.GetAsyncEnumerator(CancellationToken t) => innerCollection.ToAsyncEnumerable().GetAsyncEnumerator(t);
     }
 }

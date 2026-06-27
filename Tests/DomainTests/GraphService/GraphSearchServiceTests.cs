@@ -391,14 +391,14 @@ public sealed class GraphSearchServiceTests : StorageTests
         return new NodeLiteralSearchSelector { Name = name };
     }
 
-    private static async Task ConnectPath(IGraphStorage storage, NodeState first, params object[] path)
+    private static async Task ConnectPath(IGraphStorage storage, NodeBacking first, params object[] path)
     {
         var current = first;
         foreach (var segment in path)
         {
             var next = segment switch
             {
-                NodeState node => node,
+                NodeBacking node => node,
                 string name => await storage.Create(new(name)),
                 _ => throw new ArgumentException("Path segment must be a node or a node name.", nameof(path))
             };
@@ -408,20 +408,20 @@ public sealed class GraphSearchServiceTests : StorageTests
         }
     }
 
-    private sealed class StreamingProbeStorage(params NodeState[] nodes) : IGraphStorage
+    private sealed class StreamingProbeStorage(params NodeBacking[] nodes) : IGraphStorage
     {
         public Task Disconnect(NodeRef sourcePath, NodeRef targetPath) => throw new NotSupportedException();
-        Task<NodeState> IGraphStorage.Create(NodeLocalId name, NodeRef? parent, IDictionary<string, string>? attributes) => throw new NotImplementedException();
-        Task<NodeState?> IGraphStorage.Get(NodeRef path) => throw new NotImplementedException();
+        Task<NodeBacking> IGraphStorage.Create(NodeLocalId name, NodeRef? parent, IDictionary<string, string>? attributes) => throw new NotImplementedException();
+        Task<NodeBacking?> IGraphStorage.Get(NodeRef path) => throw new NotImplementedException();
         Task IGraphStorage.Delete(NodeRef path) => throw new NotImplementedException();
         Task IGraphStorage.Connect(NodeRef sourcePath, NodeRef targetPath) => throw new NotImplementedException();
         Task IGraphStorage.Disconnect(NodeRef sourcePath, NodeRef targetPath) => throw new NotImplementedException();
-        IAsyncEnumerable<NodeState> IGraphStorage.GetNeighbors(NodeRef path) => throw new NotImplementedException();
-        IAsyncEnumerable<NodeState> IGraphStorage.GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) => throw new NotImplementedException();
-        NodeState IGraphStorage.Root => throw new NotImplementedException();
-        Task IGraphStorage.Delete(NodeState node) => throw new NotImplementedException();
+        IAsyncEnumerable<NodeBacking> IGraphStorage.GetNeighbors(NodeRef path) => throw new NotImplementedException();
+        IAsyncEnumerable<NodeBacking> IGraphStorage.GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) => throw new NotImplementedException();
+        NodeBacking IGraphStorage.Root => throw new NotImplementedException();
+        Task IGraphStorage.Delete(NodeBacking node) => throw new NotImplementedException();
 
-        async IAsyncEnumerable<NodeState> IGraphStorage.EnumerateNodesAsync([EnumeratorCancellation] CancellationToken cancellationToken) {
+        async IAsyncEnumerable<NodeBacking> IGraphStorage.EnumerateNodesAsync([EnumeratorCancellation] CancellationToken cancellationToken) {
             foreach (var node in nodes) {
                 yield return node;
                 await Task.Yield();
@@ -429,7 +429,7 @@ public sealed class GraphSearchServiceTests : StorageTests
         }
     }
 
-    private sealed class StreamingProbeNode : NodeState
+    private sealed class StreamingProbeNode : NodeBacking
     {
         private readonly Func<IReadOnlyDictionary<string, string>> _readAttributes;
 
@@ -444,9 +444,9 @@ public sealed class GraphSearchServiceTests : StorageTests
 
         public override InternalId GlobalId { get; }
 
-        public override ICollection<EdgeState> Edges { get; } = Array.Empty<EdgeState>();
+        public override IAsyncCollection<EdgeBacking> Edges => throw new NotSupportedException();
 
-        public override ILazyCollection<NodeState> Nodes => throw new NotSupportedException();
+        public override IAsyncCollection<NodeBacking> Nodes => throw new NotSupportedException();
 
         public override IDictionary<string, string> Attributes
         {

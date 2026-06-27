@@ -25,12 +25,12 @@ public sealed class NodeTypeDslTests : StorageTests {
     public sealed class WeaponNodeType : NodeType {
         public ManufacturerNodeType Manufacturer = null!;
 
-        internal WeaponNodeType(NodeState state) : base(state) {
+        internal WeaponNodeType(NodeBacking state) : base(state) {
         }
     }
 
     public sealed class CountryNodeType : NodeType {
-        internal CountryNodeType(NodeState state) : base(state) {
+        internal CountryNodeType(NodeBacking state) : base(state) {
         }
     }
 
@@ -47,7 +47,7 @@ public sealed class NodeTypeDslTests : StorageTests {
         public string? Website = null;
         public IReadOnlyCollection<string> Aliases = [];
 
-        internal ManufacturerNodeType(NodeState state) : base(state) {
+        internal ManufacturerNodeType(NodeBacking state) : base(state) {
         }
     }
 }

@@ -97,8 +97,8 @@ public sealed class GraphControllerTests : ControllerTests {
 
     [TestMethod]
     public async Task GetNeighborNodeAsync_ReturnsConflictForAmbiguousLocalId() {
-        var controller = CreateController(AmbiguousNeighborGraphStorage.Create());
-
+        var controller = CreateController(null!);
+        throw new NotImplementedException();
         var result = await controller.GetNeighborNodeAsync("root", "same");
 
         var conflict = result.Result as ConflictObjectResult;
@@ -257,8 +257,8 @@ public sealed class GraphControllerTests : ControllerTests {
         Assert.IsFalse(Directory.EnumerateFileSystemEntries(Path.Combine(StorageOptions.RootPath, "small_arms_test_graph", "categories"))
             .Any(path => Path.GetFileName(path).StartsWith(".graphdata-node-", StringComparison.OrdinalIgnoreCase)));
 
-        Assert.IsTrue(weapons.Nodes.Any(node => node.LocalId == categories.LocalId));
-        Assert.IsTrue(categories.Nodes.Any(node => node.LocalId == weapons.LocalId));
+        Assert.IsTrue(await weapons.Nodes.AnyAsync(node => node.LocalId == categories.LocalId));
+        Assert.IsTrue(await categories.Nodes.AnyAsync(node => node.LocalId == weapons.LocalId));
     }
 
     [TestMethod]
@@ -301,7 +301,7 @@ public sealed class GraphControllerTests : ControllerTests {
         var storedNode = await Storage.Get(ak47.GlobalId);
         Assert.IsNotNull(storedNode);
         Assert.IsFalse(storedNode.Attributes.ContainsKey("graph.typeName"));
-        Assert.IsTrue(storedNode.Nodes.Any(node => node.GlobalId == weaponType.GlobalId));
+        Assert.IsTrue(await storedNode.Nodes.AnyAsync(node => node.GlobalId == weaponType.GlobalId));
     }
 
     [TestMethod]
@@ -351,7 +351,7 @@ public sealed class GraphControllerTests : ControllerTests {
             TypeGlobalId = replacementType.GlobalId.Select(static segment => segment.ToString()).ToArray()
         });
         Assert.IsInstanceOfType(retyped.Result, typeof(OkObjectResult));
-        Assert.IsFalse(source.Nodes.Any(node => node.GlobalId == target.GlobalId));
+        Assert.IsFalse(await source.Nodes.AnyAsync(node => node.GlobalId == target.GlobalId));
     }
 
     [TestMethod]
@@ -579,91 +579,14 @@ public sealed class GraphControllerTests : ControllerTests {
         globalId.StartsWith(parentGlobalId + "/", StringComparison.Ordinal);
 
     private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage {
-        public NodeState Root => inner.Root;
-        public Task<NodeState> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null) => inner.Create(name, parent, attributes);
-        public Task<NodeState?> Get(NodeRef query) => inner.Get(query);
+        public NodeBacking Root => inner.Root;
+        public Task<NodeBacking> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null) => inner.Create(name, parent, attributes);
+        public Task<NodeBacking?> Get(NodeRef query) => inner.Get(query);
         public Task Delete(NodeRef query) => inner.Delete(query);
         public Task Connect(NodeRef sourcePath, NodeRef targetPath) => Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
         public Task Disconnect(NodeRef sourcePath, NodeRef targetPath) => Task.FromResult(ServiceResult.InternalServerError(new InvalidOperationException("diagnostic connect failure").ToString()));
-        public IAsyncEnumerable<NodeState> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] others) => inner.GetCommonIntersection(first, second, others);
-        public Task Delete(NodeState node) => inner.Delete(node);
-        public IAsyncEnumerable<NodeState> EnumerateNodesAsync(CancellationToken cancellationToken = default) => inner.EnumerateNodesAsync(cancellationToken);
-    }
-
-    private sealed class AmbiguousNeighborGraphStorage : IGraphStorage {
-        private readonly StaticNode _root;
-
-        NodeState IGraphStorage.Root => _root;
-
-        private AmbiguousNeighborGraphStorage(StaticNode root) {
-            _root = root;
-        }
-
-        public IAsyncEnumerable<NodeState> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] others) {
-            throw new NotImplementedException();
-        }
-
-        public static IGraphStorage Create() {
-            var root = new StaticNode(new("root"), new("root"));
-            var first = new StaticNode(new("same"), new("left", "same"));
-            var second = new StaticNode(new("same"), new("right", "same"));
-            root.EdgeSnapshot = [
-                new EdgeStateReferenced(root, first),
-                new EdgeStateReferenced(root, second)
-            ];
-
-            return new AmbiguousNeighborGraphStorage(root);
-        }
-
-        public Task<ServiceResult<NodeState>> Get(NodeRef path) =>
-            Task.FromResult(path.Equals(_root.GlobalId)
-                ? ServiceResult<NodeState>.Ok(_root)
-                : ServiceResult<NodeState>.NotFound());
-
-        Task<NodeState> IGraphStorage.Create(NodeLocalId name, NodeRef? parent, IDictionary<string, string>? attributes) {
-            throw new NotImplementedException();
-        }
-
-        Task<NodeState?> IGraphStorage.Get(NodeRef path) {
-            throw new NotImplementedException();
-        }
-
-        Task IGraphStorage.Delete(NodeState node) {
-            throw new NotImplementedException();
-        }
-
-        Task IGraphStorage.Delete(NodeRef path) {
-            throw new NotImplementedException();
-        }
-
-        Task IGraphStorage.Connect(NodeRef sourcePath, NodeRef targetPath) {
-            throw new NotImplementedException();
-        }
-
-        Task IGraphStorage.Disconnect(NodeRef sourcePath, NodeRef targetPath) {
-            throw new NotImplementedException();
-        }
-
-        IAsyncEnumerable<NodeState> IGraphStorage.EnumerateNodesAsync(CancellationToken cancellationToken) {
-            throw new NotImplementedException();
-        }
-    }
-
-    private sealed class StaticNode(NodeLocalId localId, InternalId globalId) : NodeState {
-        public override NodeLocalId LocalId { get; } = localId;
-
-        public override InternalId GlobalId { get; } = globalId;
-
-        public ICollection<EdgeState> EdgeSnapshot { get; set; } = Array.Empty<EdgeState>();
-
-        public override ICollection<EdgeState> Edges => EdgeSnapshot;
-
-        public override ILazyCollection<NodeState> Nodes => new LazyList<NodeState>(Edges
-            .SelectMany(static edge => new[] { edge.Node1, edge.Node2 })
-            .Where(node => node.GlobalId != GlobalId)
-            .ToArray());
-
-        public override IDictionary<string, string> Attributes { get; set; } =
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        public IAsyncEnumerable<NodeBacking> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] others) => inner.GetCommonIntersection(first, second, others);
+        public Task Delete(NodeBacking node) => inner.Delete(node);
+        public IAsyncEnumerable<NodeBacking> EnumerateNodesAsync(CancellationToken cancellationToken = default) => inner.EnumerateNodesAsync(cancellationToken);
     }
 }

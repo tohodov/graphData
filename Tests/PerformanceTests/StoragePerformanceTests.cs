@@ -28,7 +28,7 @@ public sealed class StoragePerformanceTests {
         AssertStorageRoot(scope, scenario);
 
         var run = new PerformanceRun(storageKind.ToString(), graph, scenario, scope.RootPath);
-        var nodesByName = new Dictionary<NodeRef.InternalId, NodeState>();
+        var nodesByName = new Dictionary<NodeRef.InternalId, NodeBacking>();
 
         await run.MeasureEachAsync("create", graph.Nodes, async node => {
             nodesByName[node.Path] = await scope.Storage.Create(node.Path.Last(), attributes: node.Attributes).ConfigureAwait(false);
@@ -207,8 +207,8 @@ public sealed class StoragePerformanceTests {
         run.WriteReport(scope, Console.Out);
     }
 
-    private static async Task<Dictionary<NodeRef.InternalId, NodeState>> PopulateGraphAsync(IGraphStorage storage, GeneratedGraph graph) {
-        var nodesByName = new Dictionary<NodeRef.InternalId, NodeState>();
+    private static async Task<Dictionary<NodeRef.InternalId, NodeBacking>> PopulateGraphAsync(IGraphStorage storage, GeneratedGraph graph) {
+        var nodesByName = new Dictionary<NodeRef.InternalId, NodeBacking>();
         foreach (var node in graph.Nodes) {
             nodesByName[node.Path] = await storage.Create(node.Path.Single(), attributes: node.Attributes).ConfigureAwait(false);
         }

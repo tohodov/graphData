@@ -4,7 +4,7 @@ using GraphData.Core.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 public class GraphStorageContractTests : StorageTests {
-    internal async Task<NodeState> CreateNode(string? name = null) {
+    internal async Task<NodeBacking> CreateNode(string? name = null) {
         var result = await Storage.Create(new(name ?? Guid.NewGuid().ToString()), null, new Dictionary<string, string>() {
             { "type", "test" },
             { "created", DateTime.UtcNow.ToString("O") }
@@ -182,8 +182,8 @@ public class GraphStorageContractTests : StorageTests {
 
         var deleted = await Storage.Get(second.GlobalId);
         Assert.IsNull(deleted);
-        Assert.IsFalse(first.Nodes.Any(x => x.LocalId == second.LocalId));
-        Assert.IsFalse(third.Nodes.Any(x => x.LocalId == second.LocalId));
+        Assert.IsFalse(await first.Nodes.AnyAsync(x => x.LocalId == second.LocalId));
+        Assert.IsFalse(await third.Nodes.AnyAsync(x => x.LocalId == second.LocalId));
     }
     [TestMethod]
     public async Task ShouldReturnMutualConnections() {
@@ -192,8 +192,8 @@ public class GraphStorageContractTests : StorageTests {
 
         await Storage.Connect(first.GlobalId, second.GlobalId);
 
-        Assert.IsTrue(first.Nodes.Any(x => x.LocalId == second.LocalId));
-        Assert.IsTrue(second.Nodes.Any(x => x.LocalId == first.LocalId));
+        Assert.IsTrue(await first.Nodes.AnyAsync(x => x.LocalId == second.LocalId));
+        Assert.IsTrue(await second.Nodes.AnyAsync(x => x.LocalId == first.LocalId));
     }
     [TestMethod]
     public async Task ShouldReturnNestedConnectionsWithGlobalIds() {
@@ -213,8 +213,8 @@ public class GraphStorageContractTests : StorageTests {
         var parent = await Storage.Create(new("parent"));
         var child = await Storage.Create(new("child"), parent.GlobalId);
 
-        Assert.IsTrue(parent.Nodes.Any(node => node.GlobalId == child.GlobalId));
-        Assert.IsTrue(child.Nodes.Any(node => node.GlobalId == parent.GlobalId));
+        Assert.IsTrue(await parent.Nodes.AnyAsync(node => node.GlobalId == child.GlobalId));
+        Assert.IsTrue(await child.Nodes.AnyAsync(node => node.GlobalId == parent.GlobalId));
     }
 
     [TestMethod]
@@ -223,7 +223,7 @@ public class GraphStorageContractTests : StorageTests {
 
         await Storage.Connect(node.GlobalId, node.GlobalId);
 
-        CollectionAssert.DoesNotContain(node.Nodes.ToArray(), node);
+        CollectionAssert.DoesNotContain(await node.Nodes.ToArrayAsync(), node);
     }
     [TestMethod]
     [TestCategory(nameof(Node))]
@@ -249,16 +249,16 @@ public class GraphStorageContractTests : StorageTests {
         var first = await CreateNode("first");
         var second = await CreateNode("second");
 
-        Assert.AreEqual(0, first.Nodes.Count);
+        Assert.AreEqual(0, await first.Nodes.CountAsync());
 
-        first.Nodes.Add(second);
+        await first.Nodes.Add(second);
 
-        Assert.IsTrue(first.Nodes.Any(node => node.GlobalId == second.GlobalId));
-        Assert.IsTrue(second.Nodes.Any(node => node.GlobalId == first.GlobalId));
+        Assert.IsTrue(await first.Nodes.AnyAsync(node => node.GlobalId == second.GlobalId));
+        Assert.IsTrue(await second.Nodes.AnyAsync(node => node.GlobalId == first.GlobalId));
 
-        Assert.IsTrue(first.Nodes.Remove(second));
-        Assert.IsFalse(first.Nodes.Any(node => node.GlobalId == second.GlobalId));
-        Assert.IsFalse(second.Nodes.Any(node => node.GlobalId == first.GlobalId));
+        await first.Nodes.Remove(second);
+        Assert.IsFalse(await first.Nodes.AnyAsync(node => node.GlobalId == second.GlobalId));
+        Assert.IsFalse(await second.Nodes.AnyAsync(node => node.GlobalId == first.GlobalId));
     }
 
     [TestMethod]
@@ -270,13 +270,13 @@ public class GraphStorageContractTests : StorageTests {
         var third = await CreateNode("third");
         var fourth = await CreateNode("fourth");
 
-        first.Nodes.Add(second);
-        second.Nodes.Add(third);
-        third.Nodes.Add(first);
-        third.Nodes.Add(fourth);
+        await first.Nodes.Add(second);
+        await second.Nodes.Add(third);
+        await third.Nodes.Add(first);
+        await third.Nodes.Add(fourth);
 
         CollectionAssert.AreEquivalent(
             new[] { first.GlobalId, second.GlobalId, third.GlobalId, fourth.GlobalId },
-            await first.Nodes.Traverse().Select(static node => node.GlobalId).ToArrayAsync());
+            await first.Traverse().Select(static node => node.GlobalId).ToArrayAsync());
     }
 }

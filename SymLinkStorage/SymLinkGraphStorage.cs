@@ -8,7 +8,7 @@ namespace Storage;
 internal sealed class SymLinkGraphStorage : IGraphStorage {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public NodeState Root { get; }
+    public NodeBacking Root { get; }
 
     internal readonly DirectoryInfo root;
     readonly NtfsGraphStorageOptions options;
@@ -25,7 +25,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         Root = new NodeFileSystem(new(), root, this);
     }
 
-    public Task<NodeState> Create(NodeLocalId name, NodeRef? path = null, IDictionary<string, string>? attributes = null) {
+    public Task<NodeBacking> Create(NodeLocalId name, NodeRef? path = null, IDictionary<string, string>? attributes = null) {
         if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
             throw new Exception(validationError);
 
@@ -44,20 +44,24 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         if (attributes != null)
             node.WriteMetadata(attributes);
 
-        return Task.FromResult<NodeState>(node);
+        return Task.FromResult<NodeBacking>(node);
     }
 
-    public Task<NodeState?> Get(NodeRef path) {
-        return Task.FromResult<NodeState?>(FindNode(path));
+    public Task<NodeBacking?> Get(NodeRef path) {
+        return Task.FromResult<NodeBacking?>(FindNode(path));
     }
 
-    public Task Delete(NodeState node) => Delete((NodeFileSystem)node);
-    Task Delete(NodeFileSystem node) {
-        var connections = GetConnectedNodes(node);
+    public Task Delete(NodeBacking node) => Delete((NodeFileSystem)node);
+    async Task Delete(NodeFileSystem node) {
+        var connections = await node.Edges
+            .Select(edge => edge.Node1.GlobalId == node.GlobalId ? edge.Node2 : edge.Node1)
+            .Where(neighbor => neighbor.GlobalId != node.GlobalId)
+            .GroupBy(static neighbor => neighbor.GlobalId)
+            .Select(static group => group.First())
+            .ToArrayAsync();
         foreach (var connection in connections)
             DeleteLinkIfExists(Path.Combine(GetNodePath(connection), GetLinkName(node.LocalId)));
         DeleteDirectoryWithoutFollowingLinks(node.GetInfo());
-        return Task.FromResult(true);
     }
     public Task Delete(NodeRef path) {
         var node = FindNode(path);
@@ -104,7 +108,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         right.InvalidateGraphCache();
     }
 
-    public async IAsyncEnumerable<NodeState> EnumerateNodesAsync(
+    public async IAsyncEnumerable<NodeBacking> EnumerateNodesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default) {
         if (!root.Exists)
             yield break;
@@ -132,9 +136,18 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         }
     }
 
-    public IAsyncEnumerable<NodeState> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) {
-        //TODO реализовать возврат общих узлов
-        throw new NotImplementedException();
+    public async IAsyncEnumerable<NodeBacking> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) {
+        var roots = new List<NodeBacking>();
+        foreach (var path in new[] { first, second }.Concat(other))
+            if (await Get(path) is NodeBacking node)
+                roots.Add(node);
+            else
+                throw new Exception(path.ToString());
+        var selected = roots.First();
+        roots.Remove(selected);
+        await foreach (var candidate in selected.Nodes)
+            if ((await Task.WhenAll(roots.Select(async x => await x.Nodes.Contains(candidate)))).All(x => x))
+                yield return candidate;
     }
 
     internal NodeFileSystem? GetInternal(NodeFileSystem? parent, NodeLocalId nodeId) {
@@ -195,15 +208,6 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         return true;
     }
 
-    private IReadOnlyCollection<NodeState> GetConnectedNodes(NodeState node) {
-        return node.Edges
-            .Select(edge => edge.Node1.GlobalId == node.GlobalId ? edge.Node2 : edge.Node1)
-            .Where(neighbor => neighbor.GlobalId != node.GlobalId)
-            .GroupBy(static neighbor => neighbor.GlobalId)
-            .Select(static group => group.First())
-            .ToArray();
-    }
-
     private string GetNodePath(string name) {
         return Path.Combine(root.FullName, name);
     }
@@ -212,7 +216,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         return node.FolderPath;
     }
 
-    private string GetNodePath(NodeState node) {
+    private string GetNodePath(NodeBacking node) {
         return node is NodeFileSystem fileSystemState
             ? fileSystemState.FolderPath
             : GetNodePath(node.LocalId);

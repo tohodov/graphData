@@ -3,17 +3,17 @@ global using NodePath = Abstractions.NodeRef.NodePath;
 using Abstractions;
 
 public class Edge {
-    internal EdgeState State;
+    internal EdgeBacking Backing;
 
-    public virtual Node Node1 => new(State.Node1);
-    public virtual Node Node2 => new(State.Node2);
+    public virtual Node Node1 => new(Backing.Node1);
+    public virtual Node Node2 => new(Backing.Node2);
 
     public IList<Incidence> Incidences { get; } = new List<Incidence>();
 
-    internal Edge(EdgeState state) {
-        State = state;
+    internal Edge(EdgeBacking state) {
+        Backing = state;
     }
-    public Edge(Node node1, Node node2) : this(new EdgeStateReferenced(node1.State, node2.State)) { }
+    public Edge(Node node1, Node node2) : this(new EdgeStateReferenced(node1.Backing, node2.Backing)) { }
 
     protected TIncidence Attach<TIncidence>(TIncidence incidence)
         where TIncidence : Incidence {
@@ -49,7 +49,7 @@ internal sealed class InstanceOf : Edge {
     public Node InstanceNode => Instance.Node;
     public Node TypeNode => Type.Node;
 
-    public InstanceOf(EdgeState state, Node instance, Node type) : base(state) {
+    public InstanceOf(EdgeBacking state, Node instance, Node type) : base(state) {
         Instance = Attach(new InstanceEnd(instance, this));
         Type = Attach(new TypeEnd(type, this));
     }
