@@ -37,7 +37,7 @@ public class Node {
         public void Add(Node item) {
             if (!owner.nodes.Any(node => SameNode(node, item)))
                 owner.nodes.Add(item);
-            owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult();
+            item.Backing = owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult();
         }
 
         public void Clear() {
@@ -78,7 +78,7 @@ public class Node {
         public int Count => states.CountAsync().Result;
         public bool IsReadOnly => false;
 
-        public void Add(Edge item) => states.Add(item.Backing).GetAwaiter().GetResult();
+        public void Add(Edge item) => item.Backing = states.Add(item.Backing).GetAwaiter().GetResult();
 
         public void Clear() => states.Clear().GetAwaiter().GetResult();
 

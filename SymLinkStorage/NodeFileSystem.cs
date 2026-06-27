@@ -266,7 +266,19 @@ internal sealed class NodeFileSystem : NodeBacking {
     }
 
     sealed class LiveNodeCollection(NodeFileSystem owner) : IAsyncCollection<NodeBacking> {
-        public Task Add(NodeBacking item) => owner.ConnectTo(item);
+        public async Task<NodeBacking> Add(NodeBacking item) {
+            if (item is VirtualNodeState) {
+                var node = owner.storage.GetInternal(owner, item.LocalId) ?? new NodeFileSystem(item.LocalId, owner);
+                Directory.CreateDirectory(node.FolderPath);
+                if (item.Attributes.Count > 0)
+                    node.WriteMetadata(item.Attributes);
+                owner.InvalidateGraphCache();
+                return node;
+            }
+
+            await owner.ConnectTo(item);
+            return item;
+        }
         public Task Remove(NodeBacking item) => owner.DisconnectFrom(item);
         public async Task Clear() {
             foreach (var node in owner.NodeSnapshot)
@@ -278,7 +290,10 @@ internal sealed class NodeFileSystem : NodeBacking {
     }
 
     sealed class LiveEdgeCollection(NodeFileSystem owner) : IAsyncCollection<EdgeBacking> {
-        public Task Add(EdgeBacking item) => owner.ConnectTo(GetOtherEndpoint(item));
+        public async Task<EdgeBacking> Add(EdgeBacking item) {
+            await owner.ConnectTo(GetOtherEndpoint(item));
+            return item;
+        }
         public Task Remove(EdgeBacking item) => owner.DisconnectFrom(GetOtherEndpoint(item));
         public async Task Clear() {
             await foreach (var node in owner.Nodes)

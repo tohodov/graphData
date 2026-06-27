@@ -23,9 +23,15 @@ public sealed class InstanceNode : NodeType {
 
     internal InstanceNode(NodeLocalId id, NodeType type) : base(new VirtualNodeState(id)) {
         Type = type;
+        AttachType();
     }
     internal InstanceNode(NodeBacking state, NodeType type) : base(state) {
         Type = type;
+        AttachType();
+    }
+
+    private void AttachType() {
+        _ = new InstanceOf(new EdgeStateReferenced(Backing, Type.Backing), this, Type);
     }
 }
 

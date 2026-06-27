@@ -64,9 +64,10 @@ internal sealed class VirtualNodeState : NodeBacking {
     private sealed class VirtualNodeCollection(VirtualNodeState owner) : IAsyncCollection<NodeBacking> {
         ICollection<NodeBacking> innerCollection = new List<NodeBacking>();
 
-        public Task Add(NodeBacking item) {
+        public async Task<NodeBacking> Add(NodeBacking item) {
             innerCollection.Add(item);
-            return owner.ConnectTo(item);
+            await owner.ConnectTo(item);
+            return item;
         }
         public Task Remove(NodeBacking item) {
             innerCollection.Remove(item);
@@ -84,9 +85,10 @@ internal sealed class VirtualNodeState : NodeBacking {
     private sealed class VirtualEdgeCollection(VirtualNodeState owner) : IAsyncCollection<EdgeBacking> {
         ICollection<EdgeBacking> innerCollection = new List<EdgeBacking>();
 
-        public Task Add(EdgeBacking item) {
+        public async Task<EdgeBacking> Add(EdgeBacking item) {
             innerCollection.Add(item);
-            return owner.AddEdge(item);
+            await owner.AddEdge(item);
+            return item;
         }
         public Task Remove(EdgeBacking item) {
             innerCollection.Remove(item);
