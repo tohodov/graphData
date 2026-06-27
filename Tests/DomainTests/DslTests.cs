@@ -57,4 +57,23 @@ public sealed class DslTests : GraphServiceTests {
         foreach (var instance in instances)
             await AssertNode(type.LocalId, type);
     }
+
+    [TestMethod]
+    public async Task NodesAdd_ShouldMaterializePreparedVirtualSubgraphUnderStorageParent() {
+        var parent = new Node("parent");
+        var child = new Node("child");
+        parent.Nodes.Add(child);
+
+        Service.Root.Nodes.Add(parent);
+
+        await AssertNode("parent", parent);
+        await AssertNode("child", child);
+
+        var storedChild = await Storage.Get(new NodePath("parent", "child"));
+        Assert.IsNotNull(storedChild);
+        Assert.AreEqual(child.GlobalId, storedChild.GlobalId);
+
+        var wrongRootChild = await Storage.Get(new NodePath("child"));
+        Assert.IsNull(wrongRootChild);
+    }
 }

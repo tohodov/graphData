@@ -37,7 +37,7 @@ public class Node {
         public void Add(Node item) {
             if (!owner.nodes.Any(node => SameNode(node, item)))
                 owner.nodes.Add(item);
-            item.Backing = owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult();
+            item.ReplaceBacking(owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult());
         }
 
         public void Clear() {
@@ -72,6 +72,15 @@ public class Node {
             ReferenceEquals(left, right)
             || ReferenceEquals(left.Backing, right.Backing)
             || left.GlobalId == right.GlobalId;
+    }
+
+    void ReplaceBacking(NodeBacking backing) {
+        if (ReferenceEquals(Backing, backing))
+            return;
+
+        Backing = backing;
+        foreach (var node in AttachedNodes)
+            Nodes.Add(node);
     }
 
     private sealed class EdgeCollection(IAsyncCollection<EdgeBacking> states) : ICollection<Edge> {
