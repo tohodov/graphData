@@ -72,7 +72,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
 
     public Task Connect(NodeRef leftPath, NodeRef rightPath) {
         if (leftPath.Equals(rightPath))
-            throw new Exception("SourcePath and TargetPath must be different.");
+            return Task.CompletedTask;
         if (!TryValidateNodeRef(leftPath, "Source node path", out var validationError))
             throw new Exception(validationError);
         if (!TryValidateNodeRef(rightPath, "Target node path", out validationError))
@@ -87,7 +87,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
 
     public async Task Disconnect(NodeRef leftPath, NodeRef rightPath) {
         if (leftPath.Equals(rightPath))
-            throw new Exception("SourcePath and TargetPath must be different.");
+            return;
         if (!TryValidateNodeRef(leftPath, "Source node path", out var validationError))
             throw new Exception(validationError);
         if (!TryValidateNodeRef(rightPath, "Target node path", out validationError))
@@ -227,7 +227,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
     private NodeFileSystem? FindNode(NodeRef.NodePath path) {
         if (!TryValidatePath(path, "Node path", out var validationError))
             return null;
-        if (Root.Equals(new NodeRef.InternalId(path)))
+        if (Root.GlobalId == new NodeRef.InternalId(path))
             return new NodeFileSystem(root, this);
         NodeFileSystem? node = null;
         foreach (var part in path) {
@@ -247,7 +247,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
     }
 
     private bool ConnectNodes(NodeFileSystem left, NodeFileSystem right) {
-        if (left.LocalId == right.LocalId)
+        if (left.GlobalId == right.GlobalId)
             return false;
         if (IsHierarchyConnection(left.FolderPath, right.FolderPath))
             return false;

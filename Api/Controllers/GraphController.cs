@@ -38,7 +38,13 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
 
     [HttpPost("nodes")]
     public async Task<ActionResult<NodeResponse>> CreateNodeAsync([FromBody] CreateNodeRequest request) {
-        var result = await graph.CreateNode((NodeLocalId)request.LocalId, (NodePath?)request.ParentPath, attributes: request.Attributes);
+        ServiceResult<Node> result;
+        try {
+            result = await graph.CreateNode((NodeLocalId)request.LocalId, (NodePath?)request.ParentPath, attributes: request.Attributes);
+        } catch (Exception ex) {
+            return BadRequest(ex.Message);
+        }
+
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             var globalId = result.Value.GlobalId;
             var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { globalId }) ?? $"/api/graph/nodes?{string.Join('&', globalId.Select(static segment => $"globalId={Uri.EscapeDataString(segment)}"))}";
@@ -61,8 +67,14 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
 
     [HttpPost("connections")]
     public async Task<ActionResult<OperationResponse>> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
-        var result = await graph.ConnectNodesAsync(new InternalId(request.Node1InternalId.Select(x => new NodeLocalId(x))), new InternalId(request.Node2InternalId.Select(x => new NodeLocalId(x))));
-        return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
+        try {
+            var result = await graph.ConnectNodesAsync(new InternalId(request.Node1InternalId.Select(x => new NodeLocalId(x))), new InternalId(request.Node2InternalId.Select(x => new NodeLocalId(x))));
+            return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
+        } catch (InvalidOperationException ex) {
+            return StatusCode(StatusCodes.Status500InternalServerError, $"{ex.GetType().Name}: {ex.Message}");
+        } catch (Exception ex) {
+            return BadRequest(ex.Message);
+        }
     }
 
     [HttpPut("nodes/type")]

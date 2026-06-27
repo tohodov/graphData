@@ -42,9 +42,9 @@ public sealed record NodeSlotDefinition(
     public void EnsureSatisfiedBy(InstanceNode instance)
     {
         var allowedTypeIds = AllowedTypeIds.ToHashSet();
-        var count = instance.Nodes.OfType<InstanceNode>().Count(neighbor => allowedTypeIds.Contains(neighbor.Type.GlobalId));
-        //TODO это всё не работает, нужно переписывать
-        throw new NotImplementedException();
+        var count = instance.Nodes.Count(neighbor =>
+            neighbor.GlobalId != instance.Type.GlobalId
+            && neighbor.Nodes.Any(type => allowedTypeIds.Contains(type.GlobalId)));
         if (!Cardinality.Contains(count))
             throw new InvalidOperationException($"Slot '{Name}' expects {Cardinality} linked nodes, but found {count}.");
     }

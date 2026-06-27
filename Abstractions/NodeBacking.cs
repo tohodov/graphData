@@ -27,10 +27,9 @@ internal abstract class NodeBacking : IEquatable<NodeBacking>
 
             yield return node;
 
-            if (node is VirtualNodeState virtualNode)
-                await foreach (var neighbor in virtualNode.Nodes)
-                    if (!visited.Contains(neighbor.GlobalId))
-                        stack.Push(neighbor);
+            await foreach (var neighbor in node.Nodes)
+                if (!visited.Contains(neighbor.GlobalId))
+                    stack.Push(neighbor);
 
             await Task.Yield();
         }
