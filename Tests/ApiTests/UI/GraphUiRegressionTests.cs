@@ -1743,7 +1743,7 @@ public sealed class GraphUiRegressionTests {
             Path.GetDirectoryName(sourcePath)
         }) {
             var directory = new DirectoryInfo(candidate!);
-            while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "GraphData.sln"))) {
+            while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "GraphData.slnx"))) {
                 directory = directory.Parent;
             }
 
@@ -1752,7 +1752,7 @@ public sealed class GraphUiRegressionTests {
             }
         }
 
-        Assert.Fail("Could not locate GraphData.sln from test output directory, current directory, or source path.");
+        Assert.Fail("Could not locate GraphData.slnx from test output directory, current directory, or source path.");
         throw new InvalidOperationException("Unreachable after Assert.Fail.");
     }
 }
