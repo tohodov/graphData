@@ -42,4 +42,11 @@ public abstract class GraphServiceTests : StorageTests {
         initializer = new GraphStorageInitializer(Service, types);
         return initializer.InitializeAsync();
     }
+
+    protected async Task AssertNode(NodeLocalId id, Node node) {
+        Assert.AreEqual(id, node.LocalId);
+        var storageNode = await Storage.Get(node.GlobalId);
+        Assert.IsNotNull(storageNode);
+        Assert.AreEqual(id, storageNode.LocalId);
+    }
 }

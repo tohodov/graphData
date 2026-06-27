@@ -21,6 +21,9 @@ public class NodeType : Node {
 public sealed class InstanceNode : NodeType {
     public NodeType Type { get; }
 
+    internal InstanceNode(NodeLocalId id, NodeType type) : base(new VirtualNodeState(id)) {
+        Type = type;
+    }
     internal InstanceNode(NodeState state, NodeType type) : base(state) {
         Type = type;
     }
