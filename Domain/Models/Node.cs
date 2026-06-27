@@ -42,7 +42,7 @@ public class Node {
 
         public void Clear() {
             foreach (var node in Snapshot())
-                owner.Backing.Nodes.Remove(node.Backing).GetAwaiter().GetResult();
+                node.Backing.Delete().GetAwaiter().GetResult();
             owner.nodes.Clear();
         }
 
@@ -53,8 +53,9 @@ public class Node {
         public IEnumerator<Node> GetEnumerator() => Snapshot().GetEnumerator();
 
         public bool Remove(Node item) {
-            owner.Backing.Nodes.Remove(item.Backing).GetAwaiter().GetResult();
-             return true;
+            item.Backing.Delete().GetAwaiter().GetResult();
+            owner.nodes.RemoveAll(node => SameNode(node, item));
+            return true;
         }
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();

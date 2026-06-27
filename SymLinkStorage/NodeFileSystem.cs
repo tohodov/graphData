@@ -76,6 +76,7 @@ internal sealed class NodeFileSystem : NodeBacking {
 
     public bool IsExists() => Directory.Exists(FolderPath);
     public DirectoryInfo GetInfo() => new DirectoryInfo(FolderPath);
+    internal override Task Delete() => storage.Delete(this);
 
     internal IDictionary<string, string> ReadAttributes() {
         if (attributesSnapshot is not null)
@@ -189,7 +190,7 @@ internal sealed class NodeFileSystem : NodeBacking {
         }
     }
 
-    static string? GetResolvedLinkTarget(FileSystemInfo entry) {
+    internal static string? GetResolvedLinkTarget(FileSystemInfo entry) {
         var targetPath = entry switch {
             DirectoryInfo directory => directory.LinkTarget,
             FileInfo file => file.LinkTarget,
@@ -302,7 +303,8 @@ internal sealed class NodeFileSystem : NodeBacking {
             throw new InvalidOperationException($"Edge does not belong to node '{owner.GlobalId}'.");
         }
 
-        IAsyncEnumerator<EdgeBacking> IAsyncEnumerable<EdgeBacking>.GetAsyncEnumerator(CancellationToken t) => owner.Edges.GetAsyncEnumerator(t);
+        IAsyncEnumerator<EdgeBacking> IAsyncEnumerable<EdgeBacking>.GetAsyncEnumerator(CancellationToken t) =>
+            owner.EdgeSnapshot.ToAsyncEnumerable().GetAsyncEnumerator(t);
     }
 
     sealed class LiveAttributeDictionary(NodeFileSystem owner) : IDictionary<string, string> {

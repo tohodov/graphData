@@ -1,13 +1,6 @@
-using System;
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
-using Abstractions;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Storage;
 
 [RelevantTestClass]
 public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
@@ -42,49 +35,5 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
 
         Assert.AreEqual(Path.GetFullPath(expectedFirstTarget), new DirectoryInfo(firstLink).LinkTarget);
         Assert.AreEqual(Path.GetFullPath(expectedSecondTarget), new DirectoryInfo(secondLink).LinkTarget);
-    }
-
-    private static IReadOnlyList<string> SnapshotFileSystem(string root)
-    {
-        var entries = new List<string>();
-        if (!Directory.Exists(root))
-        {
-            return entries;
-        }
-
-        var stack = new Stack<DirectoryInfo>();
-        stack.Push(new DirectoryInfo(root));
-
-        while (stack.Count > 0)
-        {
-            var directory = stack.Pop();
-
-            foreach (var entry in directory.EnumerateFileSystemInfos())
-            {
-                if (entry.Name is "." or "..")
-                {
-                    continue;
-                }
-
-                var relative = Path.GetRelativePath(root, entry.FullName);
-                var isDirectory = entry.Attributes.HasFlag(FileAttributes.Directory);
-                var isLink = entry.Attributes.HasFlag(FileAttributes.ReparsePoint);
-                var kind = isLink
-                    ? "link"
-                    : isDirectory
-                        ? "dir"
-                        : "file";
-
-                entries.Add($"{kind}:{relative}");
-
-                if (isDirectory && !isLink)
-                {
-                    stack.Push(new DirectoryInfo(entry.FullName));
-                }
-            }
-        }
-
-        entries.Sort(StringComparer.OrdinalIgnoreCase);
-        return entries;
     }
 }

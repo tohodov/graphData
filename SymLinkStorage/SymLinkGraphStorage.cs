@@ -98,8 +98,16 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         if (left is null || right is null)
             return;
 
+        var hierarchyChild = GetDirectHierarchyChild(left, right);
+        if (hierarchyChild is not null) {
+            await MoveNodeToConnectedNode(hierarchyChild.GlobalId);
+            left.InvalidateGraphCache();
+            right.InvalidateGraphCache();
+            return;
+        }
+
         if (IsHierarchyConnection(left.FolderPath, right.FolderPath))
-            throw new Exception("Hierarchy connections cannot be disconnected."); //TODO сделать переподключение
+            throw new InvalidOperationException("Only direct hierarchy connections can be disconnected.");
 
         DeleteLinkIfExists(Path.Combine(GetNodePath(left), GetLinkName(right.LocalId)));
         DeleteLinkIfExists(Path.Combine(GetNodePath(right), GetLinkName(left.LocalId)));
@@ -148,6 +156,48 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         await foreach (var candidate in selected.Nodes)
             if ((await Task.WhenAll(roots.Select(async x => await x.Nodes.Contains(candidate)))).All(x => x))
                 yield return candidate;
+    }
+
+    public async Task<NodeBacking> MoveNodeToConnectedNode(NodeRef nodeRef) {
+        var node = FindNode(nodeRef) ?? throw new InvalidOperationException($"Node '{nodeRef}' was not found.");
+        if (IsStorageRoot(node.FolderPath))
+            throw new InvalidOperationException("Storage root cannot be moved.");
+
+        var newParent = (await node.Nodes
+                .OfType<NodeFileSystem>()
+                .Where(neighbor => !IsHierarchyConnection(node.FolderPath, neighbor.FolderPath))
+                .DistinctBy(neighbor => neighbor.GlobalId)
+                .OrderBy(neighbor => neighbor.GlobalId.ToString(), StringComparer.Ordinal)
+                .ToArrayAsync())
+            .FirstOrDefault();
+        if (newParent is null)
+            throw new InvalidOperationException($"Node '{node.GlobalId}' has no non-hierarchy connections to move through.");
+
+        var sourcePath = NormalizeDirectoryPath(node.FolderPath);
+        var destinationPath = NormalizeDirectoryPath(Path.Combine(newParent.FolderPath, node.LocalId.ToString()));
+
+        var selectedParentBackLink = Path.Combine(newParent.FolderPath, GetLinkName(node.LocalId));
+        DeleteLinkIfExists(Path.Combine(node.FolderPath, GetLinkName(newParent.LocalId)));
+        DeleteLinkIfExists(selectedParentBackLink);
+
+        if (FileSystemEntryExists(destinationPath))
+            throw new InvalidOperationException($"Destination node path '{destinationPath}' already exists.");
+
+        var linksToRewrite = CollectLinksTargetingSubtree(sourcePath)
+            .Where(link => !PathsEqual(link.LinkPath, selectedParentBackLink))
+            .ToArray();
+
+        foreach (var link in linksToRewrite)
+            DeleteLinkIfExists(link.LinkPath);
+
+        Directory.Move(node.FolderPath, destinationPath);
+
+        foreach (var link in linksToRewrite)
+            Directory.CreateSymbolicLink(
+                RewritePathIfInsideSubtree(link.LinkPath, sourcePath, destinationPath),
+                RewritePathIfInsideSubtree(link.TargetPath, sourcePath, destinationPath));
+
+        return new NodeFileSystem(new DirectoryInfo(destinationPath), this);
     }
 
     internal NodeFileSystem? GetInternal(NodeFileSystem? parent, NodeLocalId nodeId) {
@@ -236,15 +286,78 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         return IsDescendantPath(leftPath, rightPath) || IsDescendantPath(rightPath, leftPath);
     }
 
+    private static NodeFileSystem? GetDirectHierarchyChild(NodeFileSystem left, NodeFileSystem right) {
+        if (IsDirectChildPath(left.FolderPath, right.FolderPath))
+            return left;
+        if (IsDirectChildPath(right.FolderPath, left.FolderPath))
+            return right;
+        return null;
+    }
+
+    private static bool IsDirectChildPath(string child, string parent) {
+        var childPath = NormalizeDirectoryPath(child);
+        var childWithoutTrailingSeparator = childPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var parentPath = Path.GetDirectoryName(childWithoutTrailingSeparator);
+        return parentPath is not null && PathsEqual(parentPath, parent);
+    }
+
     private static bool IsDescendantPath(string candidate, string ancestor) =>
         candidate.Length > ancestor.Length &&
         candidate.StartsWith(ancestor, StringComparison.OrdinalIgnoreCase);
+
+    private bool IsStorageRoot(string path) => PathsEqual(path, root.FullName);
+
+    private IEnumerable<LinkRewrite> CollectLinksTargetingSubtree(string subtreePath) {
+        if (!root.Exists)
+            yield break;
+
+        var stack = new Stack<DirectoryInfo>();
+        stack.Push(root);
+
+        while (stack.Count > 0) {
+            var current = stack.Pop();
+            foreach (var entry in current.EnumerateFileSystemInfos()) {
+                if ((entry.Attributes & FileAttributes.ReparsePoint) != 0) {
+                    var targetPath = NodeFileSystem.GetResolvedLinkTarget(entry);
+                    if (targetPath is not null && IsSameOrDescendantPath(targetPath, subtreePath))
+                        yield return new LinkRewrite(entry.FullName, targetPath);
+                    continue;
+                }
+
+                if (entry is DirectoryInfo directory)
+                    stack.Push(directory);
+            }
+        }
+    }
+
+    private static string RewritePathIfInsideSubtree(string path, string oldRoot, string newRoot) {
+        if (!IsSameOrDescendantPath(path, oldRoot))
+            return path;
+
+        var relative = Path.GetRelativePath(oldRoot, path);
+        return NodeFileSystem.ResolveDirectoryPath(Path.Combine(newRoot, relative));
+    }
+
+    private static bool IsSameOrDescendantPath(string candidate, string ancestor) {
+        var normalizedCandidate = NormalizeDirectoryPath(candidate);
+        var normalizedAncestor = NormalizeDirectoryPath(ancestor);
+        return PathsEqual(normalizedCandidate, normalizedAncestor)
+            || IsDescendantPath(normalizedCandidate, normalizedAncestor);
+    }
+
+    private static bool PathsEqual(string left, string right) =>
+        string.Equals(
+            NormalizeDirectoryPath(left),
+            NormalizeDirectoryPath(right),
+            StringComparison.OrdinalIgnoreCase);
 
     private static string NormalizeDirectoryPath(string path) {
         var fullPath = Path.GetFullPath(path)
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         return fullPath + Path.DirectorySeparatorChar;
     }
+
+    private sealed record LinkRewrite(string LinkPath, string TargetPath);
 
     private void CreateLinkIfMissing(string sourcePath, string targetPath, string targetNodeName) {
         var linkPath = Path.Combine(sourcePath, GetLinkName(targetNodeName));

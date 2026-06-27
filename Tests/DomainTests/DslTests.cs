@@ -76,4 +76,69 @@ public sealed class DslTests : GraphServiceTests {
         var wrongRootChild = await Storage.Get(new NodePath("child"));
         Assert.IsNull(wrongRootChild);
     }
+
+    [TestMethod]
+    public async Task EdgesRemove_ShouldKeepHierarchyChildByMovingItThroughRemainingEdge() {
+        var oldParent = new Node("old-parent");
+        var child = new Node("child");
+        var newParent = new Node("new-parent");
+        oldParent.Nodes.Add(child);
+        Service.Root.Nodes.Add(oldParent);
+        Service.Root.Nodes.Add(newParent);
+        child.Edges.Add(new Edge(child, newParent));
+        var hierarchyEdge = oldParent.Edges.Single(edge => Connects(edge, oldParent, child));
+
+        oldParent.Edges.Remove(hierarchyEdge);
+
+        var oldChild = await Service.GetNodeAsync(new InternalId("old-parent", "child"));
+        Assert.AreEqual(ServiceResultStatus.NotFound, oldChild.Status);
+
+        var movedChild = await Service.GetNodeAsync(new InternalId("new-parent", "child"));
+        Assert.AreEqual(ServiceResultStatus.Ok, movedChild.Status);
+        Assert.IsNotNull(movedChild.Value);
+        Assert.AreEqual<NodeLocalId>("child", movedChild.Value.LocalId);
+
+        var reloadedOldParent = await Service.GetNodeAsync(new InternalId("old-parent"));
+        Assert.AreEqual(ServiceResultStatus.Ok, reloadedOldParent.Status);
+        Assert.IsNotNull(reloadedOldParent.Value);
+        Assert.IsFalse(reloadedOldParent.Value.Nodes.Any(node => node.LocalId == "child"));
+
+        var reloadedNewParent = await Service.GetNodeAsync(new InternalId("new-parent"));
+        Assert.AreEqual(ServiceResultStatus.Ok, reloadedNewParent.Status);
+        Assert.IsNotNull(reloadedNewParent.Value);
+        Assert.IsTrue(reloadedNewParent.Value.Nodes.Any(node => node.LocalId == "child"));
+    }
+
+    [TestMethod]
+    public async Task NodesRemove_ShouldDeleteHierarchyChild() {
+        var parent = new Node("parent");
+        var child = new Node("child");
+        parent.Nodes.Add(child);
+        Service.Root.Nodes.Add(parent);
+
+        parent.Nodes.Remove(child);
+
+        var reloadedParent = await Service.GetNodeAsync(new InternalId("parent"));
+        Assert.AreEqual(ServiceResultStatus.Ok, reloadedParent.Status);
+        Assert.IsNotNull(reloadedParent.Value);
+        Assert.IsFalse(reloadedParent.Value.Nodes.Any(node => node.LocalId == "child"));
+
+        var deletedChild = await Service.GetNodeAsync(new InternalId("parent", "child"));
+        Assert.AreEqual(ServiceResultStatus.NotFound, deletedChild.Status);
+    }
+
+    [TestMethod]
+    public void EdgesRemove_ShouldThrowWhenHierarchyEdgeIsChildsOnlyEdge() {
+        var parent = new Node("parent");
+        var child = new Node("child");
+        parent.Nodes.Add(child);
+        Service.Root.Nodes.Add(parent);
+        var hierarchyEdge = parent.Edges.Single(edge => Connects(edge, parent, child));
+
+        Assert.ThrowsException<InvalidOperationException>(() => parent.Edges.Remove(hierarchyEdge));
+    }
+
+    private static bool Connects(Edge edge, Node first, Node second) =>
+        edge.Node1.GlobalId == first.GlobalId && edge.Node2.GlobalId == second.GlobalId
+        || edge.Node1.GlobalId == second.GlobalId && edge.Node2.GlobalId == first.GlobalId;
 }
