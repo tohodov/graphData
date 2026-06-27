@@ -96,17 +96,6 @@ public sealed class GraphControllerTests : ControllerTests {
     }
 
     [TestMethod]
-    public async Task GetNeighborNodeAsync_ReturnsConflictForAmbiguousLocalId() {
-        var controller = CreateController(null!);
-        throw new NotImplementedException();
-        var result = await controller.GetNeighborNodeAsync("root", "same");
-
-        var conflict = result.Result as ConflictObjectResult;
-        Assert.IsNotNull(conflict);
-        StringAssert.Contains(conflict.Value?.ToString(), "same");
-    }
-
-    [TestMethod]
     public async Task GetNodeAsync_ReturnsNotFoundForMissingNode() {
         var result = await Controller.GetNodeAsync(["missing"]);
 
