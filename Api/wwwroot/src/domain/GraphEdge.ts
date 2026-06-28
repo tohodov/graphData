@@ -275,7 +275,7 @@ endpointNode(path: string): GraphNode | null {
 
   endpointShowed(path: string): boolean {
     const node = this.endpointNode(path);
-    return Boolean(node && node.showed !== false);
+    return Boolean(node && node.showed === true);
   }
 
 endpointPositioned(path: string): boolean {

@@ -565,14 +565,14 @@ export class GraphViewer {
     this.graph.selectedName = incoming.name;
   }
 
-  if (stored.showed === false) {
+  if (stored.showed !== true) {
     this.graph.positions.delete(incoming.name);
     this.graph.velocities.delete(incoming.name);
   } else {
     this.seedPosition(incoming.name ?? "", fromName ?? "", 0, this.edgeAngleFromAnchor(fromName ?? "", incoming.name ?? ""));
   }
 
-  if (stored.showed !== false && fromName && fromName !== incoming.name && !this.graph.parentByNode.has(incoming.name)) {
+  if (stored.showed === true && fromName && fromName !== incoming.name && !this.graph.parentByNode.has(incoming.name)) {
     this.graph.parentByNode.set(incoming.name, fromName);
   }
 
@@ -607,6 +607,7 @@ export class GraphViewer {
     this.graph.selectedName = created.name;
     const seedFromName = this.graph.rootName === created.name ? null : this.graph.rootName;
     const seedIndex = this.graph.visibleNodeCount();
+    created.showed = true;
     this.graph.loaded.set(created.name, created);
     this.seedPosition(created.name, seedFromName, seedIndex);
     if (typeGlobalId) {
@@ -884,7 +885,7 @@ export class GraphViewer {
       const existing = this.graph.loaded.get(node.name);
       const stored = existing ? this.mergeNodeResponses(existing, node) : GraphNode.from(node);
       this.graph.loaded.set(stored.name, stored);
-      if (!existing && !this.graph.positions.has(stored.name)) {
+      if (stored.showed === true && !this.graph.positions.has(stored.name)) {
         this.seedPosition(stored.name, this.graph.rootName, this.graph.visibleNodeCount());
       }
     }
@@ -1405,7 +1406,8 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     nodes.forEach((node, index) => {
       this.graph.loaded.set(node.name, GraphNode.from({
         ...node,
-        edges: this.mergeEdges(node.edges, edgesByNode.get(node.name) ?? [])
+        edges: this.mergeEdges(node.edges, edgesByNode.get(node.name) ?? []),
+        showed: true
       }));
       this.seedSubgraphPosition(node.name, index, nodes.length);
     });
@@ -2091,7 +2093,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   const stored = existing ? this.mergeNodeResponses(existing, incoming) : incoming;
   stored.showed = showed;
   this.graph.loaded.set(incoming.name, stored);
-  if (stored.showed === false) {
+  if (stored.showed !== true) {
     this.graph.positions.delete(incoming.name);
     this.graph.velocities.delete(incoming.name);
   }
@@ -2693,7 +2695,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   refreshEdgeAngles() {
   for (const node of this.graph.loaded.values()) {
-    if (node.showed === false) {
+    if (node.showed !== true) {
       continue;
     }
 

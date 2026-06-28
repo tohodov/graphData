@@ -560,11 +560,11 @@ export class GraphModel {
 
   isNodeVisible(path: string): boolean {
     const node = this.loaded.get(path);
-    return Boolean(node && node.showed !== false);
+    return Boolean(node && node.showed === true);
   }
 
   visibleNodeCount(): number {
-    return [...this.loaded.values()].filter(node => node.showed !== false).length;
+    return [...this.loaded.values()].filter(node => node.showed === true).length;
   }
 
   node(path: string): GraphNode | null {

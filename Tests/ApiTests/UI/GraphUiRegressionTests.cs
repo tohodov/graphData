@@ -83,8 +83,9 @@ public sealed class GraphUiRegressionTests {
               return {
                 name,
                 displayName: name,
+                showed: true,
                 edges,
-                toViewNode() { return { name, globalId: name, displayName: name }; }
+                toViewNode() { return { name, globalId: name, displayName: name, showed: true }; }
               };
             }
 
@@ -243,6 +244,7 @@ public sealed class GraphUiRegressionTests {
             model.loaded.set("a", new GraphNode({
               globalId: "a",
               displayName: "A",
+              showed: true,
               edges: [edge]
             }));
             model.loaded.set("b", new GraphNode({
@@ -269,8 +271,8 @@ public sealed class GraphUiRegressionTests {
             const control = before.edges[0].controls[0];
             const beforeSourceNodeName = before.edges[0].node1?.name;
             const beforeTargetNodeName = before.edges[0].node2?.name;
-            const beforeSourceVisible = before.edges[0].node1?.showed !== false;
-            const beforeTargetVisible = before.edges[0].node2?.showed !== false;
+            const beforeSourceVisible = before.edges[0].node1?.showed === true;
+            const beforeTargetVisible = before.edges[0].node2?.showed === true;
             viewer.handleEdgeControl(before.edges[0], control);
             const after = model.visibleGraph();
             const position = model.positions.get("b");
@@ -376,6 +378,78 @@ public sealed class GraphUiRegressionTests {
               controlTarget: control.otherName === "root/types",
               neighborLocalId: control.neighborLocalId === "types",
               finiteAngle: Number.isFinite(control.angle)
+            };
+            globalThis.__result = Object.values(globalThis.__debug).every(Boolean);
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean(), engine.Evaluate("JSON.stringify(__debug)").AsString());
+    }
+
+    [TestMethod]
+    public void GraphViewer_BasisCacheNodesRequireExplicitShowedTrue() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
+            ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            model.rootName = "workspace";
+            model.loaded.set("workspace", new GraphNode({
+              globalId: "workspace",
+              displayName: "Workspace",
+              showed: true
+            }));
+            model.positions.set("workspace", { x: 10, y: 20 });
+
+            model.loaded.set("graphdata/types/nodes/Opened", new GraphNode({
+              globalId: "graphdata/types/nodes/Opened",
+              displayName: "Opened",
+              showed: true
+            }));
+            model.positions.set("graphdata/types/nodes/Opened", { x: 30, y: 40 });
+
+            const viewer = Object.create(GraphViewer.prototype);
+            viewer.graph = model;
+
+            viewer.storeBasisGraphNodes({
+              nodes: new Map([
+                ["graphdata/types/nodes", new GraphNode({
+                  globalId: "graphdata/types/nodes",
+                  displayName: "Node types"
+                })],
+                ["graphdata/types/nodes/Hidden", new GraphNode({
+                  globalId: "graphdata/types/nodes/Hidden",
+                  displayName: "Hidden"
+                })],
+                ["graphdata/types/nodes/Opened", new GraphNode({
+                  globalId: "graphdata/types/nodes/Opened",
+                  displayName: "Opened refreshed"
+                })]
+              ])
+            });
+
+            const root = model.loaded.get("workspace");
+            const rootType = model.loaded.get("graphdata/types/nodes");
+            const hiddenType = model.loaded.get("graphdata/types/nodes/Hidden");
+            const openedType = model.loaded.get("graphdata/types/nodes/Opened");
+            const graph = model.visibleGraph();
+            const visibleNames = graph.nodes.map(node => node.name).sort().join(",");
+
+            globalThis.__debug = {
+              rootVisible: root.showed === true,
+              rootTypeCached: Boolean(rootType),
+              rootTypeHidden: rootType.showed !== true,
+              rootTypeUnpositioned: !model.positions.has("graphdata/types/nodes"),
+              hiddenTypeCached: Boolean(hiddenType),
+              hiddenTypeHidden: hiddenType.showed !== true,
+              hiddenTypeUnpositioned: !model.positions.has("graphdata/types/nodes/Hidden"),
+              openedStillVisible: openedType.showed === true,
+              openedStillPositioned: model.positions.has("graphdata/types/nodes/Opened"),
+              onlyExplicitlyShownRendered: visibleNames === "graphdata/types/nodes/Opened,workspace"
             };
             globalThis.__result = Object.values(globalThis.__debug).every(Boolean);
             """);
@@ -498,6 +572,10 @@ public sealed class GraphUiRegressionTests {
               edges: []
             }));
 
+            for (const node of model.loaded.values()) {
+              node.showed = true;
+            }
+
             const initialEdge = model.visibleGraph().edges.find(edge => edge.projected);
             const initialState = initialEdge?.collapsed === false;
             model.collapseEdge(initialEdge);
@@ -601,6 +679,10 @@ public sealed class GraphUiRegressionTests {
               edges: []
             }));
 
+            for (const node of model.loaded.values()) {
+              node.showed = true;
+            }
+
             const edge = model.visibleGraph().edges.find(item => item.projected);
             globalThis.__result = edge?.typeGlobalId === typeId
               && edge?.label === "DependsOn"
@@ -669,6 +751,10 @@ public sealed class GraphUiRegressionTests {
             }));
             model.putNode(new GraphNode({ globalId: "b", displayName: "B", edges: [] }));
             model.putNode(new GraphNode({ globalId: typeId, displayName: "DependsOn", edges: [] }));
+
+            for (const node of model.loaded.values()) {
+              node.showed = true;
+            }
 
             const graph = model.visibleGraph();
             const names = new Set(graph.nodes.map(node => node.name));
@@ -999,6 +1085,7 @@ public sealed class GraphUiRegressionTests {
               loadedNames.forEach(name => model.loaded.set(name, {
                 name,
                 displayName: name,
+                showed: true,
                 edges: [],
                 toViewNode() { return { name, displayName: name }; }
               }));
@@ -1093,6 +1180,7 @@ public sealed class GraphUiRegressionTests {
               return {
                 name,
                 displayName,
+                showed: true,
                 edges,
                 toViewNode() { return { name, globalId: name, displayName }; }
               };
@@ -1173,6 +1261,7 @@ public sealed class GraphUiRegressionTests {
               return {
                 name,
                 displayName,
+                showed: true,
                 edges,
                 toViewNode() { return { name, globalId: name, displayName }; }
               };
@@ -1287,7 +1376,7 @@ public sealed class GraphUiRegressionTests {
                 node2LocalId: "a",
                 neighborLocalId: "root"
               }]
-            }), "root", { select: false });
+            }), "root", { select: false, showed: true });
             const loadedPosition = viewer.graph.positions.get("root/a");
             const loadedOffset = {
               x: loadedPosition.x - rootPosition.x,
