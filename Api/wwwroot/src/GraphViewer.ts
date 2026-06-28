@@ -405,7 +405,7 @@ export class GraphViewer {
   this.setBusy(true);
   this.setEmptyState("Загрузка корней...");
   try {
-    const response = (await this.loadSubgraphForKeys({})) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
+    const response = (await this.loadSubgraphForRoots([], 0)) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
     const nodes = response.nodes ?? [];
     this.loadSubgraphIntoViewer(response, [], { selectRoot: false });
     this.renderSubgraphResults(response);

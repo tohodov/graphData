@@ -58,6 +58,6 @@ POST {{GraphData.Api_HostAddress}}/api/graph/subgraph
 Content-Type: application/json
 
 {
-  "globalIds": [[ "Sample node" ]],
+  "paths": [[ "Sample node" ]],
   "maxDepth": 1
 }

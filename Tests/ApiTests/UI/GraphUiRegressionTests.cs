@@ -1634,6 +1634,24 @@ public sealed class GraphUiRegressionTests {
         }
     }
 
+    [TestMethod]
+    public void GraphViewer_LoadGraphRootsSendsExplicitSubgraphRequest() {
+        foreach (var path in new[] {
+            "Api/wwwroot/src/GraphViewer.ts",
+            "Api/wwwroot/src/GraphViewer.js"
+        }) {
+            var source = ReadUiFile(path);
+
+            AssertMatches(
+                source,
+                @"loadGraphRoots\s*\(\)\s*\{[\s\S]*loadSubgraphForRoots\s*\(\s*\[\s*\]\s*,\s*0\s*\)",
+                path);
+            Assert.IsFalse(
+                source.Contains("loadSubgraphForKeys({})", StringComparison.Ordinal),
+                $"Root loading must not send an empty subgraph request body in {path}.");
+        }
+    }
+
     private static void AssertMatches(string source, string pattern, string path) {
         Assert.IsTrue(
             Regex.IsMatch(source, pattern, RegexOptions.Singleline),
