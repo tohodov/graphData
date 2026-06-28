@@ -482,6 +482,33 @@ public sealed class GraphControllerTests : ControllerTests {
     }
 
     [TestMethod]
+    public async Task GetSubgraphAsync_CanSkipMissingDisconnectedRoots() {
+        var existing = await Storage.Create(new("existing"));
+
+        var strict = await Controller.GetSubgraphAsync(new SubgraphRequest {
+            Paths = [["missing"]],
+            MaxDepth = 0
+        });
+
+        Assert.IsInstanceOfType(strict.Result, typeof(NotFoundResult));
+
+        var result = await Controller.GetSubgraphAsync(new SubgraphRequest {
+            Paths = [["missing"], [existing.LocalId.ToString()]],
+            MaxDepth = 0,
+            IgnoreMissingRoots = true
+        });
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+
+        var response = ok.Value as SubgraphResponse;
+        Assert.IsNotNull(response);
+        CollectionAssert.AreEqual(
+            new[] { existing.GlobalId.ToString() },
+            response.Nodes.Select(static node => node.InternalId).ToArray());
+    }
+
+    [TestMethod]
     public async Task SearchNodesAsync_ReturnsVariableBindings() {
         var first = await Storage.Create(new("1"), attributes: new Dictionary<string, string> { ["id"] = "source" });
         var second = await Storage.Create(new("2"), attributes: new Dictionary<string, string> { ["id"] = "Y" });

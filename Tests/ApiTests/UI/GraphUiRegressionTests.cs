@@ -1652,6 +1652,54 @@ public sealed class GraphUiRegressionTests {
         }
     }
 
+    [TestMethod]
+    public void GraphViewer_TypeSubgraphLoadSkipsMissingBasisRoots() {
+        foreach (var path in new[] {
+            "Api/wwwroot/src/GraphViewer.ts",
+            "Api/wwwroot/src/GraphViewer.js"
+        }) {
+            var source = ReadUiFile(path);
+
+            StringAssert.Contains(source, "loadSubgraphForRoots([root], 2, { ignoreMissingRoots: true })");
+            StringAssert.Contains(source, "ignoreMissingRoots: options.ignoreMissingRoots === true");
+        }
+    }
+
+    [TestMethod]
+    public void GraphViewer_ServerErrorsRenderOverlay() {
+        var html = ReadUiFile("Api/wwwroot/index.html");
+        var css = ReadUiFile("Api/wwwroot/styles.css");
+
+        StringAssert.Contains(html, "id=\"server-error-overlay\"");
+        StringAssert.Contains(html, "role=\"alertdialog\"");
+        StringAssert.Contains(html, "id=\"server-error-message\"");
+        StringAssert.Contains(css, ".server-error-overlay");
+        StringAssert.Contains(css, ".server-error-message");
+
+        foreach (var path in new[] {
+            "Api/wwwroot/src/infrastructure/GraphApi.ts",
+            "Api/wwwroot/src/infrastructure/GraphApi.js"
+        }) {
+            var source = ReadUiFile(path);
+
+            StringAssert.Contains(source, "errorFromResponse");
+            StringAssert.Contains(source, "responseText");
+            StringAssert.Contains(source, "error.status = response.status");
+        }
+
+        foreach (var path in new[] {
+            "Api/wwwroot/src/GraphViewer.ts",
+            "Api/wwwroot/src/GraphViewer.js"
+        }) {
+            var source = ReadUiFile(path);
+
+            StringAssert.Contains(source, "bindServerErrors()");
+            StringAssert.Contains(source, "showServerError(error");
+            StringAssert.Contains(source, "this.serverErrorOverlay.hidden = false");
+            StringAssert.Contains(source, "GraphApi.errorFromResponse(response, \"/api/graph/search/nodes\", \"POST\")");
+        }
+    }
+
     private static void AssertMatches(string source, string pattern, string path) {
         Assert.IsTrue(
             Regex.IsMatch(source, pattern, RegexOptions.Singleline),

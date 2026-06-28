@@ -10,7 +10,7 @@ import {
   projectionVisibleAttribute,
   nodeRadius
 } from "./domain/graphAttributes.js";
-import { GraphApi } from "./infrastructure/GraphApi.js";
+import { GraphApi, type GraphApiError } from "./infrastructure/GraphApi.js";
 import { WebGpuGraphCanvas } from "./ui/WebGpuGraphCanvas.js";
 import { GraphEdge } from "./domain/GraphEdge.js";
 import { GraphId } from "./domain/GraphId.js";
@@ -62,6 +62,10 @@ export class GraphViewer {
   statusOutput: HTMLOutputElement;
   emptyState: HTMLElement;
   emptyTitle: HTMLElement;
+  serverErrorOverlay: HTMLElement;
+  serverErrorRequest: HTMLElement;
+  serverErrorMessage: HTMLElement;
+  serverErrorClose: HTMLButtonElement;
   clearSelectionButton: HTMLButtonElement;
   deleteSelectedNodesButton: HTMLButtonElement;
   createNodeForm: HTMLFormElement;
@@ -120,6 +124,10 @@ export class GraphViewer {
     this.statusOutput = this.requireElement("#status");
     this.emptyState = this.requireElement("#empty-state");
     this.emptyTitle = this.requireElement("#empty-state .empty-title");
+    this.serverErrorOverlay = this.requireElement("#server-error-overlay");
+    this.serverErrorRequest = this.requireElement("#server-error-request");
+    this.serverErrorMessage = this.requireElement("#server-error-message");
+    this.serverErrorClose = this.requireElement("#server-error-close");
     this.clearSelectionButton = this.requireElement("#clear-selection-button");
     this.deleteSelectedNodesButton = this.requireElement("#delete-selected-nodes-button");
     this.createNodeForm = this.requireElement("#create-node-form");
@@ -209,6 +217,7 @@ export class GraphViewer {
     this.bindToolbar();
     this.bindSelectionOverlay();
     this.bindMobileMenu();
+    this.bindServerErrors();
     this.bindNodeForms();
     this.bindSearch();
     this.bindSubgraph();
@@ -289,6 +298,20 @@ export class GraphViewer {
     desktopQuery.addEventListener("change", event => {
       if (event.matches) {
         this.setMobileMenuOpen(false);
+      }
+    });
+  }
+
+  bindServerErrors() {
+    this.serverErrorClose.addEventListener("click", () => this.hideServerError());
+    this.serverErrorOverlay.addEventListener("click", event => {
+      if (event.target === this.serverErrorOverlay) {
+        this.hideServerError();
+      }
+    });
+    this.document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && !this.serverErrorOverlay.hidden) {
+        this.hideServerError();
       }
     });
   }
@@ -741,7 +764,7 @@ export class GraphViewer {
       return;
     }
 
-    const subgraphs = await Promise.all(roots.map(root => this.loadSubgraphForRoots([root], 2)));
+    const subgraphs = await Promise.all(roots.map(root => this.loadSubgraphForRoots([root], 2, { ignoreMissingRoots: true })));
     const basisGraph = this.collectBasisGraph(subgraphs);
     this.storeBasisGraphNodes(basisGraph);
 
@@ -1066,8 +1089,9 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    throw new Error(text || `HTTP ${response.status}`);
+    const error = await GraphApi.errorFromResponse(response, "/api/graph/search/nodes", "POST");
+    this.showServerError(error, "POST /api/graph/search/nodes");
+    throw error;
   }
 
   const matches: any[] = [];
@@ -1213,10 +1237,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       signal: controller.signal
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `HTTP ${response.status}`);
-    }
+    if (!response.ok) throw await GraphApi.errorFromResponse(response, "/api/graph/search/nodes", "POST");
 
     await this.readNdjsonStream(response, (match: any) => {
       count += 1;
@@ -1229,6 +1250,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     if (error.name === "AbortError") {
       this.setStatus(`Поиск остановлен: ${count}`);
     } else {
+      this.showServerError(error, "POST /api/graph/search/nodes");
       this.setStatus(error.message);
     }
   } finally {
@@ -1461,12 +1483,13 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
-  async loadSubgraphForRoots(roots: string[], maxDepth = 1): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
+  async loadSubgraphForRoots(roots: string[], maxDepth = 1, options: { ignoreMissingRoots?: boolean } = {}): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
   return (await this.apiJson("/api/graph/subgraph", {
     method: "POST",
     body: JSON.stringify({
       paths: roots.map(root => this.parseGlobalId(root)),
-      maxDepth
+      maxDepth,
+      ignoreMissingRoots: options.ignoreMissingRoots === true
     })
   })) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
 
@@ -2528,6 +2551,31 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
+  showServerError(error: unknown, fallbackRequest = "") {
+  const apiError = error as GraphApiError;
+  const request = [
+    apiError.method,
+    apiError.url
+  ].filter(Boolean).join(" ") || fallbackRequest;
+  const status = typeof apiError.status === "number"
+    ? `HTTP ${apiError.status}${apiError.statusText ? " " + apiError.statusText : ""}`
+    : "Ошибка запроса";
+  const message = apiError.responseText
+    || (typeof apiError.status === "number" ? "Ответ сервера без тела." : (error as Error)?.message || String(error));
+  this.serverErrorRequest.textContent = request;
+  this.serverErrorMessage.textContent = `${status}\n${message}`;
+  this.serverErrorOverlay.hidden = false;
+  this.serverErrorClose.focus();
+
+  }
+
+  hideServerError() {
+  this.serverErrorOverlay.hidden = true;
+  this.serverErrorRequest.textContent = "";
+  this.serverErrorMessage.textContent = "";
+
+  }
+
   setEmptyState(message: string) {
   this.emptyTitle.textContent = message;
 
@@ -2564,7 +2612,12 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   async apiJson(url: string, options: RequestInit & { expectJson?: boolean } = {}) {
-    return this.api.json(url, options);
+    try {
+      return await this.api.json(url, options);
+    } catch (error) {
+      this.showServerError(error, `${options.method ?? "GET"} ${url}`);
+      throw error;
+    }
   }
 
   parseGlobalId(value: string) {

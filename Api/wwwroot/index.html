@@ -31,6 +31,18 @@
         <div id="graph" role="img" aria-label="Редактор графа GraphData"></div>
         <div id="graph-label-layer" class="graph-label-layer" aria-hidden="true"></div>
         <div id="gpu-warning" class="gpu-warning" hidden></div>
+        <div id="server-error-overlay" class="server-error-overlay" hidden role="alertdialog" aria-labelledby="server-error-title" aria-describedby="server-error-message">
+          <div class="server-error-panel">
+            <div class="server-error-header">
+              <div>
+                <div id="server-error-title" class="server-error-title">Ошибка сервера</div>
+                <div id="server-error-request" class="server-error-request"></div>
+              </div>
+              <button id="server-error-close" class="server-error-close" type="button" title="Закрыть ошибку" aria-label="Закрыть ошибку">×</button>
+            </div>
+            <pre id="server-error-message" class="server-error-message"></pre>
+          </div>
+        </div>
         <div id="empty-state" class="empty-state">
           <div class="empty-title">Узел не выбран</div>
         </div>
