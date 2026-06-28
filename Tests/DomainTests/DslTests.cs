@@ -196,6 +196,32 @@ public sealed class DslTests : GraphServiceTests {
     }
 
     [TestMethod]
+    public async Task NodesRemove_ShouldKeepHierarchyChildWhenItHasOtherEdges() {
+        var oldParent = new Node("nodes-remove-old-parent");
+        var child = new Node("child");
+        var newParent = new Node("nodes-remove-new-parent");
+        oldParent.Nodes.Add(child);
+        Service.Root.Nodes.Add(oldParent);
+        Service.Root.Nodes.Add(newParent);
+        child.Edges.Add(new Edge(child, newParent));
+
+        oldParent.Nodes.Remove(child);
+
+        var oldChild = await Service.GetNodeAsync(new InternalId("nodes-remove-old-parent", "child"));
+        Assert.AreEqual(ServiceResultStatus.NotFound, oldChild.Status);
+
+        var movedChild = await Service.GetNodeAsync(new InternalId("nodes-remove-new-parent", "child"));
+        Assert.AreEqual(ServiceResultStatus.Ok, movedChild.Status);
+        Assert.IsNotNull(movedChild.Value);
+        Assert.AreEqual<NodeLocalId>("child", movedChild.Value.LocalId);
+
+        var reloadedNewParent = await Service.GetNodeAsync(new InternalId("nodes-remove-new-parent"));
+        Assert.AreEqual(ServiceResultStatus.Ok, reloadedNewParent.Status);
+        Assert.IsNotNull(reloadedNewParent.Value);
+        Assert.IsTrue(reloadedNewParent.Value.Nodes.Any(node => node.LocalId == "child"));
+    }
+
+    [TestMethod]
     public void EdgesRemove_ShouldThrowWhenHierarchyEdgeIsChildsOnlyEdge() {
         var parent = new Node("parent");
         var child = new Node("child");
