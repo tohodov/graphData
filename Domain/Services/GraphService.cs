@@ -231,7 +231,7 @@ public sealed class GraphService {
         return await GetSubgraph([relation.GlobalId], 2).ConfigureAwait(false);
     }
 
-    public async Task<ServiceResult<Subgraph>> GetSubgraph(IEnumerable<NodeRef> globalIds, int maxDepth, bool ignoreMissingRoots = false) {
+    public async Task<ServiceResult<Subgraph>> GetSubgraph(IEnumerable<NodeRef> globalIds, int maxDepth) {
 
         var requestedIds = globalIds.ToArray();
         var roots = new List<NodeBacking>();
@@ -240,8 +240,6 @@ public sealed class GraphService {
         else
             foreach (var rootRef in requestedIds) {
                 var root = await storage.Get(rootRef);
-                if (root is null && ignoreMissingRoots)
-                    continue;
                 if (root is null)
                     return ServiceResult<Subgraph>.NotFound();
                 if (root.GlobalId != storage.Root.GlobalId)

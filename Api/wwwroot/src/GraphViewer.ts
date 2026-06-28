@@ -817,7 +817,7 @@ export class GraphViewer {
       return;
     }
 
-    const subgraphs = await Promise.all(roots.map(root => this.loadSubgraphForRoots([root], 2, { ignoreMissingRoots: true })));
+    const subgraphs = await Promise.all(roots.map(root => this.loadSubgraphForRoots([root], 2)));
     const basisGraph = this.collectBasisGraph(subgraphs);
     this.storeBasisGraphNodes(basisGraph);
 
@@ -1365,8 +1365,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       method: "POST",
       body: JSON.stringify({
         paths: roots.map((root: string) => this.parseGlobalId(root)),
-        maxDepth: this.readNumber("#subgraph-depth", 1),
-        includeDisconnectedRoots: (this.document.querySelector("#subgraph-include-disconnected") as HTMLInputElement).checked
+        maxDepth: this.readNumber("#subgraph-depth", 1)
       })
     }) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
     this.loadSubgraphIntoViewer(response, roots);
@@ -1536,13 +1535,12 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
-  async loadSubgraphForRoots(roots: string[], maxDepth = 1, options: { ignoreMissingRoots?: boolean } = {}): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
+  async loadSubgraphForRoots(roots: string[], maxDepth = 1): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
   return (await this.apiJson("/api/graph/subgraph", {
     method: "POST",
     body: JSON.stringify({
       paths: roots.map(root => this.parseGlobalId(root)),
-      maxDepth,
-      ignoreMissingRoots: options.ignoreMissingRoots === true
+      maxDepth
     })
   })) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
 

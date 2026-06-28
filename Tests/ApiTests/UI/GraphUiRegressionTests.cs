@@ -1653,19 +1653,6 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
-    public void GraphViewer_TypeSubgraphLoadSkipsMissingBasisRoots() {
-        foreach (var path in new[] {
-            "Api/wwwroot/src/GraphViewer.ts",
-            "Api/wwwroot/src/GraphViewer.js"
-        }) {
-            var source = ReadUiFile(path);
-
-            StringAssert.Contains(source, "loadSubgraphForRoots([root], 2, { ignoreMissingRoots: true })");
-            StringAssert.Contains(source, "ignoreMissingRoots: options.ignoreMissingRoots === true");
-        }
-    }
-
-    [TestMethod]
     public void GraphViewer_ServerErrorsRenderOverlay() {
         var html = ReadUiFile("Api/wwwroot/index.html");
         var css = ReadUiFile("Api/wwwroot/styles.css");
