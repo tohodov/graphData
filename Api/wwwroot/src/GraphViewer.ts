@@ -466,6 +466,7 @@ export class GraphViewer {
     this.graph.loaded.clear();
     this.graph.parentByNode.clear();
     this.graph.rootComponentByNode.clear();
+    this.graph.hiddenNodesByCollapsedEdge.clear();
     this.graph.positions.clear();
     this.graph.velocities.clear();
     this.restoreBasisNodes(basisNodes);
@@ -1406,6 +1407,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     this.graph.loaded.clear();
     this.graph.parentByNode.clear();
     this.graph.rootComponentByNode.clear();
+    this.graph.hiddenNodesByCollapsedEdge.clear();
     this.graph.positions.clear();
     this.graph.velocities.clear();
     this.restoreBasisNodes(basisNodes);
@@ -1586,6 +1588,9 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   if (pruneEdges) {
     this.graph.loaded.delete(name);
     this.graph.rootComponentByNode.delete(name);
+    for (const hiddenNodes of this.graph.hiddenNodesByCollapsedEdge.values()) {
+      hiddenNodes.delete(name);
+    }
   } else if (node) {
     node.showed = false;
   }
@@ -1635,6 +1640,10 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   const otherName = control.otherName ?? GraphEdge.from(edge).otherEndpoint(anchorName);
 
   if (control.action === "load-neighbor") {
+    if (this.graph.isEdgeCollapsed(edge) && this.expandEdge(edge, anchorName, otherName)) {
+      return;
+    }
+
     if (otherName && this.graph.hasNode(otherName)) {
       this.revealLoadedNode(otherName, anchorName, { select: true });
       return;
@@ -1645,10 +1654,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   if (control.action === "expand-edge") {
-    this.stopSimulation();
-    this.graph.expandEdge(edge);
-    this.render();
-    this.setStatus(`Развернута связь "${this.displayName(anchorName)}" - "${this.displayName(otherName)}"`);
+    this.expandEdge(edge, anchorName, otherName);
     return;
   }
 
@@ -1673,6 +1679,65 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   this.renderTypeControls();
   this.setStatus(`Развернуто узлов: ${this.graph.visibleNodeCount()}`);
   return true;
+
+  }
+
+  expandEdge(edge: any, anchorName: string, otherName: string): boolean {
+  const key = this.graph.edgeKey(edge);
+  if (!key) {
+    return false;
+  }
+
+  const restored = this.restoreHiddenNodesForCollapsedEdge(key, anchorName, otherName);
+  this.stopSimulation();
+  this.graph.expandEdge(edge);
+  this.graph.forgetHiddenNodesForCollapsedEdge(key);
+  this.render();
+  const restoredSuffix = restored > 0 ? `, восстановлено узлов: ${restored}` : "";
+  this.setStatus(`Развернута связь "${this.displayName(anchorName)}" - "${this.displayName(otherName)}"${restoredSuffix}`);
+  return true;
+
+  }
+
+  restoreHiddenNodesForCollapsedEdge(edgeKey: string, anchorName: string, otherName: string): number {
+  const names = this.graph.hiddenNodesForCollapsedEdge(edgeKey)
+    .filter(name => this.graph.loaded.has(name));
+  const namesToRestore = new Set(names);
+  if (otherName && this.graph.loaded.has(otherName)) {
+    namesToRestore.add(otherName);
+  }
+
+  if (namesToRestore.size === 0) {
+    return 0;
+  }
+
+  let restored = 0;
+  this.graph.batchPrimitiveChanges("edge-component-expanded", () => {
+    for (const name of namesToRestore) {
+      const node = this.graph.loaded.get(name);
+      if (!node || node.showed === true) {
+        continue;
+      }
+
+      node.showed = true;
+      restored += 1;
+      this.graph.trackRootComponent(name, anchorName);
+      if (!this.graph.positions.has(name)) {
+        this.seedPosition(name, anchorName, restored - 1, this.edgeAngleFromAnchor(anchorName, name));
+      }
+      if (!this.graph.velocities.has(name)) {
+        this.graph.velocities.set(name, { x: 0, y: 0 });
+      }
+    }
+    this.graph.notifyPrimitiveChanged("node-visibility-change", { key: edgeKey });
+  });
+  this.refreshEdgeAngles();
+
+  if (otherName && this.graph.isNodeVisible(otherName)) {
+    this.graph.selectedName = otherName;
+  }
+
+  return restored;
 
   }
 
@@ -1707,9 +1772,11 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   if (namesToHide.size === 0) {
+    this.graph.forgetHiddenNodesForCollapsedEdge(edgeKey);
     return 0;
   }
 
+  this.graph.rememberHiddenNodesForCollapsedEdge(edgeKey, namesToHide);
   this.graph.batchPrimitiveChanges("edge-component-collapsed", () => {
     [...namesToHide].forEach(name => this.removeLocalNode(name, false, false));
   });

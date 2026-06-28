@@ -1245,12 +1245,38 @@ public sealed class GraphUiRegressionTests {
               .sort()
               .join(",");
 
-            globalThis.__debug = { bridgeVisible, cycleVisible, protectedVisible };
+            const restoreCycle = makeViewer(["a", "b", "c", "d"], [["a", "b"], ["b", "c"], ["c", "d"], ["d", "a"]], {
+              a: "component-a",
+              b: "component-a",
+              c: "component-a",
+              d: "component-a"
+            });
+            const firstCollapsedEdge = restoreCycle.edges.find(edge => edge.connects("a") && edge.connects("b"));
+            const hidingEdge = restoreCycle.edges.find(edge => edge.connects("a") && edge.connects("d"));
+            restoreCycle.viewer.collapseEdge(firstCollapsedEdge, "a");
+            restoreCycle.viewer.collapseEdge(hidingEdge, "a");
+            const cycleHiddenVisible = [...restoreCycle.viewer.graph.loaded.values()]
+              .filter(node => node.showed === true)
+              .map(node => node.name)
+              .sort()
+              .join(",");
+            restoreCycle.viewer.expandEdge(hidingEdge, "a", "d");
+            const cycleRestoredVisible = [...restoreCycle.viewer.graph.loaded.values()]
+              .filter(node => node.showed === true)
+              .map(node => node.name)
+              .sort()
+              .join(",");
+
+            globalThis.__debug = { bridgeVisible, cycleVisible, protectedVisible, cycleHiddenVisible, cycleRestoredVisible };
             globalThis.__result = bridgeVisible === "2"
               && bridgeEdge.collapsed === true
               && cycleVisible === "1,2,3"
               && cycleEdge.collapsed === true
-              && protectedVisible === "a,b";
+              && protectedVisible === "a,b"
+              && cycleHiddenVisible === "a"
+              && cycleRestoredVisible === "a,b,c,d"
+              && hidingEdge.collapsed === false
+              && firstCollapsedEdge.collapsed === true;
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean(), engine.Evaluate("JSON.stringify(__debug)").AsString());

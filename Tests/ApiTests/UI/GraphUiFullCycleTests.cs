@@ -48,6 +48,11 @@ public sealed class GraphUiFullCycleTests
 
         await ClickEdgeControl(page, "two", "one", "collapse-edge");
         await ExpectVisibleNodes(page, "two");
+
+        await ClickAnyEdgeControl(page, "two", "one");
+        await ExpectVisibleNodes(page, "five", "one", "three", "two");
+        await ExpectEdgeControl(page, "two", "one", "collapse-edge");
+        await ExpectEdgeControl(page, "two", "five", "expand-edge");
     }
 
     [TestMethod]
@@ -70,6 +75,10 @@ public sealed class GraphUiFullCycleTests
 
         await ClickEdgeControl(page, "a", "a/x", "collapse-edge");
         await ExpectVisibleNodes(page, "a", "b");
+
+        await ClickAnyEdgeControl(page, "a", "a/x");
+        await ExpectVisibleNodes(page, "a", "b", "x");
+        await ExpectEdgeControl(page, "a", "a/x", "collapse-edge");
     }
 
     static async Task SeedCycleGraph(Uri baseUri)
@@ -134,6 +143,13 @@ public sealed class GraphUiFullCycleTests
         await locator.DispatchEventAsync("click");
     }
 
+    static async Task ClickAnyEdgeControl(IPage page, string anchorName, string otherName)
+    {
+        var locator = page.Locator(EdgeControlSelector(anchorName, otherName)).First;
+        await locator.WaitForAsync(new LocatorWaitForOptions { State = WaitForSelectorState.Visible, Timeout = 5000 });
+        await locator.DispatchEventAsync("click");
+    }
+
     static async Task ExpectEdgeControl(IPage page, string anchorName, string otherName, string action)
     {
         await page.Locator(EdgeControlSelector(anchorName, otherName, action)).First.WaitForAsync(
@@ -141,7 +157,10 @@ public sealed class GraphUiFullCycleTests
     }
 
     static string EdgeControlSelector(string anchorName, string otherName, string action) =>
-        $".graph-edge-control[data-anchor-name='{CssAttribute(anchorName)}'][data-other-name='{CssAttribute(otherName)}'][data-edge-action='{CssAttribute(action)}']";
+        $"{EdgeControlSelector(anchorName, otherName)}[data-edge-action='{CssAttribute(action)}']";
+
+    static string EdgeControlSelector(string anchorName, string otherName) =>
+        $".graph-edge-control[data-anchor-name='{CssAttribute(anchorName)}'][data-other-name='{CssAttribute(otherName)}']";
 
     static string CssAttribute(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("'", "\\'", StringComparison.Ordinal);

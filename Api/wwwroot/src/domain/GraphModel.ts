@@ -257,6 +257,7 @@ export class GraphModel {
   loaded: EventedGraphNodeMap;
   parentByNode: Map<string, string>;
   rootComponentByNode: Map<string, string>;
+  hiddenNodesByCollapsedEdge: Map<string, Set<string>>;
   positions: GraphNodePositionMap;
   velocities: Map<string, { x: number; y: number }>;
   view: { x: number; y: number; scale: number };
@@ -283,6 +284,7 @@ export class GraphModel {
     this.loaded = new EventedGraphNodeMap(this);
     this.parentByNode = new Map();
     this.rootComponentByNode = new Map();
+    this.hiddenNodesByCollapsedEdge = new Map();
     this.positions = new GraphNodePositionMap(this.loaded);
     this.velocities = new Map();
     this.view = { x: 0, y: 0, scale: 1 };
@@ -358,6 +360,7 @@ export class GraphModel {
       this.loaded.clear();
       this.parentByNode.clear();
       this.rootComponentByNode.clear();
+      this.hiddenNodesByCollapsedEdge.clear();
       this.positions.clear();
       this.velocities.clear();
       this.intermediateGraph = { nodes: [], edges: [] };
@@ -884,6 +887,33 @@ export class GraphModel {
     }
 
     return protectedNames;
+  }
+
+  rememberHiddenNodesForCollapsedEdge(edge: GraphEdge | string | { key?: string }, nodeNames: Iterable<string>): void {
+    const key = this.edgeKey(edge);
+    if (!key) {
+      return;
+    }
+
+    const names = [...new Set([...nodeNames].filter(Boolean))];
+    if (names.length === 0) {
+      this.hiddenNodesByCollapsedEdge.delete(key);
+      return;
+    }
+
+    this.hiddenNodesByCollapsedEdge.set(key, new Set(names));
+  }
+
+  hiddenNodesForCollapsedEdge(edge: GraphEdge | string | { key?: string }): string[] {
+    const key = this.edgeKey(edge);
+    return key ? [...(this.hiddenNodesByCollapsedEdge.get(key) ?? [])] : [];
+  }
+
+  forgetHiddenNodesForCollapsedEdge(edge: GraphEdge | string | { key?: string }): void {
+    const key = this.edgeKey(edge);
+    if (key) {
+      this.hiddenNodesByCollapsedEdge.delete(key);
+    }
   }
 
   isSchemaRoot(path: string): boolean {
