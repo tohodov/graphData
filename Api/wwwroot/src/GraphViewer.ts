@@ -124,10 +124,11 @@ export class GraphViewer {
     this.statusOutput = this.requireElement("#status");
     this.emptyState = this.requireElement("#empty-state");
     this.emptyTitle = this.requireElement("#empty-state .empty-title");
-    this.serverErrorOverlay = this.requireElement("#server-error-overlay");
-    this.serverErrorRequest = this.requireElement("#server-error-request");
-    this.serverErrorMessage = this.requireElement("#server-error-message");
-    this.serverErrorClose = this.requireElement("#server-error-close");
+    const serverErrorElements = this.ensureServerErrorElements();
+    this.serverErrorOverlay = serverErrorElements.overlay;
+    this.serverErrorRequest = serverErrorElements.request;
+    this.serverErrorMessage = serverErrorElements.message;
+    this.serverErrorClose = serverErrorElements.close;
     this.clearSelectionButton = this.requireElement("#clear-selection-button");
     this.deleteSelectedNodesButton = this.requireElement("#delete-selected-nodes-button");
     this.createNodeForm = this.requireElement("#create-node-form");
@@ -257,6 +258,58 @@ export class GraphViewer {
     }
 
     return element as unknown as T;
+  }
+
+  ensureServerErrorElements() {
+    let overlay = this.document.querySelector<HTMLElement>("#server-error-overlay");
+    let request = this.document.querySelector<HTMLElement>("#server-error-request");
+    let message = this.document.querySelector<HTMLElement>("#server-error-message");
+    let close = this.document.querySelector<HTMLButtonElement>("#server-error-close");
+
+    if (!overlay) {
+      overlay = this.document.createElement("div");
+      overlay.id = "server-error-overlay";
+      overlay.className = "server-error-overlay";
+      overlay.hidden = true;
+      overlay.setAttribute("role", "alertdialog");
+      overlay.setAttribute("aria-labelledby", "server-error-title");
+      overlay.setAttribute("aria-describedby", "server-error-message");
+
+      const panel = this.document.createElement("div");
+      panel.className = "server-error-panel";
+      const header = this.document.createElement("div");
+      header.className = "server-error-header";
+      const titleBlock = this.document.createElement("div");
+      const title = this.document.createElement("div");
+      title.id = "server-error-title";
+      title.className = "server-error-title";
+      title.textContent = "Ошибка сервера";
+      request = this.document.createElement("div");
+      request.id = "server-error-request";
+      request.className = "server-error-request";
+      close = this.document.createElement("button");
+      close.id = "server-error-close";
+      close.className = "server-error-close";
+      close.type = "button";
+      close.title = "Закрыть ошибку";
+      close.setAttribute("aria-label", "Закрыть ошибку");
+      close.textContent = "×";
+      message = this.document.createElement("pre");
+      message.id = "server-error-message";
+      message.className = "server-error-message";
+
+      titleBlock.append(title, request);
+      header.append(titleBlock, close);
+      panel.append(header, message);
+      overlay.append(panel);
+      (this.graphSurface.parentElement ?? this.graphSurface).append(overlay);
+    }
+
+    if (!request || !message || !close) {
+      throw new Error("GraphData server error overlay is missing required child elements.");
+    }
+
+    return { overlay, request, message, close };
   }
 
   bindTabs() {

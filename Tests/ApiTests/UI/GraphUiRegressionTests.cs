@@ -1693,10 +1693,13 @@ public sealed class GraphUiRegressionTests {
         }) {
             var source = ReadUiFile(path);
 
+            StringAssert.Contains(source, "ensureServerErrorElements()");
+            StringAssert.Contains(source, "document.createElement(\"div\")");
             StringAssert.Contains(source, "bindServerErrors()");
             StringAssert.Contains(source, "showServerError(error");
             StringAssert.Contains(source, "this.serverErrorOverlay.hidden = false");
             StringAssert.Contains(source, "GraphApi.errorFromResponse(response, \"/api/graph/search/nodes\", \"POST\")");
+            Assert.IsFalse(source.Contains("requireElement(\"#server-error-overlay\")", StringComparison.Ordinal));
         }
     }
 
