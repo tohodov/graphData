@@ -465,6 +465,7 @@ export class GraphViewer {
   this.graph.batchPrimitiveChanges("load-root-reset", () => {
     this.graph.loaded.clear();
     this.graph.parentByNode.clear();
+    this.graph.rootComponentByNode.clear();
     this.graph.positions.clear();
     this.graph.velocities.clear();
     this.restoreBasisNodes(basisNodes);
@@ -574,6 +575,10 @@ export class GraphViewer {
 
   if (stored.showed === true && fromName && fromName !== incoming.name && !this.graph.parentByNode.has(incoming.name)) {
     this.graph.parentByNode.set(incoming.name, fromName);
+  }
+
+  if (stored.showed === true) {
+    this.graph.trackRootComponent(incoming.name, fromName);
   }
 
   this.refreshEdgeAngles();
@@ -1400,6 +1405,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   this.graph.batchPrimitiveChanges("subgraph-loaded", () => {
     this.graph.loaded.clear();
     this.graph.parentByNode.clear();
+    this.graph.rootComponentByNode.clear();
     this.graph.positions.clear();
     this.graph.velocities.clear();
     this.restoreBasisNodes(basisNodes);
@@ -1414,6 +1420,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   });
 
   this.refreshEdgeAngles();
+  this.graph.resetRootComponentsFromVisibleGraph(this.graph.visibleGraph());
 
   this.render();
   this.renderTypeControls();
@@ -1578,6 +1585,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   const node = this.graph.loaded.get(name);
   if (pruneEdges) {
     this.graph.loaded.delete(name);
+    this.graph.rootComponentByNode.delete(name);
   } else if (node) {
     node.showed = false;
   }
@@ -1669,18 +1677,105 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   collapseEdge(edge: any, anchorName: string) {
-  const otherName = edge.node1InternalId === anchorName ? edge.node2InternalId : edge.node1InternalId;
-  const childName = this.graph.treeChildNameForEdge(edge, anchorName);
-
-  if (childName) {
-    this.collapseTreeBranch(childName);
-    return;
-  }
-
+  const normalized = GraphEdge.from(edge);
+  const otherName = normalized.otherEndpoint(anchorName);
+  const key = this.graph.edgeKey(edge);
   this.graph.collapseEdge(edge);
+  const hiddenCount = this.collapseComponentAcrossEdge(key, anchorName, otherName);
   this.stopSimulation();
   this.render();
-  this.setStatus(`Свернута связь "${this.displayName(anchorName)}" - "${this.displayName(otherName)}"`);
+  const hiddenSuffix = hiddenCount > 0 ? `, скрыто узлов: ${hiddenCount}` : "";
+  this.setStatus(`Свернута связь "${this.displayName(anchorName)}" - "${this.displayName(otherName)}"${hiddenSuffix}`);
+
+  }
+
+  collapseComponentAcrossEdge(edgeKey: string, anchorName: string, otherName: string): number {
+  if (!edgeKey || !anchorName || !otherName) {
+    return 0;
+  }
+
+  const components = this.visibleComponentsWithoutEdge(edgeKey);
+  const anchorComponent = components.byNode.get(anchorName);
+  const targetComponent = components.byNode.get(otherName);
+  if (!anchorComponent || !targetComponent || anchorComponent === targetComponent) {
+    return 0;
+  }
+
+  const namesToHide = new Set(targetComponent);
+  for (const protectedName of this.graph.protectedVisibleNodesForRootComponents(namesToHide)) {
+    namesToHide.delete(protectedName);
+  }
+
+  if (namesToHide.size === 0) {
+    return 0;
+  }
+
+  this.graph.batchPrimitiveChanges("edge-component-collapsed", () => {
+    [...namesToHide].forEach(name => this.removeLocalNode(name, false, false));
+  });
+
+  if (!this.graph.selectedName || !this.graph.isNodeVisible(this.graph.selectedName)) {
+    this.graph.selectedName = [anchorName, ...anchorComponent].find(name => this.graph.isNodeVisible(name))
+      ?? [...this.graph.loaded.keys()].find(name => this.graph.isNodeVisible(name))
+      ?? null;
+  }
+
+  return namesToHide.size;
+
+  }
+
+  visibleComponentsWithoutEdge(edgeKey: string) {
+  const graph = this.graph.visibleGraph();
+  const nodeIds = new Set(
+    (graph.nodes ?? [])
+      .map(node => node.name ?? "")
+      .filter(Boolean)
+  );
+  const adjacency = new Map<string, Set<string>>();
+  nodeIds.forEach(name => adjacency.set(name, new Set()));
+
+  for (const edge of graph.edges ?? []) {
+    const currentKey = this.graph.edgeKey(edge);
+    if (!currentKey || currentKey === edgeKey || this.graph.isEdgeCollapsed(edge)) {
+      continue;
+    }
+
+    const source = edge.node1InternalId;
+    const target = edge.node2InternalId;
+    if (!nodeIds.has(source) || !nodeIds.has(target)) {
+      continue;
+    }
+
+    adjacency.get(source)!.add(target);
+    adjacency.get(target)!.add(source);
+  }
+
+  const byNode = new Map<string, string[]>();
+  const visited = new Set<string>();
+  for (const start of nodeIds) {
+    if (visited.has(start)) {
+      continue;
+    }
+
+    const component: string[] = [];
+    const queue = [start];
+    visited.add(start);
+    while (queue.length > 0) {
+      const current = queue.shift()!;
+      component.push(current);
+      for (const next of adjacency.get(current) ?? []) {
+        if (!visited.has(next)) {
+          visited.add(next);
+          queue.push(next);
+        }
+      }
+    }
+
+    component.sort((left, right) => left.localeCompare(right, "ru"));
+    component.forEach(name => byNode.set(name, component));
+  }
+
+  return { byNode };
 
   }
 

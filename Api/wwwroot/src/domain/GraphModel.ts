@@ -256,6 +256,7 @@ export class GraphModel {
   selectedEdgeKeys: Set<string>;
   loaded: EventedGraphNodeMap;
   parentByNode: Map<string, string>;
+  rootComponentByNode: Map<string, string>;
   positions: GraphNodePositionMap;
   velocities: Map<string, { x: number; y: number }>;
   view: { x: number; y: number; scale: number };
@@ -281,6 +282,7 @@ export class GraphModel {
     this.selectedEdgeKeys = new Set();
     this.loaded = new EventedGraphNodeMap(this);
     this.parentByNode = new Map();
+    this.rootComponentByNode = new Map();
     this.positions = new GraphNodePositionMap(this.loaded);
     this.velocities = new Map();
     this.view = { x: 0, y: 0, scale: 1 };
@@ -355,6 +357,7 @@ export class GraphModel {
       this.selectedName = null;
       this.loaded.clear();
       this.parentByNode.clear();
+      this.rootComponentByNode.clear();
       this.positions.clear();
       this.velocities.clear();
       this.intermediateGraph = { nodes: [], edges: [] };
@@ -800,6 +803,87 @@ export class GraphModel {
     return physical
       ? new GraphProjection(this).nodeTypeAssignments(physical)
       : new GraphProjection(this).nodeTypeAssignmentsFromCache();
+  }
+
+  resetRootComponentsFromVisibleGraph(graph: ProjectedGraph): void {
+    this.rootComponentByNode.clear();
+    const visibleNodeIds = new Set(
+      (graph.nodes ?? [])
+        .map(node => node.name ?? "")
+        .filter(Boolean)
+    );
+    const adjacency = new Map<string, Set<string>>();
+    visibleNodeIds.forEach(name => adjacency.set(name, new Set()));
+    for (const edge of graph.edges ?? []) {
+      if (this.isEdgeCollapsed(edge)) {
+        continue;
+      }
+
+      const source = edge.node1InternalId;
+      const target = edge.node2InternalId;
+      if (!visibleNodeIds.has(source) || !visibleNodeIds.has(target)) {
+        continue;
+      }
+
+      adjacency.get(source)!.add(target);
+      adjacency.get(target)!.add(source);
+    }
+
+    const visited = new Set<string>();
+    for (const start of visibleNodeIds) {
+      if (visited.has(start)) {
+        continue;
+      }
+
+      const component: string[] = [];
+      const queue = [start];
+      visited.add(start);
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        component.push(current);
+        for (const next of adjacency.get(current) ?? []) {
+          if (!visited.has(next)) {
+            visited.add(next);
+            queue.push(next);
+          }
+        }
+      }
+
+      const componentId = component.slice().sort((left, right) => left.localeCompare(right, "ru")).join("\0");
+      component.forEach(name => this.rootComponentByNode.set(name, componentId || name));
+    }
+  }
+
+  trackRootComponent(name: string, fromName: string | null = null): void {
+    if (!name) {
+      return;
+    }
+
+    const inherited = fromName ? this.rootComponentByNode.get(fromName) : null;
+    this.rootComponentByNode.set(name, inherited ?? this.rootComponentByNode.get(name) ?? name);
+  }
+
+  protectedVisibleNodesForRootComponents(namesToHide: Set<string>): Set<string> {
+    const protectedNames = new Set<string>();
+    const visibleByRootComponent = new Map<string, string[]>();
+    for (const [name, componentId] of this.rootComponentByNode.entries()) {
+      if (this.loaded.get(name)?.showed !== true) {
+        continue;
+      }
+
+      if (!visibleByRootComponent.has(componentId)) {
+        visibleByRootComponent.set(componentId, []);
+      }
+      visibleByRootComponent.get(componentId)!.push(name);
+    }
+
+    for (const visibleNames of visibleByRootComponent.values()) {
+      if (visibleNames.length > 0 && visibleNames.every(name => namesToHide.has(name))) {
+        protectedNames.add(visibleNames.sort((left, right) => left.localeCompare(right, "ru"))[0]);
+      }
+    }
+
+    return protectedNames;
   }
 
   isSchemaRoot(path: string): boolean {

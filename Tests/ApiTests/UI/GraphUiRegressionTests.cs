@@ -1065,19 +1065,23 @@ public sealed class GraphUiRegressionTests {
     public void GraphViewer_EdgeEndpointClicksCollapseExpandAndLoadByState() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
             ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
             ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
 
         engine.Execute(
             """
-            const edge = new GraphEdge({
-              node1InternalId: "a",
-              node2InternalId: "b",
-              node1LocalId: "a",
-              node2LocalId: "b-local"
-            });
+            function makeEdge(collapsed = false) {
+              return new GraphEdge({
+                node1InternalId: "a",
+                node2InternalId: "b",
+                node1LocalId: "a",
+                node2LocalId: "b-local",
+                collapsed
+              });
+            }
 
-            function makeViewer(loadedNames) {
+            function makeViewer(loadedNames, edge) {
               const calls = [];
               const viewer = Object.create(GraphViewer.prototype);
               const model = new GraphModel();
@@ -1089,6 +1093,7 @@ public sealed class GraphUiRegressionTests {
                 edges: [],
                 toViewNode() { return { name, displayName: name }; }
               }));
+              loadedNames.forEach(name => model.rootComponentByNode.set(name, "root"));
               const collapseEdge = model.collapseEdge.bind(model);
               model.collapseEdge = edge => {
                 collapseEdge(edge);
@@ -1101,68 +1106,161 @@ public sealed class GraphUiRegressionTests {
               };
               viewer.graph = model;
               viewer.loadNeighbor = (anchorName, neighborLocalId) => calls.push("load:" + anchorName + ":" + neighborLocalId);
-              viewer.collapseTreeBranch = name => calls.push("collapseTreeBranch:" + name);
               viewer.render = () => calls.push("render");
-              viewer.runSimulation = frames => calls.push("simulation:" + frames);
+              viewer.stopSimulation = () => calls.push("stop");
               viewer.setStatus = message => calls.push("status:" + message);
               viewer.displayName = id => id;
               return { viewer, calls };
             }
 
-            const loaded = makeViewer(["a", "b"]);
+            const edge = makeEdge();
+            const loaded = makeViewer(["a", "b"], edge);
             const loadedControl = loaded.viewer.graph.edgeEndpointControl(edge, "a");
             loaded.viewer.handleEdgeControl(edge, loadedControl);
             const loadedClickCollapsesEdge = loaded.calls.includes("collapse:" + edge.key)
               && edge.collapsed === true
+              && loaded.viewer.graph.loaded.get("a").showed === true
+              && loaded.viewer.graph.loaded.get("b").showed === false
               && !loaded.calls.some(call => call.startsWith("load:"));
 
-            const collapsed = makeViewer(["a", "b"]);
-            const collapsedControl = collapsed.viewer.graph.edgeEndpointControl(edge, "a");
-            collapsed.viewer.handleEdgeControl(edge, collapsedControl);
+            const oppositeEdge = makeEdge();
+            const opposite = makeViewer(["a", "b"], oppositeEdge);
+            const oppositeControl = opposite.viewer.graph.edgeEndpointControl(oppositeEdge, "b");
+            opposite.viewer.handleEdgeControl(oppositeEdge, oppositeControl);
+            const oppositeButtonCollapsesOtherSide = opposite.calls.includes("collapse:" + oppositeEdge.key)
+              && oppositeEdge.collapsed === true
+              && opposite.viewer.graph.loaded.get("a").showed === false
+              && opposite.viewer.graph.loaded.get("b").showed === true;
+
+            const collapsedEdge = makeEdge(true);
+            const collapsed = makeViewer(["a", "b"], collapsedEdge);
+            const collapsedControl = collapsed.viewer.graph.edgeEndpointControl(collapsedEdge, "a");
+            collapsed.viewer.handleEdgeControl(collapsedEdge, collapsedControl);
             const collapsedClickExpandsOnly = collapsed.calls.includes("expand:" + edge.key)
-              && edge.collapsed === false
+              && collapsedEdge.collapsed === false
               && collapsed.calls.includes("render")
               && !collapsed.calls.some(call => call.startsWith("load:"));
 
-            edge.collapsed = true;
-            const oneEndpoint = makeViewer(["a"]);
-            const oneEndpointControl = oneEndpoint.viewer.graph.edgeEndpointControl(edge, "a");
-            oneEndpoint.viewer.handleEdgeControl(edge, oneEndpointControl);
+            const loadEdge = makeEdge();
+            const oneEndpoint = makeViewer(["a"], loadEdge);
+            const oneEndpointControl = oneEndpoint.viewer.graph.edgeEndpointControl(loadEdge, "a");
+            oneEndpoint.viewer.handleEdgeControl(loadEdge, oneEndpointControl);
             const oneEndpointClickLoadsNeighbor = oneEndpoint.calls.includes("load:a:b-local")
               && !oneEndpoint.calls.some(call => call.startsWith("collapse:"));
-            edge.collapsed = false;
-
-            const treeFromParent = makeViewer(["a", "b"]);
-            treeFromParent.viewer.graph.parentByNode.set("b", "a");
-            const parentTreeControl = treeFromParent.viewer.graph.edgeEndpointControl(edge, "a");
-            treeFromParent.viewer.handleEdgeControl(edge, parentTreeControl);
-            const parentEndCollapsesChild = treeFromParent.calls.includes("collapseTreeBranch:b");
-
-            const treeFromChild = makeViewer(["a", "b"]);
-            treeFromChild.viewer.graph.parentByNode.set("b", "a");
-            const childTreeControl = treeFromChild.viewer.graph.edgeEndpointControl(edge, "b");
-            treeFromChild.viewer.handleEdgeControl(edge, childTreeControl);
-            const childEndCollapsesChild = treeFromChild.calls.includes("collapseTreeBranch:b");
 
             globalThis.__result = loadedClickCollapsesEdge
               && loadedControl.kind === "collapse"
+              && oppositeButtonCollapsesOtherSide
+              && oppositeControl.kind === "collapse"
               && collapsedClickExpandsOnly
               && collapsedControl.kind === "expand"
               && oneEndpointClickLoadsNeighbor
-              && oneEndpointControl.kind === "expand"
-              && parentTreeControl?.kind === "collapse"
-              && childTreeControl?.kind === "collapse"
-              && parentEndCollapsesChild
-              && childEndCollapsesChild;
+              && oneEndpointControl.kind === "expand";
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
     }
 
     [TestMethod]
+    public void GraphViewer_CollapseEdgeHidesEndpointSideOnlyWhenItSplitsVisibleGraph() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
+            ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
+
+        engine.Execute(
+            """
+            function makeViewer(names, pairs, componentByNode) {
+              const viewer = Object.create(GraphViewer.prototype);
+              const model = new GraphModel();
+              const edges = pairs.map(([a, b]) => new GraphEdge({
+                node1InternalId: a,
+                node2InternalId: b,
+                node1LocalId: a,
+                node2LocalId: b
+              }));
+              const edgesByNode = new Map(names.map(name => [name, []]));
+              edges.forEach(edge => {
+                edgesByNode.get(edge.node1InternalId).push(edge);
+                edgesByNode.get(edge.node2InternalId).push(edge);
+              });
+              names.forEach(name => {
+                model.loaded.set(name, new GraphNode({
+                  globalId: name,
+                  displayName: name,
+                  showed: true,
+                  edges: edgesByNode.get(name)
+                }));
+                model.positions.set(name, { x: names.indexOf(name) * 120, y: 0 });
+                model.rootComponentByNode.set(name, componentByNode[name] ?? "root");
+              });
+              viewer.graph = model;
+              viewer.refreshEdgeAngles = () => {};
+              viewer.stopSimulation = () => {};
+              viewer.render = () => {};
+              viewer.setStatus = message => viewer.lastStatus = message;
+              viewer.displayName = id => id;
+              return { viewer, edges };
+            }
+
+            const bridge = makeViewer(["1", "2", "3", "4"], [["1", "2"], ["1", "3"], ["3", "4"]], {
+              "1": "root-a",
+              "2": "root-a",
+              "3": "root-a",
+              "4": "root-a"
+            });
+            const bridgeEdge = bridge.edges.find(edge => edge.connects("1") && edge.connects("2"));
+            bridge.viewer.collapseEdge(bridgeEdge, "2");
+            const bridgeVisible = [...bridge.viewer.graph.loaded.values()]
+              .filter(node => node.showed === true)
+              .map(node => node.name)
+              .sort()
+              .join(",");
+
+            const cycle = makeViewer(["1", "2", "3"], [["1", "2"], ["2", "3"], ["3", "1"]], {
+              "1": "root-a",
+              "2": "root-a",
+              "3": "root-a"
+            });
+            const cycleEdge = cycle.edges.find(edge => edge.connects("1") && edge.connects("2"));
+            cycle.viewer.collapseEdge(cycleEdge, "1");
+            const cycleVisible = [...cycle.viewer.graph.loaded.values()]
+              .filter(node => node.showed === true)
+              .map(node => node.name)
+              .sort()
+              .join(",");
+
+            const twoRoots = makeViewer(["a", "b", "c"], [["a", "b"], ["b", "c"]], {
+              a: "component-a",
+              b: "component-b",
+              c: "component-b"
+            });
+            const crossRootEdge = twoRoots.edges.find(edge => edge.connects("a") && edge.connects("b"));
+            twoRoots.viewer.collapseEdge(crossRootEdge, "a");
+            const protectedVisible = [...twoRoots.viewer.graph.loaded.values()]
+              .filter(node => node.showed === true)
+              .map(node => node.name)
+              .sort()
+              .join(",");
+
+            globalThis.__debug = { bridgeVisible, cycleVisible, protectedVisible };
+            globalThis.__result = bridgeVisible === "2"
+              && bridgeEdge.collapsed === true
+              && cycleVisible === "1,2,3"
+              && cycleEdge.collapsed === true
+              && protectedVisible === "a,b";
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean(), engine.Evaluate("JSON.stringify(__debug)").AsString());
+    }
+
+    [TestMethod]
     public void GraphViewer_EdgeCollapseExpandDoesNotMoveExistingNodes() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
             ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
             ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
 
@@ -1200,6 +1298,7 @@ public sealed class GraphUiRegressionTests {
             viewer.graph = model;
             viewer.displayName = id => model.displayName(id);
             viewer.setStatus = () => {};
+            viewer.renderTypeControls = () => {};
             let renderCalls = 0;
             let stopCalls = 0;
             let simulationCalls = 0;
@@ -1224,6 +1323,7 @@ public sealed class GraphUiRegressionTests {
             const afterCollapse = snapshotPositions();
             const collapsed = edge.collapsed === true && model.isEdgeCollapsed(edge);
 
+            model.loaded.get("b").showed = true;
             viewer.handleEndpointClick(edge, "a");
             const afterExpand = snapshotPositions();
             const expanded = edge.collapsed === false && !model.isEdgeCollapsed(edge);
