@@ -16,7 +16,6 @@ public class GraphStorageInitializer {
     public async Task InitializeAsync() {
         var runtimeTypes = service.RuntimeTypesInitializer;
 
-        runtimeTypes.Nodes.Clear();
         runtimeTypes.Nodes.Add(new Node(new NodeLocalId(RuntimeTypesVersion)));
         runtimeTypes.Nodes.Add(new Node(new NodeLocalId(schemaRegistry.Fingerprint)));
 

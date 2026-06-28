@@ -50,7 +50,30 @@ public sealed class GraphService {
         InitializersRoot.Nodes.Add(RuntimeTypesInitializer);
         foreach (var type in schemaRegistry.Types)
             TypesRoot.Nodes.Add(new NodeType(type.Id));
+
+        AttachExistingSystemGraph();
     }
+
+    private void AttachExistingSystemGraph() {
+        if (storage.Get(new NodePath(GraphDataRoot.LocalId)).GetAwaiter().GetResult() is null)
+            return;
+
+        Root.Backing = storage.Root;
+        var queue = new Queue<(Node Node, NodePath Path)>();
+        foreach (var child in Root.AttachedNodes)
+            queue.Enqueue((child, new NodePath(child.LocalId)));
+
+        while (queue.Count > 0) {
+            var (node, path) = queue.Dequeue();
+            var existing = storage.Get(path).GetAwaiter().GetResult();
+            if (existing is not null)
+                node.Backing = existing;
+
+            foreach (var child in node.AttachedNodes)
+                queue.Enqueue((child, new NodePath(path.Concat([child.LocalId]))));
+        }
+    }
+
     public async Task<ServiceResult<Node>> CreateNode(NodeRef node, NodeType? type = null, IDictionary<string, string>? attributes = null) {
         if (node is NodePath path) {
             var localId = path.Last();
