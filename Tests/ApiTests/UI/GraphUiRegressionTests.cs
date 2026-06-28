@@ -1443,10 +1443,10 @@ public sealed class GraphUiRegressionTests {
 
             let selected = null;
             canvas.callbacks = {
-              selectGraphElements(nodeNames, edgeKeys, append) {
+              selectGraphElements(nodes, edges, append) {
                 selected = {
-                  nodeNames: [...nodeNames],
-                  edgeKeys: [...edgeKeys],
+                  nodeNames: nodes.map(node => node.name),
+                  edgeKeys: edges.map(edge => edge.key),
                   append
                 };
               }

@@ -1030,8 +1030,8 @@ export class WebGpuGraphCanvas {
       right: clientRect.right - canvasRect.left,
       bottom: clientRect.bottom - canvasRect.top
     };
-    const nodeNames: string[] = [];
-    const edgeKeys: string[] = [];
+    const selectedNodes: import("../domain/GraphModel.js").ProjectedGraphNode[] = [];
+    const selectedEdges: import("../domain/GraphModel.js").ProjectedGraphEdge[] = [];
 
     this.memory.nodes.forEach(node => {
       const position = this.positions.get(node.name ?? "");
@@ -1042,7 +1042,7 @@ export class WebGpuGraphCanvas {
       const center = this.graphToScreen(position);
       const radius = Math.max(4, screenNodeRadius(node, this.view.scale));
       if (circleIntersectsRect(center, radius, rect)) {
-        nodeNames.push(node.name ?? "");
+        selectedNodes.push(node);
       }
     });
 
@@ -1054,11 +1054,11 @@ export class WebGpuGraphCanvas {
       }
 
       if (segmentIntersectsRect(this.graphToScreen(source), this.graphToScreen(target), rect)) {
-        edgeKeys.push(edge.key ?? "");
+        selectedEdges.push(edge);
       }
     });
 
-    this.callbacks.selectGraphElements?.(nodeNames, edgeKeys, box.append);
+    this.callbacks.selectGraphElements?.(selectedNodes, selectedEdges, box.append);
   }
 
   pickNearest(clientX: number, clientY: number) {
