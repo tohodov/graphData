@@ -20,15 +20,15 @@ graphData - исследовательский прототип графовой
 
 Основная модель разделена на два нижних уровня:
 
-- `Abstractions` - минимальные контракты и состояния графа (`IGraphStorage`, `NodeState`, `EdgeState`, id-типы, `ServiceResult`). Реализации storage зависят только от этого уровня и не знают доменные `Node`/`Edge`.
-- `Domain` - доменная модель (`Node`, `Edge`, типы графовых элементов, query/search/subgraph-модели) и фасад `GraphService`, который преобразует storage-state в доменные объекты.
+- `Abstractions` - минимальные контракты и backing-состояния графа (`IGraphStorage`, `NodeBacking`, `EdgeBacking`, id-типы, `ServiceResult`). Реализации storage зависят только от этого уровня и не знают доменные `Node`/`Edge`.
+- `Domain` - доменная модель (`Node`, `Edge`, типы графовых элементов, query/search/subgraph-модели) и фасад `GraphService`, который преобразует storage backing в доменные объекты.
 
-Исполняемые входы (`Api`, `Mcp`) должны работать через `GraphService`, а не через `IGraphStorage`. Storage-проекты (`SymLinkStorage`, `PerNodeFileStorage`, `BucketedFileStorage`) остаются ниже домена и ссылаются только на `Abstractions`.
+Исполняемые входы (`Api`, `Mcp`) должны работать через `GraphService`, а не через `IGraphStorage`. Storage-проект `SymLinkStorage` остается ниже домена и ссылается только на `Abstractions`.
 Storage-state типы и storage-контракты закрыты как `internal`; доступ к ним выдается только `Domain`, storage-проектам и тестовым сборкам через `InternalsVisibleTo`.
 
 ### Attributes policy
 
-`NodeState.Attributes` - нетипизированный escape hatch и временный костыль для прототипирования, импорта внешних
+`NodeBacking.Attributes` - нетипизированный escape hatch и временный костыль для прототипирования, импорта внешних
 данных, отображаемых подписей и короткоживущих UI-экспериментов. Атрибуты не должны становиться источником
 доменной логики, инвариантов, feature branching или типовой семантики графа.
 
@@ -38,7 +38,7 @@ Storage-state типы и storage-контракты закрыты как `inte
 доменной моделью, DSL-описанием типа и проверкой инвариантов в `Domain`/`GraphService`.
 
 Техническая граница закреплена тестом `AttributePolicyTests`: код в `Domain` не должен читать или ветвиться по
-`NodeState.Attributes` вне явно разрешенных зон. Разрешения сейчас только такие: `Node` пробрасывает атрибуты как
+`NodeBacking.Attributes` вне явно разрешенных зон. Разрешения сейчас только такие: `Node` пробрасывает атрибуты как
 пользовательские данные, а `GraphSearchService` ищет по ним по прямому запросу пользователя. В `Domain` не должно
 быть внутренних `*AttributeNames*`-констант: внутренние состояния, включая marker'ы и display-настройки, должны
 выражаться узлами, связями или внешним UI-слоем, а не ключами в attributes.
@@ -57,9 +57,9 @@ Storage-state типы и storage-контракты закрыты как `inte
   описывают локальное DSL-определение одного зарегистрированного `NodeType`, его C# поля, слоты и минимальные
   проверки инвариантов через исключения.
 - `GraphService.AssignNodeTypeAsync<TNodeType>` назначает тип связью `InstanceNode -> NodeType`, перечитывает
-  инстанс из storage и валидирует операцию. API-метод `PUT /api/graph/nodes/type` продолжает работать с graph id.
+  инстанс из storage и валидирует операцию.
 - Типизированная связь описывается обычным `NodeType` с endpoint-полями. Runtime-тип такой связи связывается с
-  `GraphBaseTypeIds.Connection`, а `GraphService.ChangeEdgeTypeAsync<TNodeType>` строит промежуточный typed edge
+  зарегистрированным connection node type, а `GraphService.ChangeEdgeTypeAsync<TNodeType>` строит промежуточный typed edge
   node subgraph, который UI может детерминированно свернуть в отображаемое ребро.
 
 Оставшийся долг: C# поля с кастомными `NodeType` уже дают slot-инварианты, но хранение и редактирование
@@ -67,15 +67,12 @@ Storage-state типы и storage-контракты закрыты как `inte
 
 ## Web UI lazy navigation
 
-Web UI открывается сразу с обзором корневых узлов: клиент вызывает `POST /api/graph/subgraph`
-с пустым списком `globalIds` и `maxDepth = 0`. Это намеренно не полная загрузка графа,
+Web UI открывается сразу с обзором корневых узлов. Это намеренно не полная загрузка графа,
 а стартовая frontier-точка для пошагового просмотра.
 
-Все API-ответы, которые возвращают узел (`GET /api/graph/nodes`, `GET /api/graph/nodes/{globalId}/neighbor/{localId}`,
-`POST /api/graph/nodes`, `POST /api/graph/subgraph` в `nodes[]`, а также `POST /api/graph/search/nodes`
-в `node` и `bindings`), должны возвращать узел вместе с его incident `edges`. Благодаря этому UI видит
+Все node-shaped payload'ы, которые использует UI, должны возвращать узел вместе с его incident `edges`. Благодаря этому UI видит
 связи к еще не загруженным соседям и рисует кнопки `+` на концах ребер. Нажатие на такую кнопку вызывает
-ленивую догрузку соседа через `/neighbor/{localId}`.
+ленивую догрузку соседа.
 
 `SubgraphResponse.edges` при этом остается отдельным дедуплицированным списком только тех ребер,
 у которых оба endpoint уже входят в `nodes[]`; он нужен для раскладки загруженного подграфа и не заменяет
@@ -118,10 +115,7 @@ typed edge node остаются read-only по атрибутам, но мог�
 Unit-тестовой сборки в проекте намеренно нет: корректность должна подтверждаться функциональными тестами, которые проверяют поведение через реальные сервисы и хранилища.
 
 ```powershell
-dotnet test DomainTests\DomainTests.csproj
-dotnet test ApiTests\ApiTests.csproj
-
-dotnet run --project PerformanceTests\PerformanceTests.csproj
+dotnet test
 ```
 
 Для выборочного запуска MSTest по измененным C# API подключен сабмодуль
@@ -130,66 +124,7 @@ dotnet run --project PerformanceTests\PerformanceTests.csproj
 MSBuild target генерирует `RelevantTests.plan.json`, копирует его в output тестовой сборки,
 а нерелевантные методы завершаются ранним `TestResult` без выполнения тела. `PerformanceTests` в этот сценарий не входит.
 
-```powershell
-git submodule update --init --recursive
-powershell -ExecutionPolicy Bypass -File scripts\Run-RelevantTests.ps1 -BaselineRef HEAD
-```
-
 По умолчанию артефакты попадают в `artifacts/test-impact/<timestamp>`.
 Если менялись сами тесты, `TestSupport`, UI-файлы в `Api/wwwroot`, `.csproj` или инфраструктура решения,
 скрипт запускает соответствующую тестовую сборку целиком, потому что Roslyn-анализатор отслеживает только C# API.
 Обычный `dotnet test` без `RelevantTestsEnabled=true` остается полным прогоном.
-
-## MCP server
-
-В solution добавлен локальный MCP-сервер `Mcp` со stdio-транспортом. Его можно запускать из корня репозитория:
-
-```powershell
-dotnet run --no-launch-profile --project Mcp/Mcp.csproj
-```
-
-Для VS Code/Copilot уже добавлен workspace-конфиг `.vscode/mcp.json`. Клиенту доступны tools:
-
-- `get_node`
-- `create_node`
-- `update_node_attributes`
-- `connect_nodes`
-- `get_subgraph`
-
-### LM Studio
-
-Для стабильного подключения к LM Studio используйте установленную Release-сборку, а не `dotnet run`.
-Скрипт публикует свежие бинарники в `%USERPROFILE%\.lmstudio\graphdata-mcp-server`,
-записывает `GraphStorage.RootPath` в `%USERPROFILE%\.lmstudio\graphdata-mcp-server\appsettings.json`
-и обновляет `%USERPROFILE%\.lmstudio\mcp.json` без UTF-8 BOM. Вместе с MCP-сервером публикуется
-универсальный наблюдатель `Tray.exe` из `McpTracker ([origin](https://github.com/tohodov/McpTracker))`.
-Сервер запускает его автоматически, если он еще не запущен, и передает логи через Named Pipe.
-Окно логов открывается кликом по значку в области уведомлений; несколько MCP-инстансов и серверов отображаются отдельно.
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\Install-LmStudioMcp.ps1
-```
-
-После запуска скрипта перезапустите LM Studio. В чате сервер должен быть виден как `mcp/graphdata`.
-При первом запуске MCP-сервера рядом появится значок `MCP Tracker`.
-
-По умолчанию данные графа хранятся в `graph-data` внутри этого репозитория. Другой путь можно указать так:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\Install-LmStudioMcp.ps1 -GraphStorageRoot C:\path\to\graph-data
-```
-
-Для отладки реального запуска из LM Studio можно установить сервер в режиме ожидания debugger:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\Install-LmStudioMcp.ps1 -DebugWait
-```
-
-После этого включите `mcp/graphdata` в LM Studio и подключитесь из Visual Studio к процессу `Mcp.exe`
-через `Debug > Attach to Process`. Когда отладка закончена, переустановите обычный режим командой без `-DebugWait`.
-
-### Visual Studio
-
-В `Mcp/Properties/launchSettings.json` есть профили `Mcp` и `Mcp - wait for debugger`.
-Их удобно использовать для проверки старта, конфигурации и breakpoint'ов в инициализации.
-Для отладки tool-вызовов удобнее запускать сервер из LM Studio в режиме `-DebugWait` и attach'иться к `Mcp.exe`.

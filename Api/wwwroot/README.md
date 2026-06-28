@@ -3,15 +3,7 @@
 Static GraphData UI served by the `Api` project from `Api/wwwroot`.
 
 The client has no separate backend-for-frontend. It talks directly to the
-existing HTTP endpoints:
-
-- `GET /api/graph/nodes`
-- `POST /api/graph/nodes`
-- `PUT /api/graph/nodes`
-- `DELETE /api/graph/nodes`
-- `POST /api/graph/connections`
-- `POST /api/graph/subgraph`
-- `POST /api/graph/search/nodes`
+existing graph HTTP API.
 
 Open it at `/`.
 
@@ -23,13 +15,12 @@ incident edges. Each edge response carries enough endpoint metadata to draw the
 connection immediately, even when the node on the other end has not been loaded as
 a full node expansion yet.
 
-The initial no-query screen uses `POST /api/graph/subgraph` with an empty
-`globalIds` array and `maxDepth: 0` to load top-level roots. In that response,
-`nodes[]` must still include each root node's incident `edges`, including edges
-to children or neighbors that are not part of the returned `nodes[]` set. The
-top-level `response.edges` collection is only the de-duplicated set of edges
-whose two endpoints are both already in `nodes[]`; it does not replace
-`node.edges`.
+The initial no-query screen loads top-level roots as a frontier rather than a
+full graph snapshot. In that response, returned nodes must still include each
+root node's incident `edges`, including edges to children or neighbors that are
+not part of the returned node set. The top-level edge collection is only the
+de-duplicated set of edges whose two endpoints are both already loaded; it does
+not replace per-node `edges`.
 
 Every node-shaped API response used by the UI follows the same rule: single-node
 loads, neighbor loads, create-node responses, subgraph `nodes[]`, search

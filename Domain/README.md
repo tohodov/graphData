@@ -14,12 +14,12 @@
 - Идентичность runtime-типа узла назначается каталогом регистрации. Пользовательский `NodeType` не объявляет
   `StaticTypeId` и не должен заранее знать свой graph id.
 - Типизированный взгляд на обычный узел - это `InstanceNode`. Не нужен отдельный `TypedNodeInstance`, потому что
-  инстанс уже может прочитать назначенные типы и соседние инстансы из своего `NodeState`.
+  инстанс уже может прочитать назначенные типы и соседние инстансы из своего backing-состояния.
 - Граф условно бесконечен, поэтому `Domain` не должен строить и хранить `NodeTypeSchema` как полный snapshot.
   Операция читает через `GraphService` и `IGraphStorage` только тот фрагмент, который ей нужен.
 - `GraphService` является границей доменных операций и сам работает с `IGraphStorage`. Отдельная прослойка
   materializer для базового чтения типов узлов не нужна.
-- `NodeState.Attributes` - нетипизированный временный escape hatch. Атрибуты нельзя использовать как источник
+- `NodeBacking.Attributes` - нетипизированный временный escape hatch. Атрибуты нельзя использовать как источник
   логики, feature branching, портов, слотов или типовой семантики.
 
 ### Текущий слой типов узлов
@@ -33,8 +33,8 @@
 - `NodeSlotDefinition` описывает slot-инвариант через имя, допустимые graph type ids и cardinality, а также умеет
   проверить этот слот на конкретном `InstanceNode`.
 - `NodeSlotCardinality` задает ограничения количества связанных инстансов.
-- `InstanceNode.AssignedTypes` читает назначенные типы из связей с узлами, которые сами связаны с базовым
-  `GraphBaseTypeIds.NodeType`. Расположение и форма `InternalId` при этом не участвуют в классификации.
+- `InstanceNode.AssignedTypes` читает назначенные типы из связей с узлами, которые сами находятся в графе типов.
+  Расположение и форма `InternalId` при этом не участвуют в классификации.
 - `InstanceNode.NeighborInstances` читает соседние обычные инстансы, которые участвуют в проверке слотов.
 - `NodeTypeDefinition.EnsureSatisfiedBy(...)` проверяет минимальные инварианты типа против `InstanceNode` и
   бросает исключение при нарушении.
@@ -46,15 +46,15 @@
 - Внешний DSL типизации такой связи выражается тем же C#-слоем `Node -> NodeType -> ...`: класс-наследник
   `NodeType` описывает endpoints публичными полями/свойствами `Node` или кастомных `NodeType`.
 - Если зарегистрированный `NodeType` содержит минимум два node-поля, `TypedEdgeDefinition` может прочитать из
-  него endpoint-контракт. Такой тип дополнительно связывается с системным node type `GraphBaseTypeIds.Connection`,
+  него endpoint-контракт. Такой тип дополнительно связывается с зарегистрированным connection node type,
   чтобы UI мог отличить типы, которые можно сворачивать в отображаемые ребра.
 - `GraphService.ChangeEdgeTypeAsync<TNodeType>` превращает связь между выбранными узлами в typed edge subgraph:
   metadata-free узел-инстанс связи, назначение ему выбранного node type, metadata-free endpoint-узлы,
-  назначение endpoint-узлам `GraphBaseTypeIds.Endpoint` и связи endpoint-узлов с выбранными инстансами и
+  назначение endpoint-узлам зарегистрированного endpoint node type и связи endpoint-узлов с выбранными инстансами и
   endpoint-спеками в дереве типов.
 - Endpoint-спеки живут под node type зарегистрированного typed edge и связываются с node type-узлами, если
   endpoint объявлен через кастомный `NodeType`.
-- Низкоуровневые source/target port-узлы типизируются через `GraphBaseTypeIds.Port`.
+- Низкоуровневые source/target port-узлы типизируются через зарегистрированный port node type.
 
 ### Граница мутаций
 
