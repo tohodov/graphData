@@ -25,9 +25,17 @@
     <Project Path="Tests/RelevantTests/src/RelevantTests.MSTestAdapter/RelevantTests.MSTestAdapter.csproj" />
     <Project Path="Tests/RelevantTests/src/RelevantTests.UsageAnalyzer/RelevantTests.UsageAnalyzer.csproj" />
   </Folder>
+  <Folder Name="/Tools/">
+    <Project Path="Tools/ApiTypeScriptGenerator/ApiTypeScriptGenerator.csproj" />
+  </Folder>
   <Project Path="Abstractions/Abstractions.csproj" />
   <Project Path="Api/0_Api.csproj" />
   <Project Path="Domain/1_ Domain.csproj" />
+  <Project Path="Editor/Editor.esproj">
+    <Platform Project="AnyCPU" />
+    <Build />
+    <Deploy />
+  </Project>
   <Project Path="Mcp/0_Mcp.csproj" />
   <Project Path="SymLinkStorage/1_SymLinkStorage.csproj" />
 </Solution>

@@ -17,6 +17,28 @@ import { GraphId } from "./domain/GraphId.js";
 import { GraphModel } from "./domain/GraphModel.js";
 import { GraphNode } from "./domain/GraphNode.js";
 import { GraphType } from "./domain/GraphType.js";
+import type {
+  AssignNodeTypeRequest,
+  ChangeEdgeTypeRequest,
+  ConnectNodesRequest,
+  CreateNodeRequest,
+  EdgeResponse,
+  NodeResponse,
+  NodeSearchMatchResponse,
+  NodeSearchNodeSelectorRequest,
+  NodeSearchQueryRequest,
+  SubgraphRequest,
+  SubgraphResponse,
+  UiSettingsResponse,
+  UpdateNodeRequest
+} from "./generated/api-dtos.js";
+
+type ViewerNodeSnapshot = import("./domain/GraphNode.js").GraphNodeSnapshot;
+type ViewerEdgeSnapshot = import("./domain/GraphEdge.js").GraphEdgeSnapshot;
+type ViewerSubgraphResponse = {
+  nodes?: Array<NodeResponse | ViewerNodeSnapshot>;
+  edges?: Array<EdgeResponse | ViewerEdgeSnapshot>;
+};
 
 type GraphViewerDependencies = {
   document: Document;
@@ -243,8 +265,8 @@ export class GraphViewer {
 
   async loadUiSettings() {
     try {
-      const settings = await this.apiJson("/api/ui/settings");
-      this.graph.applyUiSettings(settings as Record<string, unknown>);
+      const settings = await this.apiJson<UiSettingsResponse>("/api/ui/settings");
+      this.graph.applyUiSettings(settings as unknown as Record<string, unknown>);
     } catch (error) {
       this.setStatus(`Не удалось загрузить настройки UI: ${(error as Error).message}`);
     }
@@ -483,7 +505,7 @@ export class GraphViewer {
   this.setBusy(true);
   this.setEmptyState("Загрузка корней...");
   try {
-    const response = (await this.loadSubgraphForRoots([], 0)) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
+    const response = await this.loadSubgraphForRoots([], 0);
     const nodes = response.nodes ?? [];
     this.loadSubgraphIntoViewer(response, [], { selectRoot: false });
     this.renderSubgraphResults(response);
@@ -633,13 +655,14 @@ export class GraphViewer {
   }
 
   async createGraphNode(localId: string, parentGlobalId: string | undefined = undefined, attributes: Record<string, string> | null = null) {
+  const request: CreateNodeRequest = {
+    localId,
+    parentPath: parentGlobalId ? this.parseGlobalId(parentGlobalId) : null,
+    attributes
+  };
   return this.normalizeNodeResponse(await this.apiJson("/api/graph/nodes", {
     method: "POST",
-    body: JSON.stringify({
-      localId,
-      parentGlobalId: parentGlobalId ? this.parseGlobalId(parentGlobalId) : null,
-      attributes
-    })
+    body: JSON.stringify(request)
   }));
 
   }
@@ -724,12 +747,13 @@ export class GraphViewer {
   }
 
   async connectGraphNodes(node1InternalId: string, node2InternalId: string) {
+  const request: ConnectNodesRequest = {
+    node1InternalId: this.parseGlobalId(node1InternalId),
+    node2InternalId: this.parseGlobalId(node2InternalId)
+  };
   await this.apiJson("/api/graph/connections", {
     method: "POST",
-    body: JSON.stringify({
-      node1InternalId: this.parseGlobalId(node1InternalId),
-      node2InternalId: this.parseGlobalId(node2InternalId)
-    }),
+    body: JSON.stringify(request),
     expectJson: false
   });
 
@@ -1026,7 +1050,7 @@ export class GraphViewer {
   try {
     for (const nodeName of nodeNames) {
       const subgraph = await this.assignGraphNodeType(nodeName, typeGlobalId);
-      this.mergeSubgraphIntoViewer(subgraph as any, { select: false });
+      this.mergeSubgraphIntoViewer(subgraph, { select: false });
     }
     this.render();
     this.renderTypeControls();
@@ -1039,14 +1063,15 @@ export class GraphViewer {
 
   }
 
-  async assignGraphNodeType(internalId: string, typeGlobalId: string): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
-  return (await this.apiJson("/api/graph/nodes/type", {
+  async assignGraphNodeType(internalId: string, typeGlobalId: string): Promise<ViewerSubgraphResponse> {
+  const request: AssignNodeTypeRequest = {
+    internalId: this.parseGlobalId(internalId),
+    typeGlobalId: this.parseGlobalId(typeGlobalId)
+  };
+  return (await this.apiJson<SubgraphResponse>("/api/graph/nodes/type", {
     method: "PUT",
-    body: JSON.stringify({
-      internalId: this.parseGlobalId(internalId),
-      typeGlobalId: this.parseGlobalId(typeGlobalId)
-    })
-  })) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
+    body: JSON.stringify(request)
+  })) as SubgraphResponse;
 
   }
 
@@ -1078,7 +1103,7 @@ export class GraphViewer {
       if (edge.relationGlobalId) {
         this.removeLocalRelationSubgraph(edge.relationGlobalId);
       }
-      this.mergeSubgraphIntoViewer(subgraph as any, { select: false });
+      this.mergeSubgraphIntoViewer(subgraph, { select: false });
       nextEdgeKeys.push(...this.projectedEdgeKeysFromSubgraph(subgraph));
     }
     nextEdgeKeys.forEach(key => this.graph.selectedEdgeKeys.add(key));
@@ -1093,19 +1118,17 @@ export class GraphViewer {
 
   }
 
-async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { node1InternalId: string; node2InternalId: string; relationGlobalId: string | null, relationLocalId?: string }, typeGlobalId: string, options: GraphViewerOptions = {}): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
-  const relationRoot = this.getBasis().relationRoot?.trim();
-  return (await this.apiJson("/api/graph/edges/type", {
+async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { node1InternalId: string; node2InternalId: string; relationGlobalId: string | null, relationLocalId?: string }, typeGlobalId: string, options: GraphViewerOptions = {}): Promise<ViewerSubgraphResponse> {
+  void options;
+  const request: ChangeEdgeTypeRequest = {
+    node1InternalId: this.parseGlobalId(edge.node1InternalId),
+    node2InternalId: this.parseGlobalId(edge.node2InternalId),
+    typeGlobalId: this.parseGlobalId(typeGlobalId)
+  };
+  return (await this.apiJson<SubgraphResponse>("/api/graph/edges/type", {
     method: "PUT",
-    body: JSON.stringify({
-      relationGlobalId: edge.relationGlobalId ? this.parseGlobalId(edge.relationGlobalId) : null,
-      node1InternalId: edge.node1InternalId ? this.parseGlobalId(edge.node1InternalId) : null,
-      node2InternalId: edge.node2InternalId ? this.parseGlobalId(edge.node2InternalId) : null,
-      typeGlobalId: this.parseGlobalId(typeGlobalId),
-      relationParentGlobalId: relationRoot ? this.parseGlobalId(relationRoot) : null,
-      relationLocalId: options.relationLocalId || (edge as any).relationLocalId || null
-    })
-  })) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
+    body: JSON.stringify(request)
+  })) as SubgraphResponse;
 
   }
 
@@ -1138,7 +1161,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
-  async searchNodeMatches(query: any) {
+  async searchNodeMatches(query: NodeSearchQueryRequest) {
   const response = await this.api.fetch("/api/graph/search/nodes", {
     method: "POST",
     headers: {
@@ -1154,8 +1177,8 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     throw error;
   }
 
-  const matches: any[] = [];
-  await this.readNdjsonStream(response, (match: any) => matches.push(match));
+  const matches: NodeSearchMatchResponse[] = [];
+  await this.readNdjsonStream(response, (match: NodeSearchMatchResponse) => matches.push(match));
   return matches;
 
   }
@@ -1260,12 +1283,12 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
-  variableSelector(name: string) {
+  variableSelector(name: string): NodeSearchNodeSelectorRequest {
   return { kind: "var", name };
 
   }
 
-  literalSelector(name: string) {
+  literalSelector(name: string): NodeSearchNodeSelectorRequest {
   return { kind: "literal", name };
 
   }
@@ -1368,13 +1391,14 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   const roots = this.parseCsv((this.document.querySelector("#subgraph-roots") as HTMLInputElement).value);
   this.setBusy(true);
   try {
-    const response = await this.apiJson("/api/graph/subgraph", {
+    const request: SubgraphRequest = {
+      paths: roots.map((root: string) => this.parseGlobalId(root)),
+      maxDepth: this.readNumber("#subgraph-depth", 1)
+    };
+    const response = await this.apiJson<SubgraphResponse>("/api/graph/subgraph", {
       method: "POST",
-      body: JSON.stringify({
-        paths: roots.map((root: string) => this.parseGlobalId(root)),
-        maxDepth: this.readNumber("#subgraph-depth", 1)
-      })
-    }) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
+      body: JSON.stringify(request)
+    }) as SubgraphResponse;
     this.loadSubgraphIntoViewer(response, roots);
     this.renderSubgraphResults(response);
     this.renderTypeControls();
@@ -1387,7 +1411,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
-  loadSubgraphIntoViewer(response: { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[]; edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }, roots: string[], options: GraphViewerOptions = {}) {
+  loadSubgraphIntoViewer(response: ViewerSubgraphResponse, roots: string[], options: GraphViewerOptions = {}) {
   const basisNodes = this.cachedBasisNodes();
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
@@ -1430,7 +1454,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
-  mergeSubgraphIntoViewer(response: { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[]; edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }, options: GraphViewerOptions = {}) {
+  mergeSubgraphIntoViewer(response: ViewerSubgraphResponse, options: GraphViewerOptions = {}) {
   const select = options.select ?? false;
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
@@ -1538,22 +1562,23 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
-  async loadSubgraphForKeys(params: any): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
-  return (await this.apiJson("/api/graph/subgraph", {
+  async loadSubgraphForKeys(params: SubgraphRequest): Promise<ViewerSubgraphResponse> {
+  return (await this.apiJson<SubgraphResponse>("/api/graph/subgraph", {
     method: "POST",
     body: JSON.stringify(params)
-  })) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
+  })) as SubgraphResponse;
 
   }
 
-  async loadSubgraphForRoots(roots: string[], maxDepth = 1): Promise<{ nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] }> {
-  return (await this.apiJson("/api/graph/subgraph", {
+  async loadSubgraphForRoots(roots: string[], maxDepth = 1): Promise<ViewerSubgraphResponse> {
+  const request: SubgraphRequest = {
+    paths: roots.map(root => this.parseGlobalId(root)),
+    maxDepth
+  };
+  return (await this.apiJson<SubgraphResponse>("/api/graph/subgraph", {
     method: "POST",
-    body: JSON.stringify({
-      paths: roots.map(root => this.parseGlobalId(root)),
-      maxDepth
-    })
-  })) as { nodes?: import("./domain/GraphNode.js").GraphNodeSnapshot[], edges?: import("./domain/GraphEdge.js").GraphEdgeSnapshot[] };
+    body: JSON.stringify(request)
+  })) as SubgraphResponse;
 
   }
 
@@ -2826,9 +2851,9 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
-  async apiJson(url: string, options: RequestInit & { expectJson?: boolean } = {}) {
+  async apiJson<T = unknown>(url: string, options: RequestInit & { expectJson?: boolean } = {}) {
     try {
-      return await this.api.json(url, options);
+      return await this.api.json<T>(url, options);
     } catch (error) {
       this.showServerError(error, `${options.method ?? "GET"} ${url}`);
       throw error;
@@ -2843,11 +2868,11 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     return GraphId.toQuery(value);
   }
 
-  normalizeNodeResponse(node: any) {
+  normalizeNodeResponse(node: NodeResponse | ViewerNodeSnapshot | null | undefined) {
     return GraphNode.fromApi(node);
   }
 
-  normalizeEdgeResponse(edge: any) {
+  normalizeEdgeResponse(edge: EdgeResponse | ViewerEdgeSnapshot | null | undefined) {
     return GraphEdge.fromApi(edge);
   }
 
@@ -2938,7 +2963,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       return Promise.resolve();
     }
 
-    return this.apiJson("/api/graph/nodes?" + this.toGlobalIdQuery(path))
+    return this.apiJson<NodeResponse>("/api/graph/nodes?" + this.toGlobalIdQuery(path))
       .then(node => this.storeNodeExpansion(this.normalizeNodeResponse(node), null, { select: false }));
   }
 
@@ -2948,9 +2973,10 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   async updateGraphNodeAttributes(path: string, attributes: any) {
+    const request: UpdateNodeRequest = { attributes };
     await this.apiJson("/api/graph/nodes?" + this.toGlobalIdQuery(path), {
       method: "PUT",
-      body: JSON.stringify({ attributes }),
+      body: JSON.stringify(request),
       expectJson: false
     });
   }

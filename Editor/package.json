@@ -1,0 +1,16 @@
+{
+  "name": "editor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GraphData browser editor",
+  "main": "main.js",
+  "scripts": {
+    "build": "tsc --build && npm run bundle",
+    "bundle": "esbuild main.ts --bundle --sourcemap --loader:.wgsl=text --outfile=../Api/wwwroot/js/app.js",
+    "clean": "tsc --build --clean"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1",
+    "typescript": "6.0.3"
+  }
+}

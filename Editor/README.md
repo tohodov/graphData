@@ -1,6 +1,8 @@
 # GraphData web UI
 
-Static GraphData UI served by the `Api` project from `Api/wwwroot`.
+GraphData UI source. The `Editor` project builds the TypeScript bundle into
+`Api/wwwroot/js`, and the `Api` project serves the static files from
+`Api/wwwroot`.
 
 The client has no separate backend-for-frontend. It talks directly to the
 existing graph HTTP API.
