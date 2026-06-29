@@ -10,6 +10,7 @@ using GraphData.Tests;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using static GraphData.Tests.GraphService.NodeTypeDslTests;
 
+[RelevantTestClass]
 public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
     static Assembly[] todoDelete = [typeof(ManufacturedByConnectionNodeType).Assembly];
     protected override Assembly[] Assemblies => todoDelete;
@@ -183,19 +184,19 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
 
     [TestMethod]
     public async Task GraphService_AssignNodeTypeAsync_UsesGraphTypeTopologyInsteadOfInternalIdShape() {
-        var arbitraryType = await Service.CreateNode("weapon-type");
-        var pathShapedNonType = await Storage.Create(new("Fake"), Service.NodeTypes.GlobalId);
+        var connectedType = await Storage.Create(new("weapon-type"), Service.NodeTypes.GlobalId);
+        var unrelatedNode = await Storage.Create(new("Fake"));
         var ak47 = await Storage.Create(new("ak-47"));
         var m16 = await Storage.Create(new("m16"));
         var fnFal = await Storage.Create(new("fn-fal"));
 
-        var arbitraryResult = await Service.AssignNodeTypeAsync(ak47.GlobalId, arbitraryType.Value!.GlobalId);
-        var pathShapedResult = await Service.AssignNodeTypeAsync(m16.GlobalId, pathShapedNonType.GlobalId);
+        var connectedResult = await Service.AssignNodeTypeAsync(ak47.GlobalId, connectedType.GlobalId);
+        var unrelatedResult = await Service.AssignNodeTypeAsync(m16.GlobalId, unrelatedNode.GlobalId);
         var rootResult = await Service.AssignNodeTypeAsync(fnFal.GlobalId, Service.NodeTypes.GlobalId);
 
-        Assert.AreEqual(ServiceResultStatus.Ok, arbitraryResult.Status, arbitraryResult.Error);
-        Assert.AreEqual(ServiceResultStatus.BadRequest, pathShapedResult.Status);
-        StringAssert.Contains(pathShapedResult.Error, "not a node type");
+        Assert.AreEqual(ServiceResultStatus.Ok, connectedResult.Status, connectedResult.Error);
+        Assert.AreEqual(ServiceResultStatus.BadRequest, unrelatedResult.Status);
+        StringAssert.Contains(unrelatedResult.Error, "not a node type");
         Assert.AreEqual(ServiceResultStatus.BadRequest, rootResult.Status);
         StringAssert.Contains(rootResult.Error, "not a node type");
     }
@@ -273,7 +274,6 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
     [TestMethod]
     public async Task AddSubgraph_ShouldPersistVirtualNodesAndConnections() {
         var catalog = new Node("catalog");
-        Service.Root.Nodes.Add(catalog);
         var weapon = new Node("ak-47");
         weapon.Attributes["displayName"] = "AK-47";
         catalog.Nodes.Add(weapon);
@@ -346,10 +346,12 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
         InternalId endpointNodeId) {
         var endpoint = await Storage.Get(endpointInstanceId);
         Assert.IsNotNull(endpoint);
+        var endpointTypeId = await GetNodeTypeIdAsync<EndpointNodeType>(Service);
         var spec = await endpoint.Nodes.SingleAsync(node =>
             node.GlobalId != relationId
             && node.GlobalId != endpointNodeId
-            /*&& node.GlobalId != GraphBaseTypeIds.Endpoint*/);
+            && node.GlobalId != Service.NodeTypes.GlobalId
+            && node.GlobalId != endpointTypeId);
         return spec;
     }
 
@@ -367,17 +369,17 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
         Assert.AreEqual(isCollection, endpoint.IsCollection);
     }
 
-    private sealed class EdgeWeaponNodeType : NodeType {
+    public sealed class EdgeWeaponNodeType : NodeType {
         internal EdgeWeaponNodeType(NodeBacking state) : base(state) {
         }
     }
 
-    private sealed class EdgeManufacturerNodeType : NodeType {
+    public sealed class EdgeManufacturerNodeType : NodeType {
         internal EdgeManufacturerNodeType(NodeBacking state) : base(state) {
         }
     }
 
-    private sealed class ManufacturedByConnectionNodeType : NodeType {
+    public sealed class ManufacturedByConnectionNodeType : NodeType {
         public EdgeWeaponNodeType Weapon = null!;
         public EdgeManufacturerNodeType Manufacturer = null!;
 
@@ -385,7 +387,7 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
         }
     }
 
-    private sealed class ShipmentConnectionNodeType : NodeType {
+    public sealed class ShipmentConnectionNodeType : NodeType {
         public EdgeWeaponNodeType Weapon = null!;
         public Node Counterparty = null!;
         public Node? OptionalWaypoint = null;

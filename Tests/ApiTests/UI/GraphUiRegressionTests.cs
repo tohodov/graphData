@@ -1913,14 +1913,14 @@ public sealed class GraphUiRegressionTests {
 
     private static string ReadUiFile(string relativePath) {
         var fullPath = Path.Combine(RepoRoot(), relativePath.Replace('/', Path.DirectorySeparatorChar));
-        if (!File.Exists(fullPath)
-            && relativePath.StartsWith("Api/wwwroot/", StringComparison.Ordinal)
-            && relativePath.EndsWith(".js", StringComparison.Ordinal)) {
-            var compiledRelativePath = "Api/obj/ts/" + relativePath["Api/wwwroot/".Length..];
-            var compiledPath = Path.Combine(RepoRoot(), compiledRelativePath.Replace('/', Path.DirectorySeparatorChar));
-            if (File.Exists(compiledPath)) {
-                fullPath = compiledPath;
-            }
+        if (!File.Exists(fullPath) && relativePath.StartsWith("Api/wwwroot/src/", StringComparison.Ordinal)) {
+            var editorRelativePath = relativePath["Api/wwwroot/".Length..];
+            var editorPath = relativePath.EndsWith(".js", StringComparison.Ordinal)
+                ? "Editor/obj/ts/" + editorRelativePath
+                : "Editor/" + editorRelativePath;
+            var candidate = Path.Combine(RepoRoot(), editorPath.Replace('/', Path.DirectorySeparatorChar));
+            if (File.Exists(candidate))
+                fullPath = candidate;
         }
 
         return File.ReadAllText(fullPath, Encoding.UTF8);

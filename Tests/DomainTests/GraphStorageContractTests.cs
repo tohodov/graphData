@@ -3,6 +3,7 @@ using GraphData.Core.Models;
 using GraphData.Core.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
+[RelevantTestClass]
 public class GraphStorageContractTests : StorageTests {
     internal async Task<NodeBacking> CreateNode(string? name = null) {
         var result = await Storage.Create(new(name ?? Guid.NewGuid().ToString()), null, new Dictionary<string, string>() {

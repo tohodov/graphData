@@ -20,9 +20,10 @@ public sealed class UiControllerTests : StorageTests {
 
         var settings = result.Value;
         Assert.IsNotNull(settings);
-        Assert.AreEqual("graphdata/types/nodes", settings.SystemNodeIds.NodeTypeRoot);
-        Assert.AreEqual("graphdata/storage", settings.SystemNodeIds.StorageRoot);
-        Assert.AreEqual("graphdata/types/nodes", settings.Basis.NodeTypeRoot);
+        Assert.AreEqual("NodeTypes", settings.SystemNodeIds.NodeTypeRoot);
+        Assert.AreEqual("", settings.SystemNodeIds.StorageRoot);
+        Assert.AreEqual("NodeTypes", settings.Basis.NodeTypeRoot);
+        Assert.IsNotNull(await Storage.Get(new NodePath("NodeTypes")));
     }
 
     private GraphData.Core.Services.GraphService CreateService(GraphSchemaRegistry schemaRegistry) =>

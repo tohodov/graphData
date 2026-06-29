@@ -259,9 +259,10 @@ internal sealed class NodeFileSystem : NodeBacking {
     sealed class LiveNodeCollection(NodeFileSystem owner) : IAsyncCollection<NodeBacking> {
         public async Task<NodeBacking> Add(NodeBacking item) {
             if (item is VirtualNodeState) {
-                var node = owner.storage.GetInternal(owner, item.LocalId) ?? new NodeFileSystem(item.LocalId, owner);
+                var existing = owner.storage.GetInternal(owner, item.LocalId);
+                var node = existing ?? new NodeFileSystem(item.LocalId, owner);
                 Directory.CreateDirectory(node.FolderPath);
-                if (item.Attributes.Count > 0)
+                if (existing is null && item.Attributes.Count > 0)
                     node.WriteMetadata(item.Attributes);
                 return node;
             }

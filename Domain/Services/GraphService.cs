@@ -30,10 +30,14 @@ public sealed class GraphService {
         this.schemaRegistry = schemaRegistry;
 
         Root = new StorageRoot(storage.Root);
-        NodeTypes = new NodeType(nameof(NodeTypes));
-        Root.Nodes.Add(NodeTypes);
+        NodeTypes = new NodeType(GetExistingOrVirtual(
+            new NodePath([new NodeLocalId(nameof(NodeTypes))]),
+            nameof(NodeTypes)));
+        Root.Attach(NodeTypes);
         foreach (var type in schemaRegistry.Types)
-            NodeTypes.Nodes.Add(new NodeType(type.Id));
+            NodeTypes.Attach(new NodeType(GetExistingOrVirtual(
+                new NodePath([NodeTypes.LocalId, type.Id]),
+                type.Id)));
     }
 
     public async Task<ServiceResult<Node>> CreateNode(NodeRef node, NodeType? type = null, IDictionary<string, string>? attributes = null) {
@@ -129,6 +133,14 @@ public sealed class GraphService {
         if (node is null)
             return ServiceResult<Subgraph>.NotFound();
 
+        var node2 = new NodeType(typeNode);
+        var definition = schemaRegistry.GetOrBuildDefinition(node2, ResolveRuntimeTypeId);
+        try {
+            definition.EnsureSatisfiedBy(new InstanceNode(node, node2));
+        } catch (InvalidOperationException ex) {
+            return ServiceResult<Subgraph>.BadRequest(ex.Message);
+        }
+
         var alreadyAssigned = await node.Nodes.AnyAsync(neighbor => neighbor.GlobalId == typeNode.GlobalId);
         if (!alreadyAssigned)
             await storage.Connect(nodeId, typeId).ConfigureAwait(false);
@@ -137,9 +149,6 @@ public sealed class GraphService {
         if (reloadedNode is null)
             return ServiceResult<Subgraph>.NotFound();
 
-        var node2 = new NodeType(typeNode);
-        var definition = schemaRegistry.GetOrBuildDefinition(node2, ResolveRuntimeTypeId);
-        definition.EnsureSatisfiedBy(new InstanceNode(reloadedNode, node2));
         return await GetSubgraph([nodeId, typeId], 1).ConfigureAwait(false);
     }
 
@@ -200,7 +209,9 @@ public sealed class GraphService {
             if (disconnect.Status != ServiceResultStatus.Ok)
                 return ToSubgraphResult(disconnect);
         }
-        var relation = await storage.Create(new NodeLocalId(Guid.NewGuid().ToString()), GetTypeNodeInternal<InstanceNode>().GlobalId).ConfigureAwait(false);
+        var relation = await storage.Create(
+            await NextAvailableRootLocalIdAsync(RelationPrefix(definition.NodeType.Type.LocalId)).ConfigureAwait(false))
+            .ConfigureAwait(false);
         await storage.Connect(relation.GlobalId, type.GlobalId).ConfigureAwait(false);
 
         var ensureEndpointType = GetTypeNodeInternal<EndpointNodeType>();
@@ -208,9 +219,18 @@ public sealed class GraphService {
         var endpoints = definition.Endpoints.ToArray();
         for (var index = 0; index < endpoints.Length; index++) {
             var endpoint = endpoints[index];
-            var endpointInstance = await storage.Create(NodeLocalId.Random(), relation.GlobalId).ConfigureAwait(false);
+            var endpointInstance = await storage.Create(
+                new NodeLocalId($"endpoint-{endpoint.Name}"),
+                relation.GlobalId).ConfigureAwait(false);
             await storage.Connect(endpointInstance.GlobalId, ensureEndpointType.GlobalId).ConfigureAwait(false);
-            await storage.Connect(endpointInstance.GlobalId, GetTypeNodeInternal<EndpointNodeType>().GlobalId).ConfigureAwait(false);
+            await storage.Connect(endpointInstance.GlobalId, NodeTypes.GlobalId).ConfigureAwait(false);
+            await storage.Connect(endpointInstance.GlobalId, endpointStates[index].GlobalId).ConfigureAwait(false);
+            if (endpoint.NodeTypeId is { } endpointTypeId) {
+                var endpointSpec = await storage.Create(
+                    new NodeLocalId($"endpoint-spec-{endpoint.Name}"),
+                    endpointInstance.GlobalId).ConfigureAwait(false);
+                await storage.Connect(endpointSpec.GlobalId, endpointTypeId).ConfigureAwait(false);
+            }
         }
 
         return await GetSubgraph([relation.GlobalId], 2).ConfigureAwait(false);
@@ -221,7 +241,7 @@ public sealed class GraphService {
         var requestedIds = globalIds.ToArray();
         var roots = new List<NodeBacking>();
         if (requestedIds.Length == 0)
-            roots.AddRange(await storage.Root.Nodes.ToArrayAsync());
+            roots.AddRange(await GetTopLevelUserRootsAsync(storage.Root).ConfigureAwait(false));
         else
             foreach (var rootRef in requestedIds) {
                 var root = await storage.Get(rootRef);
@@ -230,7 +250,7 @@ public sealed class GraphService {
                 if (root.GlobalId != storage.Root.GlobalId)
                     roots.Add(root);
                 else
-                    roots.AddRange(await storage.Root.Nodes.ToArrayAsync());
+                    roots.AddRange(await GetTopLevelUserRootsAsync(root).ConfigureAwait(false));
             }
 
         var visitedRequests = new HashSet<InternalId>();
@@ -268,35 +288,18 @@ public sealed class GraphService {
     }
 
     public async Task<ServiceResult<Subgraph>> AddSubgraph(Node root) {
-        if (await storage.Get(root.GlobalId) is not null)//TODO продумать и сделать механизм отличия материализованных и добавляемых Node
-            throw new Exception("Уже добавлено!");
-        var nodes = new List<SubgraphNode>();
-        var edges = new List<SubgraphEdge>();
-        var visitedPaths = new HashSet<string>(StringComparer.Ordinal);
-        var queue = new Queue<SubgraphNode>();
+        var backing = await GetOrCreateSubgraphRoot(root).ConfigureAwait(false);
+        root.ReplaceBacking(backing);
 
-        queue.Enqueue(new SubgraphNode(root.Backing, new NodePath(), null));
-
-        var persistedNodes = new List<NodeBacking>();
-        while (queue.Count > 0) {
-            var nodeQ = queue.Dequeue();
-            if (!visitedPaths.Add(nodeQ.Path.ToString()))
-                continue;
-            nodes.Add(nodeQ);
-            foreach (var child in root.Nodes) {
-                if (!(await storage.Get(child.GlobalId) is NodeBacking backing))//TODO продумать и сделать механизм отличия материализованных и добавляемых Node
-                    continue;
-                await foreach (var node in backing.Nodes) {
-                    cancellationTokens.Token.ThrowIfCancellationRequested();
-                    var existing = await storage.Create(node.LocalId, backing.GlobalId);
-                    child.ReplaceBacking(existing);
-                    persistedNodes.Add(existing);
-                }
-            }
+        var persistedNodes = new List<Node>();
+        foreach (var node in TraverseAttachedNodes(root)) {
+            cancellationTokens.Token.ThrowIfCancellationRequested();
+            if (await storage.Get(node.GlobalId).ConfigureAwait(false) is not null)
+                persistedNodes.Add(node);
         }
 
         return ServiceResult<Subgraph>.Ok(new Subgraph {
-            Nodes = persistedNodes.Select(static node => new Node(node)).ToArray()
+            Nodes = persistedNodes
         });
     }
 
@@ -344,6 +347,47 @@ public sealed class GraphService {
             InternalId id when !id.Any() => null,
             _ => parent
         };
+    }
+
+    private NodeBacking GetExistingOrVirtual(NodePath path, NodeLocalId localId) {
+        return storage.Get(path).GetAwaiter().GetResult()
+            ?? new VirtualNodeState(localId);
+    }
+
+    private async Task<IReadOnlyCollection<NodeBacking>> GetTopLevelUserRootsAsync(NodeBacking root) {
+        return (await root.Nodes.ToArrayAsync().ConfigureAwait(false))
+            .Where(node => node.GlobalId != NodeTypes.GlobalId)
+            .Where(node => node.LocalId != NodeTypes.LocalId)
+            .ToArray();
+    }
+
+    private async Task<NodeBacking> GetOrCreateSubgraphRoot(Node root) {
+        if (root.GlobalId == storage.Root.GlobalId)
+            return storage.Root;
+
+        if (await storage.Get(root.GlobalId).ConfigureAwait(false) is { } existingByGlobalId)
+            return existingByGlobalId;
+
+        var rootPath = new NodePath([root.LocalId]);
+        if (await storage.Get(rootPath).ConfigureAwait(false) is { } existingByPath)
+            return existingByPath;
+
+        return await storage.Create(root.LocalId, attributes: root.CopyAttributesForMaterialization()).ConfigureAwait(false);
+    }
+
+    private static IEnumerable<Node> TraverseAttachedNodes(Node root) {
+        var visited = new HashSet<InternalId>();
+        var stack = new Stack<Node>();
+        stack.Push(root);
+        while (stack.Count > 0) {
+            var node = stack.Pop();
+            if (!visited.Add(node.GlobalId))
+                continue;
+
+            yield return node;
+            foreach (var child in node.AttachedNodes.Reverse())
+                stack.Push(child);
+        }
     }
 
     private void AttachInstanceOf(Node instance, NodeType type) {
@@ -397,6 +441,24 @@ public sealed class GraphService {
         }
     }
 
+    private static string RelationPrefix(NodeLocalId typeId) {
+        var value = typeId.ToString();
+        if (value.EndsWith("Connection", StringComparison.Ordinal))
+            value = value[..^"Connection".Length];
+
+        var chars = new List<char>();
+        for (var index = 0; index < value.Length; index++) {
+            var current = value[index];
+            if (char.IsUpper(current) && index > 0)
+                chars.Add('-');
+            chars.Add(char.ToLowerInvariant(current));
+        }
+
+        return chars.Count == 0
+            ? "typed-edge"
+            : new string(chars.ToArray());
+    }
+
     private static ServiceResult<Subgraph> ToSubgraphResult(ServiceResult result) => new(result.Status, Error: result.Error);
 
     private sealed record TypedEdgeShape(InternalId TypeId, IReadOnlyCollection<NodeBacking> EndpointPorts);
@@ -426,6 +488,8 @@ public sealed class GraphService {
         return new NodeType(internalState);
     }
     internal async Task<NodeBacking?> GetTypeNode(NodeBacking node) {
+        if (node.GlobalId == NodeTypes.GlobalId)
+            return null;
         if (await node.Nodes.AnyAsync(x => x.GlobalId == NodeTypes.GlobalId))
             return node;
         var typeNode = await node.Nodes.SelectMany(x => x.Nodes).FirstOrDefaultAsync(x => x.GlobalId == NodeTypes.GlobalId);

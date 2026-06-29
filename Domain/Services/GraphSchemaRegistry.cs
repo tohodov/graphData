@@ -68,7 +68,10 @@ public sealed class GraphSchemaRegistry
             .SelectMany(GetLoadableTypes)
             .Concat(options.Types)
             .Distinct()
-            .Where(static type => typeof(NodeType).IsAssignableFrom(type) && type is { IsAbstract: false, IsPublic: true })
+            .Where(static type =>
+                typeof(NodeType).IsAssignableFrom(type)
+                && type is { IsAbstract: false, ContainsGenericParameters: false }
+                && (type.IsPublic || type.IsNestedPublic))
             .Except([typeof(NodeType)])
             .Select(static x => new RuntimeGraphTypeDefinition(x, NodeType.CreateDefaultLocalId(x)))
             .ToArray();
