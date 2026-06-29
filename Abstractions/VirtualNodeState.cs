@@ -13,7 +13,6 @@ internal sealed class VirtualNodeState : NodeBacking {
     public override IAsyncCollection<EdgeBacking> Edges { get; }
     public override IAsyncCollection<NodeBacking> Nodes { get; }
     public override IDictionary<string, string> Attributes { get; set; }
-    internal override bool IsVirtual => true;
 
     private async Task ConnectTo(NodeBacking target) {
         if (target.GlobalId == GlobalId)

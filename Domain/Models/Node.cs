@@ -47,7 +47,7 @@ public class Node {
             if (Contains(item) || WouldCreateDuplicateVirtualNode(item))
                 throw new InvalidOperationException($"Node '{item.GlobalId}' is already linked to '{owner.GlobalId}'.");
 
-            if (item.Backing.IsVirtual)
+            if (item.Backing is VirtualNodeState)
                 TrackCreatedNode(item);
 
             var backing = owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult();
@@ -80,7 +80,7 @@ public class Node {
         }
 
         internal void StageVirtualNode(Node item) {
-            if (!item.Backing.IsVirtual)
+            if (item.Backing is not VirtualNodeState)
                 throw new ArgumentException("Only virtual nodes can be staged for creation.", nameof(item));
             if (WouldCreateDuplicateVirtualNode(item))
                 throw new InvalidOperationException($"Node '{item.LocalId}' is already linked to '{owner.GlobalId}'.");
@@ -90,18 +90,18 @@ public class Node {
 
         internal IReadOnlyCollection<Node> GetPreparedNodes() {
             var nodes = new List<Node>();
-            if (owner.Backing.IsVirtual)
+            if (owner.Backing is VirtualNodeState)
                 foreach (var state in owner.Backing.Nodes.ToArrayAsync().GetAwaiter().GetResult())
                     AddPreparedNode(nodes, ResolveNode(state));
 
-            foreach (var node in createdLinkedNodes.Where(static node => node.Backing.IsVirtual))
+            foreach (var node in createdLinkedNodes.Where(static node => node.Backing is VirtualNodeState))
                 AddPreparedNode(nodes, node);
 
             return nodes;
         }
 
         internal void MaterializePreparedLinks(NodeBacking previousBacking) {
-            if (materializingPreparedLinks || owner.Backing.IsVirtual)
+            if (materializingPreparedLinks || owner.Backing is VirtualNodeState)
                 return;
 
             materializingPreparedLinks = true;
@@ -126,11 +126,11 @@ public class Node {
 
         private IReadOnlyCollection<Node> GetPreparedNodes(NodeBacking previousBacking) {
             var nodes = new List<Node>();
-            if (previousBacking.IsVirtual)
+            if (previousBacking is VirtualNodeState)
                 foreach (var state in previousBacking.Nodes.ToArrayAsync().GetAwaiter().GetResult())
                     AddPreparedNode(nodes, ResolveNode(state));
 
-            foreach (var node in createdLinkedNodes.Where(static node => node.Backing.IsVirtual))
+            foreach (var node in createdLinkedNodes.Where(static node => node.Backing is VirtualNodeState))
                 AddPreparedNode(nodes, node);
 
             return nodes;
@@ -147,7 +147,7 @@ public class Node {
         }
 
         private bool WouldCreateDuplicateVirtualNode(Node item) =>
-            item.Backing.IsVirtual && Snapshot().Any(node => node.LocalId == item.LocalId);
+            item.Backing is VirtualNodeState && Snapshot().Any(node => node.LocalId == item.LocalId);
 
         private static void AddPreparedNode(List<Node> nodes, Node node) {
             if (!nodes.Any(existing => SameNode(existing, node)))
