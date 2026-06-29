@@ -330,11 +330,11 @@ export class WebGpuGraphCanvas {
       throw new Error("WebGPU is unavailable: this browser context did not expose navigator.gpu.");
     }
 
-    if (!globalThis.GPUBufferUsage) {
+    if (!("GPUBufferUsage" in globalThis)) {
       throw new Error("WebGPU buffer usage constants are unavailable");
     }
 
-    if (!globalThis.GPUShaderStage) {
+    if (!("GPUShaderStage" in globalThis)) {
       throw new Error("WebGPU shader stage constants are unavailable");
     }
 

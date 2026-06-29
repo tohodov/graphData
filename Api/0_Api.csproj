@@ -4,20 +4,6 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <TypeScriptToolPath>$(MSBuildProjectDirectory)\node_modules\.bin</TypeScriptToolPath>
-    <VisualStudioNodeToolPath>MSBuild\Microsoft\VisualStudio\NodeJs</VisualStudioNodeToolPath>
-    <NodeExe Condition="'$(NodeExe)' == '' and Exists('$(VSINSTALLDIR)$(VisualStudioNodeToolPath)\node.exe')">$(VSINSTALLDIR)$(VisualStudioNodeToolPath)\node.exe</NodeExe>
-    <NodeExe Condition="'$(NodeExe)' == '' and Exists('$(VsInstallRoot)\$(VisualStudioNodeToolPath)\node.exe')">$(VsInstallRoot)\$(VisualStudioNodeToolPath)\node.exe</NodeExe>
-    <NodeExe Condition="'$(NodeExe)' == '' and Exists('$(ProgramFiles)\Microsoft Visual Studio\2022\Community\$(VisualStudioNodeToolPath)\node.exe')">$(ProgramFiles)\Microsoft Visual Studio\2022\Community\$(VisualStudioNodeToolPath)\node.exe</NodeExe>
-    <NodeExe Condition="'$(NodeExe)' == '' and Exists('$(ProgramFiles)\Microsoft Visual Studio\2022\Professional\$(VisualStudioNodeToolPath)\node.exe')">$(ProgramFiles)\Microsoft Visual Studio\2022\Professional\$(VisualStudioNodeToolPath)\node.exe</NodeExe>
-    <NodeExe Condition="'$(NodeExe)' == '' and Exists('$(ProgramFiles)\Microsoft Visual Studio\2022\Enterprise\$(VisualStudioNodeToolPath)\node.exe')">$(ProgramFiles)\Microsoft Visual Studio\2022\Enterprise\$(VisualStudioNodeToolPath)\node.exe</NodeExe>
-    <NodeExe Condition="'$(NodeExe)' == ''">node</NodeExe>
-    <NpmExe Condition="'$(NpmExe)' == '' and Exists('$(VSINSTALLDIR)$(VisualStudioNodeToolPath)\npm.cmd')">$(VSINSTALLDIR)$(VisualStudioNodeToolPath)\npm.cmd</NpmExe>
-    <NpmExe Condition="'$(NpmExe)' == '' and Exists('$(VsInstallRoot)\$(VisualStudioNodeToolPath)\npm.cmd')">$(VsInstallRoot)\$(VisualStudioNodeToolPath)\npm.cmd</NpmExe>
-    <NpmExe Condition="'$(NpmExe)' == '' and Exists('$(ProgramFiles)\Microsoft Visual Studio\2022\Community\$(VisualStudioNodeToolPath)\npm.cmd')">$(ProgramFiles)\Microsoft Visual Studio\2022\Community\$(VisualStudioNodeToolPath)\npm.cmd</NpmExe>
-    <NpmExe Condition="'$(NpmExe)' == '' and Exists('$(ProgramFiles)\Microsoft Visual Studio\2022\Professional\$(VisualStudioNodeToolPath)\npm.cmd')">$(ProgramFiles)\Microsoft Visual Studio\2022\Professional\$(VisualStudioNodeToolPath)\npm.cmd</NpmExe>
-    <NpmExe Condition="'$(NpmExe)' == '' and Exists('$(ProgramFiles)\Microsoft Visual Studio\2022\Enterprise\$(VisualStudioNodeToolPath)\npm.cmd')">$(ProgramFiles)\Microsoft Visual Studio\2022\Enterprise\$(VisualStudioNodeToolPath)\npm.cmd</NpmExe>
-    <NpmExe Condition="'$(NpmExe)' == ''">npm</NpmExe>
     <AssemblyName>Api</AssemblyName>
     <AssemblyTitle>Api</AssemblyTitle>
     <RootNamespace>Api</RootNamespace>
@@ -34,7 +20,7 @@
   </ItemGroup>
 
   <Target Name="RestoreTypeScriptTooling" BeforeTargets="BuildTypeScript" Inputs="$(MSBuildProjectDirectory)\package.json;$(MSBuildProjectDirectory)\package-lock.json" Outputs="$(MSBuildProjectDirectory)\node_modules\.bin\tsc.cmd" Condition="'$(DesignTimeBuild)' != 'true'">
-    <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="&quot;$(NpmExe)&quot; ci --no-audit --no-fund" />
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="npm ci --no-audit --no-fund" />
   </Target>
 
   <Target Name="BuildTypeScript" BeforeTargets="CoreCompile" Condition="'$(DesignTimeBuild)' != 'true'">
@@ -42,7 +28,7 @@
       <TypeScriptCompilerOutput Remove="@(TypeScriptCompilerOutput)" />
       <EsbuildOutput Remove="@(EsbuildOutput)" />
     </ItemGroup>
-    <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="&quot;$(NodeExe)&quot; &quot;node_modules\typescript\lib\tsc.js&quot; -p tsconfig.json" ConsoleToMsBuild="true" IgnoreExitCode="true" StandardOutputImportance="High" StandardErrorImportance="High">
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="npm run build" ConsoleToMsBuild="true" IgnoreExitCode="true" StandardOutputImportance="High" StandardErrorImportance="High">
       <Output TaskParameter="ConsoleOutput" ItemName="TypeScriptCompilerOutput" />
       <Output TaskParameter="ExitCode" PropertyName="TypeScriptExitCode" />
     </Exec>
@@ -53,7 +39,7 @@
     <MakeDir Directories="@(WgslSource->'$(MSBuildProjectDirectory)\obj\ts\%(RecursiveDir)')" />
     <Copy SourceFiles="@(WgslSource)" DestinationFiles="@(WgslSource->'$(MSBuildProjectDirectory)\obj\ts\%(RecursiveDir)%(Filename)%(Extension)')" />
     <MakeDir Directories="$(MSBuildProjectDirectory)\wwwroot\js" />
-    <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="&quot;$(NodeExe)&quot; &quot;node_modules\esbuild\bin\esbuild&quot; obj/ts/main.js --bundle --sourcemap --loader:.wgsl=text --outfile=wwwroot/js/app.js" ConsoleToMsBuild="true" IgnoreExitCode="true" StandardOutputImportance="High" StandardErrorImportance="High">
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="npm run bundle" ConsoleToMsBuild="true" IgnoreExitCode="true" StandardOutputImportance="High" StandardErrorImportance="High">
       <Output TaskParameter="ConsoleOutput" ItemName="EsbuildOutput" />
       <Output TaskParameter="ExitCode" PropertyName="EsbuildExitCode" />
     </Exec>

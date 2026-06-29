@@ -10,8 +10,12 @@
     "allowJs": false,
     "checkJs": false,
     "strict": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "moduleDetection": "force",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": ["@webgpu/types"],
+    "types": [],
     "skipLibCheck": true
   },
   "include": ["wwwroot/main.ts", "wwwroot/src/**/*.ts"],

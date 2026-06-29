@@ -1,7 +1,11 @@
 {
   "private": true,
+  "scripts": {
+    "build": "tsc --build",
+    "bundle": "esbuild obj/ts/main.js --bundle --sourcemap --loader:.wgsl=text --outfile=wwwroot/js/app.js",
+    "clean": "tsc --build --clean"
+  },
   "devDependencies": {
-    "@webgpu/types": "0.1.70",
     "esbuild": "0.28.1",
     "typescript": "6.0.3"
   }
