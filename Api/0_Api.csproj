@@ -7,22 +7,18 @@
     <AssemblyName>Api</AssemblyName>
     <AssemblyTitle>Api</AssemblyTitle>
     <RootNamespace>Api</RootNamespace>
-    <EditorTypeScriptDtoOutput>$(MSBuildThisFileDirectory)..\Editor\src\generated\api-dtos.ts</EditorTypeScriptDtoOutput>
-    <EditorTypeScriptDtoGeneratorProject>$(MSBuildThisFileDirectory)..\Tools\ApiTypeScriptGenerator\ApiTypeScriptGenerator.csproj</EditorTypeScriptDtoGeneratorProject>
+    <OpenApiDocumentsDirectory>obj</OpenApiDocumentsDirectory>
+    <OpenApiGenerateDocumentsOptions>--file-name openapi</OpenApiGenerateDocumentsOptions>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.21" />
-    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.9" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Domain\1_ Domain.csproj" />
     <ProjectReference Include="..\SymLinkStorage\1_SymLinkStorage.csproj" />
   </ItemGroup>
-
-  <Target Name="GenerateEditorTypeScriptDtos" AfterTargets="CoreCompile" Inputs="$(TargetPath);@(Compile);$(EditorTypeScriptDtoGeneratorProject);$(MSBuildThisFileDirectory)..\Tools\ApiTypeScriptGenerator\Program.cs" Outputs="$(EditorTypeScriptDtoOutput)" Condition="'$(DesignTimeBuild)' != 'true'">
-    <Exec Command="dotnet run --project &quot;$(EditorTypeScriptDtoGeneratorProject)&quot; --configuration $(Configuration) --no-launch-profile -- &quot;$(TargetPath)&quot; &quot;$(EditorTypeScriptDtoOutput)&quot;" />
-  </Target>
 
 </Project>

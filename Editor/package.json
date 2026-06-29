@@ -5,12 +5,15 @@
   "description": "GraphData browser editor",
   "main": "main.js",
   "scripts": {
-    "build": "tsc --build && npm run bundle",
+    "build": "npm run build:api && npm run generate:api-types && tsc --build && npm run bundle",
+    "build:api": "dotnet build ../Api/0_Api.csproj",
     "bundle": "esbuild main.ts --bundle --sourcemap --loader:.wgsl=text --outfile=../Api/wwwroot/js/app.js",
-    "clean": "tsc --build --clean"
+    "clean": "tsc --build --clean",
+    "generate:api-types": "openapi-typescript ../Api/obj/openapi.json -o src/generated/openapi-types.ts"
   },
   "devDependencies": {
     "esbuild": "0.28.1",
+    "openapi-typescript": "7.13.0",
     "typescript": "6.0.3"
   }
 }

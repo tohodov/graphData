@@ -1,3 +1,4 @@
+using System.Reflection;
 using Domain.Services;
 using GraphData.Api.Runtime;
 using GraphData.Core.Extensions;
@@ -9,22 +10,24 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services
     .AddControllers()
     .AddJsonOptions(static options => GraphJsonSerializerOptions.Configure(options.JsonSerializerOptions));
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddOpenApi(options => options.AddDocumentTransformer<SearchSelectorOpenApiDocumentTransformer>());
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ICancellationTokenAccessor, HttpContextCancellationTokenAccessor>();
 builder.Services.AddDomain();
 builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
 
 var app = builder.Build();
+var isOpenApiDocumentGeneration = Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider";
 
-using (var scope = app.Services.CreateScope())
+if (!isOpenApiDocumentGeneration)
+{
+    using var scope = app.Services.CreateScope();
     await scope.ServiceProvider.GetRequiredService<GraphStorageInitializer>().InitializeAsync();
+}
 
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.MapOpenApi();
 }
 
 app.UseHttpsRedirection();

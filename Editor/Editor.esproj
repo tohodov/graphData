@@ -1,7 +1,1 @@
-<Project Sdk="Microsoft.VisualStudio.JavaScript.Sdk/1.0.5277448">
-
-  <Target Name="BuildApiTypeScriptDtos" BeforeTargets="CoreCompile" Condition="'$(DesignTimeBuild)' != 'true'">
-    <Exec WorkingDirectory="$(MSBuildProjectDirectory)\.." Command="dotnet build &quot;Api\0_Api.csproj&quot; --configuration $(Configuration)" />
-  </Target>
-
-</Project>
+<Project Sdk="Microsoft.VisualStudio.JavaScript.Sdk/1.0.5277448" />

@@ -25,9 +25,6 @@
     <Project Path="Tests/RelevantTests/src/RelevantTests.MSTestAdapter/RelevantTests.MSTestAdapter.csproj" />
     <Project Path="Tests/RelevantTests/src/RelevantTests.UsageAnalyzer/RelevantTests.UsageAnalyzer.csproj" />
   </Folder>
-  <Folder Name="/Tools/">
-    <Project Path="Tools/ApiTypeScriptGenerator/ApiTypeScriptGenerator.csproj" />
-  </Folder>
   <Project Path="Abstractions/Abstractions.csproj" />
   <Project Path="Api/0_Api.csproj" />
   <Project Path="Domain/1_ Domain.csproj" />
