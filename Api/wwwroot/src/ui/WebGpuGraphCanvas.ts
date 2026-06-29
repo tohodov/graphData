@@ -1323,13 +1323,13 @@ function clamp(value: number, min: number, max: number) {
 
 function normalizeRendererMode(mode: string | null) {
   const text = String(mode ?? "").toLowerCase().replace(/[_\s]/g, "-");
-  if (text === "svg") {
-    return "svg";
+  if (text === "webgpu") {
+    return "webgpu";
   }
 
   if (text === "html" || text === "htmlcanvas" || text === "html-in-canvas" || text === "html-canvas") {
     return "html-canvas";
   }
 
-  return "webgpu";
+  return "svg";
 }
