@@ -1,6 +1,6 @@
 import edgeShader from "./shaders/edge.wgsl";
 import nodeShader from "./shaders/node.wgsl";
-import type { GraphRenderer, GraphRendererHost, GraphRenderMemory, GraphView } from "./GraphRenderer.js";
+import type { GraphRenderer, GraphRendererHost, GraphRenderMemory, GraphVertexData, GraphView } from "./GraphRenderer.js";
 
 type WebGpuBufferUsageConstants = {
   readonly COPY_DST: GPUBufferUsageFlags;
@@ -255,7 +255,7 @@ export class WebGpuRenderer implements GraphRenderer {
     }
   }
 
-  createBuffer(data: Float32Array, usage: GPUBufferUsageFlags) {
+  createBuffer(data: GraphVertexData, usage: GPUBufferUsageFlags) {
     if (!this.device) return null;
     const buffer = this.device.createBuffer({
       size: Math.max(4, align4(data.byteLength)),
@@ -274,7 +274,7 @@ export class WebGpuRenderer implements GraphRenderer {
 
     this.resize();
     const start = this.window.performance.now();
-    const uniforms = new Float32Array([
+    const uniforms: GraphVertexData = new Float32Array([
       this.canvas.width,
       this.canvas.height,
       view.scale,

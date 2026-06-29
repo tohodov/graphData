@@ -2,7 +2,6 @@ import { nodeRadius } from "../domain/graphAttributes.js";
 import { HtmlCanvasRenderer } from "./HtmlCanvasRenderer.js";
 import { SvgRenderer } from "./SvgRenderer.js";
 import { WebGpuRenderer } from "./WebGpuRenderer.js";
-import { GraphNode } from "../domain/GraphNode.js";
 import type { GraphRenderer, GraphRendererHost, GraphView, GraphRenderMemory } from "./GraphRenderer.js";
 
 const tapMoveThreshold = 8;
@@ -151,7 +150,7 @@ export class WebGpuGraphCanvas {
   }
 
   createRenderer(mode: string) {
-    const host = {
+    const host: GraphRendererHost = {
       document: this.document,
       window: this.window,
       surface: this.canvas

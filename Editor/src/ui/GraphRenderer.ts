@@ -6,6 +6,8 @@ export type GraphView = {
   scale: number;
 };
 
+export type GraphVertexData = Float32Array<ArrayBuffer>;
+
 export type GraphRenderMemory = {
   graph: ProjectedGraph;
   nodes: import("../domain/GraphModel.js").ProjectedGraphNode[];
@@ -13,8 +15,8 @@ export type GraphRenderMemory = {
   nodeIndexByName: Map<string, number>;
   nodeCount: number;
   edgeCount: number;
-  nodeVertexData: Float32Array;
-  edgeVertexData: Float32Array;
+  nodeVertexData: GraphVertexData;
+  edgeVertexData: GraphVertexData;
   byteLength: number;
 };
 

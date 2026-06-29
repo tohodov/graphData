@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.VisualStudio.JavaScript.Sdk/1.0.5277448">
   <PropertyGroup>
     <TypeScriptToolsVersion>6.0.3</TypeScriptToolsVersion>
+    <!-- BuildDependency orders Api before Editor, but Editor must not copy Api runtime output. -->
+    <_GetChildProjectCopyToOutputDirectoryItems>false</_GetChildProjectCopyToOutputDirectoryItems>
   </PropertyGroup>
 </Project>

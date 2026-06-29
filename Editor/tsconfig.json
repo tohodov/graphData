@@ -21,7 +21,6 @@
       "DOM.Iterable"
     ],
     "types": [
-      "node",
       "@webgpu/types"
     ],
     "skipLibCheck": true

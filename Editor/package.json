@@ -5,8 +5,7 @@
   "description": "GraphData browser editor",
   "main": "main.js",
   "scripts": {
-    "build": "npm run build:api && npm run generate:api-types && tsc --build && npm run bundle",
-    "build:api": "dotnet build ../Api/0_Api.csproj",
+    "build": "npm run generate:api-types && tsc --build && npm run bundle",
     "bundle": "esbuild main.ts --bundle --sourcemap --loader:.wgsl=text --outfile=../Api/wwwroot/js/app.js",
     "clean": "tsc --build --clean",
     "generate:api-types": "openapi-typescript ../Api/obj/openapi.json -o src/generated/openapi-types.ts"

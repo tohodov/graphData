@@ -64,7 +64,7 @@ class GraphNodePositionMap {
   }
 
   *entries(): IterableIterator<[string, GraphPoint]> {
-    for (const [name, node] of this.nodes.entries()) {
+    for (const name of this.nodes.keys()) {
       const position = this.attach(name);
       if (position) {
         yield [name, position];

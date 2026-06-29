@@ -29,6 +29,7 @@
   <Project Path="Api/0_Api.csproj" />
   <Project Path="Domain/1_ Domain.csproj" />
   <Project Path="Editor/Editor.esproj">
+    <BuildDependency Project="Api/0_Api.csproj" />
     <Platform Project="AnyCPU" />
     <Build />
     <Deploy />
