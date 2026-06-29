@@ -13,9 +13,17 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
+    "noUnusedLocals": true,
     "moduleDetection": "force",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "types": [],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node",
+      "@webgpu/types"
+    ],
     "skipLibCheck": true
   },
   "include": ["main.ts", "src/**/*.ts"],

@@ -12,6 +12,7 @@
     "generate:api-types": "openapi-typescript ../Api/obj/openapi.json -o src/generated/openapi-types.ts"
   },
   "devDependencies": {
+    "@webgpu/types": "^0.1.71",
     "esbuild": "0.28.1",
     "openapi-typescript": "7.13.0",
     "typescript": "6.0.3"
