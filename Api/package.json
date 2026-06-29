@@ -1,7 +1,7 @@
 {
   "private": true,
   "devDependencies": {
-    "@webgpu/types": "^0.1.70",
+    "@webgpu/types": "0.1.70",
     "esbuild": "0.28.1",
     "typescript": "6.0.3"
   }

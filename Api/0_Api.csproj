@@ -33,8 +33,8 @@
     <ProjectReference Include="..\SymLinkStorage\1_SymLinkStorage.csproj" />
   </ItemGroup>
 
-  <Target Name="RestoreTypeScriptTooling" BeforeTargets="BuildTypeScript" Inputs="$(MSBuildProjectDirectory)\package.json" Outputs="$(MSBuildProjectDirectory)\node_modules\.bin\tsc.cmd" Condition="'$(DesignTimeBuild)' != 'true'">
-    <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="&quot;$(NpmExe)&quot; install --no-audit --no-fund --no-package-lock" />
+  <Target Name="RestoreTypeScriptTooling" BeforeTargets="BuildTypeScript" Inputs="$(MSBuildProjectDirectory)\package.json;$(MSBuildProjectDirectory)\package-lock.json" Outputs="$(MSBuildProjectDirectory)\node_modules\.bin\tsc.cmd" Condition="'$(DesignTimeBuild)' != 'true'">
+    <Exec WorkingDirectory="$(MSBuildProjectDirectory)" Command="&quot;$(NpmExe)&quot; ci --no-audit --no-fund" />
   </Target>
 
   <Target Name="BuildTypeScript" BeforeTargets="CoreCompile" Condition="'$(DesignTimeBuild)' != 'true'">
