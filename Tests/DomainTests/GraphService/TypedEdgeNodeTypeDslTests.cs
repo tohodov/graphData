@@ -49,9 +49,9 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
 
         Assert.IsTrue(await relation.Nodes.AnyAsync(node => node.GlobalId == edgeTypeId));
         var edgeType = await Storage.Get(edgeTypeId);
-        Assert.IsTrue(await edgeType!.Nodes.AnyAsync(node => node.GlobalId == Service.TypesRoot.GlobalId));
-        await AssertConnected(weaponEndpointId, Service.TypesRoot.GlobalId);
-        await AssertConnected(manufacturerEndpointId, Service.TypesRoot.GlobalId);
+        Assert.IsTrue(await edgeType!.Nodes.AnyAsync(node => node.GlobalId == Service.NodeTypes.GlobalId));
+        await AssertConnected(weaponEndpointId, Service.NodeTypes.GlobalId);
+        await AssertConnected(manufacturerEndpointId, Service.NodeTypes.GlobalId);
         await AssertConnected(weaponEndpointId, weapon.Value.GlobalId);
         await AssertConnected(weaponEndpointId, weaponEndpointSpec.GlobalId);
         await AssertConnected(manufacturerEndpointId, manufacturer.Value.GlobalId);
@@ -160,8 +160,8 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
 
     [TestMethod]
     public async Task NodeTypeDefinition_EnforcesRequiredTypedSlot() {
-        var weaponTypeState = await Storage.Create("weapon-type", Service.TypesRoot.GlobalId);
-        var manufacturerTypeState = await Storage.Create("manufacturer-type", Service.TypesRoot.GlobalId);
+        var weaponTypeState = await Storage.Create("weapon-type", Service.NodeTypes.GlobalId);
+        var manufacturerTypeState = await Storage.Create("manufacturer-type", Service.NodeTypes.GlobalId);
         var weaponType = await Service.GetTypeNode(weaponTypeState.GlobalId)!;
         var manufacturerType = await Service.GetTypeNode(manufacturerTypeState.GlobalId)!;
         var builder = new NodeTypeBuilder(weaponType!, type => new InternalId());
@@ -184,14 +184,14 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
     [TestMethod]
     public async Task GraphService_AssignNodeTypeAsync_UsesGraphTypeTopologyInsteadOfInternalIdShape() {
         var arbitraryType = await Service.CreateNode("weapon-type");
-        var pathShapedNonType = await Storage.Create(new("Fake"), Service.TypesRoot.GlobalId);
+        var pathShapedNonType = await Storage.Create(new("Fake"), Service.NodeTypes.GlobalId);
         var ak47 = await Storage.Create(new("ak-47"));
         var m16 = await Storage.Create(new("m16"));
         var fnFal = await Storage.Create(new("fn-fal"));
 
         var arbitraryResult = await Service.AssignNodeTypeAsync(ak47.GlobalId, arbitraryType.Value!.GlobalId);
         var pathShapedResult = await Service.AssignNodeTypeAsync(m16.GlobalId, pathShapedNonType.GlobalId);
-        var rootResult = await Service.AssignNodeTypeAsync(fnFal.GlobalId, Service.TypesRoot.GlobalId);
+        var rootResult = await Service.AssignNodeTypeAsync(fnFal.GlobalId, Service.NodeTypes.GlobalId);
 
         Assert.AreEqual(ServiceResultStatus.Ok, arbitraryResult.Status, arbitraryResult.Error);
         Assert.AreEqual(ServiceResultStatus.BadRequest, pathShapedResult.Status);
@@ -279,7 +279,7 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
         catalog.Nodes.Add(weapon);
         var weaponType = new Node("Weapon");
         weapon.Nodes.Add(weaponType);
-        Service.TypesRoot.Nodes.Add(weaponType);
+        Service.NodeTypes.Nodes.Add(weaponType);
 
         var result = await Service.AddSubgraph(catalog);
 
@@ -291,7 +291,7 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
         var persistedWeapon = await Storage.Get(weapon.GlobalId);
         Assert.IsNotNull(persistedWeapon);
         Assert.AreEqual("AK-47", persistedWeapon.Attributes["displayName"]);
-        Assert.IsNotNull(await Storage.Get(Service.TypesRoot.GlobalId));
+        Assert.IsNotNull(await Storage.Get(Service.NodeTypes.GlobalId));
 
         Assert.IsTrue(await persistedWeapon.Nodes.AnyAsync(node => node.GlobalId == weaponType.GlobalId));
     }

@@ -11,15 +11,11 @@ public sealed class UiController(GraphService graph) : ControllerBase {
     public ActionResult<UiSettingsResponse> GetSettings() =>
         new UiSettingsResponse {
             SystemNodeIds = new UiSystemNodeIdsResponse {
-                GraphDataRoot = graph.GraphDataRoot.GlobalId.ToString(),
-                TypeRoot = graph.TypeRoot.GlobalId.ToString(),
-                NodeTypeRoot = graph.TypesRoot.GlobalId.ToString(),
-                StorageRoot = graph.StorageRoot.GlobalId.ToString(),
-                InitializerRoot = graph.InitializersRoot.GlobalId.ToString(),
-                RuntimeTypesInitializer = graph.RuntimeTypesInitializer.GlobalId.ToString()
+                NodeTypeRoot = graph.NodeTypes.GlobalId.ToString(),
+                StorageRoot = graph.Root.GlobalId.ToString(),
             },
             Basis = new UiBasisResponse {
-                NodeTypeRoot = graph.TypesRoot.GlobalId.ToString()
+                NodeTypeRoot = graph.NodeTypes.GlobalId.ToString()
             }
         };
 }

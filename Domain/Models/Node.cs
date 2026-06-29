@@ -1,10 +1,7 @@
 using Abstractions;
 
 public class Node {
-    readonly List<Node> nodes = [];
-
-    internal NodeBacking Backing;
-    internal IReadOnlyCollection<Node> AttachedNodes => nodes;
+    internal NodeBacking Backing { get; private set; }
 
     public virtual NodeLocalId LocalId => Backing.LocalId;
     public virtual InternalId GlobalId => Backing.GlobalId;
@@ -31,19 +28,21 @@ public class Node {
     }
 
     private sealed class NodeCollection(Node owner) : ICollection<Node> {
+        readonly List<Node> nodes = [];
+
         public int Count => Snapshot().Count;
         public bool IsReadOnly => true;
 
         public void Add(Node item) {
-            if (!owner.nodes.Any(node => SameNode(node, item)))
-                owner.nodes.Add(item);
+            if (!nodes.Any(node => SameNode(node, item)))
+                nodes.Add(item);
             item.ReplaceBacking(owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult());
         }
 
         public void Clear() {
             foreach (var node in Snapshot())
                 Remove(node);
-            owner.nodes.Clear();
+            nodes.Clear();
         }
 
         public bool Contains(Node item) => Snapshot().Any(node => SameNode(node, item));
@@ -61,14 +60,14 @@ public class Node {
                 owner.Backing.Nodes.Remove(item.Backing).GetAwaiter().GetResult();
             else
                 item.Backing.Delete().GetAwaiter().GetResult();
-            owner.nodes.RemoveAll(node => SameNode(node, item));
+            nodes.RemoveAll(node => SameNode(node, item));
             return true;
         }
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 
         private List<Node> Snapshot() {
-            var nodes = new List<Node>(owner.nodes);
+            var nodes = new List<Node>(this.nodes);
             foreach (var state in owner.Backing.Nodes.ToArrayAsync().GetAwaiter().GetResult()) {
                 if (!nodes.Any(node => ReferenceEquals(node.Backing, state) || node.GlobalId == state.GlobalId))
                     nodes.Add(new Node(state));
@@ -82,12 +81,12 @@ public class Node {
             || left.GlobalId == right.GlobalId;
     }
 
-    void ReplaceBacking(NodeBacking backing) {
+    internal void ReplaceBacking(NodeBacking backing) {
         if (ReferenceEquals(Backing, backing))
             return;
 
         Backing = backing;
-        foreach (var node in AttachedNodes)
+        foreach (var node in Nodes)
             Nodes.Add(node);
     }
 

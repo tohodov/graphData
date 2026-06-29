@@ -598,12 +598,8 @@ export interface components {
             basis: components["schemas"]["UiBasisResponse"];
         };
         UiSystemNodeIdsResponse: {
-            graphDataRoot: string;
-            typeRoot: string;
             nodeTypeRoot: string;
             storageRoot: string;
-            initializerRoot: string;
-            runtimeTypesInitializer: string;
         };
         UpdateNodeRequest: {
             attributes: {

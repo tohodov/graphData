@@ -34,8 +34,3 @@ public sealed class InstanceNode : NodeType {
         _ = new InstanceOf(new InMemoryEdgeBacking(Backing, Type.Backing), this, Type);//TODO переписать на явное поведение
     }
 }
-
-public class StorageRoot : NodeType {
-    internal StorageRoot() : base(new VirtualNodeState(new NodeLocalId())) { }
-    internal StorageRoot(NodeBacking state) : base(state) { }
-}

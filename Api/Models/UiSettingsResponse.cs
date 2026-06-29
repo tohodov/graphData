@@ -9,17 +9,8 @@ public sealed record UiSettingsResponse
 
 public sealed record UiSystemNodeIdsResponse
 {
-    public required string GraphDataRoot { get; init; }
-
-    public required string TypeRoot { get; init; }
-
     public required string NodeTypeRoot { get; init; }
-
     public required string StorageRoot { get; init; }
-
-    public required string InitializerRoot { get; init; }
-
-    public required string RuntimeTypesInitializer { get; init; }
 }
 
 public sealed record UiBasisResponse

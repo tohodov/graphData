@@ -68,12 +68,10 @@ public sealed class GraphSchemaRegistry
             .SelectMany(GetLoadableTypes)
             .Concat(options.Types)
             .Distinct()
-            .Where(static type => type is { IsAbstract: false, ContainsGenericParameters: false })
-            .Select(CreateRuntimeTypeDefinition)
-            .Where(static definition => definition is not null)
-            .Cast<RuntimeGraphTypeDefinition>()
+            .Where(static type => typeof(NodeType).IsAssignableFrom(type) && type is { IsAbstract: false, IsPublic: true })
+            .Except([typeof(NodeType)])
+            .Select(static x => new RuntimeGraphTypeDefinition(x, NodeType.CreateDefaultLocalId(x)))
             .ToArray();
-
         var duplicate = candidateTypes
             .GroupBy(static type => type.Id)
             .FirstOrDefault(static group => group.Count() > 1);
@@ -111,26 +109,6 @@ public sealed class GraphSchemaRegistry
             var dynamicBuilder = new NodeTypeBuilder(typeNode, resolveTypeId);
             return dynamicBuilder.Build();
         });
-    }
-
-    private static RuntimeGraphTypeDefinition? CreateRuntimeTypeDefinition(Type type)
-    {
-        if (typeof(NodeType).IsAssignableFrom(type)) {
-            var id = NodeType.CreateDefaultLocalId(type);
-            return new RuntimeGraphTypeDefinition(type, id);
-        }
-        return null;
-    }
-
-    private static InternalId GetStaticTypeId(Type type)
-    {
-        var property = type.GetProperty(
-            "StaticTypeId",
-            BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy);
-        if (property?.GetValue(null) is InternalId id)
-            return id;
-
-        throw new InvalidOperationException($"Runtime graph type '{type.FullName}' must expose a public static StaticTypeId property.");
     }
 
     private static IReadOnlyCollection<Type> GetLoadableTypes(Assembly assembly)

@@ -5,7 +5,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 public sealed class DslTests : GraphServiceTests {
     [TestMethod]
     public async Task LINQ_Traverse_TEMP() {
-        var weaponTypeBaseNode = ((Node)await Service.CreateNode("weapon", Service.TypesRoot.GlobalId))!;
+        var weaponTypeBaseNode = ((Node)await Service.CreateNode("weapon", Service.NodeTypes.GlobalId))!;
         var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
         var node = ((Node)await Service.CreateNode("ak47", Service.Root.GlobalId, weaponType))!;
         await Service.CreateNode("m16", Service.Root.GlobalId, weaponType);
@@ -32,7 +32,7 @@ public sealed class DslTests : GraphServiceTests {
     [TestMethod]
     public async Task LINQ_Traverse() {
         var weaponType = new NodeType("weapon");
-        Service.TypesRoot.Nodes.Add(weaponType);
+        Service.NodeTypes.Nodes.Add(weaponType);
         var ak47 = new InstanceNode("ak47", weaponType);
         Service.Root.Nodes.Add(ak47);
         Service.Root.Nodes.Add(new InstanceNode("m16", weaponType));
@@ -125,7 +125,7 @@ public sealed class DslTests : GraphServiceTests {
 
     [TestMethod]
     public async Task NodeIncidences_ShouldReflectDslTypeAttachmentsAfterFirstRead() {
-        var weaponTypeBaseNode = (await Service.CreateNode("dsl-incidence-weapon", Service.TypesRoot.GlobalId)).Value!;
+        var weaponTypeBaseNode = (await Service.CreateNode("dsl-incidence-weapon", Service.NodeTypes.GlobalId)).Value!;
         var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
 
         CollectionAssert.AreEquivalent(

@@ -14,13 +14,11 @@ public class GraphStorageInitializer {
     }
 
     public async Task InitializeAsync() {
-        var runtimeTypes = service.RuntimeTypesInitializer;
-
-        runtimeTypes.Nodes.Add(new Node(new NodeLocalId(RuntimeTypesVersion)));
-        runtimeTypes.Nodes.Add(new Node(new NodeLocalId(schemaRegistry.Fingerprint)));
-
-        var result = await service.AddSubgraph(service.Root).ConfigureAwait(false);
-        if (result.Status != ServiceResultStatus.Ok)
-            throw new Exception(result.Error);
+        if (!service.Root.Attributes.ContainsKey(schemaRegistry.Fingerprint)) {
+            var result = await service.AddSubgraph(service.Root);//TODO добавлять только новые типы
+            if (result.Status != ServiceResultStatus.Ok)
+                throw new Exception(result.Error);
+            service.Root.Attributes[schemaRegistry.Fingerprint] = RuntimeTypesVersion;
+        }
     }
 }
