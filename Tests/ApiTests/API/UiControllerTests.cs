@@ -8,15 +8,14 @@ namespace GraphData.Tests.Api;
 [RelevantTestClass]
 public sealed class UiControllerTests : StorageTests {
     [TestMethod]
-    public async Task GetSettings_ReturnsMaterializedSystemNodeIdsForRequestScopedGraphService() {
+    public async Task GetSettings_ReturnsMaterializedSystemNodeIdsForRequestScopedGraph() {
         var schemaRegistry = GraphSchemaRegistry.Create();
-        await new GraphStorageInitializer(CreateService(schemaRegistry)).InitializeAsync();
-        await new GraphStorageInitializer(CreateService(schemaRegistry)).InitializeAsync();
+        await new GraphStorageInitializer(CreateGraphFactory(schemaRegistry)).InitializeAsync();
+        await new GraphStorageInitializer(CreateGraphFactory(schemaRegistry)).InitializeAsync();
 
-        var requestService = CreateService(schemaRegistry);
-        var controller = new UiController(requestService);
+        var controller = new UiController(CreateGraphFactory(schemaRegistry));
 
-        var result = controller.GetSettings();
+        var result = await controller.GetSettings();
 
         var settings = result.Value;
         Assert.IsNotNull(settings);
@@ -26,9 +25,8 @@ public sealed class UiControllerTests : StorageTests {
         Assert.IsNotNull(await Storage.Get(new NodePath("NodeTypes")));
     }
 
-    private GraphData.Core.Services.GraphService CreateService(GraphSchemaRegistry schemaRegistry) =>
+    private GraphFactory CreateGraphFactory(GraphSchemaRegistry schemaRegistry) =>
         new(
             Storage,
-            new GraphSearchService(Storage),
             schemaRegistry);
 }

@@ -3,13 +3,13 @@ using GraphData.Core.Services;
 namespace Domain.Services;
 
 public class GraphStorageInitializer {
-    readonly GraphService service;
+    readonly GraphFactory graphFactory;
 
-    public GraphStorageInitializer(GraphService service) {
-        this.service = service;
+    public GraphStorageInitializer(GraphFactory graphFactory) {
+        this.graphFactory = graphFactory;
     }
 
-    public async Task InitializeAsync() {
-        await service.InitializeSchemaAsync().ConfigureAwait(false);
+    public async Task<Graph> InitializeAsync() {
+        return await graphFactory.OpenAsync().ConfigureAwait(false);
     }
 }

@@ -22,12 +22,15 @@ public abstract class StorageTests : IAsyncDisposable {
 }
 public abstract class GraphServiceTests : StorageTests {
     public GraphService Service { get; }
+    public Graph Graph { get; private set; } = null!;
     protected virtual Assembly[] Assemblies { get; } = [];
     readonly GraphSchemaRegistry types;
+    readonly GraphFactory graphFactory;
     GraphStorageInitializer? initializer = null;
 
     public GraphServiceTests() {
         types = GraphSchemaRegistry.Create(Assemblies);
+        graphFactory = new GraphFactory(Storage, types);
         Service = new GraphService(
             Storage,
             new GraphSearchService(Storage),
@@ -38,8 +41,12 @@ public abstract class GraphServiceTests : StorageTests {
     public Task Init() {
         if (initializer != null)
             throw new Exception("неправильный жизненный цикл теста");
-        initializer = new GraphStorageInitializer(Service);
-        return initializer.InitializeAsync();
+        initializer = new GraphStorageInitializer(graphFactory);
+        return InitializeGraphAsync();
+    }
+
+    private async Task InitializeGraphAsync() {
+        Graph = await initializer!.InitializeAsync().ConfigureAwait(false);
     }
 
     protected async Task AssertNode(NodeLocalId id, Node node) {

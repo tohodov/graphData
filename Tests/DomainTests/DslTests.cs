@@ -5,11 +5,11 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 public sealed class DslTests : GraphServiceTests {
     [TestMethod]
     public async Task LINQ_Traverse_TEMP() {
-        var weaponTypeBaseNode = ((Node)await Service.CreateNode("weapon", Service.NodeTypes.GlobalId))!;
+        var weaponTypeBaseNode = ((Node)await Service.CreateNode("weapon", Graph.NodeTypes.GlobalId))!;
         var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
-        var node = ((Node)await Service.CreateNode("ak47", Service.Root.GlobalId, weaponType))!;
-        await Service.CreateNode("m16", Service.Root.GlobalId, weaponType);
-        await Service.CreateNode("mp5", Service.Root.GlobalId, weaponType);
+        var node = ((Node)await Service.CreateNode("ak47", Graph.Root.GlobalId, weaponType))!;
+        await Service.CreateNode("m16", Graph.Root.GlobalId, weaponType);
+        await Service.CreateNode("mp5", Graph.Root.GlobalId, weaponType);
 
         var type = node.Incidences
             .OfType<InstanceOf.InstanceEnd>()
@@ -32,11 +32,11 @@ public sealed class DslTests : GraphServiceTests {
     [TestMethod]
     public async Task LINQ_Traverse() {
         var weaponType = new NodeType("weapon");
-        Service.NodeTypes.Nodes.Add(weaponType);
+        Graph.NodeTypes.Nodes.Add(weaponType);
         var ak47 = new InstanceNode("ak47", weaponType);
-        Service.Root.Nodes.Add(ak47);
-        Service.Root.Nodes.Add(new InstanceNode("m16", weaponType));
-        Service.Root.Nodes.Add(new InstanceNode("mp5", weaponType));
+        Graph.Root.Nodes.Add(ak47);
+        Graph.Root.Nodes.Add(new InstanceNode("m16", weaponType));
+        Graph.Root.Nodes.Add(new InstanceNode("mp5", weaponType));
 
         var type = ak47.Incidences
             .OfType<InstanceOf.InstanceEnd>()
@@ -64,7 +64,7 @@ public sealed class DslTests : GraphServiceTests {
         var child = new Node("child");
         parent.Nodes.Add(child);
 
-        Service.Root.Nodes.Add(parent);
+        Graph.Root.Nodes.Add(parent);
 
         await AssertNode("parent", parent);
         await AssertNode("child", child);
@@ -134,20 +134,20 @@ public sealed class DslTests : GraphServiceTests {
 
     [TestMethod]
     public async Task NodeIncidences_ShouldReflectDslTypeAttachmentsAfterFirstRead() {
-        var weaponTypeBaseNode = (await Service.CreateNode("dsl-incidence-weapon", Service.NodeTypes.GlobalId)).Value!;
+        var weaponTypeBaseNode = (await Service.CreateNode("dsl-incidence-weapon", Graph.NodeTypes.GlobalId)).Value!;
         var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
 
         CollectionAssert.AreEquivalent(
             Array.Empty<NodeLocalId>(),
             ReadTypedInstanceLocalIds(weaponType));
 
-        var ak47 = (await Service.CreateNode("dsl-incidence-ak47", Service.Root.GlobalId, weaponType)).Value!;
+        var ak47 = (await Service.CreateNode("dsl-incidence-ak47", Graph.Root.GlobalId, weaponType)).Value!;
 
         CollectionAssert.AreEquivalent(
             new[] { ak47.LocalId },
             ReadTypedInstanceLocalIds(weaponType));
 
-        var m16 = (await Service.CreateNode("dsl-incidence-m16", Service.Root.GlobalId, weaponType)).Value!;
+        var m16 = (await Service.CreateNode("dsl-incidence-m16", Graph.Root.GlobalId, weaponType)).Value!;
 
         CollectionAssert.AreEquivalent(
             new[] { ak47.LocalId, m16.LocalId },
@@ -160,8 +160,8 @@ public sealed class DslTests : GraphServiceTests {
         var child = new Node("child");
         var newParent = new Node("new-parent");
         oldParent.Nodes.Add(child);
-        Service.Root.Nodes.Add(oldParent);
-        Service.Root.Nodes.Add(newParent);
+        Graph.Root.Nodes.Add(oldParent);
+        Graph.Root.Nodes.Add(newParent);
         child.Edges.Add(new Edge(child, newParent));
         var hierarchyEdge = oldParent.Edges.Single(edge => Connects(edge, oldParent, child));
 
@@ -191,7 +191,7 @@ public sealed class DslTests : GraphServiceTests {
         var parent = new Node("parent");
         var child = new Node("child");
         parent.Nodes.Add(child);
-        Service.Root.Nodes.Add(parent);
+        Graph.Root.Nodes.Add(parent);
 
         parent.Nodes.Remove(child);
 
@@ -210,8 +210,8 @@ public sealed class DslTests : GraphServiceTests {
         var child = new Node("child");
         var newParent = new Node("nodes-remove-new-parent");
         oldParent.Nodes.Add(child);
-        Service.Root.Nodes.Add(oldParent);
-        Service.Root.Nodes.Add(newParent);
+        Graph.Root.Nodes.Add(oldParent);
+        Graph.Root.Nodes.Add(newParent);
         child.Edges.Add(new Edge(child, newParent));
 
         oldParent.Nodes.Remove(child);
@@ -235,7 +235,7 @@ public sealed class DslTests : GraphServiceTests {
         var parent = new Node("parent");
         var child = new Node("child");
         parent.Nodes.Add(child);
-        Service.Root.Nodes.Add(parent);
+        Graph.Root.Nodes.Add(parent);
         var hierarchyEdge = parent.Edges.Single(edge => Connects(edge, parent, child));
 
         Assert.ThrowsException<InvalidOperationException>(() => parent.Edges.Remove(hierarchyEdge));

@@ -21,9 +21,13 @@ public static class ServiceCollectionExtensions
                 provider.GetRequiredService<GraphSearchService>(),
                 provider.GetRequiredService<GraphSchemaRegistry>()
             ));
+        services.AddScoped<GraphFactory>(static provider =>
+            new GraphFactory(
+                provider.GetRequiredService<IGraphStorage>(),
+                provider.GetRequiredService<GraphSchemaRegistry>()));
         services.AddTransient<GraphStorageInitializer>(static provider =>
             new GraphStorageInitializer(
-                provider.GetRequiredService<GraphService>()));
+                provider.GetRequiredService<GraphFactory>()));
         return services;
     }
 }

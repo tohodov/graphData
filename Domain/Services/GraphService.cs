@@ -3,15 +3,9 @@ using GraphData.Core.Models;
 
 namespace GraphData.Core.Services;
 
-class StorageRoot : NodeType {
-    internal StorageRoot(NodeBacking state) : base(state) { }
-}
 public sealed class GraphService {
     const string SourcePortRole = "source";
     const string TargetPortRole = "target";
-
-    public Node Root { get; }
-    public NodeType NodeTypes { get; }
 
     readonly IGraphStorage storage;
     readonly GraphSearchService searchService;
@@ -25,16 +19,6 @@ public sealed class GraphService {
         this.storage = storage;
         this.searchService = searchService;
         this.schemaRegistry = schemaRegistry;
-
-        Root = new StorageRoot(storage.Root);
-        NodeTypes = new NodeType(GetExistingOrVirtual(
-            new NodePath([new NodeLocalId(nameof(NodeTypes))]),
-            nameof(NodeTypes)));
-        foreach (var type in schemaRegistry.Types) {
-            var typePath = new NodePath([NodeTypes.LocalId, type.Id]);
-            if (storage.Get(typePath).GetAwaiter().GetResult() is null)
-                NodeTypes.Nodes.StageVirtualNode(new NodeType(new VirtualNodeState(type.Id)));
-        }
     }
 
     public async Task<ServiceResult<Node>> CreateNode(NodeRef node, NodeType? type = null, IDictionary<string, string>? attributes = null) {
@@ -50,16 +34,15 @@ public sealed class GraphService {
         return await CreateNodeCore(localId, path, type, attributes).ConfigureAwait(false);
     }
 
-    public Task<ServiceResult<Node>> CreateNode<TNodeType>(
+    public async Task<ServiceResult<Node>> CreateNode<TNodeType>(
         NodeLocalId localId,
         NodePath? path = null,
         IDictionary<string, string>? attributes = null)
         where TNodeType : NodeType {
-        var typeId = schemaRegistry.GetNodeTypeId(typeof(TNodeType));
-        var type = NodeTypes.Nodes.OfType<NodeType>().FirstOrDefault(x => x.LocalId == typeId);
+        var type = await GetRuntimeTypeNodeAsync<TNodeType>().ConfigureAwait(false);
         if (type == null)
-            return Task.FromResult(ServiceResult<Node>.NotFound());
-        return CreateNodeCore(localId, path, type, attributes);
+            return ServiceResult<Node>.NotFound();
+        return await CreateNodeCore(localId, path, type, attributes).ConfigureAwait(false);
     }
 
     private async Task<ServiceResult<Node>> CreateNodeCore(NodeLocalId localId, NodeRef? parent, NodeType? type, IDictionary<string, string>? attributes) {
@@ -111,11 +94,11 @@ public sealed class GraphService {
         return ServiceResult.Ok();
     }
 
-    public Task<ServiceResult<Subgraph>> AssignNodeTypeAsync<TNodeType>(NodePath nodeId) where TNodeType : NodeType {
-        var type = GetTypeNode<TNodeType>();
+    public async Task<ServiceResult<Subgraph>> AssignNodeTypeAsync<TNodeType>(NodePath nodeId) where TNodeType : NodeType {
+        var type = await GetRuntimeTypeNodeAsync<TNodeType>().ConfigureAwait(false);
         if (type == null)
-            return Task.FromResult(ServiceResult<Subgraph>.NotFound());
-        return AssignNodeTypeAsync(nodeId, type.GlobalId);
+            return ServiceResult<Subgraph>.NotFound();
+        return await AssignNodeTypeAsync(nodeId, type.GlobalId).ConfigureAwait(false);
     }
 
     public async Task<ServiceResult<Subgraph>> AssignNodeTypeAsync(NodeRef nodeId, NodeRef typeId) {
@@ -185,9 +168,7 @@ public sealed class GraphService {
         if (endpointIds.Count < 2)
             return ServiceResult<Subgraph>.BadRequest("Typed edge requires at least two endpoint nodes.");
         var definition = definitionResult.Value;
-        var type = GetTypeNode<TNodeType>();
-        if (type == null)
-            return ServiceResult<Subgraph>.NotFound();
+        var type = definition.NodeType.Type;
         var endpointStates = new List<NodeBacking>(endpointIds.Count);
         foreach (var endpointId in endpointIds) {
             var endpoint = await storage.Get(endpointId).ConfigureAwait(false);
@@ -211,7 +192,7 @@ public sealed class GraphService {
             .ConfigureAwait(false);
         await storage.Connect(relation.GlobalId, type.GlobalId).ConfigureAwait(false);
 
-        var ensureEndpointType = GetTypeNodeInternal<EndpointNodeType>();
+        var ensureEndpointType = await GetRequiredRuntimeTypeNodeAsync<EndpointNodeType>().ConfigureAwait(false);
 
         var endpoints = definition.Endpoints.ToArray();
         for (var index = 0; index < endpoints.Length; index++) {
@@ -220,7 +201,7 @@ public sealed class GraphService {
                 new NodeLocalId($"endpoint-{endpoint.Name}"),
                 relation.GlobalId).ConfigureAwait(false);
             await storage.Connect(endpointInstance.GlobalId, ensureEndpointType.GlobalId).ConfigureAwait(false);
-            await storage.Connect(endpointInstance.GlobalId, NodeTypes.GlobalId).ConfigureAwait(false);
+            await storage.Connect(endpointInstance.GlobalId, FixedGraphTopology.NodeTypesId).ConfigureAwait(false);
             await storage.Connect(endpointInstance.GlobalId, endpointStates[index].GlobalId).ConfigureAwait(false);
             if (endpoint.NodeTypeId is { } endpointTypeId) {
                 var endpointSpec = await storage.Create(
@@ -292,12 +273,8 @@ public sealed class GraphService {
 
     public async Task<ServiceResult<NodeTypeDefinition>> GetNodeTypeDefinitionAsync<TNodeType>()
         where TNodeType : NodeType {
-        var typeId = schemaRegistry.GetNodeTypeId(typeof(TNodeType));
-        var type = NodeTypes.Nodes.FirstOrDefault(x => x.LocalId == typeId);
-        if (type is null)
-            return ServiceResult<NodeTypeDefinition>.NotFound();
-        var typeNode = await GetTypeNode(type);
-        if (typeNode == null)
+        var typeNode = await GetRuntimeTypeNodeAsync<TNodeType>().ConfigureAwait(false);
+        if (typeNode is null)
             return ServiceResult<NodeTypeDefinition>.NotFound();
 
         var definition = schemaRegistry.GetOrBuildDefinition(typeNode, ResolveRuntimeTypeId);
@@ -306,11 +283,7 @@ public sealed class GraphService {
 
     public async Task<ServiceResult<TypedEdgeDefinition>> GetTypedEdgeDefinitionAsync<TNodeType>()
         where TNodeType : NodeType {
-        var typeId = schemaRegistry.GetNodeTypeId(typeof(TNodeType));
-        var type = NodeTypes.Nodes.FirstOrDefault(x => x.LocalId == typeId);
-        if (type is null)
-            return ServiceResult<TypedEdgeDefinition>.NotFound();
-        var typeNode = await GetTypeNode(type);
+        var typeNode = await GetRuntimeTypeNodeAsync<TNodeType>().ConfigureAwait(false);
         if (typeNode is null)
             return ServiceResult<TypedEdgeDefinition>.NotFound();
 
@@ -330,28 +303,11 @@ public sealed class GraphService {
         };
     }
 
-    private NodeBacking GetExistingOrVirtual(NodePath path, NodeLocalId localId) {
-        return storage.Get(path).GetAwaiter().GetResult()
-            ?? new VirtualNodeState(localId);
-    }
-
     private async Task<IReadOnlyCollection<NodeBacking>> GetTopLevelUserRootsAsync(NodeBacking root) {
         return (await root.Nodes.ToArrayAsync().ConfigureAwait(false))
-            .Where(node => node.GlobalId != NodeTypes.GlobalId)
-            .Where(node => node.LocalId != NodeTypes.LocalId)
+            .Where(node => node.GlobalId != FixedGraphTopology.NodeTypesId)
+            .Where(node => node.LocalId != FixedGraphTopology.NodeTypesLocalId)
             .ToArray();
-    }
-
-    internal Task InitializeSchemaAsync() {
-        if (NodeTypes.Backing is VirtualNodeState) {
-            Root.Nodes.Add(NodeTypes);
-            return Task.CompletedTask;
-        }
-
-        foreach (var nodeType in NodeTypes.Nodes.GetPreparedNodes().ToArray())
-            NodeTypes.Nodes.Add(nodeType);
-
-        return Task.CompletedTask;
     }
 
     private void AttachInstanceOf(Node instance, NodeType type) {
@@ -365,7 +321,7 @@ public sealed class GraphService {
 
     private InternalId ResolveRuntimeTypeId(Type type) {//TODO искать Node а не верить что она есть
         var localId = schemaRegistry.GetNodeTypeId(type);
-        return new InternalId(NodeTypes.GlobalId.Concat([localId]));
+        return FixedGraphTopology.NodeTypeId(localId);
     }
 
     private async Task<ServiceResult> DisconnectBasicEdgeIfPresentAsync(NodeRef sourceId, InternalId targetId) {
@@ -393,7 +349,8 @@ public sealed class GraphService {
 
     private async Task<ServiceResult<NodeBacking>> CreatePortAsync(InternalId relationId, string role) {
         var port = await storage.Create(new NodeLocalId(role), relationId).ConfigureAwait(false);
-        await storage.Connect(port.GlobalId, GetTypeNodeInternal<PortNodeType>().GlobalId).ConfigureAwait(false);
+        var portType = await GetRequiredRuntimeTypeNodeAsync<PortNodeType>().ConfigureAwait(false);
+        await storage.Connect(port.GlobalId, portType.GlobalId).ConfigureAwait(false);
         return port;
     }
 
@@ -452,27 +409,23 @@ public sealed class GraphService {
         return new NodeType(internalState);
     }
     internal async Task<NodeBacking?> GetTypeNode(NodeBacking node) {
-        if (node.GlobalId == NodeTypes.GlobalId)
+        if (node.GlobalId == FixedGraphTopology.NodeTypesId)
             return null;
-        if (await node.Nodes.AnyAsync(x => x.GlobalId == NodeTypes.GlobalId))
+        if (await node.Nodes.AnyAsync(x => x.GlobalId == FixedGraphTopology.NodeTypesId))
             return node;
-        var typeNode = await node.Nodes.SelectMany(x => x.Nodes).FirstOrDefaultAsync(x => x.GlobalId == NodeTypes.GlobalId);
+        var typeNode = await node.Nodes.SelectMany(x => x.Nodes).FirstOrDefaultAsync(x => x.GlobalId == FixedGraphTopology.NodeTypesId);
         return typeNode;
     }
-    public NodeType? GetTypeNode<T>() where T : NodeType {
+    private async Task<NodeType?> GetRuntimeTypeNodeAsync<T>() where T : NodeType {
         var typeId = schemaRegistry.GetNodeTypeId(typeof(T));
-        var graphType = NodeTypes.Nodes
-            .OfType<NodeType>()
-            .FirstOrDefault(node => node.LocalId == typeId);
-        if (graphType is not null && graphType.GlobalId == ResolveRuntimeTypeId(typeof(T)))
-            return graphType;
-
-        var state = storage.Get(ResolveRuntimeTypeId(typeof(T))).GetAwaiter().GetResult();
-        return state is not null
-            ? new NodeType(state)
-            : graphType;
+        var state = await storage.Get(FixedGraphTopology.NodeTypePath(typeId)).ConfigureAwait(false);
+        return state is null
+            ? null
+            : new NodeType(state);
     }
-    NodeType GetTypeNodeInternal<T>(T? instance = null) where T : NodeType {
-        return GetTypeNode<T>() ?? throw new InvalidOperationException($"Runtime graph type '{typeof(T).FullName}' is not present in the graph service type root.");
+
+    private async Task<NodeType> GetRequiredRuntimeTypeNodeAsync<T>() where T : NodeType {
+        return await GetRuntimeTypeNodeAsync<T>().ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Runtime graph type '{typeof(T).FullName}' is not present in the graph service type root.");
     }
 }
