@@ -1,18 +1,16 @@
 using Abstractions;
 
 public class Node {
-    readonly List<Node> attachedNodes = [];
-    bool materializingAttachedNodes;
+    readonly NodeCollection nodes;
 
     internal NodeBacking Backing { get; private set; }
-    internal IReadOnlyCollection<Node> AttachedNodes => attachedNodes;
 
     public virtual NodeLocalId LocalId => Backing.LocalId;
     public virtual InternalId GlobalId => Backing.GlobalId;
 
     public virtual ICollection<Edge> Edges => new EdgeCollection(Backing.Edges);
     public virtual ICollection<Incidence> Incidences { get; } = new List<Incidence>();
-    public virtual ICollection<Node> Nodes => new NodeCollection(this);
+    public virtual NodeCollection Nodes => nodes;
 
     public virtual IDictionary<string, string> Attributes {
         get => Backing.Attributes;
@@ -23,6 +21,7 @@ public class Node {
 
     internal Node(NodeBacking state) {
         Backing = state;
+        nodes = new NodeCollection(this);
     }
 
     internal void Attach(Incidence incidence) {
@@ -31,24 +30,27 @@ public class Node {
         Incidences.Add(incidence);
     }
 
-    internal void Attach(Node node) {
-        if (!attachedNodes.Any(attached => SameNode(attached, node)))
-            attachedNodes.Add(node);
-    }
+    public sealed class NodeCollection : ICollection<Node> {
+        readonly Node owner;
+        readonly List<Node> localNodes = [];
+        bool materializingLocalNodes;
 
-    private sealed class NodeCollection(Node owner) : ICollection<Node> {
+        internal NodeCollection(Node owner) => this.owner = owner;
+
+        internal IReadOnlyCollection<Node> LocalNodes => localNodes;
+
         public int Count => Snapshot().Count;
         public bool IsReadOnly => true;
 
         public void Add(Node item) {
-            owner.Attach(item);
+            AddLocal(item);
             item.ReplaceBacking(owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult());
         }
 
         public void Clear() {
             foreach (var node in Snapshot())
                 Remove(node);
-            owner.attachedNodes.Clear();
+            localNodes.Clear();
         }
 
         public bool Contains(Node item) => Snapshot().Any(node => SameNode(node, item));
@@ -66,14 +68,32 @@ public class Node {
                 owner.Backing.Nodes.Remove(item.Backing).GetAwaiter().GetResult();
             else
                 item.Backing.Delete().GetAwaiter().GetResult();
-            owner.attachedNodes.RemoveAll(node => SameNode(node, item));
+            localNodes.RemoveAll(node => SameNode(node, item));
             return true;
+        }
+
+        internal void AddLocal(Node item) {
+            if (!localNodes.Any(node => SameNode(node, item)))
+                localNodes.Add(item);
+        }
+
+        internal void MaterializeLocalNodes() {
+            if (materializingLocalNodes)
+                return;
+
+            materializingLocalNodes = true;
+            try {
+                foreach (var node in localNodes.ToArray())
+                    node.ReplaceBacking(owner.Backing.Nodes.Add(node.Backing).GetAwaiter().GetResult());
+            } finally {
+                materializingLocalNodes = false;
+            }
         }
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 
         private List<Node> Snapshot() {
-            var nodes = new List<Node>(owner.attachedNodes);
+            var nodes = new List<Node>(localNodes);
             foreach (var state in owner.Backing.Nodes.ToArrayAsync().GetAwaiter().GetResult()) {
                 if (!nodes.Any(node => ReferenceEquals(node.Backing, state) || node.GlobalId == state.GlobalId))
                     nodes.Add(new Node(state));
@@ -86,20 +106,7 @@ public class Node {
         if (!ReferenceEquals(Backing, backing))
             Backing = backing;
 
-        MaterializeAttachedNodes();
-    }
-
-    internal void MaterializeAttachedNodes() {
-        if (materializingAttachedNodes)
-            return;
-
-        materializingAttachedNodes = true;
-        try {
-            foreach (var node in attachedNodes.ToArray())
-                node.ReplaceBacking(Backing.Nodes.Add(node.Backing).GetAwaiter().GetResult());
-        } finally {
-            materializingAttachedNodes = false;
-        }
+        nodes.MaterializeLocalNodes();
     }
 
     internal IDictionary<string, string>? CopyAttributesForMaterialization() {

@@ -272,6 +272,18 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
             subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
     }
     [TestMethod]
+    public async Task AddSubgraph_ShouldUseOnlyLocalNodeLinksForStorageRoot() {
+        var unrelated = await Storage.Create(new("unrelated-root"));
+
+        var result = await Service.AddSubgraph(Service.Root);
+
+        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
+        var returnedIds = result.Value!.Nodes.Select(static node => node.GlobalId).ToArray();
+        CollectionAssert.Contains(returnedIds, Service.NodeTypes.GlobalId);
+        CollectionAssert.DoesNotContain(returnedIds, unrelated.GlobalId);
+    }
+
+    [TestMethod]
     public async Task AddSubgraph_ShouldPersistVirtualNodesAndConnections() {
         var catalog = new Node("catalog");
         var weapon = new Node("ak-47");

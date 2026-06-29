@@ -33,9 +33,9 @@ public sealed class GraphService {
         NodeTypes = new NodeType(GetExistingOrVirtual(
             new NodePath([new NodeLocalId(nameof(NodeTypes))]),
             nameof(NodeTypes)));
-        Root.Attach(NodeTypes);
+        Root.Nodes.AddLocal(NodeTypes);
         foreach (var type in schemaRegistry.Types)
-            NodeTypes.Attach(new NodeType(GetExistingOrVirtual(
+            NodeTypes.Nodes.AddLocal(new NodeType(GetExistingOrVirtual(
                 new NodePath([NodeTypes.LocalId, type.Id]),
                 type.Id)));
     }
@@ -292,7 +292,7 @@ public sealed class GraphService {
         root.ReplaceBacking(backing);
 
         var persistedNodes = new List<Node>();
-        foreach (var node in TraverseAttachedNodes(root)) {
+        foreach (var node in TraverseLocalNodes(root)) {
             cancellationTokens.Token.ThrowIfCancellationRequested();
             if (await storage.Get(node.GlobalId).ConfigureAwait(false) is not null)
                 persistedNodes.Add(node);
@@ -375,7 +375,7 @@ public sealed class GraphService {
         return await storage.Create(root.LocalId, attributes: root.CopyAttributesForMaterialization()).ConfigureAwait(false);
     }
 
-    private static IEnumerable<Node> TraverseAttachedNodes(Node root) {
+    private static IEnumerable<Node> TraverseLocalNodes(Node root) {
         var visited = new HashSet<InternalId>();
         var stack = new Stack<Node>();
         stack.Push(root);
@@ -385,7 +385,7 @@ public sealed class GraphService {
                 continue;
 
             yield return node;
-            foreach (var child in node.AttachedNodes.Reverse())
+            foreach (var child in node.Nodes.LocalNodes.Reverse())
                 stack.Push(child);
         }
     }
