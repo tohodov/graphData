@@ -273,14 +273,14 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
     }
 
     [TestMethod]
-    public async Task AddSubgraph_ShouldUseOnlyLoadedNodeLinksForStorageRoot() {
+    public async Task AddSubgraph_ShouldNotReadStorageNeighborsForMaterializedRoot() {
         var unrelated = await Storage.Create(new("unrelated-root"));
 
         var result = await Service.AddSubgraph(Service.Root);
 
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
         var returnedIds = result.Value!.Nodes.Select(static node => node.GlobalId).ToArray();
-        CollectionAssert.Contains(returnedIds, Service.NodeTypes.GlobalId);
+        CollectionAssert.Contains(returnedIds, Service.Root.GlobalId);
         CollectionAssert.DoesNotContain(returnedIds, unrelated.GlobalId);
     }
 
@@ -290,9 +290,9 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
         var weapon = new Node("ak-47");
         weapon.Attributes["displayName"] = "AK-47";
         catalog.Nodes.Add(weapon);
-        var weaponType = new Node("Weapon");
-        weapon.Nodes.Add(weaponType);
+        var weaponType = new Node("AdHocWeapon");
         Service.NodeTypes.Nodes.Add(weaponType);
+        weapon.Nodes.Add(weaponType);
 
         var result = await Service.AddSubgraph(catalog);
 

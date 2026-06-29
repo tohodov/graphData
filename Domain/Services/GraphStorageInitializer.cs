@@ -11,7 +11,7 @@ public class GraphStorageInitializer {
     }
 
     public async Task InitializeAsync() {
-        var result = await service.AddSubgraph(service.Root).ConfigureAwait(false);
+        var result = await service.AddSubgraph(service.NodeTypes).ConfigureAwait(false);
         if (result.Status != ServiceResultStatus.Ok)
             throw new Exception(result.Error);
     }

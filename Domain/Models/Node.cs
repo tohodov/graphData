@@ -33,27 +33,31 @@ public class Node {
     public sealed class NodeCollection : ICollection<Node> {
         readonly Node owner;
 
-        // Keeps object identity and runtime type for links already loaded into this collection;
-        // Snapshot() merges these with links that are only available from backing.
-        readonly List<Node> loadedLinkedNodes = [];
-        bool materializingLoadedLinks;
+        // Keeps object identity and runtime type for nodes created from virtual input.
+        // Existing links remain owned by backing and are merged in Snapshot().
+        readonly List<Node> createdLinkedNodes = [];
+        bool materializingPreparedLinks;
 
         internal NodeCollection(Node owner) => this.owner = owner;
-
-        internal IReadOnlyCollection<Node> LoadedLinkedNodes => loadedLinkedNodes;
 
         public int Count => Snapshot().Count;
         public bool IsReadOnly => true;
 
         public void Add(Node item) {
-            TrackLoadedLink(item);
-            item.ReplaceBacking(owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult());
+            if (Contains(item) || WouldCreateDuplicateVirtualNode(item))
+                throw new InvalidOperationException($"Node '{item.GlobalId}' is already linked to '{owner.GlobalId}'.");
+
+            if (item.Backing.IsVirtual)
+                TrackCreatedNode(item);
+
+            var backing = owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult();
+            item.ReplaceBacking(backing);
         }
 
         public void Clear() {
             foreach (var node in Snapshot())
                 Remove(node);
-            loadedLinkedNodes.Clear();
+            createdLinkedNodes.Clear();
         }
 
         public bool Contains(Node item) => Snapshot().Any(node => SameNode(node, item));
@@ -71,45 +75,92 @@ public class Node {
                 owner.Backing.Nodes.Remove(item.Backing).GetAwaiter().GetResult();
             else
                 item.Backing.Delete().GetAwaiter().GetResult();
-            loadedLinkedNodes.RemoveAll(node => SameNode(node, item));
+            createdLinkedNodes.RemoveAll(node => SameNode(node, item));
             return true;
         }
 
-        internal void TrackLoadedLink(Node item) {
-            if (!loadedLinkedNodes.Any(node => SameNode(node, item)))
-                loadedLinkedNodes.Add(item);
+        internal void StageVirtualNode(Node item) {
+            if (!item.Backing.IsVirtual)
+                throw new ArgumentException("Only virtual nodes can be staged for creation.", nameof(item));
+            if (WouldCreateDuplicateVirtualNode(item))
+                throw new InvalidOperationException($"Node '{item.LocalId}' is already linked to '{owner.GlobalId}'.");
+
+            TrackCreatedNode(item);
         }
 
-        internal void MaterializeLoadedLinks() {
-            if (materializingLoadedLinks)
+        internal IReadOnlyCollection<Node> GetPreparedNodes() {
+            var nodes = new List<Node>();
+            if (owner.Backing.IsVirtual)
+                foreach (var state in owner.Backing.Nodes.ToArrayAsync().GetAwaiter().GetResult())
+                    AddPreparedNode(nodes, ResolveNode(state));
+
+            foreach (var node in createdLinkedNodes.Where(static node => node.Backing.IsVirtual))
+                AddPreparedNode(nodes, node);
+
+            return nodes;
+        }
+
+        internal void MaterializePreparedLinks(NodeBacking previousBacking) {
+            if (materializingPreparedLinks || owner.Backing.IsVirtual)
                 return;
 
-            materializingLoadedLinks = true;
+            materializingPreparedLinks = true;
             try {
-                foreach (var node in loadedLinkedNodes.ToArray())
+                foreach (var node in GetPreparedNodes(previousBacking))
                     node.ReplaceBacking(owner.Backing.Nodes.Add(node.Backing).GetAwaiter().GetResult());
             } finally {
-                materializingLoadedLinks = false;
+                materializingPreparedLinks = false;
             }
         }
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 
         private List<Node> Snapshot() {
-            var nodes = new List<Node>(loadedLinkedNodes);
+            var nodes = new List<Node>(createdLinkedNodes);
             foreach (var state in owner.Backing.Nodes.ToArrayAsync().GetAwaiter().GetResult()) {
                 if (!nodes.Any(node => ReferenceEquals(node.Backing, state) || node.GlobalId == state.GlobalId))
                     nodes.Add(new Node(state));
             }
             return nodes;
         }
+
+        private IReadOnlyCollection<Node> GetPreparedNodes(NodeBacking previousBacking) {
+            var nodes = new List<Node>();
+            if (previousBacking.IsVirtual)
+                foreach (var state in previousBacking.Nodes.ToArrayAsync().GetAwaiter().GetResult())
+                    AddPreparedNode(nodes, ResolveNode(state));
+
+            foreach (var node in createdLinkedNodes.Where(static node => node.Backing.IsVirtual))
+                AddPreparedNode(nodes, node);
+
+            return nodes;
+        }
+
+        private void TrackCreatedNode(Node item) {
+            if (!createdLinkedNodes.Any(node => SameNode(node, item)))
+                createdLinkedNodes.Add(item);
+        }
+
+        private Node ResolveNode(NodeBacking state) {
+            return createdLinkedNodes.FirstOrDefault(node => ReferenceEquals(node.Backing, state) || node.GlobalId == state.GlobalId)
+                ?? new Node(state);
+        }
+
+        private bool WouldCreateDuplicateVirtualNode(Node item) =>
+            item.Backing.IsVirtual && Snapshot().Any(node => node.LocalId == item.LocalId);
+
+        private static void AddPreparedNode(List<Node> nodes, Node node) {
+            if (!nodes.Any(existing => SameNode(existing, node)))
+                nodes.Add(node);
+        }
     }
 
     internal void ReplaceBacking(NodeBacking backing) {
+        var previousBacking = Backing;
         if (!ReferenceEquals(Backing, backing))
             Backing = backing;
 
-        nodes.MaterializeLoadedLinks();
+        nodes.MaterializePreparedLinks(previousBacking);
     }
 
     internal IDictionary<string, string>? CopyAttributesForMaterialization() {

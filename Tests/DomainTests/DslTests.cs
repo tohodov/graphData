@@ -78,6 +78,15 @@ public sealed class DslTests : GraphServiceTests {
     }
 
     [TestMethod]
+    public async Task NodesAdd_ShouldThrowWhenExistingNodeIsAlreadyLinked() {
+        var first = (await Service.CreateNode("existing-link-first")).Value!;
+        var second = (await Service.CreateNode("existing-link-second")).Value!;
+        first.Nodes.Add(second);
+
+        Assert.ThrowsException<InvalidOperationException>(() => first.Nodes.Add(second));
+    }
+
+    [TestMethod]
     public async Task NodeNodes_ShouldReflectFolderChangesAfterFirstRead() {
         var parent = (await Service.CreateNode("dsl-nodes-parent")).Value!;
         var first = (await Service.CreateNode("first", parent.GlobalId)).Value!;

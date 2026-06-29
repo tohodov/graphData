@@ -9,6 +9,7 @@ internal abstract class NodeBacking : IEquatable<NodeBacking>
     public abstract IAsyncCollection<EdgeBacking> Edges { get; }
     public abstract IAsyncCollection<NodeBacking> Nodes { get; }
     public abstract IDictionary<string, string> Attributes { get; set; }
+    internal virtual bool IsVirtual => false;
     internal virtual Task Delete() => Task.CompletedTask;
 
     bool IEquatable<NodeBacking>.Equals(NodeBacking? other) => GlobalId.Equals(other?.GlobalId);
