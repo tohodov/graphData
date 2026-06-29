@@ -1,1 +1,5 @@
-<Project Sdk="Microsoft.VisualStudio.JavaScript.Sdk/1.0.5277448" />
+<Project Sdk="Microsoft.VisualStudio.JavaScript.Sdk/1.0.5277448">
+  <PropertyGroup>
+    <TypeScriptToolsVersion>6.0.3</TypeScriptToolsVersion>
+  </PropertyGroup>
+</Project>
