@@ -271,8 +271,9 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
             new[] { firstRoot.GlobalId, secondRoot.GlobalId },
             subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
     }
+
     [TestMethod]
-    public async Task AddSubgraph_ShouldUseOnlyLocalNodeLinksForStorageRoot() {
+    public async Task AddSubgraph_ShouldUseOnlyLoadedNodeLinksForStorageRoot() {
         var unrelated = await Storage.Create(new("unrelated-root"));
 
         var result = await Service.AddSubgraph(Service.Root);

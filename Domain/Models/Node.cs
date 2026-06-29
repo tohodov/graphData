@@ -32,25 +32,28 @@ public class Node {
 
     public sealed class NodeCollection : ICollection<Node> {
         readonly Node owner;
-        readonly List<Node> localNodes = [];
-        bool materializingLocalNodes;
+
+        // Keeps object identity and runtime type for links already loaded into this collection;
+        // Snapshot() merges these with links that are only available from backing.
+        readonly List<Node> loadedLinkedNodes = [];
+        bool materializingLoadedLinks;
 
         internal NodeCollection(Node owner) => this.owner = owner;
 
-        internal IReadOnlyCollection<Node> LocalNodes => localNodes;
+        internal IReadOnlyCollection<Node> LoadedLinkedNodes => loadedLinkedNodes;
 
         public int Count => Snapshot().Count;
         public bool IsReadOnly => true;
 
         public void Add(Node item) {
-            AddLocal(item);
+            TrackLoadedLink(item);
             item.ReplaceBacking(owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult());
         }
 
         public void Clear() {
             foreach (var node in Snapshot())
                 Remove(node);
-            localNodes.Clear();
+            loadedLinkedNodes.Clear();
         }
 
         public bool Contains(Node item) => Snapshot().Any(node => SameNode(node, item));
@@ -68,32 +71,32 @@ public class Node {
                 owner.Backing.Nodes.Remove(item.Backing).GetAwaiter().GetResult();
             else
                 item.Backing.Delete().GetAwaiter().GetResult();
-            localNodes.RemoveAll(node => SameNode(node, item));
+            loadedLinkedNodes.RemoveAll(node => SameNode(node, item));
             return true;
         }
 
-        internal void AddLocal(Node item) {
-            if (!localNodes.Any(node => SameNode(node, item)))
-                localNodes.Add(item);
+        internal void TrackLoadedLink(Node item) {
+            if (!loadedLinkedNodes.Any(node => SameNode(node, item)))
+                loadedLinkedNodes.Add(item);
         }
 
-        internal void MaterializeLocalNodes() {
-            if (materializingLocalNodes)
+        internal void MaterializeLoadedLinks() {
+            if (materializingLoadedLinks)
                 return;
 
-            materializingLocalNodes = true;
+            materializingLoadedLinks = true;
             try {
-                foreach (var node in localNodes.ToArray())
+                foreach (var node in loadedLinkedNodes.ToArray())
                     node.ReplaceBacking(owner.Backing.Nodes.Add(node.Backing).GetAwaiter().GetResult());
             } finally {
-                materializingLocalNodes = false;
+                materializingLoadedLinks = false;
             }
         }
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 
         private List<Node> Snapshot() {
-            var nodes = new List<Node>(localNodes);
+            var nodes = new List<Node>(loadedLinkedNodes);
             foreach (var state in owner.Backing.Nodes.ToArrayAsync().GetAwaiter().GetResult()) {
                 if (!nodes.Any(node => ReferenceEquals(node.Backing, state) || node.GlobalId == state.GlobalId))
                     nodes.Add(new Node(state));
@@ -106,7 +109,7 @@ public class Node {
         if (!ReferenceEquals(Backing, backing))
             Backing = backing;
 
-        nodes.MaterializeLocalNodes();
+        nodes.MaterializeLoadedLinks();
     }
 
     internal IDictionary<string, string>? CopyAttributesForMaterialization() {
