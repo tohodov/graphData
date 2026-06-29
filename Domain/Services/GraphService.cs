@@ -15,18 +15,15 @@ public sealed class GraphService {
 
     readonly IGraphStorage storage;
     readonly GraphSearchService searchService;
-    readonly ICancellationTokenAccessor cancellationTokens;
     readonly GraphSchemaRegistry schemaRegistry;
 
     internal GraphService(
         IGraphStorage storage,
         GraphSearchService searchService,
-        ICancellationTokenAccessor cancellationTokens,
         GraphSchemaRegistry schemaRegistry
     ) {
         this.storage = storage;
         this.searchService = searchService;
-        this.cancellationTokens = cancellationTokens;
         this.schemaRegistry = schemaRegistry;
 
         Root = new StorageRoot(storage.Root);
@@ -287,23 +284,6 @@ public sealed class GraphService {
             });
     }
 
-    public async Task<ServiceResult<Subgraph>> AddSubgraph(Node root) {
-        var preparedNodes = TraversePreparedNodes(root).ToArray();
-        var backing = await GetOrCreateSubgraphRoot(root).ConfigureAwait(false);
-        root.ReplaceBacking(backing);
-
-        var persistedNodes = new List<Node>();
-        foreach (var node in preparedNodes) {
-            cancellationTokens.Token.ThrowIfCancellationRequested();
-            if (await storage.Get(node.GlobalId).ConfigureAwait(false) is not null)
-                persistedNodes.Add(node);
-        }
-
-        return ServiceResult<Subgraph>.Ok(new Subgraph {
-            Nodes = persistedNodes
-        });
-    }
-
     public IAsyncEnumerable<NodeSearchMatch> SearchNodesStreamAsync(
         NodeSearchQuery query,
         CancellationToken cancellationToken = default) {
@@ -362,33 +342,16 @@ public sealed class GraphService {
             .ToArray();
     }
 
-    private async Task<NodeBacking> GetOrCreateSubgraphRoot(Node root) {
-        if (root.GlobalId == storage.Root.GlobalId)
-            return storage.Root;
-
-        if (await storage.Get(root.GlobalId).ConfigureAwait(false) is { } existingByGlobalId)
-            return existingByGlobalId;
-
-        var rootPath = new NodePath([root.LocalId]);
-        if (await storage.Get(rootPath).ConfigureAwait(false) is { } existingByPath)
-            return existingByPath;
-
-        return await storage.Create(root.LocalId, attributes: root.CopyAttributesForMaterialization()).ConfigureAwait(false);
-    }
-
-    private static IEnumerable<Node> TraversePreparedNodes(Node root) {
-        var visited = new HashSet<InternalId>();
-        var stack = new Stack<Node>();
-        stack.Push(root);
-        while (stack.Count > 0) {
-            var node = stack.Pop();
-            if (!visited.Add(node.GlobalId))
-                continue;
-
-            yield return node;
-            foreach (var child in node.Nodes.GetPreparedNodes().Reverse())
-                stack.Push(child);
+    internal Task InitializeSchemaAsync() {
+        if (NodeTypes.Backing is VirtualNodeState) {
+            Root.Nodes.Add(NodeTypes);
+            return Task.CompletedTask;
         }
+
+        foreach (var nodeType in NodeTypes.Nodes.GetPreparedNodes().ToArray())
+            NodeTypes.Nodes.Add(nodeType);
+
+        return Task.CompletedTask;
     }
 
     private void AttachInstanceOf(Node instance, NodeType type) {

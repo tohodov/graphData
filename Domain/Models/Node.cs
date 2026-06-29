@@ -163,12 +163,6 @@ public class Node {
         nodes.MaterializePreparedLinks(previousBacking);
     }
 
-    internal IDictionary<string, string>? CopyAttributesForMaterialization() {
-        return Backing.Attributes.Count == 0
-            ? null
-            : new Dictionary<string, string>(Backing.Attributes, StringComparer.OrdinalIgnoreCase);
-    }
-
     private static bool SameNode(Node left, Node right) =>
         ReferenceEquals(left, right)
         || ReferenceEquals(left.Backing, right.Backing)

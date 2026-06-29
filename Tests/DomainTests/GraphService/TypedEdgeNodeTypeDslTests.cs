@@ -272,63 +272,6 @@ public sealed class TypedEdgeNodeTypeDslTests : GraphServiceTests {
             subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
     }
 
-    [TestMethod]
-    public async Task AddSubgraph_ShouldNotReadStorageNeighborsForMaterializedRoot() {
-        var unrelated = await Storage.Create(new("unrelated-root"));
-
-        var result = await Service.AddSubgraph(Service.Root);
-
-        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
-        var returnedIds = result.Value!.Nodes.Select(static node => node.GlobalId).ToArray();
-        CollectionAssert.Contains(returnedIds, Service.Root.GlobalId);
-        CollectionAssert.DoesNotContain(returnedIds, unrelated.GlobalId);
-    }
-
-    [TestMethod]
-    public async Task AddSubgraph_ShouldPersistVirtualNodesAndConnections() {
-        var catalog = new Node("catalog");
-        var weapon = new Node("ak-47");
-        weapon.Attributes["displayName"] = "AK-47";
-        catalog.Nodes.Add(weapon);
-        var weaponType = new Node("AdHocWeapon");
-        Service.NodeTypes.Nodes.Add(weaponType);
-        weapon.Nodes.Add(weaponType);
-
-        var result = await Service.AddSubgraph(catalog);
-
-        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
-        CollectionAssert.IsSubsetOf(
-            new[] { catalog.GlobalId, weapon.GlobalId, weaponType.GlobalId },
-            result.Value!.Nodes.Select(static node => node.GlobalId).ToArray());
-
-        var persistedWeapon = await Storage.Get(weapon.GlobalId);
-        Assert.IsNotNull(persistedWeapon);
-        Assert.AreEqual("AK-47", persistedWeapon.Attributes["displayName"]);
-        Assert.IsNotNull(await Storage.Get(Service.NodeTypes.GlobalId));
-
-        Assert.IsTrue(await persistedWeapon.Nodes.AnyAsync(node => node.GlobalId == weaponType.GlobalId));
-    }
-
-    [TestMethod]
-    public async Task AddSubgraph_ShouldPreserveExistingNodeAttributes() {
-        await Storage.Create(
-            new("catalog"),
-            attributes: new Dictionary<string, string> {
-                ["color"] = "#123456"
-            });
-        var catalog = new Node("catalog");
-        catalog.Attributes["color"] = "#abcdef";
-        catalog.Attributes["generated"] = "true";
-
-        var result = await Service.AddSubgraph(catalog);
-
-        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
-        var persisted = await Storage.Get(catalog.GlobalId);
-        Assert.IsNotNull(persisted);
-        Assert.AreEqual("#123456", persisted.Attributes["color"]);
-        Assert.IsFalse(persisted.Attributes.ContainsKey("generated"));
-    }
-
     private static string EndpointInstanceLocalId(string endpointName) =>
         $"endpoint-{endpointName}";
 

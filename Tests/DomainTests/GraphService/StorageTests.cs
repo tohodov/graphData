@@ -31,7 +31,6 @@ public abstract class GraphServiceTests : StorageTests {
         Service = new GraphService(
             Storage,
             new GraphSearchService(Storage),
-            new CancellationTokensAccessorMock(),
             types);
     }
 
@@ -39,7 +38,7 @@ public abstract class GraphServiceTests : StorageTests {
     public Task Init() {
         if (initializer != null)
             throw new Exception("неправильный жизненный цикл теста");
-        initializer = new GraphStorageInitializer(Service, types);
+        initializer = new GraphStorageInitializer(Service);
         return initializer.InitializeAsync();
     }
 

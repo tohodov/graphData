@@ -19,7 +19,7 @@ public class ControllerTests : GraphServiceTests {
     }
 
     internal static GraphController CreateController(IGraphStorage storage) { //TODO сделать virtual
-        var controller = new GraphController(new GraphService(storage, new GraphSearchService(storage), new CancellationTokensAccessorMock(), GraphSchemaRegistry.Create()));
+        var controller = new GraphController(new GraphService(storage, new GraphSearchService(storage), GraphSchemaRegistry.Create()));
         controller.ControllerContext = new ControllerContext {
             HttpContext = new DefaultHttpContext()
         };

@@ -10,8 +10,8 @@ public sealed class UiControllerTests : StorageTests {
     [TestMethod]
     public async Task GetSettings_ReturnsMaterializedSystemNodeIdsForRequestScopedGraphService() {
         var schemaRegistry = GraphSchemaRegistry.Create();
-        await new GraphStorageInitializer(CreateService(schemaRegistry), schemaRegistry).InitializeAsync();
-        await new GraphStorageInitializer(CreateService(schemaRegistry), schemaRegistry).InitializeAsync();
+        await new GraphStorageInitializer(CreateService(schemaRegistry)).InitializeAsync();
+        await new GraphStorageInitializer(CreateService(schemaRegistry)).InitializeAsync();
 
         var requestService = CreateService(schemaRegistry);
         var controller = new UiController(requestService);
@@ -30,6 +30,5 @@ public sealed class UiControllerTests : StorageTests {
         new(
             Storage,
             new GraphSearchService(Storage),
-            new CancellationTokensAccessorMock(),
             schemaRegistry);
 }
