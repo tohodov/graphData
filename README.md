@@ -21,7 +21,7 @@ graphData - исследовательский прототип графовой
 Основная модель разделена на два нижних уровня:
 
 - `Abstractions` - минимальные контракты и backing-состояния графа (`IGraphStorage`, `NodeBacking`, `EdgeBacking`, id-типы, `ServiceResult`). Реализации storage зависят только от этого уровня и не знают доменные `Node`/`Edge`.
-- `Domain` - доменная модель (`Node`, `Edge`, типы графовых элементов, query/search/subgraph-модели) и фасад `GraphService`, который преобразует storage backing в доменные объекты.
+- `Domain` - доменная модель (`Graph`, `Node`, `Edge`, типы графовых элементов, query/search/subgraph-модели) и фасад `GraphService`, который выполняет async-операции над открытым графом.
 
 Исполняемые входы (`Api`, `Mcp`) должны работать через `GraphService`, а не через `IGraphStorage`. Storage-проект `SymLinkStorage` остается ниже домена и ссылается только на `Abstractions`.
 Storage-state типы и storage-контракты закрыты как `internal`; доступ к ним выдается только `Domain`, storage-проектам и тестовым сборкам через `InternalsVisibleTo`.
@@ -49,10 +49,12 @@ Storage-state типы и storage-контракты закрыты как `inte
 
 - Внешний DSL типизации узлов выражается C#-иерархией `Node -> NodeType -> ...`; graph id типа назначается
   каталогом регистрации, а не `StaticTypeId` в пользовательском классе.
+- `Graph` открывает storage, материализует зарегистрированные runtime-типы возле root и остается точкой доступа
+  к DSL для внешних приложений.
 - Типизированный взгляд на обычный узел - это `InstanceNode`, который читает назначенные типы и соседние
   инстансы из реальных связей графа.
 - Граф условно бесконечен, поэтому в домене не должно быть snapshot-схемы всего графа. `GraphService` читает
-  через `IGraphStorage` только тот фрагмент, который нужен конкретной операции.
+  через async backing/storage API только тот фрагмент, который нужен конкретной операции.
 - `NodeTypeDefinition`, `NodeFieldDefinition`, `NodeTypeBuilder`, `NodeSlotDefinition` и `NodeSlotCardinality`
   описывают локальное DSL-определение одного зарегистрированного `NodeType`, его C# поля, слоты и минимальные
   проверки инвариантов через исключения.

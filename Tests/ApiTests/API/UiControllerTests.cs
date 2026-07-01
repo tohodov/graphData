@@ -11,7 +11,7 @@ public sealed class UiControllerTests : StorageTests {
     public async Task GetSettings_ReturnsMaterializedSystemNodeIdsForRequestScopedGraph() {
         var schemaRegistry = GraphSchemaRegistry.Create();
 
-        var controller = new UiController(CreateGraphFactory(schemaRegistry));
+        var controller = new UiController(CreateGraphProvider(schemaRegistry));
 
         var result = await controller.GetSettings();
 
@@ -23,7 +23,7 @@ public sealed class UiControllerTests : StorageTests {
         Assert.IsNotNull(await Storage.Get(new NodePath("NodeTypes")));
     }
 
-    private GraphFactory CreateGraphFactory(GraphSchemaRegistry schemaRegistry) =>
+    private GraphProvider CreateGraphProvider(GraphSchemaRegistry schemaRegistry) =>
         new(
             Storage,
             schemaRegistry);

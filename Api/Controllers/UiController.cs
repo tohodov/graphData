@@ -6,10 +6,10 @@ namespace GraphData.Api.Controllers;
 
 [ApiController]
 [Route("api/ui")]
-public sealed class UiController(GraphFactory graphFactory) : ControllerBase {
+public sealed class UiController(GraphProvider graphProvider) : ControllerBase {
     [HttpGet("settings")]
     public async Task<ActionResult<UiSettingsResponse>> GetSettings() {
-        var graph = await graphFactory.OpenAsync().ConfigureAwait(false);
+        var graph = await graphProvider.GetGraphAsync().ConfigureAwait(false);
         return new UiSettingsResponse {
             SystemNodeIds = new UiSystemNodeIdsResponse {
                 NodeTypeRoot = graph.NodeTypes.GlobalId.ToString(),

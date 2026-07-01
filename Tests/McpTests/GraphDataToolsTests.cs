@@ -13,7 +13,7 @@ public sealed class GraphDataToolsTests : StorageTests
 {
     [TestInitialize]
     public override async Task Init() {
-        await new GraphFactory(Storage, GraphSchemaRegistry.Create()).OpenAsync();
+        await Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
     }
 
     [TestMethod]

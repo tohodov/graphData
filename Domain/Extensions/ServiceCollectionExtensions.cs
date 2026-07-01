@@ -14,16 +14,15 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(GraphSchemaRegistry.Create(runtimeTypeOptions));
         services.AddScoped<GraphSearchService>(static provider =>
             new GraphSearchService(provider.GetRequiredService<IGraphStorage>()));
-        services.AddScoped<GraphService>(static provider =>
-            new GraphService(
-                provider.GetRequiredService<IGraphStorage>(),
-                provider.GetRequiredService<GraphSearchService>(),
-                provider.GetRequiredService<GraphSchemaRegistry>()
-            ));
-        services.AddScoped<GraphFactory>(static provider =>
-            new GraphFactory(
+        services.AddScoped<GraphProvider>(static provider =>
+            new GraphProvider(
                 provider.GetRequiredService<IGraphStorage>(),
                 provider.GetRequiredService<GraphSchemaRegistry>()));
+        services.AddScoped<GraphService>(static provider =>
+            new GraphService(
+                provider.GetRequiredService<GraphProvider>(),
+                provider.GetRequiredService<GraphSearchService>()
+            ));
         return services;
     }
 }

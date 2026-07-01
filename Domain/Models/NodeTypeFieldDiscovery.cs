@@ -10,7 +10,7 @@ internal static class NodeTypeFieldDiscovery
     public static void AddDiscoveredFields(
         Type nodeType,
         NodeTypeBuilder builder,
-        Func<Type, InternalId> resolveTypeId)
+        Func<Type, NodeType> resolveType)
     {
         foreach (var member in GetDslMembers(nodeType)) {
             var memberType = GetMemberType(member);
@@ -26,7 +26,7 @@ internal static class NodeTypeFieldDiscovery
                     valueType,
                     cardinality,
                     IsCollectionType(memberType),
-                    resolveTypeId(valueType)));
+                    resolveType(valueType)));
                 continue;
             }
 

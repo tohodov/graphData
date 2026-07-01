@@ -15,10 +15,12 @@
   `StaticTypeId` и не должен заранее знать свой graph id.
 - Типизированный взгляд на обычный узел - это `InstanceNode`. Не нужен отдельный `TypedNodeInstance`, потому что
   инстанс уже может прочитать назначенные типы и соседние инстансы из своего backing-состояния.
+- `Graph` является источником runtime DSL: открывает storage, материализует служебный подграф типов возле root
+  и отдает внешнему коду доменные `Node`/`NodeType`, а не константы путей.
 - Граф условно бесконечен, поэтому `Domain` не должен строить и хранить `NodeTypeSchema` как полный snapshot.
-  Операция читает через `GraphService` и `IGraphStorage` только тот фрагмент, который ей нужен.
-- `GraphService` является границей доменных операций и сам работает с `IGraphStorage`. Отдельная прослойка
-  materializer для базового чтения типов узлов не нужна.
+  Операция читает через `GraphService` только тот фрагмент storage, который ей нужен.
+- `GraphService` является границей доменных операций: он получает открытый `Graph`, работает асинхронно через
+  backing/storage API и не вызывает синхронный DSL `Node`/`Edge` для storage-backed узлов.
 - `NodeBacking.Attributes` - нетипизированный временный escape hatch. Атрибуты нельзя использовать как источник
   логики, feature branching, портов, слотов или типовой семантики.
 
@@ -28,9 +30,9 @@
   `Node`, примитивы, nullable-ссылки и коллекции.
 - `NodeTypeBuilder` остается точкой расширения для дополнительных правил и слотов.
 - `NodeTypeDefinition` описывает один зарегистрированный `NodeType`, а не всю схему графа.
-- `NodeFieldDefinition` фиксирует C#-поле типа: kind значения, CLR-тип, cardinality и id кастомного `NodeType`,
-  если поле указывает на типизированный узел.
-- `NodeSlotDefinition` описывает slot-инвариант через имя, допустимые graph type ids и cardinality, а также умеет
+- `NodeFieldDefinition` фиксирует C#-поле типа: kind значения, CLR-тип, cardinality и зарегистрированный
+  `NodeType`, если поле указывает на типизированный узел.
+- `NodeSlotDefinition` описывает slot-инвариант через имя, допустимые `NodeType` и cardinality, а также умеет
   проверить этот слот на конкретном `InstanceNode`.
 - `NodeSlotCardinality` задает ограничения количества связанных инстансов.
 - `InstanceNode.AssignedTypes` читает назначенные типы из связей с узлами, которые сами находятся в графе типов.
@@ -75,6 +77,7 @@
 - `NodeTypeId` как отдельную типизацию id вместо зарегистрированного `NodeType`.
 - `NodeTypeSchema` как snapshot всех типов графа.
 - `TypedNodeInstance`/`TypedNodeNeighbor` как дубли `InstanceNode` и его соседей.
+- `FixedGraphTopology`/публичные id-константы как отдельный словарь внутренностей `Graph`.
 - `NodeTypeSchemaMaterializer` как слой между `GraphService` и `IGraphStorage` для базового чтения типов.
 
 ### Оставшийся долг

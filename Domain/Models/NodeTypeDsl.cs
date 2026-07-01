@@ -23,25 +23,14 @@ public readonly record struct NodeSlotCardinality(int Min, int? Max)
 
 public sealed record NodeSlotDefinition(
     string Name,
-    IReadOnlyCollection<InternalId> AllowedTypeIds,
+    IReadOnlyCollection<NodeType> AllowedTypes,
     NodeSlotCardinality Cardinality)
 {
-    public IReadOnlyCollection<NodeType> AllowedTypes { get; init; } = [];
-
-    public NodeSlotDefinition(
-        string name,
-        IReadOnlyCollection<NodeType> allowedTypes,
-        NodeSlotCardinality cardinality)
-        : this(
-            name,
-            allowedTypes.Select(static type => type.GlobalId).ToArray(),
-            cardinality) {
-        AllowedTypes = allowedTypes;
-    }
-
     public void EnsureSatisfiedBy(InstanceNode instance)
     {
-        var allowedTypeIds = AllowedTypeIds.ToHashSet();
+        var allowedTypeIds = AllowedTypes
+            .Select(static type => type.GlobalId)
+            .ToHashSet();
         var count = instance.Nodes.Count(neighbor =>
             neighbor.GlobalId != instance.Type.GlobalId
             && neighbor.Nodes.Any(type => allowedTypeIds.Contains(type.GlobalId)));
@@ -56,11 +45,11 @@ public sealed record NodeFieldDefinition(
     Type ClrType,
     NodeSlotCardinality Cardinality,
     bool IsCollection,
-    InternalId? NodeTypeId = null) //TODO переписать на узел-тип
+    NodeType? NodeType = null)
 {
     internal NodeSlotDefinition? ToSlotDefinition() =>
-        ValueKind == NodeFieldValueKind.Node && NodeTypeId is { } nodeTypeId
-            ? new NodeSlotDefinition(Name, [nodeTypeId], Cardinality)
+        ValueKind == NodeFieldValueKind.Node && NodeType is { } nodeType
+            ? new NodeSlotDefinition(Name, [nodeType], Cardinality)
             : null;
 }
 
@@ -80,15 +69,15 @@ public sealed record NodeTypeDefinition(
 public sealed class NodeTypeBuilder
 {
     private readonly NodeType _type;
-    private readonly Func<Type, InternalId> _resolveTypeId;
+    private readonly Func<Type, NodeType> _resolveType;
     private readonly List<NodeSlotDefinition> _slots = [];
     private readonly List<NodeFieldDefinition> _fields = [];
     private bool _isAbstract;
 
-    internal NodeTypeBuilder(NodeType type, Func<Type, InternalId> resolveTypeId)
+    internal NodeTypeBuilder(NodeType type, Func<Type, NodeType> resolveType)
     {
         _type = type;
-        _resolveTypeId = resolveTypeId;
+        _resolveType = resolveType;
     }
 
     public NodeTypeBuilder Abstract(bool value = true)
@@ -102,7 +91,11 @@ public sealed class NodeTypeBuilder
         NodeType allowedType,
         NodeSlotCardinality? cardinality = null)
     {
-        return RequiresSlot(name, allowedType.GlobalId, cardinality);
+        _slots.Add(new NodeSlotDefinition(
+            RequireName(name),
+            [allowedType],
+            cardinality ?? NodeSlotCardinality.Required()));
+        return this;
     }
 
     public NodeTypeBuilder RequiresSlot<TNodeType>(
@@ -110,19 +103,7 @@ public sealed class NodeTypeBuilder
         NodeSlotCardinality? cardinality = null)
         where TNodeType : NodeType
     {
-        return RequiresSlot(name, _resolveTypeId(typeof(TNodeType)), cardinality);
-    }
-
-    public NodeTypeBuilder RequiresSlot(
-        string name,
-        InternalId allowedTypeId,
-        NodeSlotCardinality? cardinality = null)
-    {
-        _slots.Add(new NodeSlotDefinition(
-            RequireName(name),
-            [allowedTypeId],
-            cardinality ?? NodeSlotCardinality.Required()));
-        return this;
+        return RequiresSlot(name, _resolveType(typeof(TNodeType)), cardinality);
     }
 
     public NodeTypeBuilder Slot(
@@ -130,24 +111,13 @@ public sealed class NodeTypeBuilder
         IEnumerable<NodeType> allowedTypes,
         NodeSlotCardinality cardinality)
     {
-        return SlotByTypeIds(
-            name,
-            allowedTypes.Select(static type => type.GlobalId),
-            cardinality);
-    }
-
-    public NodeTypeBuilder SlotByTypeIds(
-        string name,
-        IEnumerable<InternalId> allowedTypeIds,
-        NodeSlotCardinality cardinality)
-    {
-        var typeIds = allowedTypeIds
+        var types = allowedTypes
             .Distinct()
             .ToArray();
-        if (typeIds.Length == 0)
-            throw new ArgumentException("At least one allowed node type is required.", nameof(allowedTypeIds));
+        if (types.Length == 0)
+            throw new ArgumentException("At least one allowed node type is required.", nameof(allowedTypes));
 
-        _slots.Add(new NodeSlotDefinition(RequireName(name), typeIds, cardinality));
+        _slots.Add(new NodeSlotDefinition(RequireName(name), types, cardinality));
         return this;
     }
 

@@ -36,26 +36,22 @@ public abstract class StorageTests : IAsyncDisposable {
     }
 }
 public abstract class GraphServiceTests : StorageTests {
-    public GraphService Service { get; }
+    public GraphService Service { get; private set; } = null!;
+    protected Graph Graph { get; private set; } = null!;
     protected virtual Assembly[] Assemblies { get; } = [];
-
-    public GraphServiceTests() {
-        Service = new GraphService(Storage, new GraphSearchService(Storage), GraphSchemaRegistry.Create(Assemblies));
-    }
 
     [TestInitialize]
     public override async Task Init() {
-        await new GraphFactory(Storage, GraphSchemaRegistry.Create(Assemblies)).OpenAsync();
+        Graph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create(Assemblies));
+        Service = new GraphService(Graph, new GraphSearchService(Storage));
     }
 
     protected async Task<Subgraph> GetRoots() {
         return (await Service.GetSubgraph([], 0)).Value!;
     }
     protected async Task<Node> GetTypesRoot() {
-        var result = await Service.GetNode(FixedGraphTopology.NodeTypesId);
-        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
-        Assert.IsNotNull(result.Value);
-        return result.Value;
+        await Task.CompletedTask;
+        return Graph.NodeTypes;
     }
     protected async Task<Node> Create(string localId) {
         var result = await Service.CreateNode(localId);
@@ -78,13 +74,15 @@ public abstract class GraphDslTests : StorageTests {
     public override async Task Init() {
         if (Graph != null)
             throw new Exception("неправильный жизненный цикл теста");
-        Graph = await new GraphFactory(Storage, GraphSchemaRegistry.Create(Assemblies)).OpenAsync();
+        Graph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create(Assemblies));
     }
 }
 public abstract class GraphTests : GraphDslTests {
-    public GraphService Service { get; }
+    public GraphService Service { get; private set; } = null!;
 
-    public GraphTests() {
-        Service = new GraphService(Storage, new GraphSearchService(Storage), GraphSchemaRegistry.Create(Assemblies));
+    [TestInitialize]
+    public override async Task Init() {
+        await base.Init();
+        Service = new GraphService(Graph, new GraphSearchService(Storage));
     }
 }

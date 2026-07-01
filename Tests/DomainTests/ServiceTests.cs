@@ -47,7 +47,7 @@ public sealed class ServiceTests : GraphServiceTests {
         Assert.IsNotNull(storedNode);
         Assert.IsTrue(await storedNode.Nodes.AnyAsync(neighbor => neighbor.GlobalId == weaponType.GlobalId));
         Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "ak47")));
-        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, FixedGraphTopology.NodeTypesLocalId.ToString(), "weapon")));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, typesRoot.LocalId.ToString(), "weapon")));
     }
 
     [TestMethod]
@@ -215,7 +215,7 @@ public sealed class ServiceTests : GraphServiceTests {
 
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
         var definition = result.Value!;
-        var typeState = await Storage.Get(definition.TypeId);
+        var typeState = await Storage.Get(definition.Type.GlobalId);
         Assert.IsNotNull(typeState);
         AssertMetadataFree(typeState);
         var weaponNodeTypeId = await GetNodeTypeIdAsync<EdgeWeaponNodeType>(Service);
@@ -305,7 +305,7 @@ public sealed class ServiceTests : GraphServiceTests {
             Assert.AreEqual(type, actual.ClrType);
             Assert.AreEqual(car, actual.Cardinality);
             Assert.AreEqual(isCollection, actual.IsCollection);
-            Assert.AreEqual(id, actual.NodeTypeId);
+            Assert.AreEqual(id, actual.NodeType?.GlobalId);
         }
     }
 
@@ -477,7 +477,7 @@ public sealed class ServiceTests : GraphServiceTests {
         where TNodeType : NodeType {
         var result = await Service.GetTypedEdgeDefinitionAsync<TNodeType>();
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
-        return result.Value!.TypeId;
+        return result.Value!.Type.GlobalId;
     }
 
     private static async Task<InternalId> GetNodeTypeIdAsync<TNodeType>(GraphData.Core.Services.GraphService Service)
@@ -504,7 +504,7 @@ public sealed class ServiceTests : GraphServiceTests {
         var endpoint = definition.Endpoints.Single(value => value.Name == name);
         Assert.AreEqual(clrType, endpoint.ClrType);
         Assert.AreEqual(cardinality, endpoint.Cardinality);
-        Assert.AreEqual(nodeTypeId, endpoint.NodeTypeId);
+        Assert.AreEqual(nodeTypeId, endpoint.NodeType?.GlobalId);
         Assert.AreEqual(isCollection, endpoint.IsCollection);
     }
 }

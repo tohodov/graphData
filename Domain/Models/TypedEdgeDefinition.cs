@@ -7,33 +7,33 @@ public sealed record TypedEdgeEndpointDefinition(
     Type ClrType,
     NodeSlotCardinality Cardinality,
     bool IsCollection,
-    InternalId? NodeTypeId = null);
+    NodeType? NodeType = null);
 
 public sealed record TypedEdgeDefinition(
     NodeTypeDefinition NodeType,
     IReadOnlyCollection<TypedEdgeEndpointDefinition> Endpoints)
 {
-    public InternalId TypeId => NodeType.Type.GlobalId;
+    public NodeType Type => NodeType.Type;
 
     public void EnsureSatisfiedBy(IReadOnlyCollection<InstanceNode> endpoints)
     {
         if (Endpoints.Count < 2)
-            throw new InvalidOperationException($"Typed edge node type '{TypeId}' must define at least two endpoints.");
+            throw new InvalidOperationException($"Typed edge node type '{Type.GlobalId}' must define at least two endpoints.");
 
         if (endpoints.Count != Endpoints.Count)
             throw new InvalidOperationException(
-                $"Typed edge node type '{TypeId}' expects {Endpoints.Count} endpoints, but got {endpoints.Count}.");
+                $"Typed edge node type '{Type.GlobalId}' expects {Endpoints.Count} endpoints, but got {endpoints.Count}.");
 
         var endpointInstances = endpoints.ToArray();
         var endpointDefinitions = Endpoints.ToArray();
         for (var index = 0; index < endpointDefinitions.Length; index++) {
             var definition = endpointDefinitions[index];
-            if (definition.NodeTypeId is not { } nodeTypeId)
+            if (definition.NodeType is not { } nodeType)
                 continue;
 
             var instance = endpointInstances[index];
-            if (!instance.Nodes.Any(type => type.GlobalId == nodeTypeId))
-                throw new InvalidOperationException($"Endpoint '{definition.Name}' expects node type '{nodeTypeId}', but node '{instance.GlobalId}' has another type.");
+            if (!instance.Nodes.Any(type => type.GlobalId == nodeType.GlobalId))
+                throw new InvalidOperationException($"Endpoint '{definition.Name}' expects node type '{nodeType.GlobalId}', but node '{instance.GlobalId}' has another type.");
         }
     }
 
@@ -47,7 +47,7 @@ public sealed record TypedEdgeDefinition(
                 field.ClrType,
                 field.Cardinality,
                 field.IsCollection,
-                field.NodeTypeId))
+                field.NodeType))
             .ToArray();
 
         if (endpoints.Length < 2) {

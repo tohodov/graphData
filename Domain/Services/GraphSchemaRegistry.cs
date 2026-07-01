@@ -36,14 +36,12 @@ public sealed class GraphRuntimeTypeOptions
 public sealed class GraphSchemaRegistry
 {
     private readonly IReadOnlyDictionary<NodeLocalId, Type> _nodeTypeDescriptors;
-    private readonly IReadOnlyDictionary<Type, NodeLocalId> _nodeTypeDescriptorsByClrType;
     private readonly ConcurrentDictionary<InternalId, NodeTypeDefinition> _definitions = new();
 
     private GraphSchemaRegistry(IReadOnlyCollection<RuntimeGraphTypeDefinition> types)
     {
         Types = types;
         _nodeTypeDescriptors = Types.ToDictionary(static x => x.Id, static x => x.ClrType);
-        _nodeTypeDescriptorsByClrType = Types.ToDictionary(static x => x.ClrType, static x => x.Id);
         Fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", types.Select(static type => type.ClrType.AssemblyQualifiedName)))));
     }
 
@@ -89,27 +87,19 @@ public sealed class GraphSchemaRegistry
         return _nodeTypeDescriptors.TryGetValue(typeId, out type!);
     }
 
-    public NodeLocalId GetNodeTypeId(Type type)
-    {
-        if (_nodeTypeDescriptorsByClrType.TryGetValue(type, out var id))
-            return id;
-
-        throw new InvalidOperationException($"CLR type '{type.FullName}' is not a registered node type.");
-    }
-
-    public NodeTypeDefinition GetOrBuildDefinition(NodeType typeNode, Func<Type, InternalId> resolveTypeId)
+    public NodeTypeDefinition GetOrBuildDefinition(NodeType typeNode, Func<Type, NodeType> resolveType)
     {
         return _definitions.GetOrAdd(typeNode.GlobalId, id =>
         {
             var localId = typeNode.LocalId;
             if (TryGetClrType(localId, out var clrType))
             {
-                var builder = new NodeTypeBuilder(typeNode, resolveTypeId);
-                NodeTypeFieldDiscovery.AddDiscoveredFields(clrType, builder, resolveTypeId);
+                var builder = new NodeTypeBuilder(typeNode, resolveType);
+                NodeTypeFieldDiscovery.AddDiscoveredFields(clrType, builder, resolveType);
                 return builder.Build();
             }
 
-            var dynamicBuilder = new NodeTypeBuilder(typeNode, resolveTypeId);
+            var dynamicBuilder = new NodeTypeBuilder(typeNode, resolveType);
             return dynamicBuilder.Build();
         });
     }
