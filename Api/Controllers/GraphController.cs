@@ -77,6 +77,18 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
         }
     }
 
+    [HttpDelete("connections")]
+    public async Task<ActionResult<OperationResponse>> DisconnectNodesAsync([FromBody] ConnectNodesRequest request) {
+        try {
+            var result = await graph.Disconnect(new NodePath(request.Node1InternalId.Select(x => new NodeLocalId(x))), new NodePath(request.Node2InternalId.Select(x => new NodeLocalId(x))));
+            return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
+        } catch (InvalidOperationException ex) {
+            return StatusCode(StatusCodes.Status500InternalServerError, $"{ex.GetType().Name}: {ex.Message}");
+        } catch (Exception ex) {
+            return BadRequest(ex.Message);
+        }
+    }
+
     [HttpPut("nodes/type")]
     public async Task<ActionResult<SubgraphResponse>> AssignNodeTypeAsync([FromBody] AssignNodeTypeRequest request) {
         var result = await graph.AssignNodeTypeAsync(new NodePath(request.InternalId.Select(x => new NodeLocalId(x))), new NodePath(request.TypeGlobalId.Select(x => new NodeLocalId(x))));

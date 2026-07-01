@@ -68,8 +68,9 @@ export type AssignTypeOperationInput = {
 
 export type GraphOperationContext = {
   readonly selection: GraphSelection;
+  confirm(message: string): boolean;
   clearSelection(): void;
-  deleteNodes(nodeNames: readonly string[]): Promise<void>;
+  deleteSelection(nodeNames: readonly string[], edges: readonly unknown[]): Promise<void>;
   createNode(localId: string, options: { typeGlobalId?: string; linkedNodeNames?: readonly string[] }): Promise<void>;
   connectNodes(
     node1InternalId: string,
@@ -142,21 +143,30 @@ export class ClearSelectionOperation extends GraphOperation {
   }
 }
 
-export class DeleteNodesOperation extends GraphOperation {
+export class DeleteSelectionOperation extends GraphOperation {
   constructor() {
-    super("delete-nodes");
+    super("delete-selection");
   }
 
   override isAvailable(selection: GraphSelection): boolean {
-    return selection.hasNodes();
+    return !selection.isEmpty();
   }
 
   execute(context: GraphOperationContext): Promise<void> {
-    if (!this.ensureAvailable(context, "Нет выбранных узлов для удаления")) {
+    if (!this.ensureAvailable(context, "Нет выбранных элементов для удаления")) {
       return Promise.resolve();
     }
 
-    return context.deleteNodes(context.selection.nodeNames);
+    const selection = context.selection;
+    const parts = [
+      selection.nodeCount > 0 ? `узлов: ${selection.nodeCount}` : "",
+      selection.edgeCount > 0 ? `связей: ${selection.edgeCount}` : ""
+    ].filter(Boolean).join(", ");
+    if (!context.confirm(`Удалить выбранные элементы (${parts})? Это действие нельзя отменить.`)) {
+      return Promise.resolve();
+    }
+
+    return context.deleteSelection(selection.nodeNames, selection.edgeObjects);
   }
 }
 
@@ -228,7 +238,7 @@ export class AssignEdgeTypeOperation extends GraphOperation {
 export class GraphOperations {
   readonly createNode = new CreateNodeOperation();
   readonly clearSelection = new ClearSelectionOperation();
-  readonly deleteNodes = new DeleteNodesOperation();
+  readonly deleteSelection = new DeleteSelectionOperation();
   readonly connectNodes = new ConnectNodesOperation();
   readonly assignNodeType = new AssignNodeTypeOperation();
   readonly assignEdgeType = new AssignEdgeTypeOperation();

@@ -407,7 +407,7 @@ export class GraphViewer {
       this.operations.clearSelection.execute(this.operationContext());
     });
     this.deleteSelectedNodesButton.addEventListener("click", () => {
-      void this.operations.deleteNodes.execute(this.operationContext());
+      void this.operations.deleteSelection.execute(this.operationContext());
     });
     this.assignNodeType.addEventListener("change", () => this.updateEditorState());
     this.assignEdgeType.addEventListener("change", () => this.updateEditorState());
@@ -703,6 +703,57 @@ export class GraphViewer {
     this.render();
     this.renderTypeControls();
     this.setStatus(`Удалено узлов: ${nodeNames.length}`);
+  } catch (error) {
+    this.setStatus((error as Error).message);
+  } finally {
+    this.setBusy(false);
+  }
+
+  }
+
+  async deleteSelection(nodeNames: string[], edges: any[]) {
+  if (nodeNames.length === 0 && edges.length === 0) {
+    this.setStatus("Нет выбранных элементов для удаления");
+    return;
+  }
+
+  const selectedNodeNames = new Set(nodeNames);
+  const edgesToDelete = edges.filter(edge => {
+    const relationGlobalId = edge.relationGlobalId ?? null;
+    return !selectedNodeNames.has(edge.node1InternalId ?? "")
+      && !selectedNodeNames.has(edge.node2InternalId ?? "")
+      && (!relationGlobalId || !selectedNodeNames.has(relationGlobalId));
+  });
+  this.setBusy(true);
+  try {
+    for (const edge of edgesToDelete) {
+      const relationGlobalId = edge.relationGlobalId ?? null;
+      if (relationGlobalId) {
+        await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(relationGlobalId)}`, {
+          method: "DELETE",
+          expectJson: false
+        });
+        this.removeLocalRelationSubgraph(relationGlobalId);
+        this.expandedSelectionKeys.delete(this.selectionKeyForNode(relationGlobalId));
+      } else {
+        await this.disconnectGraphNodes(edge.node1InternalId ?? "", edge.node2InternalId ?? "");
+        this.removeLocalEdge(edge.node1InternalId ?? "", edge.node2InternalId ?? "");
+      }
+      this.expandedSelectionKeys.delete(this.selectionKeyForEdge(edge.key ?? ""));
+    }
+
+    for (const nodeName of nodeNames) {
+      await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(nodeName)}`, {
+        method: "DELETE",
+        expectJson: false
+      });
+      this.removeLocalNode(nodeName, false);
+      this.expandedSelectionKeys.delete(this.selectionKeyForNode(nodeName));
+    }
+
+    this.render();
+    this.renderTypeControls();
+    this.setStatus(`Удалено элементов: ${nodeNames.length + edgesToDelete.length}`);
   } catch (error) {
     this.setStatus((error as Error).message);
   } finally {
@@ -2181,6 +2232,23 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
+  async disconnectGraphNodes(node1InternalId: string, node2InternalId: string) {
+  if (!node1InternalId || !node2InternalId) {
+    throw new Error("Нельзя удалить связь без обоих концов");
+  }
+
+  const request: ConnectNodesRequest = {
+    node1InternalId: this.parseGlobalId(node1InternalId),
+    node2InternalId: this.parseGlobalId(node2InternalId)
+  };
+  await this.apiJson("/api/graph/connections", {
+    method: "DELETE",
+    body: JSON.stringify(request),
+    expectJson: false
+  });
+
+  }
+
   currentSelection(): GraphSelection {
     const nodeNames = this.selectedNodeNames();
     const edgeObjects = this.selectedEdgeObjects();
@@ -2196,12 +2264,13 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   operationContext(): GraphOperationContext {
     return {
       selection: this.currentSelection(),
+      confirm: message => this.window.confirm(message),
       clearSelection: () => {
         this.graph.clearSelection();
         this.expandedSelectionKeys.clear();
         this.render();
       },
-      deleteNodes: nodeNames => this.deleteNodes([...nodeNames]),
+      deleteSelection: (nodeNames, edges) => this.deleteSelection([...nodeNames], [...edges]),
       createNode: (localId, options) => this.createNode(localId, {
         typeGlobalId: options.typeGlobalId,
         linkedNodeNames: [...(options.linkedNodeNames ?? [])]
@@ -2841,7 +2910,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   updateEditorState() {
     const selection = this.currentSelection();
   this.clearSelectionButton.disabled = this.graph.busy || !selection.allows(this.operations.clearSelection);
-  this.deleteSelectedNodesButton.disabled = this.graph.busy || !selection.allows(this.operations.deleteNodes);
+  this.deleteSelectedNodesButton.disabled = this.graph.busy || !selection.allows(this.operations.deleteSelection);
   this.createNodeForm.querySelector<HTMLButtonElement>("button")!.disabled = this.graph.busy
     || !selection.allows(this.operations.createNode);
   this.assignNodeTypeButton.disabled = this.graph.busy || !selection.allows(this.operations.assignNodeType) || !this.assignNodeType.value;
