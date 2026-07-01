@@ -20,7 +20,7 @@ var isOpenApiDocumentGeneration = Assembly.GetEntryAssembly()?.GetName().Name ==
 
 if (!isOpenApiDocumentGeneration)
 {
-
+    await app.Services.GetRequiredService<Graph>().OpenAsync().ConfigureAwait(false);
 }
 
 if (app.Environment.IsDevelopment())

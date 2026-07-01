@@ -7,17 +7,8 @@ public sealed class GraphService {
     const string SourcePortRole = "source";
     const string TargetPortRole = "target";
 
-    readonly GraphProvider? graphProvider;
-    readonly Graph? graph;
+    readonly Graph graph;
     readonly GraphSearchService searchService;
-
-    internal GraphService(
-        GraphProvider graphProvider,
-        GraphSearchService searchService
-    ) {
-        this.graphProvider = graphProvider;
-        this.searchService = searchService;
-    }
 
     internal GraphService(
         Graph graph,
@@ -31,7 +22,7 @@ public sealed class GraphService {
         IGraphStorage storage,
         GraphSearchService searchService,
         GraphSchemaRegistry schemaRegistry
-    ) : this(new GraphProvider(storage, schemaRegistry), searchService) {
+    ) : this(new Graph(storage, schemaRegistry), searchService) {
     }
 
     public async Task<ServiceResult<Node>> CreateNode(NodeLocalId localId, NodeRef? path = null, NodeType? type = null, IDictionary<string, string>? attributes = null) {
@@ -467,10 +458,8 @@ public sealed class GraphService {
         return false;
     }
 
-    private ValueTask<Graph> GetGraphAsync() {
-        if (graph is not null)
-            return ValueTask.FromResult(graph);
-
-        return graphProvider!.GetGraphAsync();
+    private async ValueTask<Graph> GetGraphAsync() {
+        await graph.OpenAsync().ConfigureAwait(false);
+        return graph;
     }
 }

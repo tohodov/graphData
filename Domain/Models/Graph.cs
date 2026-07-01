@@ -7,36 +7,51 @@ public sealed class Graph {
 
     readonly IGraphStorage storage;
     readonly GraphSchemaRegistry schemaRegistry;
-    readonly IReadOnlyDictionary<Type, NodeType> runtimeTypesByClrType;
+    readonly Dictionary<Type, NodeType> runtimeTypesByClrType = [];
+    readonly SemaphoreSlim openGate = new(1, 1);
+    Node? root;
+    NodeType? nodeTypes;
+    bool isOpen;
 
-    Graph(
-        IGraphStorage storage,
-        GraphSchemaRegistry schemaRegistry,
-        NodeBacking root,
-        NodeBacking nodeTypes,
-        IReadOnlyDictionary<Type, NodeType> runtimeTypesByClrType) {
+    internal Graph(IGraphStorage storage, GraphSchemaRegistry schemaRegistry) {
         this.storage = storage;
         this.schemaRegistry = schemaRegistry;
-        this.runtimeTypesByClrType = runtimeTypesByClrType;
-        Root = new Node(root);
-        NodeTypes = new NodeType(nodeTypes);
     }
 
-    public Node Root { get; }
-    public NodeType NodeTypes { get; }
+    public Node Root => root ?? throw new InvalidOperationException("Graph is not open.");
+    public NodeType NodeTypes => nodeTypes ?? throw new InvalidOperationException("Graph is not open.");
     public IReadOnlyCollection<NodeType> RuntimeTypes => runtimeTypesByClrType.Values.ToArray();
 
     internal IGraphStorage Storage => storage;
 
     internal static async Task<Graph> OpenAsync(IGraphStorage storage, GraphSchemaRegistry schemaRegistry) {
-        var nodeTypes = await EnsureNodeTypesRootAsync(storage).ConfigureAwait(false);
-        var runtimeTypes = new Dictionary<Type, NodeType>();
-        foreach (var type in schemaRegistry.Types) {
-            var nodeType = await EnsureNodeTypeAsync(storage, nodeTypes, type.Id).ConfigureAwait(false);
-            runtimeTypes[type.ClrType] = new NodeType(nodeType);
-        }
+        var graph = new Graph(storage, schemaRegistry);
+        await graph.OpenAsync().ConfigureAwait(false);
+        return graph;
+    }
 
-        return new Graph(storage, schemaRegistry, storage.Root, nodeTypes, runtimeTypes);
+    public async Task OpenAsync() {
+        if (isOpen)
+            return;
+
+        await openGate.WaitAsync().ConfigureAwait(false);
+        try {
+            if (isOpen)
+                return;
+
+            var nodeTypesRoot = await EnsureNodeTypesRootAsync(storage).ConfigureAwait(false);
+            runtimeTypesByClrType.Clear();
+            foreach (var type in schemaRegistry.Types) {
+                var nodeType = await EnsureNodeTypeAsync(storage, nodeTypesRoot, type.Id).ConfigureAwait(false);
+                runtimeTypesByClrType[type.ClrType] = new NodeType(nodeType);
+            }
+
+            root = new Node(storage.Root);
+            nodeTypes = new NodeType(nodeTypesRoot);
+            isOpen = true;
+        } finally {
+            openGate.Release();
+        }
     }
 
     public NodeType? GetRuntimeType<TNodeType>()

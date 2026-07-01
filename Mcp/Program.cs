@@ -2,6 +2,7 @@ using System.Diagnostics;
 using Client;
 using GraphData.Api.Runtime;
 using GraphData.Core.Extensions;
+using GraphData.Core.Services;
 using GraphData.Mcp.Runtime;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -43,5 +44,5 @@ builder.Services
     .WithToolsFromAssembly(serializerOptions: GraphJsonSerializerOptions.Create());
 
 var app = builder.Build();
-//TODO инициализировать designtime типы
+await app.Services.GetRequiredService<Graph>().OpenAsync().ConfigureAwait(false);
 await app.RunAsync();

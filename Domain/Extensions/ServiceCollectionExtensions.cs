@@ -12,15 +12,15 @@ public static class ServiceCollectionExtensions
         var runtimeTypeOptions = new GraphRuntimeTypeOptions();
         configureRuntimeTypes?.Invoke(runtimeTypeOptions);
         services.AddSingleton(GraphSchemaRegistry.Create(runtimeTypeOptions));
-        services.AddScoped<GraphSearchService>(static provider =>
-            new GraphSearchService(provider.GetRequiredService<IGraphStorage>()));
-        services.AddScoped<GraphProvider>(static provider =>
-            new GraphProvider(
+        services.AddSingleton(static provider =>
+            new Graph(
                 provider.GetRequiredService<IGraphStorage>(),
                 provider.GetRequiredService<GraphSchemaRegistry>()));
+        services.AddScoped<GraphSearchService>(static provider =>
+            new GraphSearchService(provider.GetRequiredService<IGraphStorage>()));
         services.AddScoped<GraphService>(static provider =>
             new GraphService(
-                provider.GetRequiredService<GraphProvider>(),
+                provider.GetRequiredService<Graph>(),
                 provider.GetRequiredService<GraphSearchService>()
             ));
         return services;
