@@ -43,11 +43,19 @@ public abstract class GraphServiceTests : StorageTests {
         Service = new GraphService(Storage, new GraphSearchService(Storage), GraphSchemaRegistry.Create(Assemblies));
     }
 
+    [TestInitialize]
+    public override async Task Init() {
+        await new GraphFactory(Storage, GraphSchemaRegistry.Create(Assemblies)).OpenAsync();
+    }
+
     protected async Task<Subgraph> GetRoots() {
         return (await Service.GetSubgraph([], 0)).Value!;
     }
     protected async Task<Node> GetTypesRoot() {
-        return (await GetRoots()).Nodes.Single();
+        var result = await Service.GetNode(FixedGraphTopology.NodeTypesId);
+        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
+        Assert.IsNotNull(result.Value);
+        return result.Value;
     }
     protected async Task<Node> Create(string localId) {
         var result = await Service.CreateNode(localId);

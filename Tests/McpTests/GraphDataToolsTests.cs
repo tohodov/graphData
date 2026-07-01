@@ -11,6 +11,11 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 [RelevantTestClass]
 public sealed class GraphDataToolsTests : StorageTests
 {
+    [TestInitialize]
+    public override async Task Init() {
+        await new GraphFactory(Storage, GraphSchemaRegistry.Create()).OpenAsync();
+    }
+
     [TestMethod]
     public async Task GetNode_ReturnsApiNodeShapeWithoutSerializingNodeCycles()
     {

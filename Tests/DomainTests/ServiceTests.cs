@@ -17,10 +17,12 @@ public sealed class ServiceTests : GraphServiceTests {
 
     [TestMethod]
     public async Task LINQ_Traverse() {
-        var typesRoot = (await Service.GetSubgraph([], 0)).Value!.Nodes.Single();
+        var typesRoot = await GetTypesRoot();
         var weaponTypeBaseNode = await Create("weapon", typesRoot.GlobalId)!;
         var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
-        var node = ((Node)await Service.CreateNode("ak47", path: null, weaponType))!;
+        var nodeResult = await Service.CreateNode("ak47", path: null, weaponType);
+        Assert.AreEqual(ServiceResultStatus.Ok, nodeResult.Status, nodeResult.Error);
+        var node = nodeResult.Value!;
         await Service.CreateNode("m16", path: null, weaponType);
         await Service.CreateNode("mp5", path: null, weaponType);
 
@@ -40,147 +42,92 @@ public sealed class ServiceTests : GraphServiceTests {
             .Select(x => x.Instance)
             .ToArray();
         CollectionAssert.AreEquivalent(new NodeLocalId[] { "ak47", "m16", "mp5" }, instances.Select(x => x.LocalId).ToArray());
+
+        var storedNode = await Storage.Get(node.GlobalId);
+        Assert.IsNotNull(storedNode);
+        Assert.IsTrue(await storedNode.Nodes.AnyAsync(neighbor => neighbor.GlobalId == weaponType.GlobalId));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "ak47")));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, FixedGraphTopology.NodeTypesLocalId.ToString(), "weapon")));
     }
 
     [TestMethod]
-    public async Task NodesAdd_ShouldThrowWhenExistingNodeIsAlreadyLinked() {
+    public async Task ConnectNodesAsync_ShouldKeepExistingConnectionIdempotent() {
         var first = (await Service.CreateNode("existing-link-first")).Value!;
         var second = (await Service.CreateNode("existing-link-second")).Value!;
-        first.Nodes.Add(second);
 
-        Assert.ThrowsException<InvalidOperationException>(() => first.Nodes.Add(second));
+        var firstConnect = await Service.ConnectNodesAsync(first.GlobalId, second.GlobalId);
+        var secondConnect = await Service.ConnectNodesAsync(first.GlobalId, second.GlobalId);
+
+        Assert.AreEqual(ServiceResultStatus.Ok, firstConnect.Status, firstConnect.Error);
+        Assert.AreEqual(ServiceResultStatus.Ok, secondConnect.Status, secondConnect.Error);
+
+        var storedFirst = await Storage.Get(first.GlobalId);
+        var storedSecond = await Storage.Get(second.GlobalId);
+        Assert.IsNotNull(storedFirst);
+        Assert.IsNotNull(storedSecond);
+        Assert.AreEqual(1, await storedFirst.Nodes.CountAsync(node => node.GlobalId == second.GlobalId));
+        Assert.AreEqual(1, await storedSecond.Nodes.CountAsync(node => node.GlobalId == first.GlobalId));
+
+        var firstLink = Path.Combine(StorageOptions.RootPath, first.LocalId.ToString(), second.LocalId.ToString());
+        var secondLink = Path.Combine(StorageOptions.RootPath, second.LocalId.ToString(), first.LocalId.ToString());
+        Assert.IsTrue(File.GetAttributes(firstLink).HasFlag(FileAttributes.ReparsePoint));
+        Assert.IsTrue(File.GetAttributes(secondLink).HasFlag(FileAttributes.ReparsePoint));
     }
+
     [TestMethod]
-    public async Task NodeNodes_ShouldReflectFolderChangesAfterFirstRead() {
-        var parent = (await Service.CreateNode("dsl-nodes-parent")).Value!;
-        var first = (await Service.CreateNode("first", parent.GlobalId)).Value!;
-        var secondPath = Path.Combine(StorageOptions.RootPath, parent.LocalId, "second");
-
-        CollectionAssert.AreEquivalent(
-            new[] { first.LocalId },
-            parent.Nodes.Select(static child => child.LocalId).ToArray());
-
-        Directory.CreateDirectory(secondPath);
-
-        CollectionAssert.AreEquivalent(
-            new[] { first.LocalId, new NodeLocalId("second") },
-            parent.Nodes.Select(static child => child.LocalId).ToArray());
-
-        Directory.Delete(secondPath);
-
-        CollectionAssert.AreEquivalent(
-            new[] { first.LocalId },
-            parent.Nodes.Select(static child => child.LocalId).ToArray());
-    }
-    [TestMethod]
-    public async Task NodeEdges_ShouldReflectFolderChangesAfterFirstRead() {
-        var parent = (await Service.CreateNode("dsl-edges-parent")).Value!;
-        var first = (await Service.CreateNode("first", parent.GlobalId)).Value!;
-        var secondPath = Path.Combine(StorageOptions.RootPath, parent.LocalId, "second");
-
-        CollectionAssert.AreEquivalent(
-            new[] { first.LocalId },
-            parent.Edges
-                .Select(edge => edge.Node1.GlobalId == parent.GlobalId ? edge.Node2 : edge.Node1)
-                .Where(neighbor => neighbor.GlobalId != parent.GlobalId)
-                .Select(static neighbor => neighbor.LocalId)
-                .ToArray());
-
-        Directory.CreateDirectory(secondPath);
-
-        CollectionAssert.AreEquivalent(
-            new[] { first.LocalId, new NodeLocalId("second") },
-            parent.Edges
-                .Select(edge => edge.Node1.GlobalId == parent.GlobalId ? edge.Node2 : edge.Node1)
-                .Where(neighbor => neighbor.GlobalId != parent.GlobalId)
-                .Select(static neighbor => neighbor.LocalId)
-                .ToArray());
-
-        Directory.Delete(secondPath);
-
-        CollectionAssert.AreEquivalent(
-            new[] { first.LocalId },
-            parent.Edges
-                .Select(edge => edge.Node1.GlobalId == parent.GlobalId ? edge.Node2 : edge.Node1)
-                .Where(neighbor => neighbor.GlobalId != parent.GlobalId)
-                .Select(static neighbor => neighbor.LocalId)
-                .ToArray());
-    }
-    [TestMethod]
-    public async Task NodeIncidences_ShouldReflectDslTypeAttachmentsAfterFirstRead() {
-        var typeRoot = await GetTypesRoot();
-        var weaponTypeBaseNode = (await Service.CreateNode("dsl-incidence-weapon", typeRoot.GlobalId)).Value!;
-        var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
-
-        CollectionAssert.AreEquivalent(
-            Array.Empty<NodeLocalId>(),
-            weaponType.Incidences
-                .OfType<InstanceOf.TypeEnd>()
-                .Select(static incidence => incidence.Instance.LocalId)
-                .ToArray());
-
-        var ak47 = (await Service.CreateNode("dsl-incidence-ak47", path: null, weaponType)).Value!;
-
-        CollectionAssert.AreEquivalent(
-            new[] { ak47.LocalId },
-            weaponType.Incidences
-                .OfType<InstanceOf.TypeEnd>()
-                .Select(static incidence => incidence.Instance.LocalId)
-                .ToArray());
-
-        var m16 = (await Service.CreateNode("dsl-incidence-m16", path: null, weaponType)).Value!;
-
-        CollectionAssert.AreEquivalent(
-            new[] { ak47.LocalId, m16.LocalId },
-            weaponType.Incidences
-                .OfType<InstanceOf.TypeEnd>()
-                .Select(static incidence => incidence.Instance.LocalId)
-                .ToArray());
-    }
-    [TestMethod]
-    public async Task EdgesRemove_ShouldKeepHierarchyChildByMovingItThroughRemainingEdge() {
+    public async Task Disconnect_ShouldKeepHierarchyChildByMovingItThroughRemainingEdge() {
         var oldParent = (await Service.CreateNode("old-parent")).Value!;
         var child = (await Service.CreateNode("child", oldParent.GlobalId)).Value!;
         var newParent = (await Service.CreateNode("new-parent")).Value!;
         var result = await Service.ConnectNodesAsync(child.GlobalId, newParent.GlobalId);
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status);
-        var hierarchyEdge = oldParent.Edges.Single();
 
-        oldParent.Edges.Remove(hierarchyEdge);
+        result = await Service.Disconnect(oldParent.GlobalId, child.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, result.Status);
 
-        var oldChild = await Service.GetNode(new InternalId("old-parent", "child"));
+        var oldChild = await Service.GetNode(new NodePath("old-parent", "child"));
         Assert.AreEqual(ServiceResultStatus.NotFound, oldChild.Status);
 
-        var movedChild = await Service.GetNode(new InternalId("new-parent", "child"));
+        var movedChild = await Service.GetNode(new NodePath("new-parent", "child"));
         Assert.AreEqual(ServiceResultStatus.Ok, movedChild.Status);
         Assert.IsNotNull(movedChild.Value);
         Assert.AreEqual<NodeLocalId>("child", movedChild.Value.LocalId);
 
-        var reloadedOldParent = await Service.GetNode(new InternalId("old-parent"));
+        var reloadedOldParent = await Service.GetNode(new NodePath("old-parent"));
         Assert.AreEqual(ServiceResultStatus.Ok, reloadedOldParent.Status);
         Assert.IsNotNull(reloadedOldParent.Value);
         Assert.IsFalse(reloadedOldParent.Value.Nodes.Any(node => node.LocalId == "child"));
 
-        var reloadedNewParent = await Service.GetNode(new InternalId("new-parent"));
+        var reloadedNewParent = await Service.GetNode(new NodePath("new-parent"));
         Assert.AreEqual(ServiceResultStatus.Ok, reloadedNewParent.Status);
         Assert.IsNotNull(reloadedNewParent.Value);
         Assert.IsTrue(reloadedNewParent.Value.Nodes.Any(node => node.LocalId == "child"));
+
+        Assert.IsNull(await Storage.Get(oldParent.GlobalId, child.LocalId));
+        Assert.IsNotNull(await Storage.Get(newParent.GlobalId, child.LocalId));
+        Assert.IsFalse(Directory.Exists(Path.Combine(StorageOptions.RootPath, "old-parent", "child")));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "new-parent", "child")));
     }
+
     [TestMethod]
-    public async Task NodesRemove_ShouldDeleteHierarchyChild() {
+    public async Task DeleteNode_ShouldDeleteHierarchyChild() {
         var parent = await Create("parent");
         var child = await Create("child", parent.GlobalId);
 
-        parent.Nodes.Remove(child);
+        var result = await Service.DeleteNode(child.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
 
-        var reloadedParent = await Service.GetNode(new InternalId("parent"));
+        var reloadedParent = await Service.GetNode(new NodePath("parent"));
         Assert.AreEqual(ServiceResultStatus.Ok, reloadedParent.Status);
         Assert.IsNotNull(reloadedParent.Value);
         Assert.IsFalse(reloadedParent.Value.Nodes.Any(node => node.LocalId == "child"));
 
-        var deletedChild = await Service.GetNode(new InternalId("parent", "child"));
+        var deletedChild = await Service.GetNode(new NodePath("parent", "child"));
         Assert.AreEqual(ServiceResultStatus.NotFound, deletedChild.Status);
+        Assert.IsNull(await Storage.Get(parent.GlobalId, child.LocalId));
+        Assert.IsFalse(Directory.Exists(Path.Combine(StorageOptions.RootPath, "parent", "child")));
     }
+
     [TestMethod]
     public async Task GraphService_ChangeEdgeTypeAsync_CreatesMetadataFreeTypedEdgeSubgraph() {
         var typesRoot = await GetTypesRoot();
@@ -196,56 +143,70 @@ public sealed class ServiceTests : GraphServiceTests {
 
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
 
-        throw new NotImplementedException();
-        //var relationId = new InternalId("manufactured-by-1");
-        //var relation = await Storage.Get(relationId);
-        //Assert.IsNotNull(relation);
-        //AssertMetadataFree(relation);
+        var relationId = new NodePath("manufactured-by-1");
+        var relation = await Storage.Get(relationId);
+        Assert.IsNotNull(relation);
+        AssertMetadataFree(relation);
 
-        //var weaponEndpointId = new InternalId("manufactured-by-1", EndpointInstanceLocalId(nameof(ManufacturedByConnectionNodeType.Weapon)));
-        //var manufacturerEndpointId = new InternalId("manufactured-by-1", EndpointInstanceLocalId(nameof(ManufacturedByConnectionNodeType.Manufacturer)));
-        //var weaponEndpoint = await Storage.Get(weaponEndpointId);
-        //Assert.IsNotNull(weaponEndpoint);
-        //var manufacturerEndpoint = await Storage.Get(manufacturerEndpointId);
-        //Assert.IsNotNull(manufacturerEndpoint);
-        //AssertMetadataFree(weaponEndpoint);
-        //AssertMetadataFree(manufacturerEndpoint);
+        var weaponEndpointId = new NodePath("manufactured-by-1", "endpoint-Weapon");
+        var manufacturerEndpointId = new NodePath("manufactured-by-1", "endpoint-Manufacturer");
+        var weaponEndpointSpecId = new NodePath("manufactured-by-1", "endpoint-Weapon", "endpoint-spec-Weapon");
+        var manufacturerEndpointSpecId = new NodePath("manufactured-by-1", "endpoint-Manufacturer", "endpoint-spec-Manufacturer");
 
-        //var edgeTypeId = await GetTypedEdgeTypeIdAsync<ManufacturedByConnectionNodeType>(Service);
-        //var weaponNodeTypeId = await GetNodeTypeIdAsync<EdgeWeaponNodeType>(Service);
-        //var manufacturerNodeTypeId = await GetNodeTypeIdAsync<EdgeManufacturerNodeType>(Service);
+        var weaponEndpoint = await Storage.Get(weaponEndpointId);
+        var manufacturerEndpoint = await Storage.Get(manufacturerEndpointId);
+        var weaponEndpointSpec = await Storage.Get(weaponEndpointSpecId);
+        var manufacturerEndpointSpec = await Storage.Get(manufacturerEndpointSpecId);
+        Assert.IsNotNull(weaponEndpoint);
+        Assert.IsNotNull(manufacturerEndpoint);
+        Assert.IsNotNull(weaponEndpointSpec);
+        Assert.IsNotNull(manufacturerEndpointSpec);
+        AssertMetadataFree(weaponEndpoint);
+        AssertMetadataFree(manufacturerEndpoint);
+        AssertMetadataFree(weaponEndpointSpec);
+        AssertMetadataFree(manufacturerEndpointSpec);
 
-        //var weaponEndpointSpec = await GetEndpointSpecAsync(weaponEndpointId, relationId, weapon.Value.GlobalId);
-        //var manufacturerEndpointSpec = await GetEndpointSpecAsync(manufacturerEndpointId, relationId, manufacturer.Value.GlobalId);
+        var edgeTypeId = await GetTypedEdgeTypeIdAsync<ManufacturedByConnectionNodeType>(Service);
+        var endpointTypeId = await GetNodeTypeIdAsync<EndpointNodeType>(Service);
+        var weaponNodeTypeId = await GetNodeTypeIdAsync<EdgeWeaponNodeType>(Service);
+        var manufacturerNodeTypeId = await GetNodeTypeIdAsync<EdgeManufacturerNodeType>(Service);
 
-        //Assert.IsTrue(await relation.Nodes.AnyAsync(node => node.GlobalId == edgeTypeId));
-        //var edgeType = await Storage.Get(edgeTypeId);
-        //Assert.IsTrue(await edgeType!.Nodes.AnyAsync(node => node.GlobalId == typesRoot.GlobalId));
-        //await AssertConnected(weaponEndpointId, typesRoot.GlobalId);
-        //await AssertConnected(manufacturerEndpointId, typesRoot.GlobalId);
-        //await AssertConnected(weaponEndpointId, weapon.Value.GlobalId);
-        //await AssertConnected(weaponEndpointId, weaponEndpointSpec.GlobalId);
-        //await AssertConnected(manufacturerEndpointId, manufacturer.Value.GlobalId);
-        //await AssertConnected(manufacturerEndpointId, manufacturerEndpointSpec.GlobalId);
-        //await AssertConnected(weaponEndpointSpec.GlobalId, weaponNodeTypeId);
-        //await AssertConnected(manufacturerEndpointSpec.GlobalId, manufacturerNodeTypeId);
+        Assert.IsTrue(await relation.Nodes.AnyAsync(node => node.GlobalId == edgeTypeId));
+        var edgeType = await Storage.Get(edgeTypeId);
+        Assert.IsNotNull(edgeType);
+        Assert.IsTrue(await edgeType.Nodes.AnyAsync(node => node.GlobalId == typesRoot.GlobalId));
+        Assert.IsTrue(await weaponEndpoint.Nodes.AnyAsync(node => node.GlobalId == endpointTypeId));
+        Assert.IsTrue(await manufacturerEndpoint.Nodes.AnyAsync(node => node.GlobalId == endpointTypeId));
+        Assert.IsTrue(await weaponEndpoint.Nodes.AnyAsync(node => node.GlobalId == weapon.Value!.GlobalId));
+        Assert.IsTrue(await manufacturerEndpoint.Nodes.AnyAsync(node => node.GlobalId == manufacturer.Value!.GlobalId));
+        Assert.IsTrue(await weaponEndpoint.Nodes.AnyAsync(node => node.GlobalId == weaponEndpointSpec.GlobalId));
+        Assert.IsTrue(await manufacturerEndpoint.Nodes.AnyAsync(node => node.GlobalId == manufacturerEndpointSpec.GlobalId));
+        Assert.IsTrue(await weaponEndpointSpec.Nodes.AnyAsync(node => node.GlobalId == weaponNodeTypeId));
+        Assert.IsTrue(await manufacturerEndpointSpec.Nodes.AnyAsync(node => node.GlobalId == manufacturerNodeTypeId));
 
-        //var weaponConnections = await Storage.GetNeighbors(weapon.Value.GlobalId).ToArrayAsync();
-        //Assert.IsFalse(weaponConnections.Any(node => node.GlobalId == manufacturer.Value.GlobalId));
+        var storedWeapon = await Storage.Get(weapon.Value.GlobalId);
+        Assert.IsNotNull(storedWeapon);
+        Assert.IsFalse(await storedWeapon.Nodes.AnyAsync(node => node.GlobalId == manufacturer.Value.GlobalId));
 
-        //var returnedIds = result.Value!.Nodes.Select(static node => node.GlobalId).ToArray();
-        //CollectionAssert.IsSubsetOf(
-        //    new[] {
-        //        relationId,
-        //        edgeTypeId,
-        //        weapon.Value.GlobalId,
-        //        manufacturer.Value.GlobalId,
-        //        weaponEndpointId,
-        //        manufacturerEndpointId,
-        //        weaponEndpointSpec.GlobalId,
-        //        manufacturerEndpointSpec.GlobalId
-        //    },
-        //    returnedIds);
+        var relationPath = Path.Combine(StorageOptions.RootPath, "manufactured-by-1");
+        Assert.IsTrue(Directory.Exists(relationPath));
+        Assert.IsTrue(Directory.Exists(Path.Combine(relationPath, "endpoint-Weapon")));
+        Assert.IsTrue(Directory.Exists(Path.Combine(relationPath, "endpoint-Manufacturer")));
+        Assert.IsFalse(File.Exists(Path.Combine(relationPath, StorageOptions.MetadataFileName)));
+
+        var returnedIds = result.Value!.Nodes.Select(static node => node.GlobalId.ToString()).ToArray();
+        CollectionAssert.IsSubsetOf(
+            new[] {
+                relationId.ToString(),
+                edgeTypeId.ToString(),
+                weapon.Value.GlobalId.ToString(),
+                manufacturer.Value.GlobalId.ToString(),
+                weaponEndpointId.ToString(),
+                manufacturerEndpointId.ToString(),
+                weaponEndpointSpec.GlobalId.ToString(),
+                manufacturerEndpointSpec.GlobalId.ToString()
+            },
+            returnedIds);
     }
 
     [TestMethod]
@@ -270,31 +231,42 @@ public sealed class ServiceTests : GraphServiceTests {
 
     [TestMethod]
     public async Task GraphService_AssignNodeTypeAsync_UsesRegisteredNodeTypeDescriptor() {
-        var ak47 = await Storage.Create(new("ak-47"));
+        var ak47Result = await Service.CreateNode(new NodeLocalId("ak-47"));
+        Assert.AreEqual(ServiceResultStatus.Ok, ak47Result.Status, ak47Result.Error);
+        var ak47 = ak47Result.Value!;
 
         var invalid = await Service.AssignNodeTypeAsync<WeaponNodeType>(ak47.GlobalId);
 
         Assert.AreEqual(ServiceResultStatus.BadRequest, invalid.Status);
         StringAssert.Contains(invalid.Error, "Manufacturer");
         var weaponTypeId = await GetNodeTypeIdAsync<WeaponNodeType>(Service);
-        Assert.IsFalse(await ak47.Nodes.AnyAsync(node => node.GlobalId == weaponTypeId));
+        var storedAk47 = await Storage.Get(ak47.GlobalId);
+        Assert.IsNotNull(storedAk47);
+        Assert.IsFalse(await storedAk47.Nodes.AnyAsync(node => node.GlobalId == weaponTypeId));
 
         var country = await Service.CreateNode<CountryNodeType>(new("ussr"));
         Assert.AreEqual(ServiceResultStatus.Ok, country.Status, country.Error);
-        var manufacturer = await Storage.Create(new("kalashnikov"), attributes: new Dictionary<string, string> {
+        var manufacturerResult = await Service.CreateNode(new NodeLocalId("kalashnikov"), attributes: new Dictionary<string, string> {
             [nameof(ManufacturerNodeType.LegalName)] = "Kalashnikov Concern",
             [nameof(ManufacturerNodeType.FoundedYear)] = "1807",
             [nameof(ManufacturerNodeType.IsActive)] = "true"
         });
-        await Service.ConnectNodesAsync(manufacturer.GlobalId, country.Value!.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, manufacturerResult.Status, manufacturerResult.Error);
+        var manufacturer = manufacturerResult.Value!;
+        var connectCountry = await Service.ConnectNodesAsync(manufacturer.GlobalId, country.Value!.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, connectCountry.Status, connectCountry.Error);
         var assignManufacturer = await Service.AssignNodeTypeAsync<ManufacturerNodeType>(manufacturer.GlobalId);
         Assert.AreEqual(ServiceResultStatus.Ok, assignManufacturer.Status, assignManufacturer.Error);
-        await Service.ConnectNodesAsync(ak47.GlobalId, manufacturer.GlobalId);
+        var connectManufacturer = await Service.ConnectNodesAsync(ak47.GlobalId, manufacturer.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, connectManufacturer.Status, connectManufacturer.Error);
 
         var valid = await Service.AssignNodeTypeAsync<WeaponNodeType>(ak47.GlobalId);
 
         Assert.AreEqual(ServiceResultStatus.Ok, valid.Status, valid.Error);
-        Assert.IsTrue(await ak47.Nodes.AnyAsync(node => node.GlobalId == weaponTypeId));
+        storedAk47 = await Storage.Get(ak47.GlobalId);
+        Assert.IsNotNull(storedAk47);
+        Assert.IsTrue(await storedAk47.Nodes.AnyAsync(node => node.GlobalId == weaponTypeId));
+        Assert.IsTrue(File.GetAttributes(Path.Combine(StorageOptions.RootPath, "ak-47", "Weapon")).HasFlag(FileAttributes.ReparsePoint));
     }
 
     [TestMethod]
@@ -328,42 +300,33 @@ public sealed class ServiceTests : GraphServiceTests {
             definition.Slots.Select(static slot => slot.Name).ToArray());
 
         void AssertField(NodeTypeDefinition d, string field, NodeFieldValueKind kind, Type type, NodeSlotCardinality car, NodeRef? id = null, bool isCollection = false) {
-            throw new NotImplementedException();
+            var actual = d.Fields.Single(value => value.Name == field);
+            Assert.AreEqual(kind, actual.ValueKind);
+            Assert.AreEqual(type, actual.ClrType);
+            Assert.AreEqual(car, actual.Cardinality);
+            Assert.AreEqual(isCollection, actual.IsCollection);
+            Assert.AreEqual(id, actual.NodeTypeId);
         }
-    }
-
-    [TestMethod]
-    public async Task NodeTypeDefinition_EnforcesRequiredTypedSlot() {
-        var typeRoot = await GetTypesRoot();
-        var weaponTypeState = await Storage.Create("weapon-type", typeRoot.GlobalId);
-        var manufacturerTypeState = await Storage.Create("manufacturer-type", typeRoot.GlobalId);
-        var weaponType = await Service.GetTypeNode(weaponTypeState.GlobalId)!;
-        var manufacturerType = await Service.GetTypeNode(manufacturerTypeState.GlobalId)!;
-        var builder = new NodeTypeBuilder(weaponType!, type => throw new NotImplementedException());
-        var definition = builder.RequiresSlot("manufacturer", manufacturerType!).Build();
-        var ak47 = await Storage.Create(new("ak-47"));
-        await Storage.Connect(ak47.GlobalId, weaponType!.GlobalId);
-
-        var invalid = new InstanceNode(ak47, weaponType);
-
-        Assert.ThrowsException<InvalidOperationException>(() => definition.EnsureSatisfiedBy(invalid));
-
-        var manufacturer = await Storage.Create(new("kalashnikov"));
-        await Storage.Connect(manufacturer.GlobalId, manufacturerType!.GlobalId);
-        await Storage.Connect(ak47.GlobalId, manufacturer.GlobalId);
-        var valid = new InstanceNode(ak47, weaponType);
-
-        definition.EnsureSatisfiedBy(valid);
     }
 
     [TestMethod]
     public async Task GraphService_AssignNodeTypeAsync_UsesGraphTypeTopologyInsteadOfInternalIdShape() {
         var typeRoot = await GetTypesRoot();
-        var connectedType = await Storage.Create(new("weapon-type"), typeRoot.GlobalId);
-        var unrelatedNode = await Storage.Create(new("Fake"));
-        var ak47 = await Storage.Create(new("ak-47"));
-        var m16 = await Storage.Create(new("m16"));
-        var fnFal = await Storage.Create(new("fn-fal"));
+        var connectedTypeResult = await Service.CreateNode(new NodeLocalId("weapon-type"), typeRoot.GlobalId);
+        var unrelatedNodeResult = await Service.CreateNode(new NodeLocalId("Fake"));
+        var ak47Result = await Service.CreateNode(new NodeLocalId("ak-47"));
+        var m16Result = await Service.CreateNode(new NodeLocalId("m16"));
+        var fnFalResult = await Service.CreateNode(new NodeLocalId("fn-fal"));
+        Assert.AreEqual(ServiceResultStatus.Ok, connectedTypeResult.Status, connectedTypeResult.Error);
+        Assert.AreEqual(ServiceResultStatus.Ok, unrelatedNodeResult.Status, unrelatedNodeResult.Error);
+        Assert.AreEqual(ServiceResultStatus.Ok, ak47Result.Status, ak47Result.Error);
+        Assert.AreEqual(ServiceResultStatus.Ok, m16Result.Status, m16Result.Error);
+        Assert.AreEqual(ServiceResultStatus.Ok, fnFalResult.Status, fnFalResult.Error);
+        var connectedType = connectedTypeResult.Value!;
+        var unrelatedNode = unrelatedNodeResult.Value!;
+        var ak47 = ak47Result.Value!;
+        var m16 = m16Result.Value!;
+        var fnFal = fnFalResult.Value!;
 
         var connectedResult = await Service.AssignNodeTypeAsync(ak47.GlobalId, connectedType.GlobalId);
         var unrelatedResult = await Service.AssignNodeTypeAsync(m16.GlobalId, unrelatedNode.GlobalId);
@@ -374,18 +337,28 @@ public sealed class ServiceTests : GraphServiceTests {
         StringAssert.Contains(unrelatedResult.Error, "not a node type");
         Assert.AreEqual(ServiceResultStatus.BadRequest, rootResult.Status);
         StringAssert.Contains(rootResult.Error, "not a node type");
+
+        var storedAk47 = await Storage.Get(ak47.GlobalId);
+        var storedM16 = await Storage.Get(m16.GlobalId);
+        var storedFnFal = await Storage.Get(fnFal.GlobalId);
+        Assert.IsNotNull(storedAk47);
+        Assert.IsNotNull(storedM16);
+        Assert.IsNotNull(storedFnFal);
+        Assert.IsTrue(await storedAk47.Nodes.AnyAsync(node => node.GlobalId == connectedType.GlobalId));
+        Assert.IsFalse(await storedM16.Nodes.AnyAsync(node => node.GlobalId == unrelatedNode.GlobalId));
+        Assert.IsFalse(await storedFnFal.Nodes.AnyAsync(node => node.GlobalId == typeRoot.GlobalId));
     }
 
     [TestMethod]
     public async Task ShouldRespectDepth() {
-        var first = await Storage.Create("first");
-        var second = await Storage.Create("second");
-        var third = await Storage.Create("third");
-        var fourth = await Storage.Create("fourth");
+        var first = await Create("first");
+        var second = await Create("second");
+        var third = await Create("third");
+        var fourth = await Create("fourth");
 
-        await Storage.Connect(first.GlobalId, second.GlobalId);
-        await Storage.Connect(second.GlobalId, third.GlobalId);
-        await Storage.Connect(third.GlobalId, fourth.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.ConnectNodesAsync(first.GlobalId, second.GlobalId)).Status);
+        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.ConnectNodesAsync(second.GlobalId, third.GlobalId)).Status);
+        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.ConnectNodesAsync(third.GlobalId, fourth.GlobalId)).Status);
 
         var subgraph = (await Service.GetSubgraph([first.GlobalId], 2)).Value!;
         var subgraphNodeIds = subgraph.Nodes.Select(static node => node.GlobalId).ToArray();
@@ -405,26 +378,30 @@ public sealed class ServiceTests : GraphServiceTests {
             .ToArray();
         Assert.IsTrue(children.Any(x => x.LocalId == second.LocalId));
         Assert.IsFalse(children.Any(x => x.LocalId == third.LocalId));
+
+        Assert.IsTrue(File.GetAttributes(Path.Combine(StorageOptions.RootPath, "first", "second")).HasFlag(FileAttributes.ReparsePoint));
+        Assert.IsTrue(File.GetAttributes(Path.Combine(StorageOptions.RootPath, "second", "third")).HasFlag(FileAttributes.ReparsePoint));
     }
 
     [TestMethod]
     public async Task ShouldTraverseHierarchy() {
-        var root = await Storage.Create(new("root"));
-        var weapons = await Storage.Create(new("weapons"), root.GlobalId);
-        var ak47 = await Storage.Create(new("ak_47"), weapons.GlobalId);
+        var root = await Create("root");
+        var weapons = await Create("weapons", root.GlobalId);
+        var ak47 = await Create("ak_47", weapons.GlobalId);
 
         var subgraph = (await Service.GetSubgraph([root.GlobalId], 2)).Value!;
 
         CollectionAssert.AreEquivalent(
             new[] { root.GlobalId, weapons.GlobalId, ak47.GlobalId },
             subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "root", "weapons", "ak_47")));
     }
 
     [TestMethod]
     public async Task EmptyQueryShouldStartFromTopLevelRoots() {
-        var firstRoot = await Storage.Create(new("first"));
-        var secondRoot = await Storage.Create(new("second"));
-        var child = await Storage.Create(new("child"), firstRoot.GlobalId);
+        var firstRoot = await Create("first");
+        var secondRoot = await Create("second");
+        var child = await Create("child", firstRoot.GlobalId);
 
         var subgraph = (await Service.GetSubgraph([], 0)).Value!;
 
@@ -432,19 +409,22 @@ public sealed class ServiceTests : GraphServiceTests {
             new[] { firstRoot.GlobalId, secondRoot.GlobalId },
             subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
         CollectionAssert.DoesNotContain(subgraph.Nodes.Select(static node => node.GlobalId).ToArray(), child.GlobalId);
+        Assert.IsNotNull(await Storage.Get(child.GlobalId));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "first", "child")));
     }
 
     [TestMethod]
     public async Task EmptyNodeIdentifierShouldStartFromTopLevelRoots() {
-        var firstRoot = await Storage.Create(new("first"));
-        var secondRoot = await Storage.Create(new("second"));
-        await Storage.Create(new("child"), firstRoot.GlobalId);
+        var firstRoot = await Create("first");
+        var secondRoot = await Create("second");
+        await Create("child", firstRoot.GlobalId);
 
         var subgraph = (await Service.GetSubgraph([new NodePath()], 0)).Value!;
 
         CollectionAssert.AreEquivalent(
             new[] { firstRoot.GlobalId, secondRoot.GlobalId },
             subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "first", "child")));
     }
 
     [TestMethod]
@@ -466,16 +446,21 @@ public sealed class ServiceTests : GraphServiceTests {
         Assert.IsNotNull(movedChild.Value);
         Assert.AreEqual<NodeLocalId>("child", movedChild.Value.LocalId);
 
-        var reloadedNewParent = await Service.GetNode(oldParent.GlobalId);
+        var reloadedOldParent = await Service.GetNode(oldParent.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, reloadedOldParent.Status);
+        Assert.IsNotNull(reloadedOldParent.Value);
+        Assert.IsFalse(reloadedOldParent.Value.Nodes.Any(node => node.LocalId == "child"));
+
+        var reloadedNewParent = await Service.GetNode(newParent.GlobalId);
         Assert.AreEqual(ServiceResultStatus.Ok, reloadedNewParent.Status);
         Assert.IsNotNull(reloadedNewParent.Value);
         Assert.IsTrue(reloadedNewParent.Value.Nodes.Any(node => node.LocalId == "child"));
 
         Assert.IsNull(await Storage.Get(oldParent.GlobalId, child.LocalId));
-        Assert.IsFalse(child.GetBacking().FolderPath.Contains(oldParent.LocalId));
+        Assert.IsFalse(Directory.Exists(Path.Combine(StorageOptions.RootPath, "old", "child")));
 
         Assert.IsNotNull(await Storage.Get(newParent.GlobalId, child.LocalId));
-        Assert.IsTrue(child.GetBacking().FolderPath.Contains(newParent.LocalId));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "new", "child")));
     }
 
     [TestMethod]
@@ -484,6 +469,8 @@ public sealed class ServiceTests : GraphServiceTests {
         var child = await Create("child", parent.GlobalId);
 
         await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => Service.Disconnect(parent.GlobalId, child.GlobalId));
+        Assert.IsNotNull(await Storage.Get(child.GlobalId));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "parent", "child")));
     }
 
     private static async Task<InternalId> GetTypedEdgeTypeIdAsync<TNodeType>(GraphData.Core.Services.GraphService Service)
@@ -520,6 +507,4 @@ public sealed class ServiceTests : GraphServiceTests {
         Assert.AreEqual(nodeTypeId, endpoint.NodeTypeId);
         Assert.AreEqual(isCollection, endpoint.IsCollection);
     }
-
-    
 }

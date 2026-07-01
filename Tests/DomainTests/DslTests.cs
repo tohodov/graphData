@@ -1,4 +1,5 @@
 using Abstractions;
+using GraphData.Core.Models;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 [RelevantTestClass]
@@ -151,6 +152,37 @@ public sealed class DslTests : GraphDslTests {
     }
 
     [TestMethod]
+    public async Task NodeTypeDefinition_EnforcesRequiredTypedSlot() {
+        var weaponType = new NodeType("weapon-type");
+        var manufacturerType = new NodeType("manufacturer-type");
+        Graph.NodeTypes.Nodes.Add(weaponType);
+        Graph.NodeTypes.Nodes.Add(manufacturerType);
+        var definition = new NodeTypeBuilder(weaponType, type => throw new NotImplementedException())
+            .RequiresSlot("manufacturer", manufacturerType)
+            .Build();
+
+        var ak47 = new InstanceNode("ak-47", weaponType);
+        Graph.Root.Nodes.Add(ak47);
+        ak47.Nodes.Add(weaponType);
+
+        Assert.ThrowsException<InvalidOperationException>(() => definition.EnsureSatisfiedBy(ak47));
+
+        var manufacturer = new InstanceNode("kalashnikov", manufacturerType);
+        Graph.Root.Nodes.Add(manufacturer);
+        manufacturer.Nodes.Add(manufacturerType);
+        ak47.Nodes.Add(manufacturer);
+
+        definition.EnsureSatisfiedBy(ak47);
+
+        var storedAk47 = await Storage.Get(ak47.GlobalId);
+        Assert.IsNotNull(storedAk47);
+        Assert.IsTrue(await storedAk47.Nodes.AnyAsync(node => node.GlobalId == weaponType.GlobalId));
+        Assert.IsTrue(await storedAk47.Nodes.AnyAsync(node => node.GlobalId == manufacturer.GlobalId));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "ak-47")));
+        Assert.IsTrue(File.GetAttributes(Path.Combine(StorageOptions.RootPath, "ak-47", "kalashnikov")).HasFlag(FileAttributes.ReparsePoint));
+    }
+
+    [TestMethod]
     public async Task EdgesRemove_ShouldKeepHierarchyChildByMovingItThroughRemainingEdge() {
         var oldParent = new Node("old-parent");
         var child = new Node("child");
@@ -162,10 +194,16 @@ public sealed class DslTests : GraphDslTests {
         child.Edges.Add(new Edge(child, newParent));
         oldParent.Nodes.Remove(child);
 
-        Assert.IsFalse(child.Incidences.Any(x => x.Node.GlobalId == oldParent.GlobalId));
-        Assert.IsTrue(child.Incidences.Any(x => x.Node.GlobalId == newParent.GlobalId));
-        Assert.IsFalse(oldParent.Incidences.Any(x => x.Node.GlobalId == child.GlobalId));
-        Assert.IsTrue(newParent.Incidences.Any(x => x.Node.GlobalId == child.GlobalId));
+        var storedOldParent = await Storage.Get(oldParent.GlobalId);
+        var storedNewParent = await Storage.Get(newParent.GlobalId);
+        Assert.IsNotNull(storedOldParent);
+        Assert.IsNotNull(storedNewParent);
+        Assert.IsFalse(await storedOldParent.Nodes.AnyAsync(node => node.LocalId == "child"));
+        Assert.IsTrue(await storedNewParent.Nodes.AnyAsync(node => node.LocalId == "child"));
+        Assert.IsNull(await Storage.Get(oldParent.GlobalId, child.LocalId));
+        Assert.IsNotNull(await Storage.Get(newParent.GlobalId, child.LocalId));
+        Assert.IsFalse(Directory.Exists(Path.Combine(StorageOptions.RootPath, "old-parent", "child")));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "new-parent", "child")));
     }
 
     [TestMethod]
@@ -181,8 +219,7 @@ public sealed class DslTests : GraphDslTests {
         Assert.IsNull(await Storage.Get(parent.GlobalId, child.LocalId));
         Assert.IsFalse(parent.GetBacking().Folder.EnumerateDirectories().Any());
 
-        Assert.ThrowsException<Exception>(() => child.Attributes.FirstOrDefault());
-        Assert.ThrowsException<Exception>(() => child.Nodes.Count());
+        Assert.IsFalse(Directory.Exists(Path.Combine(StorageOptions.RootPath, "parent", "child")));
     }
 
     [TestMethod]
@@ -200,15 +237,17 @@ public sealed class DslTests : GraphDslTests {
 
         Assert.IsFalse(oldParent.Nodes.Any(node => node.LocalId == "child"));
         Assert.IsNull(await Storage.Get(oldParent.GlobalId, child.LocalId));
-        Assert.IsFalse(child.GetBacking().FolderPath.Contains(oldParent.LocalId));
+        Assert.IsFalse(Directory.Exists(Path.Combine(StorageOptions.RootPath, "old", "child")));
 
-        Assert.IsTrue(newParent.Nodes.Any(node => node.LocalId == "child"));
+        var reloadedNewParent = await Storage.Get(newParent.GlobalId);
+        Assert.IsNotNull(reloadedNewParent);
+        Assert.IsTrue(await reloadedNewParent.Nodes.AnyAsync(node => node.LocalId == "child"));
         Assert.IsNotNull(await Storage.Get(newParent.GlobalId, child.LocalId));
-        Assert.IsTrue(child.GetBacking().FolderPath.Contains(newParent.LocalId));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "new", "child")));
     }
 
     [TestMethod]
-    public void EdgesRemove_ShouldThrowWhenHierarchyEdgeIsChildsOnlyEdge() {
+    public async Task EdgesRemove_ShouldThrowWhenHierarchyEdgeIsChildsOnlyEdge() {
         var parent = new Node("parent");
         var child = new Node("child");
         parent.Nodes.Add(child);
@@ -217,6 +256,8 @@ public sealed class DslTests : GraphDslTests {
         var hierarchyEdge = parent.Edges.Single();
 
         Assert.ThrowsException<InvalidOperationException>(() => parent.Edges.Remove(hierarchyEdge));
+        Assert.IsTrue(parent.Nodes.Any(node => node.LocalId == "child"));
+        Assert.IsNotNull(await Storage.Get(parent.GlobalId, child.LocalId));
         Assert.IsTrue(child.GetBacking().Folder.Exists);
     }
 }
