@@ -68,34 +68,40 @@
         </nav>
 
         <section id="tab-operations" class="tab-panel active">
-          <div class="panel-block">
-            <span class="eyebrow">Выбор</span>
+          <div class="panel-block" data-operation="clear-selection">
+            <span class="eyebrow">Операция</span>
             <div class="button-row">
               <button id="clear-selection-button" type="button">Снять выбор</button>
-              <button id="delete-selected-nodes-button" class="danger-button" type="button">Удалить</button>
             </div>
           </div>
 
-          <div class="panel-block stack-form">
+          <div class="panel-block" data-operation="delete-selection">
+            <span class="eyebrow">Операция</span>
+            <div class="button-row">
+              <button id="delete-selected-nodes-button" class="danger-button" type="button">Удалить выбранное</button>
+            </div>
+          </div>
+
+          <div class="panel-block stack-form" data-operation="assign-node-type">
             <span class="eyebrow">Тип выбранных узлов</span>
             <select id="assign-node-type"></select>
             <button id="assign-node-type-button" type="button">Назначить выбранным узлам</button>
           </div>
 
-          <div class="panel-block stack-form">
+          <div class="panel-block stack-form" data-operation="assign-edge-type">
             <span class="eyebrow">Тип выбранных связей</span>
             <select id="assign-edge-type"></select>
             <button id="assign-edge-type-button" type="button">Назначить выбранным связям</button>
           </div>
 
-          <form id="create-node-form" class="panel-block stack-form">
+          <form id="create-node-form" class="panel-block stack-form" data-operation="create-node">
             <span class="eyebrow">Создать узел</span>
             <input id="create-node-name" type="text" autocomplete="off" spellcheck="false" placeholder="LocalId нового узла">
             <select id="create-node-type"></select>
             <button type="submit">Создать</button>
           </form>
 
-          <form id="connect-form" class="panel-block stack-form">
+          <form id="connect-form" class="panel-block stack-form" data-operation="connect-nodes">
             <span class="eyebrow">Соединить активный узел</span>
             <input id="connect-target-name" type="text" autocomplete="off" spellcheck="false" placeholder="GlobalId узла">
             <select id="connect-edge-type"></select>

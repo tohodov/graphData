@@ -199,7 +199,34 @@ export interface paths {
                 };
             };
         };
-        delete?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ConnectNodesRequest"];
+                    "text/json": components["schemas"]["ConnectNodesRequest"];
+                    "application/*+json": components["schemas"]["ConnectNodesRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["OperationResponse"];
+                        "application/json": components["schemas"]["OperationResponse"];
+                        "text/json": components["schemas"]["OperationResponse"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;

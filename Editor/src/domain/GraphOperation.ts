@@ -242,4 +242,12 @@ export class GraphOperations {
   readonly connectNodes = new ConnectNodesOperation();
   readonly assignNodeType = new AssignNodeTypeOperation();
   readonly assignEdgeType = new AssignEdgeTypeOperation();
+  readonly all: readonly GraphOperation[] = [
+    this.clearSelection,
+    this.deleteSelection,
+    this.assignNodeType,
+    this.assignEdgeType,
+    this.createNode,
+    this.connectNodes
+  ];
 }

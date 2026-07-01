@@ -16,7 +16,7 @@ import { GraphEdge } from "./domain/GraphEdge.js";
 import { GraphId } from "./domain/GraphId.js";
 import { GraphModel } from "./domain/GraphModel.js";
 import { GraphNode } from "./domain/GraphNode.js";
-import { GraphOperations, GraphSelection, type GraphOperationContext } from "./domain/GraphOperation.js";
+import { GraphOperations, GraphSelection, type GraphOperation, type GraphOperationContext } from "./domain/GraphOperation.js";
 import { GraphType } from "./domain/GraphType.js";
 import type {
   AssignNodeTypeRequest,
@@ -66,6 +66,7 @@ export class GraphViewer {
   api: GraphApi;
   graph: GraphModel;
   operations: GraphOperations;
+  operationPanels: { operation: GraphOperation; element: HTMLElement }[];
   canvas: WebGpuGraphCanvas;
 
   graphSurface: HTMLCanvasElement;
@@ -129,6 +130,7 @@ export class GraphViewer {
     this.api = api;
     this.graph = new GraphModel();
     this.operations = new GraphOperations();
+    this.operationPanels = [];
 
     this.graphSurface = this.requireElement<HTMLCanvasElement>("#graph");
     this.labelLayer = this.requireElement("#graph-label-layer");
@@ -185,6 +187,7 @@ export class GraphViewer {
     this.assignEdgeTypeButton = this.requireElement("#assign-edge-type-button");
     this.edgeTypeList = this.requireElement("#edge-type-list");
     this.typedEdgeList = this.requireElement("#typed-edge-list");
+    this.operationPanels = this.createOperationPanels();
     this.canvas = new WebGpuGraphCanvas({
       document: this.document,
       window: this.window,
@@ -333,6 +336,21 @@ export class GraphViewer {
     }
 
     return { overlay, request, message, close };
+  }
+
+  createOperationPanels() {
+    const operationsById = new Map(this.operations.all.map(operation => [operation.id, operation]));
+
+    return [...this.document.querySelectorAll<HTMLElement>("[data-operation]")]
+      .map(element => {
+        const operationId = element.dataset.operation ?? "";
+        const operation = operationsById.get(operationId);
+        if (!operation) {
+          throw new Error(`GraphData operation panel is bound to unknown operation: ${operationId}`);
+        }
+
+        return { operation, element };
+      });
   }
 
   bindTabs() {
@@ -2909,6 +2927,9 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   updateEditorState() {
     const selection = this.currentSelection();
+  this.operationPanels.forEach(panel => {
+    panel.element.hidden = !selection.allows(panel.operation);
+  });
   this.clearSelectionButton.disabled = this.graph.busy || !selection.allows(this.operations.clearSelection);
   this.deleteSelectedNodesButton.disabled = this.graph.busy || !selection.allows(this.operations.deleteSelection);
   this.createNodeForm.querySelector<HTMLButtonElement>("button")!.disabled = this.graph.busy
