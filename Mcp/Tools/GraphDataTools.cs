@@ -20,7 +20,7 @@ public sealed class GraphDataTools(GraphService graph) {
     [Description("Gets a graph node by GlobalId and returns the same node shape as the HTTP API: LocalId, GlobalId, attributes, and edges.")]
     public async Task<string> GetNode(
         [Description("NodePath segments to look up.")] string[] path) {
-        var result = await graph.GetNodeAsync(new NodePath(path));
+        var result = await graph.GetNode(new NodePath(path));
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             return ToJson(new {
                 found = true,
@@ -53,7 +53,7 @@ public sealed class GraphDataTools(GraphService graph) {
     public async Task<string> UpdateNodeAttributes(
         [Description("NodePath segments of the node to update.")] string[] path,
         [Description("Complete replacement set of string attributes.")] Dictionary<string, string> attributes) {
-        var result = await graph.UpdateNodeAsync(new NodePath(path), attributes);
+        var result = await graph.UpdateNode(new NodePath(path), attributes);
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new { success = true })
             : ToJson(ToErrorResponse(result.Status, result.Error));
@@ -63,7 +63,7 @@ public sealed class GraphDataTools(GraphService graph) {
     [Description("Deletes an existing graph node by GlobalId.")]
     public async Task<string> DeleteNode(
         [Description("NodePath segments of the node to delete.")] string[] path) {
-        var result = await graph.DeleteNodeAsync(new NodePath(path));
+        var result = await graph.DeleteNode(new NodePath(path));
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new { success = true })
             : ToJson(ToErrorResponse(result.Status, result.Error));

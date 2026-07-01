@@ -47,7 +47,6 @@
 
   <ItemGroup>
     <Compile Include="..\CancellationTokensAccessorMock.cs" Link="CancellationTokensAccessorMock.cs" />
-    <Compile Include="..\TestGraphStorageScope.cs" Link="TestGraphStorageScope.cs" />
   </ItemGroup>
 
 </Project>

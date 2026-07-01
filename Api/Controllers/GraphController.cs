@@ -20,19 +20,19 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
 
     [HttpGet("nodes")]
     public async Task<ActionResult<NodeResponse>> GetNodeAsync([FromQuery] string[] globalId) {
-        var result = await graph.GetNodeAsync(new NodePath(globalId));
+        var result = await graph.GetNode(new NodePath(globalId));
         return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
     [HttpGet("nodes/{globalId}/neighbor/{localId}")]
     public async Task<ActionResult<NodeResponse>> GetNeighborNodeAsync([FromRoute] string globalId, [FromRoute] string localId) {
-        var decoded = Uri.UnescapeDataString(globalId);
+        var decoded = Uri.UnescapeDataString(globalId);//TODO убрать из API и WEB UI globalId
         var segments = decoded
             .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(static segment => segment)
             .Select(x => new NodeLocalId(x));
-        var internalId = new InternalId(segments);
-        var result = await graph.GetNeighborNodeAsync(internalId, localId);
+        var path = new NodePath(segments);
+        var result = await graph.GetNode(path, localId);
         return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
@@ -55,20 +55,20 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
 
     [HttpPut("nodes")]
     public async Task<ActionResult<OperationResponse>> UpdateNodeAsync([FromQuery] string[] path, [FromBody] UpdateNodeRequest request) {
-        var result = await graph.UpdateNodeAsync(new NodePath(path), request.Attributes);
+        var result = await graph.UpdateNode(new NodePath(path), request.Attributes);
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result.Status, result.Error);
     }
 
     [HttpDelete("nodes")]
     public async Task<ActionResult<OperationResponse>> DeleteNodeAsync([FromQuery] string[] path) {
-        var result = await graph.DeleteNodeAsync(new NodePath(path));
+        var result = await graph.DeleteNode(new NodePath(path));
         return ToActionResult<OperationResponse>(result);
     }
 
     [HttpPost("connections")]
     public async Task<ActionResult<OperationResponse>> ConnectNodesAsync([FromBody] ConnectNodesRequest request) {
         try {
-            var result = await graph.ConnectNodesAsync(new InternalId(request.Node1InternalId.Select(x => new NodeLocalId(x))), new InternalId(request.Node2InternalId.Select(x => new NodeLocalId(x))));
+            var result = await graph.ConnectNodesAsync(new NodePath(request.Node1InternalId.Select(x => new NodeLocalId(x))), new NodePath(request.Node2InternalId.Select(x => new NodeLocalId(x))));
             return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
         } catch (InvalidOperationException ex) {
             return StatusCode(StatusCodes.Status500InternalServerError, $"{ex.GetType().Name}: {ex.Message}");
@@ -79,16 +79,16 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
 
     [HttpPut("nodes/type")]
     public async Task<ActionResult<SubgraphResponse>> AssignNodeTypeAsync([FromBody] AssignNodeTypeRequest request) {
-        var result = await graph.AssignNodeTypeAsync(new InternalId(request.InternalId.Select(x => new NodeLocalId(x))), new InternalId(request.TypeGlobalId.Select(x => new NodeLocalId(x))));
+        var result = await graph.AssignNodeTypeAsync(new NodePath(request.InternalId.Select(x => new NodeLocalId(x))), new NodePath(request.TypeGlobalId.Select(x => new NodeLocalId(x))));
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
     [HttpPut("edges/type")]
     public async Task<ActionResult<SubgraphResponse>> ChangeEdgeTypeAsync([FromBody] ChangeEdgeTypeRequest request) {
         var result = await graph.ChangeEdgeTypeAsync(
-            new InternalId(request.Node1InternalId.Select(x => new NodeLocalId(x))),
-            new InternalId(request.Node2InternalId.Select(x => new NodeLocalId(x))),
-            new InternalId(request.TypeGlobalId.Select(x => new NodeLocalId(x))));
+            new NodePath(request.Node1InternalId.Select(x => new NodeLocalId(x))),
+            new NodePath(request.Node2InternalId.Select(x => new NodeLocalId(x))),
+            new NodePath(request.TypeGlobalId.Select(x => new NodeLocalId(x))));
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 

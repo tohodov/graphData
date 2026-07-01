@@ -53,6 +53,15 @@ public class Node {
             var backing = owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult();
             item.ReplaceBacking(backing);
         }
+        public Node Create(NodeLocalId id) {
+            if (Snapshot().Any(node => node.LocalId == id))
+                throw new InvalidOperationException($"Node '{id}' is already exists.");
+            var item = new VirtualNodeState(id);
+            var backing = owner.Backing.Nodes.Add(item).GetAwaiter().GetResult();
+            var node = new Node(backing);
+            TrackCreatedNode(node);
+            return node;
+        }
 
         public void Clear() {
             foreach (var node in Snapshot())

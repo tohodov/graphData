@@ -13,12 +13,10 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
     internal readonly DirectoryInfo root;
     readonly NtfsGraphStorageOptions options;
     readonly ICancellationTokenAccessor cancellationTokens;
-    readonly ILogger<SymLinkGraphStorage> logger;
 
-    public SymLinkGraphStorage(IOptions<NtfsGraphStorageOptions> options, ICancellationTokenAccessor cancellationTokens, ILogger<SymLinkGraphStorage> logger) {
+    public SymLinkGraphStorage(IOptions<NtfsGraphStorageOptions> options, ICancellationTokenAccessor cancellationTokens) {
         this.options = options.Value;
         this.cancellationTokens = cancellationTokens;
-        this.logger = logger;
         root = new DirectoryInfo(Path.GetFullPath(this.options.RootPath));
         if (!root.Exists)
             root.Create();
@@ -356,17 +354,11 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
 
     private void CreateLinkIfMissing(string sourcePath, string targetPath, string targetNodeName) {
         var linkPath = Path.Combine(sourcePath, GetLinkName(targetNodeName));
-        try {
-            if (FileSystemEntryExists(linkPath)) {
-                return;
-            }
+        if (FileSystemEntryExists(linkPath))
+            return;
 
-            var targetFullPath = Path.GetFullPath(targetPath);
-            Directory.CreateSymbolicLink(linkPath, targetFullPath);
-        } catch (Exception ex) {
-            logger.LogError(ex, "Failed to create link from {Source} to {Target}", sourcePath, targetPath);
-            throw;
-        }
+        var targetFullPath = Path.GetFullPath(targetPath);
+        Directory.CreateSymbolicLink(linkPath, targetFullPath);
     }
 
     private static bool FileSystemEntryExists(string path) {

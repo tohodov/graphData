@@ -1,5 +1,4 @@
 using Abstractions;
-using Domain.Services;
 using GraphData.Core.Services;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -25,9 +24,6 @@ public static class ServiceCollectionExtensions
             new GraphFactory(
                 provider.GetRequiredService<IGraphStorage>(),
                 provider.GetRequiredService<GraphSchemaRegistry>()));
-        services.AddTransient<GraphStorageInitializer>(static provider =>
-            new GraphStorageInitializer(
-                provider.GetRequiredService<GraphFactory>()));
         return services;
     }
 }

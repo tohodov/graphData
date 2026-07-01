@@ -16,6 +16,7 @@ internal sealed class NodeFileSystem : NodeBacking {
     Dictionary<string, string>? attributesSnapshot;
 
     public string FolderPath => folderPath; //TODO encapsulate
+    internal DirectoryInfo Folder => new DirectoryInfo(FolderPath);
     public string MetadataPath => Combine(FolderPath, MetadataFileName);
 
     public override NodeLocalId LocalId { get; }

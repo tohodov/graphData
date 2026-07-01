@@ -2,33 +2,7 @@ using Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 [RelevantTestClass]
-public sealed class DslTests : GraphServiceTests {
-    [TestMethod]
-    public async Task LINQ_Traverse_TEMP() {
-        var weaponTypeBaseNode = ((Node)await Service.CreateNode("weapon", Graph.NodeTypes.GlobalId))!;
-        var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
-        var node = ((Node)await Service.CreateNode("ak47", Graph.Root.GlobalId, weaponType))!;
-        await Service.CreateNode("m16", Graph.Root.GlobalId, weaponType);
-        await Service.CreateNode("mp5", Graph.Root.GlobalId, weaponType);
-
-        var type = node.Incidences
-            .OfType<InstanceOf.InstanceEnd>()
-            .Select(x => x.Type)
-            .First();
-        Assert.AreEqual<NodeLocalId>("weapon", type.LocalId);
-
-        var metaType = type.Incidences
-            .OfType<InstanceOf.InstanceEnd>()
-            .FirstOrDefault();
-        Assert.IsNull(metaType);
-
-        var instances = type.Incidences
-            .OfType<InstanceOf.TypeEnd>()
-            .Select(x => x.Instance)
-            .ToArray();
-        CollectionAssert.AreEquivalent(new NodeLocalId[] { "ak47", "m16", "mp5" }, instances.Select(x => x.LocalId).ToArray());
-    }
-
+public sealed class DslTests : GraphDslTests {
     [TestMethod]
     public async Task LINQ_Traverse() {
         var weaponType = new NodeType("weapon");
@@ -79,79 +53,101 @@ public sealed class DslTests : GraphServiceTests {
 
     [TestMethod]
     public async Task NodesAdd_ShouldThrowWhenExistingNodeIsAlreadyLinked() {
-        var first = (await Service.CreateNode("existing-link-first")).Value!;
-        var second = (await Service.CreateNode("existing-link-second")).Value!;
+        var first = Graph.Root.Nodes.Create("existing-link-first");
+        var second = Graph.Root.Nodes.Create("existing-link-second");
         first.Nodes.Add(second);
-
         Assert.ThrowsException<InvalidOperationException>(() => first.Nodes.Add(second));
     }
 
     [TestMethod]
     public async Task NodeNodes_ShouldReflectFolderChangesAfterFirstRead() {
-        var parent = (await Service.CreateNode("dsl-nodes-parent")).Value!;
-        var first = (await Service.CreateNode("first", parent.GlobalId)).Value!;
+        var parent = Graph.Root.Nodes.Create("dsl-nodes-parent");
+        var first = parent.Nodes.Create("first");
         var secondPath = Path.Combine(StorageOptions.RootPath, parent.LocalId, "second");
 
         CollectionAssert.AreEquivalent(
             new[] { first.LocalId },
-            ReadNodeLocalIds(parent));
+            parent.Nodes.Select(static child => child.LocalId).ToArray());
 
         Directory.CreateDirectory(secondPath);
 
         CollectionAssert.AreEquivalent(
             new[] { first.LocalId, new NodeLocalId("second") },
-            ReadNodeLocalIds(parent));
+            parent.Nodes.Select(static child => child.LocalId).ToArray());
 
         Directory.Delete(secondPath);
 
         CollectionAssert.AreEquivalent(
             new[] { first.LocalId },
-            ReadNodeLocalIds(parent));
+            parent.Nodes.Select(static child => child.LocalId).ToArray());
     }
 
     [TestMethod]
     public async Task NodeEdges_ShouldReflectFolderChangesAfterFirstRead() {
-        var parent = (await Service.CreateNode("dsl-edges-parent")).Value!;
-        var first = (await Service.CreateNode("first", parent.GlobalId)).Value!;
+        var parent = Graph.Root.Nodes.Create("dsl-edges-parent");
+        var first = parent.Nodes.Create("first");
         var secondPath = Path.Combine(StorageOptions.RootPath, parent.LocalId, "second");
 
         CollectionAssert.AreEquivalent(
             new[] { first.LocalId },
-            ReadEdgeNeighborLocalIds(parent));
+            parent.Edges
+                .Select(edge => edge.Node1.GlobalId == parent.GlobalId ? edge.Node2 : edge.Node1)
+                .Where(neighbor => neighbor.GlobalId != parent.GlobalId)
+                .Select(static neighbor => neighbor.LocalId)
+                .ToArray());
 
         Directory.CreateDirectory(secondPath);
 
         CollectionAssert.AreEquivalent(
             new[] { first.LocalId, new NodeLocalId("second") },
-            ReadEdgeNeighborLocalIds(parent));
+            parent.Edges
+                .Select(edge => edge.Node1.GlobalId == parent.GlobalId ? edge.Node2 : edge.Node1)
+                .Where(neighbor => neighbor.GlobalId != parent.GlobalId)
+                .Select(static neighbor => neighbor.LocalId)
+                .ToArray());
 
         Directory.Delete(secondPath);
 
         CollectionAssert.AreEquivalent(
             new[] { first.LocalId },
-            ReadEdgeNeighborLocalIds(parent));
+            parent.Edges
+                .Select(edge => edge.Node1.GlobalId == parent.GlobalId ? edge.Node2 : edge.Node1)
+                .Where(neighbor => neighbor.GlobalId != parent.GlobalId)
+                .Select(static neighbor => neighbor.LocalId)
+                .ToArray());
     }
 
     [TestMethod]
     public async Task NodeIncidences_ShouldReflectDslTypeAttachmentsAfterFirstRead() {
-        var weaponTypeBaseNode = (await Service.CreateNode("dsl-incidence-weapon", Graph.NodeTypes.GlobalId)).Value!;
-        var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
+        var weaponType = new NodeType("weapon");
+        Graph.NodeTypes.Nodes.Add(weaponType);
 
         CollectionAssert.AreEquivalent(
             Array.Empty<NodeLocalId>(),
-            ReadTypedInstanceLocalIds(weaponType));
+            weaponType.Incidences
+                .OfType<InstanceOf.TypeEnd>()
+                .Select(static incidence => incidence.Instance.LocalId)
+                .ToArray());
 
-        var ak47 = (await Service.CreateNode("dsl-incidence-ak47", Graph.Root.GlobalId, weaponType)).Value!;
+        var ak47 = new InstanceNode("ak47", weaponType);
+        weaponType.Nodes.Add(ak47);
 
         CollectionAssert.AreEquivalent(
             new[] { ak47.LocalId },
-            ReadTypedInstanceLocalIds(weaponType));
+            weaponType.Incidences
+                .OfType<InstanceOf.TypeEnd>()
+                .Select(static incidence => incidence.Instance.LocalId)
+                .ToArray());
 
-        var m16 = (await Service.CreateNode("dsl-incidence-m16", Graph.Root.GlobalId, weaponType)).Value!;
+        var m16 = new InstanceNode("m16", weaponType);
+        weaponType.Nodes.Add(m16);
 
         CollectionAssert.AreEquivalent(
             new[] { ak47.LocalId, m16.LocalId },
-            ReadTypedInstanceLocalIds(weaponType));
+            weaponType.Incidences
+                .OfType<InstanceOf.TypeEnd>()
+                .Select(static incidence => incidence.Instance.LocalId)
+                .ToArray());
     }
 
     [TestMethod]
@@ -162,28 +158,14 @@ public sealed class DslTests : GraphServiceTests {
         oldParent.Nodes.Add(child);
         Graph.Root.Nodes.Add(oldParent);
         Graph.Root.Nodes.Add(newParent);
+
         child.Edges.Add(new Edge(child, newParent));
-        var hierarchyEdge = oldParent.Edges.Single(edge => Connects(edge, oldParent, child));
+        oldParent.Nodes.Remove(child);
 
-        oldParent.Edges.Remove(hierarchyEdge);
-
-        var oldChild = await Service.GetNodeAsync(new InternalId("old-parent", "child"));
-        Assert.AreEqual(ServiceResultStatus.NotFound, oldChild.Status);
-
-        var movedChild = await Service.GetNodeAsync(new InternalId("new-parent", "child"));
-        Assert.AreEqual(ServiceResultStatus.Ok, movedChild.Status);
-        Assert.IsNotNull(movedChild.Value);
-        Assert.AreEqual<NodeLocalId>("child", movedChild.Value.LocalId);
-
-        var reloadedOldParent = await Service.GetNodeAsync(new InternalId("old-parent"));
-        Assert.AreEqual(ServiceResultStatus.Ok, reloadedOldParent.Status);
-        Assert.IsNotNull(reloadedOldParent.Value);
-        Assert.IsFalse(reloadedOldParent.Value.Nodes.Any(node => node.LocalId == "child"));
-
-        var reloadedNewParent = await Service.GetNodeAsync(new InternalId("new-parent"));
-        Assert.AreEqual(ServiceResultStatus.Ok, reloadedNewParent.Status);
-        Assert.IsNotNull(reloadedNewParent.Value);
-        Assert.IsTrue(reloadedNewParent.Value.Nodes.Any(node => node.LocalId == "child"));
+        Assert.IsFalse(child.Incidences.Any(x => x.Node.GlobalId == oldParent.GlobalId));
+        Assert.IsTrue(child.Incidences.Any(x => x.Node.GlobalId == newParent.GlobalId));
+        Assert.IsFalse(oldParent.Incidences.Any(x => x.Node.GlobalId == child.GlobalId));
+        Assert.IsTrue(newParent.Incidences.Any(x => x.Node.GlobalId == child.GlobalId));
     }
 
     [TestMethod]
@@ -195,39 +177,34 @@ public sealed class DslTests : GraphServiceTests {
 
         parent.Nodes.Remove(child);
 
-        var reloadedParent = await Service.GetNodeAsync(new InternalId("parent"));
-        Assert.AreEqual(ServiceResultStatus.Ok, reloadedParent.Status);
-        Assert.IsNotNull(reloadedParent.Value);
-        Assert.IsFalse(reloadedParent.Value.Nodes.Any(node => node.LocalId == "child"));
+        Assert.IsFalse(parent.Nodes.Any(node => node.LocalId == "child"));
+        Assert.IsNull(await Storage.Get(parent.GlobalId, child.LocalId));
+        Assert.IsFalse(parent.GetBacking().Folder.EnumerateDirectories().Any());
 
-        var deletedChild = await Service.GetNodeAsync(new InternalId("parent", "child"));
-        Assert.AreEqual(ServiceResultStatus.NotFound, deletedChild.Status);
+        Assert.ThrowsException<Exception>(() => child.Attributes.FirstOrDefault());
+        Assert.ThrowsException<Exception>(() => child.Nodes.Count());
     }
 
     [TestMethod]
     public async Task NodesRemove_ShouldKeepHierarchyChildWhenItHasOtherEdges() {
-        var oldParent = new Node("nodes-remove-old-parent");
+        var oldParent = new Node("old");
         var child = new Node("child");
-        var newParent = new Node("nodes-remove-new-parent");
+        var newParent = new Node("new");
         oldParent.Nodes.Add(child);
         Graph.Root.Nodes.Add(oldParent);
         Graph.Root.Nodes.Add(newParent);
         child.Edges.Add(new Edge(child, newParent));
+        Assert.IsTrue(child.GetBacking().FolderPath.Contains(oldParent.LocalId));
 
         oldParent.Nodes.Remove(child);
 
-        var oldChild = await Service.GetNodeAsync(new InternalId("nodes-remove-old-parent", "child"));
-        Assert.AreEqual(ServiceResultStatus.NotFound, oldChild.Status);
+        Assert.IsFalse(oldParent.Nodes.Any(node => node.LocalId == "child"));
+        Assert.IsNull(await Storage.Get(oldParent.GlobalId, child.LocalId));
+        Assert.IsFalse(child.GetBacking().FolderPath.Contains(oldParent.LocalId));
 
-        var movedChild = await Service.GetNodeAsync(new InternalId("nodes-remove-new-parent", "child"));
-        Assert.AreEqual(ServiceResultStatus.Ok, movedChild.Status);
-        Assert.IsNotNull(movedChild.Value);
-        Assert.AreEqual<NodeLocalId>("child", movedChild.Value.LocalId);
-
-        var reloadedNewParent = await Service.GetNodeAsync(new InternalId("nodes-remove-new-parent"));
-        Assert.AreEqual(ServiceResultStatus.Ok, reloadedNewParent.Status);
-        Assert.IsNotNull(reloadedNewParent.Value);
-        Assert.IsTrue(reloadedNewParent.Value.Nodes.Any(node => node.LocalId == "child"));
+        Assert.IsTrue(newParent.Nodes.Any(node => node.LocalId == "child"));
+        Assert.IsNotNull(await Storage.Get(newParent.GlobalId, child.LocalId));
+        Assert.IsTrue(child.GetBacking().FolderPath.Contains(newParent.LocalId));
     }
 
     [TestMethod]
@@ -236,28 +213,10 @@ public sealed class DslTests : GraphServiceTests {
         var child = new Node("child");
         parent.Nodes.Add(child);
         Graph.Root.Nodes.Add(parent);
-        var hierarchyEdge = parent.Edges.Single(edge => Connects(edge, parent, child));
+
+        var hierarchyEdge = parent.Edges.Single();
 
         Assert.ThrowsException<InvalidOperationException>(() => parent.Edges.Remove(hierarchyEdge));
+        Assert.IsTrue(child.GetBacking().Folder.Exists);
     }
-
-    private static bool Connects(Edge edge, Node first, Node second) =>
-        edge.Node1.GlobalId == first.GlobalId && edge.Node2.GlobalId == second.GlobalId
-        || edge.Node1.GlobalId == second.GlobalId && edge.Node2.GlobalId == first.GlobalId;
-
-    private static NodeLocalId[] ReadNodeLocalIds(Node node) =>
-        node.Nodes.Select(static child => child.LocalId).ToArray();
-
-    private static NodeLocalId[] ReadEdgeNeighborLocalIds(Node node) =>
-        node.Edges
-            .Select(edge => edge.Node1.GlobalId == node.GlobalId ? edge.Node2 : edge.Node1)
-            .Where(neighbor => neighbor.GlobalId != node.GlobalId)
-            .Select(static neighbor => neighbor.LocalId)
-            .ToArray();
-
-    private static NodeLocalId[] ReadTypedInstanceLocalIds(Node type) =>
-        type.Incidences
-            .OfType<InstanceOf.TypeEnd>()
-            .Select(static incidence => incidence.Instance.LocalId)
-            .ToArray();
 }

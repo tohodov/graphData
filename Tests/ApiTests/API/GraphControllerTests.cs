@@ -272,7 +272,8 @@ public sealed class GraphControllerTests : ControllerTests {
 
     [TestMethod]
     public async Task AssignNodeTypeAsync_ConnectsNodeToTypeThroughDslValidator() {
-        var weaponType = await Storage.Create(new("Weapon"), Graph.NodeTypes.GlobalId);
+        var typeRoot = await GetTypesRoot();
+        var weaponType = await Storage.Create(new("Weapon"), typeRoot.GlobalId);
         var ak47 = await Storage.Create(new("ak-47"));
 
         var result = await Controller.AssignNodeTypeAsync(new AssignNodeTypeRequest {
@@ -295,7 +296,8 @@ public sealed class GraphControllerTests : ControllerTests {
 
     [TestMethod]
     public async Task ChangeEdgeTypeAsync_CreatesTypedEdgeSubgraphForBasicEdgeAndReturnsIt() {
-        var newType = await Storage.Create(new("new-type"), Graph.NodeTypes.GlobalId);
+        var typeRoot = await GetTypesRoot();
+        var newType = await Storage.Create(new("new-type"), typeRoot.GlobalId);
         var source = await Storage.Create(new("source"));
         var target = await Storage.Create(new("target"));
         await Storage.Connect(source.GlobalId, target.GlobalId);
@@ -332,7 +334,7 @@ public sealed class GraphControllerTests : ControllerTests {
         Assert.IsNotNull(storedRelation);
         Assert.AreEqual(0, storedRelation.Attributes.Count);
 
-        var replacementType = await Storage.Create(new("replacement-type"), Graph.NodeTypes.GlobalId);
+        var replacementType = await Storage.Create(new("replacement-type"), typeRoot.GlobalId);
         await Storage.Update(storedRelation.GlobalId, new Dictionary<string, string> { ["note"] = "user note" });
         var retyped = await Controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
             Node1InternalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),

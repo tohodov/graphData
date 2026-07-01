@@ -34,9 +34,8 @@ public abstract class NodeRef {
         readonly ImmutableArray<NodeLocalId> segments;
         readonly int hashCode;
 
-        public InternalId() : this([]) { }
-        public InternalId(params IEnumerable<NodeLocalId> segments) : this(CreateSegments(segments)) { }
-        public InternalId(ImmutableArray<NodeLocalId> segments) {
+        internal InternalId(params IEnumerable<NodeLocalId> segments) : this(CreateSegments(segments)) { }
+        internal InternalId(ImmutableArray<NodeLocalId> segments) {
             if (segments.IsDefault)
                 segments = ImmutableArray<NodeLocalId>.Empty;
             this.segments = segments;

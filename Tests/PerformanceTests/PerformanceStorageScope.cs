@@ -2,14 +2,12 @@ using System;
 using System.IO;
 using System.Threading.Tasks;
 using Abstractions;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Storage;
 
 namespace GraphData.Tests.Performance;
 
-public enum PerformanceStorageKind
-{
+public enum PerformanceStorageKind {
     [Obsolete("SymLink", true)]
     PerNodeFile,
     [Obsolete("SymLink", true)]
@@ -17,10 +15,8 @@ public enum PerformanceStorageKind
     SymLink
 }
 
-internal sealed class PerformanceStorageScope : IAsyncDisposable
-{
-    private PerformanceStorageScope(PerformanceStorageKind kind, string rootPath, IGraphStorage storage)
-    {
+internal sealed class PerformanceStorageScope : IAsyncDisposable {
+    private PerformanceStorageScope(PerformanceStorageKind kind, string rootPath, IGraphStorage storage) {
         Kind = kind;
         RootPath = rootPath;
         Storage = storage;
@@ -32,8 +28,7 @@ internal sealed class PerformanceStorageScope : IAsyncDisposable
 
     public IGraphStorage Storage { get; }
 
-    public static PerformanceStorageScope Create(PerformanceStorageKind kind, string scenario)
-    {
+    public static PerformanceStorageScope Create(PerformanceStorageKind kind, string scenario) {
         ArgumentException.ThrowIfNullOrWhiteSpace(scenario);
 
         var rootPath = Path.Combine(
@@ -43,8 +38,7 @@ internal sealed class PerformanceStorageScope : IAsyncDisposable
             PerformanceTestGate.SanitizePathSegment(scenario),
             kind.ToString());
 
-        IGraphStorage storage = kind switch
-        {
+        IGraphStorage storage = kind switch {
             //PerformanceStorageKind.PerNodeFile => new PerNodeFileGraphStorage(
             //    Options.Create(new PerNodeFileGraphStorageOptions { RootPath = rootPath }),
             //    NullLogger<PerNodeFileGraphStorage>.Instance),
@@ -55,8 +49,7 @@ internal sealed class PerformanceStorageScope : IAsyncDisposable
 
             PerformanceStorageKind.SymLink => new SymLinkGraphStorage(
                 Options.Create(new NtfsGraphStorageOptions { RootPath = rootPath }),
-                new CancellationTokensAccessorMock(),
-                NullLogger<SymLinkGraphStorage>.Instance),
+                new CancellationTokensAccessorMock()),
 
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown storage kind.")
         };
@@ -64,10 +57,8 @@ internal sealed class PerformanceStorageScope : IAsyncDisposable
         return new PerformanceStorageScope(kind, rootPath, storage);
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        switch (Storage)
-        {
+    public async ValueTask DisposeAsync() {
+        switch (Storage) {
             case IAsyncDisposable asyncDisposable:
                 await asyncDisposable.DisposeAsync().ConfigureAwait(false);
                 break;

@@ -21,15 +21,6 @@ public sealed class GraphService {
         this.schemaRegistry = schemaRegistry;
     }
 
-    public async Task<ServiceResult<Node>> CreateNode(NodeRef node, NodeType? type = null, IDictionary<string, string>? attributes = null) {
-        if (node is NodePath path) {
-            var localId = path.Last();
-            return await CreateNodeCore(localId, new NodePath(path.Except([localId])), type, attributes).ConfigureAwait(false);
-        } else if (node is InternalId id) {
-            var localId = id.Last();
-            return await CreateNodeCore(localId, new InternalId(id.Except([localId])), type, attributes).ConfigureAwait(false);
-        } else throw new NotImplementedException();//TODO надо переобдумать контракт GraphService
-    }
     public async Task<ServiceResult<Node>> CreateNode(NodeLocalId localId, NodeRef? path = null, NodeType? type = null, IDictionary<string, string>? attributes = null) {
         return await CreateNodeCore(localId, path, type, attributes).ConfigureAwait(false);
     }
@@ -62,26 +53,26 @@ public sealed class GraphService {
         return result;
     }
 
-    public async Task<ServiceResult<Node>> GetNodeAsync(NodeRef globalId) {
-        var result = await storage.Get(globalId);
+    public async Task<ServiceResult<Node>> GetNode(NodeRef path) {
+        var result = await storage.Get(path);
         if (result is null)
             return ServiceResult<Node>.NotFound();
         return new Node(result);
     }
 
-    public async Task<ServiceResult<Node>> GetNeighborNodeAsync(InternalId internalId, NodeLocalId localId) {
-        var result = await storage.Get(internalId, localId);
+    public async Task<ServiceResult<Node>> GetNode(NodeRef path, NodeLocalId localId) {
+        var result = await storage.Get(path, localId);
         if (result is null)
             return ServiceResult<Node>.NotFound();
         return new Node(result);
     }
 
-    public async Task<ServiceResult> UpdateNodeAsync(NodeRef globalId, IDictionary<string, string> attributes) {
-        await storage.Update(globalId, attributes);
+    public async Task<ServiceResult> UpdateNode(NodeRef path, IDictionary<string, string> attributes) {
+        await storage.Update(path, attributes);
         return ServiceResult.Ok();
     }
 
-    public async Task<ServiceResult> DeleteNodeAsync(NodeRef globalId) {
+    public async Task<ServiceResult> DeleteNode(NodeRef globalId) {
         var node = await storage.Get(globalId);
         if (node == null)
             return ServiceResult.NotFound();
@@ -91,6 +82,10 @@ public sealed class GraphService {
 
     public async Task<ServiceResult> ConnectNodesAsync(NodeRef sourceGlobalId, NodeRef targetGlobalId) {
         await storage.Connect(sourceGlobalId, targetGlobalId);
+        return ServiceResult.Ok();
+    }
+    public async Task<ServiceResult> Disconnect(NodeRef sourceGlobalId, NodeRef targetGlobalId) {
+        await storage.Disconnect(sourceGlobalId, targetGlobalId);
         return ServiceResult.Ok();
     }
 
@@ -137,7 +132,7 @@ public sealed class GraphService {
         NodeRef target,
         NodeRef typeId
     ) {
-        var typeResult = await GetNodeAsync(typeId);
+        var typeResult = await GetNode(typeId);
         if (typeResult.Status != ServiceResultStatus.Ok || typeResult.Value is null)
             return ServiceResult<Subgraph>.From(typeResult);
         var type = typeResult.Value;
@@ -394,7 +389,7 @@ public sealed class GraphService {
 
 
     public async Task<NodeType?> GetTypeNode(NodeRef id) {
-        var nodeResult = await GetNodeAsync(id);
+        var nodeResult = await GetNode(id);
         if (nodeResult.Value == null)
             return null;
         var node = await GetTypeNode(nodeResult.Value);

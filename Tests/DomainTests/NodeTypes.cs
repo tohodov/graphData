@@ -4,23 +4,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 namespace GraphData.Tests.GraphService;
 
-public sealed class NodeTypeDslTests : StorageTests {
-
-    public static void AssertField(
-        NodeTypeDefinition definition,
-        string name,
-        NodeFieldValueKind kind,
-        Type clrType,
-        NodeSlotCardinality cardinality,
-        InternalId? nodeTypeId = null,
-        bool isCollection = false) {
-        var field = definition.Fields.Single(value => value.Name == name);
-        Assert.AreEqual(kind, field.ValueKind);
-        Assert.AreEqual(clrType, field.ClrType);
-        Assert.AreEqual(cardinality, field.Cardinality);
-        Assert.AreEqual(nodeTypeId, field.NodeTypeId);
-        Assert.AreEqual(isCollection, field.IsCollection);
-    }
+public sealed class NodeTypes {
 
     public sealed class WeaponNodeType : NodeType {
         public ManufacturerNodeType Manufacturer = null!;
@@ -48,6 +32,34 @@ public sealed class NodeTypeDslTests : StorageTests {
         public IReadOnlyCollection<string> Aliases = [];
 
         internal ManufacturerNodeType(NodeBacking state) : base(state) {
+        }
+    }
+    public sealed class EdgeWeaponNodeType : NodeType {
+        internal EdgeWeaponNodeType(NodeBacking state) : base(state) {
+        }
+    }
+
+    public sealed class EdgeManufacturerNodeType : NodeType {
+        internal EdgeManufacturerNodeType(NodeBacking state) : base(state) {
+        }
+    }
+
+    public sealed class ManufacturedByConnectionNodeType : NodeType {
+        public EdgeWeaponNodeType Weapon = null!;
+        public EdgeManufacturerNodeType Manufacturer = null!;
+
+        internal ManufacturedByConnectionNodeType(NodeBacking state) : base(state) {
+        }
+    }
+
+    public sealed class ShipmentConnectionNodeType : NodeType {
+        public EdgeWeaponNodeType Weapon = null!;
+        public Node Counterparty = null!;
+        public Node? OptionalWaypoint = null;
+        public IReadOnlyCollection<EdgeManufacturerNodeType> Manufacturers = [];
+        public string Note = "";
+
+        internal ShipmentConnectionNodeType(NodeBacking state) : base(state) {
         }
     }
 }

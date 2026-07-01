@@ -1,4 +1,4 @@
-using Domain.Services;
+
 using GraphData.Api.Controllers;
 using GraphData.Core.Services;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -10,8 +10,6 @@ public sealed class UiControllerTests : StorageTests {
     [TestMethod]
     public async Task GetSettings_ReturnsMaterializedSystemNodeIdsForRequestScopedGraph() {
         var schemaRegistry = GraphSchemaRegistry.Create();
-        await new GraphStorageInitializer(CreateGraphFactory(schemaRegistry)).InitializeAsync();
-        await new GraphStorageInitializer(CreateGraphFactory(schemaRegistry)).InitializeAsync();
 
         var controller = new UiController(CreateGraphFactory(schemaRegistry));
 

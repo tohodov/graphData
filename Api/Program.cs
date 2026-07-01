@@ -1,5 +1,4 @@
 using System.Reflection;
-using Domain.Services;
 using GraphData.Api.Runtime;
 using GraphData.Core.Extensions;
 using GraphData.Core.Services;
@@ -21,8 +20,7 @@ var isOpenApiDocumentGeneration = Assembly.GetEntryAssembly()?.GetName().Name ==
 
 if (!isOpenApiDocumentGeneration)
 {
-    using var scope = app.Services.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<GraphStorageInitializer>().InitializeAsync();
+
 }
 
 if (app.Environment.IsDevelopment())

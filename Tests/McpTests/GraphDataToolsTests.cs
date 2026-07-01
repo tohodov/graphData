@@ -9,17 +9,16 @@ using GraphData.Tests;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
 [RelevantTestClass]
-public sealed class GraphDataToolsTests
+public sealed class GraphDataToolsTests : StorageTests
 {
     [TestMethod]
     public async Task GetNode_ReturnsApiNodeShapeWithoutSerializingNodeCycles()
     {
-        await using var scope = TestGraphStorageScope.Create();
-        var first = await scope.Storage.Create(new NodeLocalId("1"));
-        var second = await scope.Storage.Create(new NodeLocalId("2"));
-        await scope.Storage.Connect(first.GlobalId, second.GlobalId);
+        var first = await Storage.Create(new NodeLocalId("1"));
+        var second = await Storage.Create(new NodeLocalId("2"));
+        await Storage.Connect(first.GlobalId, second.GlobalId);
 
-        var tools = new GraphDataTools(new GraphService(scope.Storage, new GraphSearchService(scope.Storage), GraphSchemaRegistry.Create()));
+        var tools = new GraphDataTools(new GraphService(Storage, new GraphSearchService(Storage), GraphSchemaRegistry.Create()));
         var json = await tools.GetNode(["1"]);
 
         using var document = JsonDocument.Parse(json);

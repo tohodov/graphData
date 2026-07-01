@@ -19,12 +19,12 @@ public sealed class GraphFactory {
         return new Graph(storage.Root, nodeTypes);
     }
 
-    private async Task<NodeBacking> EnsureNodeTypesRootAsync() {
+    async Task<NodeBacking> EnsureNodeTypesRootAsync() {
         return await storage.Get(FixedGraphTopology.NodeTypesPath).ConfigureAwait(false)
             ?? await storage.Create(FixedGraphTopology.NodeTypesLocalId).ConfigureAwait(false);
     }
 
-    private async Task EnsureNodeTypeAsync(NodeLocalId localId) {
+    async Task EnsureNodeTypeAsync(NodeLocalId localId) {
         if (await storage.Get(FixedGraphTopology.NodeTypePath(localId)).ConfigureAwait(false) is not null)
             return;
 
