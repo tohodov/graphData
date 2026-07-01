@@ -23,6 +23,7 @@ public static class ServiceCollectionExtensions
                 provider.GetRequiredService<Graph>(),
                 provider.GetRequiredService<GraphSearchService>()
             ));
+        services.AddScoped<GraphBackupService>();
         return services;
     }
 }

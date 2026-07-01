@@ -248,13 +248,28 @@ internal sealed class NodeFileSystem : NodeBacking {
     }
 
     async Task WriteMetadataAsync(Dictionary<string, string> data) {//TODO move to base
+        if (data.Count == 0) {
+            DeleteMetadata();
+            return;
+        }
+
         await using var stream = new FileStream(MetadataPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
         await JsonSerializer.SerializeAsync(stream, data, SymLinkGraphStorage.SerializerOptions);
     }
     public void WriteMetadata(IDictionary<string, string> data) {//TODO move to base
         attributesSnapshot = null;
+        if (data.Count == 0) {
+            DeleteMetadata();
+            return;
+        }
+
         using var stream = new FileStream(MetadataPath, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: 4096, useAsync: true);
         JsonSerializer.Serialize(stream, data, SymLinkGraphStorage.SerializerOptions);
+    }
+
+    void DeleteMetadata() {
+        if (File.Exists(MetadataPath))
+            File.Delete(MetadataPath);
     }
 
     sealed class LiveNodeCollection(NodeFileSystem owner) : IAsyncCollection<NodeBacking> {
