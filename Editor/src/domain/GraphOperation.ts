@@ -1,15 +1,21 @@
 export type GraphSelectionSnapshot = {
   readonly nodeCount: number;
   readonly edgeCount: number;
+  readonly nodeNames?: readonly string[];
+  readonly edgeObjects?: readonly unknown[];
 };
 
 export class GraphSelection {
   readonly nodeCount: number;
   readonly edgeCount: number;
+  readonly nodeNames: readonly string[];
+  readonly edgeObjects: readonly unknown[];
 
   constructor(snapshot: GraphSelectionSnapshot) {
     this.nodeCount = snapshot.nodeCount;
     this.edgeCount = snapshot.edgeCount;
+    this.nodeNames = snapshot.nodeNames ?? [];
+    this.edgeObjects = snapshot.edgeObjects ?? [];
   }
 
   get totalCount(): number {
@@ -45,6 +51,36 @@ export class GraphSelection {
   }
 }
 
+export type CreateNodeOperationInput = {
+  readonly localId: string;
+  readonly typeGlobalId: string;
+};
+
+export type ConnectNodesOperationInput = {
+  readonly targetNodeGlobalId: string;
+  readonly typeGlobalId: string;
+  readonly relationLocalId: string;
+};
+
+export type AssignTypeOperationInput = {
+  readonly typeGlobalId: string;
+};
+
+export type GraphOperationContext = {
+  readonly selection: GraphSelection;
+  clearSelection(): void;
+  deleteNodes(nodeNames: readonly string[]): Promise<void>;
+  createNode(localId: string, options: { typeGlobalId?: string; linkedNodeNames?: readonly string[] }): Promise<void>;
+  connectNodes(
+    node1InternalId: string,
+    node2InternalId: string,
+    options: { typeGlobalId?: string; relationLocalId?: string }
+  ): Promise<void>;
+  assignNodeType(nodeNames: readonly string[], typeGlobalId: string): Promise<void>;
+  assignEdgeType(edges: readonly unknown[], typeGlobalId: string): Promise<void>;
+  setStatus(message: string): void;
+};
+
 export abstract class GraphOperation {
   readonly id: string;
 
@@ -53,6 +89,15 @@ export abstract class GraphOperation {
   }
 
   abstract isAvailable(selection: GraphSelection): boolean;
+
+  protected ensureAvailable(context: GraphOperationContext, message: string): boolean {
+    if (context.selection.allows(this)) {
+      return true;
+    }
+
+    context.setStatus(message);
+    return false;
+  }
 }
 
 export class CreateNodeOperation extends GraphOperation {
@@ -62,6 +107,22 @@ export class CreateNodeOperation extends GraphOperation {
 
   override isAvailable(selection: GraphSelection): boolean {
     return selection.hasOnlyNodes();
+  }
+
+  execute(context: GraphOperationContext, input: CreateNodeOperationInput): Promise<void> {
+    if (!this.ensureAvailable(context, "Создание узла недоступно, когда выбраны связи")) {
+      return Promise.resolve();
+    }
+
+    if (!input.localId) {
+      context.setStatus("Введите LocalId нового узла");
+      return Promise.resolve();
+    }
+
+    return context.createNode(input.localId, {
+      typeGlobalId: input.typeGlobalId,
+      linkedNodeNames: context.selection.nodeNames
+    });
   }
 }
 
@@ -73,6 +134,12 @@ export class ClearSelectionOperation extends GraphOperation {
   override isAvailable(selection: GraphSelection): boolean {
     return !selection.isEmpty();
   }
+
+  execute(context: GraphOperationContext): void {
+    if (this.ensureAvailable(context, "")) {
+      context.clearSelection();
+    }
+  }
 }
 
 export class DeleteNodesOperation extends GraphOperation {
@@ -82,6 +149,14 @@ export class DeleteNodesOperation extends GraphOperation {
 
   override isAvailable(selection: GraphSelection): boolean {
     return selection.hasNodes();
+  }
+
+  execute(context: GraphOperationContext): Promise<void> {
+    if (!this.ensureAvailable(context, "Нет выбранных узлов для удаления")) {
+      return Promise.resolve();
+    }
+
+    return context.deleteNodes(context.selection.nodeNames);
   }
 }
 
@@ -93,6 +168,23 @@ export class ConnectNodesOperation extends GraphOperation {
   override isAvailable(selection: GraphSelection): boolean {
     return selection.hasExactlyOneNode();
   }
+
+  execute(context: GraphOperationContext, input: ConnectNodesOperationInput): Promise<void> {
+    if (!this.ensureAvailable(context, "Выберите ровно один узел и укажите цель связи")) {
+      return Promise.resolve();
+    }
+
+    const sourceNodeName = context.selection.nodeNames[0] ?? "";
+    if (!sourceNodeName || !input.targetNodeGlobalId) {
+      context.setStatus("Выберите ровно один узел и укажите цель связи");
+      return Promise.resolve();
+    }
+
+    return context.connectNodes(sourceNodeName, input.targetNodeGlobalId, {
+      typeGlobalId: input.typeGlobalId,
+      relationLocalId: input.relationLocalId
+    });
+  }
 }
 
 export class AssignNodeTypeOperation extends GraphOperation {
@@ -103,6 +195,15 @@ export class AssignNodeTypeOperation extends GraphOperation {
   override isAvailable(selection: GraphSelection): boolean {
     return selection.hasNodes();
   }
+
+  execute(context: GraphOperationContext, input: AssignTypeOperationInput): Promise<void> {
+    if (!this.ensureAvailable(context, "Выберите узлы и тип узла") || !input.typeGlobalId) {
+      context.setStatus("Выберите узлы и тип узла");
+      return Promise.resolve();
+    }
+
+    return context.assignNodeType(context.selection.nodeNames, input.typeGlobalId);
+  }
 }
 
 export class AssignEdgeTypeOperation extends GraphOperation {
@@ -112,6 +213,15 @@ export class AssignEdgeTypeOperation extends GraphOperation {
 
   override isAvailable(selection: GraphSelection): boolean {
     return selection.hasEdges();
+  }
+
+  execute(context: GraphOperationContext, input: AssignTypeOperationInput): Promise<void> {
+    if (!this.ensureAvailable(context, "Выберите связи и тип связи") || !input.typeGlobalId) {
+      context.setStatus("Выберите связи и тип связи");
+      return Promise.resolve();
+    }
+
+    return context.assignEdgeType(context.selection.edgeObjects, input.typeGlobalId);
   }
 }
 

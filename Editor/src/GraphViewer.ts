@@ -16,7 +16,7 @@ import { GraphEdge } from "./domain/GraphEdge.js";
 import { GraphId } from "./domain/GraphId.js";
 import { GraphModel } from "./domain/GraphModel.js";
 import { GraphNode } from "./domain/GraphNode.js";
-import { GraphOperations, GraphSelection } from "./domain/GraphOperation.js";
+import { GraphOperations, GraphSelection, type GraphOperationContext } from "./domain/GraphOperation.js";
 import { GraphType } from "./domain/GraphType.js";
 import type {
   AssignNodeTypeRequest,
@@ -53,7 +53,6 @@ export type GraphViewerOptions = {
   preserveBusy?: boolean;
   selectRoot?: boolean;
   showed?: boolean;
-  parentGlobalId?: string;
   typeGlobalId?: string;
   relationLocalId?: string;
   relationGlobalId?: string;
@@ -95,7 +94,6 @@ export class GraphViewer {
   deleteSelectedNodesButton: HTMLButtonElement;
   createNodeForm: HTMLFormElement;
   createNodeName: HTMLInputElement;
-  createNodeParent: HTMLInputElement;
   createNodeType: HTMLSelectElement;
   connectForm: HTMLFormElement;
   connectTargetName: HTMLInputElement;
@@ -159,7 +157,6 @@ export class GraphViewer {
     this.deleteSelectedNodesButton = this.requireElement("#delete-selected-nodes-button");
     this.createNodeForm = this.requireElement("#create-node-form");
     this.createNodeName = this.requireElement("#create-node-name");
-    this.createNodeParent = this.requireElement("#create-node-parent");
     this.createNodeType = this.requireElement("#create-node-type");
     this.connectForm = this.requireElement("#connect-form");
     this.connectTargetName = this.requireElement("#connect-target-name");
@@ -407,46 +404,27 @@ export class GraphViewer {
 
   bindNodeForms() {
     this.clearSelectionButton.addEventListener("click", () => {
-      this.graph.clearSelection();
-      this.expandedSelectionKeys.clear();
-      this.render();
+      this.operations.clearSelection.execute(this.operationContext());
     });
-    this.deleteSelectedNodesButton.addEventListener("click", () => void this.deleteSelectedNodes());
+    this.deleteSelectedNodesButton.addEventListener("click", () => {
+      void this.operations.deleteNodes.execute(this.operationContext());
+    });
     this.assignNodeType.addEventListener("change", () => this.updateEditorState());
     this.assignEdgeType.addEventListener("change", () => this.updateEditorState());
     this.connectTargetName.addEventListener("input", () => this.updateEditorState());
 
     this.createNodeForm.addEventListener("submit", event => {
       event.preventDefault();
-      if (!this.currentSelection().allows(this.operations.createNode)) {
-        this.setStatus("Создание узла недоступно, когда выбраны связи");
-        return;
-      }
-
-      const name = this.createNodeName.value.trim();
-      if (!name) {
-        this.setStatus("Введите LocalId нового узла");
-        return;
-      }
-
-      void this.createNode(name, {
-        parentGlobalId: this.createNodeParent.value.trim(),
-        typeGlobalId: this.createNodeType.value,
-        linkedNodeNames: this.selectedNodeNames()
+      void this.operations.createNode.execute(this.operationContext(), {
+        localId: this.createNodeName.value.trim(),
+        typeGlobalId: this.createNodeType.value
       });
     });
 
     this.connectForm.addEventListener("submit", event => {
       event.preventDefault();
-      const selectedNodeNames = this.selectedNodeNames();
-      const node1InternalId = selectedNodeNames.length === 1 ? selectedNodeNames[0] : null;
-      const node2InternalId = this.connectTargetName.value.trim();
-      if (!node1InternalId || !node2InternalId) {
-        this.setStatus("Выберите ровно один узел и укажите цель связи");
-        return;
-      }
-
-      void this.connectNodes(node1InternalId, node2InternalId, {
+      void this.operations.connectNodes.execute(this.operationContext(), {
+        targetNodeGlobalId: this.connectTargetName.value.trim(),
         typeGlobalId: this.connectEdgeType.value,
         relationLocalId: this.connectEdgeName.value.trim()
       });
@@ -480,8 +458,12 @@ export class GraphViewer {
     this.ensureBasisButton.addEventListener("click", () => void this.ensureDefaultBasis());
     this.refreshTypesButton.addEventListener("click", () => void this.refreshTypes());
     this.loadRelationsButton.addEventListener("click", () => void this.loadRelationInstances());
-    this.assignNodeTypeButton.addEventListener("click", () => void this.assignSelectedNodeType());
-    this.assignEdgeTypeButton.addEventListener("click", () => void this.assignSelectedEdgeType());
+    this.assignNodeTypeButton.addEventListener("click", () => {
+      void this.operations.assignNodeType.execute(this.operationContext(), { typeGlobalId: this.assignNodeType.value });
+    });
+    this.assignEdgeTypeButton.addEventListener("click", () => {
+      void this.operations.assignEdgeType.execute(this.operationContext(), { typeGlobalId: this.assignEdgeType.value });
+    });
   }
 
 
@@ -631,12 +613,11 @@ export class GraphViewer {
   }
 
   async createNode(name: string, options: GraphViewerOptions = {}) {
-  const parentGlobalId = options.parentGlobalId || null;
   const typeGlobalId = options.typeGlobalId || "";
   const linkedNodeNames = [...new Set(options.linkedNodeNames ?? [])].filter(Boolean);
   this.setBusy(true);
   try {
-    const created = await this.createGraphNode(name, parentGlobalId ?? undefined);
+    const created = await this.createGraphNode(name);
     for (const linkedNodeName of linkedNodeNames) {
       if (linkedNodeName !== created.path) {
         await this.connectGraphNodes(created.path, linkedNodeName);
@@ -646,7 +627,6 @@ export class GraphViewer {
       await this.assignGraphNodeType(created.path, typeGlobalId);
     }
     this.createNodeName.value = "";
-    this.createNodeParent.value = "";
     this.graph.rootName = this.graph.rootName ?? created.name;
     this.graph.selectedName = created.name;
     const seedFromName = this.graph.rootName === created.name ? null : this.graph.rootName;
@@ -704,8 +684,7 @@ export class GraphViewer {
 
   }
 
-  async deleteSelectedNodes() {
-  const nodeNames = this.selectedNodeNames();
+  async deleteNodes(nodeNames: string[]) {
   if (nodeNames.length === 0) {
     this.setStatus("Нет выбранных узлов для удаления");
     return;
@@ -1044,18 +1023,6 @@ export class GraphViewer {
 
   }
 
-  async assignSelectedNodeType() {
-  const nodeNames = this.selectedNodeNames();
-  const typeGlobalId = this.assignNodeType.value;
-  if (nodeNames.length === 0 || !typeGlobalId) {
-    this.setStatus("Выберите узлы и тип узла");
-    return;
-  }
-
-  await this.assignNodeTypeToNodes(nodeNames, typeGlobalId);
-
-  }
-
   async assignNodeTypeToNodes(nodeNames: string[], typeGlobalId: string) {
   if (!nodeNames?.length || !typeGlobalId) {
     this.setStatus("Выберите узлы и тип узла");
@@ -1088,18 +1055,6 @@ export class GraphViewer {
     method: "PUT",
     body: JSON.stringify(request)
   })) as SubgraphResponse;
-
-  }
-
-  async assignSelectedEdgeType() {
-  const edges = this.selectedEdgeObjects();
-  const typeGlobalId = this.assignEdgeType.value;
-  if (edges.length === 0 || !typeGlobalId) {
-    this.setStatus("Выберите связи и тип связи");
-    return;
-  }
-
-  await this.changeEdgeTypeForEdges(edges, typeGlobalId);
 
   }
 
@@ -2227,10 +2182,35 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   currentSelection(): GraphSelection {
+    const nodeNames = this.selectedNodeNames();
+    const edgeObjects = this.selectedEdgeObjects();
     return new GraphSelection({
-      nodeCount: this.selectedNodeObjects().length,
-      edgeCount: this.selectedEdgeObjects().length
+      nodeCount: nodeNames.length,
+      edgeCount: edgeObjects.length,
+      nodeNames,
+      edgeObjects
     });
+
+  }
+
+  operationContext(): GraphOperationContext {
+    return {
+      selection: this.currentSelection(),
+      clearSelection: () => {
+        this.graph.clearSelection();
+        this.expandedSelectionKeys.clear();
+        this.render();
+      },
+      deleteNodes: nodeNames => this.deleteNodes([...nodeNames]),
+      createNode: (localId, options) => this.createNode(localId, {
+        typeGlobalId: options.typeGlobalId,
+        linkedNodeNames: [...(options.linkedNodeNames ?? [])]
+      }),
+      connectNodes: (node1InternalId, node2InternalId, options) => this.connectNodes(node1InternalId, node2InternalId, options),
+      assignNodeType: (nodeNames, typeGlobalId) => this.assignNodeTypeToNodes([...nodeNames], typeGlobalId),
+      assignEdgeType: (edges, typeGlobalId) => this.changeEdgeTypeForEdges([...edges], typeGlobalId),
+      setStatus: message => this.setStatus(message)
+    };
 
   }
 
