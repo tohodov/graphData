@@ -18,8 +18,9 @@ public class ControllerTests : GraphServiceTests {
         return controller;
     }
 
-    internal static GraphController CreateController(IGraphStorage storage) { //TODO сделать virtual
-        var controller = new GraphController(new GraphService(storage, new GraphSearchService(storage), GraphSchemaRegistry.Create()));
+    internal static async Task<GraphController> CreateController(IGraphStorage storage) { //TODO сделать virtual
+        var graph = await Graph.OpenAsync(storage, GraphSchemaRegistry.Create());
+        var controller = new GraphController(new GraphService(graph, new GraphSearchService(storage)));
         controller.ControllerContext = new ControllerContext {
             HttpContext = new DefaultHttpContext()
         };

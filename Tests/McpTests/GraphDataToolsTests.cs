@@ -11,11 +11,6 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 [RelevantTestClass]
 public sealed class GraphDataToolsTests : StorageTests
 {
-    [TestInitialize]
-    public override async Task Init() {
-        await Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
-    }
-
     [TestMethod]
     public async Task GetNode_ReturnsApiNodeShapeWithoutSerializingNodeCycles()
     {
@@ -23,7 +18,8 @@ public sealed class GraphDataToolsTests : StorageTests
         var second = await Storage.Create(new NodeLocalId("2"));
         await Storage.Connect(first.GlobalId, second.GlobalId);
 
-        var tools = new GraphDataTools(new GraphService(Storage, new GraphSearchService(Storage), GraphSchemaRegistry.Create()));
+        var graph = await Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
+        var tools = new GraphDataTools(new GraphService(graph, new GraphSearchService(Storage)));
         var json = await tools.GetNode(["1"]);
 
         using var document = JsonDocument.Parse(json);

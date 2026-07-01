@@ -254,7 +254,7 @@ public sealed class GraphControllerTests : ControllerTests {
     public async Task ConnectNodesAsync_ReturnsInternalErrorDetailsWhenConnectFails() {
         var source = await Storage.Create(new("source"));
         var target = await Storage.Create(new("target"));
-        var controller = CreateController(new ConnectThrowingGraphStorage(Storage));
+        var controller = await CreateController(new ConnectThrowingGraphStorage(Storage));
 
         var result = await controller.ConnectNodesAsync(new ConnectNodesRequest {
             Node1InternalId = [source.LocalId.ToString()],

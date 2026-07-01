@@ -24,7 +24,6 @@ public sealed class StoragePerformanceTests {
 
         const string scenario = "storage-operations";
         await using var scope = PerformanceStorageScope.Create(storageKind, scenario);
-        var service = new GraphService(scope.Storage, new GraphSearchService(scope.Storage), GraphSchemaRegistry.Create());
         AssertStorageRoot(scope, scenario);
 
         var run = new PerformanceRun(storageKind.ToString(), graph, scenario, scope.RootPath);
@@ -73,6 +72,7 @@ public sealed class StoragePerformanceTests {
         }).ConfigureAwait(false);
 
         await run.MeasureAsync("subgraph-depth-2", 1, async () => {
+            var service = await CreateServiceAsync(scope.Storage).ConfigureAwait(false);
             var subgraph = (await service.GetSubgraph([graph.Nodes[0].Path], 2).ConfigureAwait(false)).Value!;
             PerformanceAssert.IsTrue(subgraph.Nodes.Count > 0);
         }).ConfigureAwait(false);
@@ -176,11 +176,11 @@ public sealed class StoragePerformanceTests {
 
         const string scenario = "subgraph-random-reads";
         await using var scope = PerformanceStorageScope.Create(storageKind, scenario);
-        var service = new GraphService(scope.Storage, new GraphSearchService(scope.Storage), GraphSchemaRegistry.Create());
         AssertStorageRoot(scope, scenario);
 
         var run = new PerformanceRun(storageKind.ToString(), graph, scenario, scope.RootPath);
         await PopulateGraphAsync(scope.Storage, graph).ConfigureAwait(false);
+        var service = await CreateServiceAsync(scope.Storage).ConfigureAwait(false);
 
         var sampleCount = PerformanceTestGate.GetInt("GRAPH_DATA_PERF_SUBGRAPH_SAMPLE_COUNT", Math.Min(25, graph.NodeCount));
         var depths = PerformanceTestGate.GetIntList("GRAPH_DATA_PERF_SUBGRAPH_DEPTHS", [1, 2, 3], minValue: 0);
@@ -220,6 +220,11 @@ public sealed class StoragePerformanceTests {
         }
 
         return nodesByName;
+    }
+
+    private static async Task<GraphService> CreateServiceAsync(IGraphStorage storage) {
+        var graph = await Graph.OpenAsync(storage, GraphSchemaRegistry.Create()).ConfigureAwait(false);
+        return new GraphService(graph, new GraphSearchService(storage));
     }
 
     private static async Task<int> ReadSubgraphNodeCountAsync(

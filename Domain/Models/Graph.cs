@@ -20,9 +20,15 @@ public sealed class Graph {
 
     public Node Root => root ?? throw new InvalidOperationException("Graph is not open.");
     public NodeType NodeTypes => nodeTypes ?? throw new InvalidOperationException("Graph is not open.");
-    public IReadOnlyCollection<NodeType> RuntimeTypes => runtimeTypesByClrType.Values.ToArray();
+    public IReadOnlyCollection<NodeType> RuntimeTypes {
+        get {
+            EnsureOpen();
+            return runtimeTypesByClrType.Values.ToArray();
+        }
+    }
 
     internal IGraphStorage Storage => storage;
+    internal bool IsOpen => isOpen;
 
     internal static async Task<Graph> OpenAsync(IGraphStorage storage, GraphSchemaRegistry schemaRegistry) {
         var graph = new Graph(storage, schemaRegistry);
@@ -61,6 +67,7 @@ public sealed class Graph {
 
     public NodeType? GetRuntimeType(Type clrType) {
         ArgumentNullException.ThrowIfNull(clrType);
+        EnsureOpen();
         return runtimeTypesByClrType.TryGetValue(clrType, out var nodeType)
             ? nodeType
             : null;
@@ -73,6 +80,7 @@ public sealed class Graph {
     }
 
     public NodeTypeDefinition GetNodeTypeDefinition(NodeType nodeType) {
+        EnsureOpen();
         return schemaRegistry.GetOrBuildDefinition(nodeType, GetRequiredRuntimeType);
     }
 
@@ -104,12 +112,14 @@ public sealed class Graph {
     }
 
     internal async Task<NodeType?> AsNodeTypeAsync(NodeBacking node) {
+        EnsureOpen();
         return await IsNodeTypeAsync(node).ConfigureAwait(false)
             ? new NodeType(node)
             : null;
     }
 
     internal async Task<bool> IsNodeTypeAsync(NodeBacking node) {
+        EnsureOpen();
         if (node.GlobalId == NodeTypes.GlobalId)
             return false;
 
@@ -119,9 +129,15 @@ public sealed class Graph {
     }
 
     internal async Task<IReadOnlyCollection<NodeBacking>> GetTopLevelUserRootStatesAsync() {
+        EnsureOpen();
         return (await storage.Root.Nodes.ToArrayAsync().ConfigureAwait(false))
             .Where(node => node.GlobalId != NodeTypes.GlobalId)
             .ToArray();
+    }
+
+    internal void EnsureOpen() {
+        if (!isOpen)
+            throw new InvalidOperationException("Graph is not open.");
     }
 
     static async Task<NodeBacking> EnsureNodeTypesRootAsync(IGraphStorage storage) {
