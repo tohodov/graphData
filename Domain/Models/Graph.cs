@@ -95,11 +95,6 @@ public sealed class Graph {
             : null;
     }
 
-    public async Task<IReadOnlyCollection<Node>> GetTopLevelUserRootsAsync() {
-        var roots = await GetTopLevelUserRootStatesAsync().ConfigureAwait(false);
-        return roots.Select(static state => new Node(state)).ToArray();
-    }
-
     internal NodeType GetRequiredRuntimeType<TNodeType>()
         where TNodeType : NodeType {
         return GetRequiredRuntimeType(typeof(TNodeType));
@@ -126,13 +121,6 @@ public sealed class Graph {
         return await node.Nodes
             .AnyAsync(neighbor => neighbor.GlobalId == NodeTypes.GlobalId)
             .ConfigureAwait(false);
-    }
-
-    internal async Task<IReadOnlyCollection<NodeBacking>> GetTopLevelUserRootStatesAsync() {
-        EnsureOpen();
-        return (await storage.Root.Nodes.ToArrayAsync().ConfigureAwait(false))
-            .Where(node => node.GlobalId != NodeTypes.GlobalId)
-            .ToArray();
     }
 
     internal void EnsureOpen() {

@@ -220,7 +220,7 @@ public sealed class GraphService {
         var requestedIds = globalIds.ToArray();
         var roots = new List<NodeBacking>();
         if (requestedIds.Length == 0)
-            roots.AddRange(await graph.GetTopLevelUserRootStatesAsync().ConfigureAwait(false));
+            roots.AddRange(await storage.Root.Nodes.ToArrayAsync());
         else
             foreach (var rootRef in requestedIds) {
                 var root = await storage.Get(rootRef);
@@ -229,7 +229,7 @@ public sealed class GraphService {
                 if (root.GlobalId != storage.Root.GlobalId)
                     roots.Add(root);
                 else
-                    roots.AddRange(await graph.GetTopLevelUserRootStatesAsync().ConfigureAwait(false));
+                    roots.AddRange(await storage.Root.Nodes.ToArrayAsync());
             }
 
         var visitedRequests = new HashSet<InternalId>();
