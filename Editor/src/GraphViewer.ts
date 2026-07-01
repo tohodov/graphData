@@ -16,6 +16,7 @@ import { GraphEdge } from "./domain/GraphEdge.js";
 import { GraphId } from "./domain/GraphId.js";
 import { GraphModel } from "./domain/GraphModel.js";
 import { GraphNode } from "./domain/GraphNode.js";
+import { GraphOperations, GraphSelection } from "./domain/GraphOperation.js";
 import { GraphType } from "./domain/GraphType.js";
 import type {
   AssignNodeTypeRequest,
@@ -57,6 +58,7 @@ export type GraphViewerOptions = {
   relationLocalId?: string;
   relationGlobalId?: string;
   fromName?: string;
+  linkedNodeNames?: string[];
 };
 
 export class GraphViewer {
@@ -64,6 +66,7 @@ export class GraphViewer {
   window: Window;
   api: GraphApi;
   graph: GraphModel;
+  operations: GraphOperations;
   canvas: WebGpuGraphCanvas;
 
   graphSurface: HTMLCanvasElement;
@@ -127,6 +130,7 @@ export class GraphViewer {
     this.window = window;
     this.api = api;
     this.graph = new GraphModel();
+    this.operations = new GraphOperations();
 
     this.graphSurface = this.requireElement<HTMLCanvasElement>("#graph");
     this.labelLayer = this.requireElement("#graph-label-layer");
@@ -414,6 +418,11 @@ export class GraphViewer {
 
     this.createNodeForm.addEventListener("submit", event => {
       event.preventDefault();
+      if (!this.currentSelection().allows(this.operations.createNode)) {
+        this.setStatus("Создание узла недоступно, когда выбраны связи");
+        return;
+      }
+
       const name = this.createNodeName.value.trim();
       if (!name) {
         this.setStatus("Введите LocalId нового узла");
@@ -422,7 +431,8 @@ export class GraphViewer {
 
       void this.createNode(name, {
         parentGlobalId: this.createNodeParent.value.trim(),
-        typeGlobalId: this.createNodeType.value
+        typeGlobalId: this.createNodeType.value,
+        linkedNodeNames: this.selectedNodeNames()
       });
     });
 
@@ -623,9 +633,15 @@ export class GraphViewer {
   async createNode(name: string, options: GraphViewerOptions = {}) {
   const parentGlobalId = options.parentGlobalId || null;
   const typeGlobalId = options.typeGlobalId || "";
+  const linkedNodeNames = [...new Set(options.linkedNodeNames ?? [])].filter(Boolean);
   this.setBusy(true);
   try {
     const created = await this.createGraphNode(name, parentGlobalId ?? undefined);
+    for (const linkedNodeName of linkedNodeNames) {
+      if (linkedNodeName !== created.path) {
+        await this.connectGraphNodes(created.path, linkedNodeName);
+      }
+    }
     if (typeGlobalId) {
       await this.assignGraphNodeType(created.path, typeGlobalId);
     }
@@ -638,7 +654,7 @@ export class GraphViewer {
     created.showed = true;
     this.graph.loaded.set(created.name, created);
     this.seedPosition(created.name, seedFromName, seedIndex);
-    if (typeGlobalId) {
+    if (typeGlobalId || linkedNodeNames.length > 0) {
       const expanded = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(created.path)}`));
       this.storeNodeExpansion(expanded, null, { select: true });
     }
@@ -2210,6 +2226,14 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   }
 
+  currentSelection(): GraphSelection {
+    return new GraphSelection({
+      nodeCount: this.selectedNodeObjects().length,
+      edgeCount: this.selectedEdgeObjects().length
+    });
+
+  }
+
   pruneSelectionToGraph() {
     const activeGraph = this.graph.visibleGraph();
     const nodeNames = new Set((activeGraph.nodes ?? []).map(node => node.name));
@@ -2835,15 +2859,15 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   updateEditorState() {
-    const nodeCount = this.selectedNodeObjects().length;
-    const edgeCount = this.selectedEdgeObjects().length;
-    const total = nodeCount + edgeCount;
-  this.clearSelectionButton.disabled = this.graph.busy || total === 0;
-  this.deleteSelectedNodesButton.disabled = this.graph.busy || nodeCount === 0;
-  this.assignNodeTypeButton.disabled = this.graph.busy || nodeCount === 0 || !this.assignNodeType.value;
-  this.assignEdgeTypeButton.disabled = this.graph.busy || edgeCount === 0 || !this.assignEdgeType.value;
+    const selection = this.currentSelection();
+  this.clearSelectionButton.disabled = this.graph.busy || !selection.allows(this.operations.clearSelection);
+  this.deleteSelectedNodesButton.disabled = this.graph.busy || !selection.allows(this.operations.deleteNodes);
+  this.createNodeForm.querySelector<HTMLButtonElement>("button")!.disabled = this.graph.busy
+    || !selection.allows(this.operations.createNode);
+  this.assignNodeTypeButton.disabled = this.graph.busy || !selection.allows(this.operations.assignNodeType) || !this.assignNodeType.value;
+  this.assignEdgeTypeButton.disabled = this.graph.busy || !selection.allows(this.operations.assignEdgeType) || !this.assignEdgeType.value;
   this.connectForm.querySelector<HTMLButtonElement>("button")!.disabled = this.graph.busy
-    || nodeCount !== 1
+    || !selection.allows(this.operations.connectNodes)
     || !this.connectTargetName.value.trim();
   if (!this.graph.searchAbort) {
     this.setSearchStreaming(false);
