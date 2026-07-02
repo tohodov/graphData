@@ -616,16 +616,41 @@ export class GraphModel {
   }
 
   *primitiveEdgeViews(): IterableIterator<GraphEdge> {
-    const emitted = new Set<string>();
+    const edges = new Map<string, GraphEdge>();
     for (const node of this.loaded.values()) {
       for (const edge of node.edges ?? []) {
         const normalized = GraphEdge.from(edge);
-        if (!emitted.has(normalized.key)) {
-          emitted.add(normalized.key);
-          yield normalized.toViewEdge(this.edgeEndpointNodes(normalized)) as unknown as GraphEdge;
-        }
+        const existing = edges.get(normalized.key);
+        edges.set(normalized.key, this.preferredPrimitiveEdge(existing, normalized));
       }
     }
+
+    for (const edge of edges.values()) {
+      yield edge.toViewEdge(this.edgeEndpointNodes(edge)) as unknown as GraphEdge;
+    }
+  }
+
+  private preferredPrimitiveEdge(existing: GraphEdge | undefined, candidate: GraphEdge): GraphEdge {
+    if (!existing) {
+      return candidate;
+    }
+
+    return this.primitiveEdgeViewScore(candidate) > this.primitiveEdgeViewScore(existing)
+      ? candidate
+      : existing;
+  }
+
+  private primitiveEdgeViewScore(edge: GraphEdge): number {
+    const controlAnchorVisible = edge.controlAnchorGlobalId
+      ? this.isNodeVisible(edge.controlAnchorGlobalId)
+      : false;
+
+    return (controlAnchorVisible && edge.controlAngle !== null ? 1000 : 0)
+      + (edge.controlAngle !== null ? 100 : 0)
+      + (this.isNodeVisible(edge.node1InternalId) ? 10 : 0)
+      + (this.isNodeVisible(edge.node2InternalId) ? 10 : 0)
+      + (this.positions.has(edge.node1InternalId) ? 1 : 0)
+      + (this.positions.has(edge.node2InternalId) ? 1 : 0);
   }
 
   primitiveNodeCount(): number {

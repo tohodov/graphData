@@ -1531,6 +1531,64 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphModel_PrimitiveEdgeViewsPreferVisibleAnchorControlAngle() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
+            ("Api/wwwroot/src/GraphViewer.js", "GraphViewer"));
+
+        engine.Execute(
+            """
+            const viewer = Object.create(GraphViewer.prototype);
+            viewer.graph = new GraphModel();
+
+            const edgeFromHiddenChild = {
+              node1InternalId: "root",
+              node2InternalId: "root/a",
+              node1LocalId: "root",
+              node2LocalId: "a",
+              neighborLocalId: "root"
+            };
+            const edgeFromVisibleRoot = {
+              node1InternalId: "root",
+              node2InternalId: "root/a",
+              node1LocalId: "root",
+              node2LocalId: "a",
+              neighborLocalId: "a"
+            };
+
+            viewer.graph.loaded.set("root/a", new GraphNode({
+              globalId: "root/a",
+              localId: "a",
+              edges: [edgeFromHiddenChild]
+            }));
+            viewer.graph.loaded.set("root", new GraphNode({
+              globalId: "root",
+              localId: "root",
+              showed: true,
+              edges: [edgeFromVisibleRoot]
+            }));
+            viewer.graph.positions.set("root", { x: 0, y: 0 });
+            viewer.refreshEdgeAngles();
+
+            const rootStoredEdge = viewer.graph.loaded.get("root").edges[0];
+            const graphEdge = viewer.graph.visibleGraph().edges.find(edge =>
+              edge.node1InternalId === "root" && edge.node2InternalId === "root/a");
+            const control = graphEdge?.controls?.[0];
+
+            globalThis.__result = rootStoredEdge.controlAngleFor("root") !== null
+              && control?.action === "load-neighbor"
+              && control?.anchorName === "root"
+              && control?.otherName === "root/a"
+              && control?.neighborLocalId === "a"
+              && Number.isFinite(control?.angle);
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void WebGpuCanvas_RendersUnshownEndpointControlsAtStoredAngle() {
         var engine = CreateUiEngine(("Api/wwwroot/src/ui/WebGpuGraphCanvas.js", "WebGpuGraphCanvas"));
 
