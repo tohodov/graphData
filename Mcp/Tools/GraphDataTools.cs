@@ -350,8 +350,10 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         var cardinality = ReadTypeCardinality(value, defaultValue: NodeSlotCardinality.Required());
         if (cardinality.Status != ServiceResultStatus.Ok)
             return ServiceResult<NodeFieldDefinition>.From(cardinality);
+        var maxCardinality = cardinality.Value.Max;
+        var inferredIsCollection = !maxCardinality.HasValue || maxCardinality.Value > 1;
         var isCollection = ReadOptionalBool(value, "isCollection")
-            ?? cardinality.Value.Max is null or > 1;
+            ?? inferredIsCollection;
 
         if (kind == NodeFieldValueKind.Node) {
             var nodeType = await ReadOptionalTypeReference(value, "nodeType").ConfigureAwait(false);
