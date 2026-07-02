@@ -20,13 +20,16 @@ internal static class NodeTypeFieldDiscovery
             var cardinality = CreateCardinality(member, memberType, valueType);
 
             if (typeof(NodeType).IsAssignableFrom(valueType)) {
+                var referencedNodeType = valueType == typeof(NodeType)
+                    ? null
+                    : resolveType(valueType);
                 builder.Field(new NodeFieldDefinition(
                     member.Name,
                     NodeFieldValueKind.Node,
                     valueType,
                     cardinality,
                     IsCollectionType(memberType),
-                    resolveType(valueType)));
+                    referencedNodeType));
                 continue;
             }
 
