@@ -1,7 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\Api\0_Api.csproj" />
     <ProjectReference Include="..\Domain\1_ Domain.csproj" />
     <ProjectReference Include="..\SymLinkStorage\1_SymLinkStorage.csproj" />
     <ProjectReference Include="..\McpTracker\Client\Client.csproj" />

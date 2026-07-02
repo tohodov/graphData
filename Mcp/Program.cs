@@ -1,6 +1,7 @@
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Client;
-using GraphData.Api.Runtime;
 using GraphData.Core.Extensions;
 using GraphData.Core.Services;
 using GraphData.Mcp.Runtime;
@@ -41,8 +42,16 @@ builder.Services
     .WithMcpTrackerMessageFilters()
     .WithListResourcesHandler((_, _) => ValueTask.FromResult(new ListResourcesResult { Resources = [] }))
     .WithListResourceTemplatesHandler((_, _) => ValueTask.FromResult(new ListResourceTemplatesResult { ResourceTemplates = [] }))
-    .WithToolsFromAssembly(serializerOptions: GraphJsonSerializerOptions.Create());
+    .WithToolsFromAssembly(serializerOptions: CreateJsonOptions());
 
 var app = builder.Build();
 await app.Services.GetRequiredService<Graph>().OpenAsync().ConfigureAwait(false);
 await app.RunAsync();
+
+static JsonSerializerOptions CreateJsonOptions() {
+    var options = new JsonSerializerOptions(JsonSerializerDefaults.Web) {
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+    };
+    options.AllowOutOfOrderMetadataProperties = true;
+    return options;
+}
