@@ -54,14 +54,25 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
     }
 
     [HttpPut("nodes")]
-    public async Task<ActionResult<OperationResponse>> UpdateNodeAsync([FromQuery] string[] path, [FromBody] UpdateNodeRequest request) {
-        var result = await graph.UpdateNode(new NodePath(path), request.Attributes);
+    public async Task<ActionResult<OperationResponse>> UpdateNodeAsync(
+        [FromQuery] string[] globalId,
+        [FromQuery] string[] path,
+        [FromBody] UpdateNodeRequest request) {
+        if (TryCreateRequiredNodePath(globalId, path, out var nodePath, out var error) == false)
+            return BadRequest(error);
+
+        var result = await graph.UpdateNode(nodePath, request.Attributes);
         return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result.Status, result.Error);
     }
 
     [HttpDelete("nodes")]
-    public async Task<ActionResult<OperationResponse>> DeleteNodeAsync([FromQuery] string[] path) {
-        var result = await graph.DeleteNode(new NodePath(path));
+    public async Task<ActionResult<OperationResponse>> DeleteNodeAsync(
+        [FromQuery] string[] globalId,
+        [FromQuery] string[] path) {
+        if (TryCreateRequiredNodePath(globalId, path, out var nodePath, out var error) == false)
+            return BadRequest(error);
+
+        var result = await graph.DeleteNode(nodePath);
         return ToActionResult<OperationResponse>(result);
     }
 
@@ -172,5 +183,24 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
             ServiceResultStatus.Conflict => Conflict(error),
             _ => StatusCode(StatusCodes.Status500InternalServerError)
         };
+    }
+
+    private static bool TryCreateRequiredNodePath(
+        string[] globalId,
+        string[] path,
+        out NodePath nodePath,
+        out string? error) {
+        var segments = globalId.Length > 0
+            ? globalId
+            : path;
+        if (segments.Length == 0) {
+            nodePath = new NodePath();
+            error = "Node globalId is required.";
+            return false;
+        }
+
+        nodePath = new NodePath(segments);
+        error = null;
+        return true;
     }
 }

@@ -129,6 +129,18 @@ public sealed class ServiceTests : GraphServiceTests {
     }
 
     [TestMethod]
+    public async Task DeleteNode_ShouldRejectStorageRoot() {
+        var node = await Create("node");
+
+        var result = await Service.DeleteNode(new NodePath());
+
+        Assert.AreEqual(ServiceResultStatus.BadRequest, result.Status);
+        Assert.AreEqual("Storage root cannot be deleted.", result.Error);
+        Assert.IsTrue(Directory.Exists(StorageOptions.RootPath));
+        Assert.IsNotNull(await Storage.Get(node.GlobalId));
+    }
+
+    [TestMethod]
     public async Task GraphService_ChangeEdgeTypeAsync_CreatesMetadataFreeTypedEdgeSubgraph() {
         var typesRoot = await GetTypesRoot();
         var weapon = await Service.CreateNode<EdgeWeaponNodeType>(new("ak-47"));

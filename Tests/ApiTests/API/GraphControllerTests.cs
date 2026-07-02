@@ -157,6 +157,48 @@ public sealed class GraphControllerTests : ControllerTests {
     }
 
     [TestMethod]
+    public async Task UpdateNodeAsync_AcceptsGlobalIdQuery() {
+        var node = await Storage.Create(new("node"), attributes: new Dictionary<string, string> {
+            ["kind"] = "original"
+        });
+
+        var result = await Controller.UpdateNodeAsync([node.LocalId.ToString()], [], new UpdateNodeRequest {
+            Attributes = new Dictionary<string, string> {
+                ["kind"] = "updated"
+            }
+        });
+
+        Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
+        var stored = await Storage.Get(node.GlobalId);
+        Assert.IsNotNull(stored);
+        Assert.AreEqual("updated", stored.Attributes["kind"]);
+    }
+
+    [TestMethod]
+    public async Task DeleteNodeAsync_AcceptsGlobalIdQuery() {
+        var node = await Storage.Create(new("node"));
+
+        var result = await Controller.DeleteNodeAsync([node.LocalId.ToString()], []);
+
+        Assert.IsInstanceOfType(result.Result, typeof(OkResult));
+        Assert.IsNull(await Storage.Get(node.GlobalId));
+        Assert.IsTrue(Directory.Exists(StorageOptions.RootPath));
+    }
+
+    [TestMethod]
+    public async Task DeleteNodeAsync_RejectsMissingNodeIdentifierWithoutDeletingStorageRoot() {
+        var node = await Storage.Create(new("node"));
+
+        var result = await Controller.DeleteNodeAsync([], []);
+
+        var badRequest = result.Result as BadRequestObjectResult;
+        Assert.IsNotNull(badRequest);
+        Assert.AreEqual("Node globalId is required.", badRequest.Value);
+        Assert.IsTrue(Directory.Exists(StorageOptions.RootPath));
+        Assert.IsNotNull(await Storage.Get(node.GlobalId));
+    }
+
+    [TestMethod]
     public async Task CreateNodeAsync_ReturnsBadRequestForInvalidNodeName() {
         var result = await Controller.CreateNodeAsync(new CreateNodeRequest {
             LocalId = "KG Test: Ручное стрелковое оружие"

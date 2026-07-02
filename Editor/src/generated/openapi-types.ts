@@ -38,6 +38,7 @@ export interface paths {
         put: {
             parameters: {
                 query?: {
+                    globalId?: string[];
                     path?: string[];
                 };
                 header?: never;
@@ -96,6 +97,7 @@ export interface paths {
         delete: {
             parameters: {
                 query?: {
+                    globalId?: string[];
                     path?: string[];
                 };
                 header?: never;

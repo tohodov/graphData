@@ -51,6 +51,9 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
 
     public Task Delete(NodeBacking node) => Delete((NodeFileSystem)node);
     async Task Delete(NodeFileSystem node) {
+        if (IsStorageRoot(node.FolderPath))
+            throw new InvalidOperationException("Storage root cannot be deleted.");
+
         var connections = await node.Edges
             .Select(edge => edge.Node1.GlobalId == node.GlobalId ? edge.Node2 : edge.Node1)
             .Where(neighbor => neighbor.GlobalId != node.GlobalId)

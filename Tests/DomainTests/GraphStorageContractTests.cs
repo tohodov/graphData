@@ -186,6 +186,17 @@ public class GraphStorageContractTests : StorageTests {
         Assert.IsFalse(await first.Nodes.AnyAsync(x => x.LocalId == second.LocalId));
         Assert.IsFalse(await third.Nodes.AnyAsync(x => x.LocalId == second.LocalId));
     }
+
+    [TestMethod]
+    public async Task ShouldRejectDeletingStorageRoot() {
+        var node = await CreateNode("node");
+
+        await Assert.ThrowsExceptionAsync<InvalidOperationException>(() => Storage.Delete(new NodePath()));
+
+        Assert.IsTrue(Directory.Exists(StorageOptions.RootPath));
+        Assert.IsNotNull(await Storage.Get(node.GlobalId));
+    }
+
     [TestMethod]
     public async Task ShouldReturnMutualConnections() {
         var first = await CreateNode();

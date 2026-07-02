@@ -79,6 +79,8 @@ public sealed class GraphService {
         var node = await storage.Get(globalId);
         if (node == null)
             return ServiceResult.NotFound();
+        if (node.GlobalId == storage.Root.GlobalId)
+            return ServiceResult.BadRequest("Storage root cannot be deleted.");
         await storage.Delete(node);
         return ServiceResult.Ok();
     }
