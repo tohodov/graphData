@@ -99,9 +99,21 @@ public sealed class GraphSchemaRegistry
                 return builder.Build();
             }
 
-            var dynamicBuilder = new NodeTypeBuilder(typeNode, resolveType);
-            return dynamicBuilder.Build();
+            var dynamicDefinition = DynamicNodeTypeDefinitionStorage.TryRead(typeNode);
+            if (dynamicDefinition is not null)
+                return dynamicDefinition;
+
+            return new NodeTypeDefinition(
+                typeNode,
+                IsAbstract: false,
+                Slots: Array.Empty<NodeSlotDefinition>(),
+                Fields: Array.Empty<NodeFieldDefinition>());
         });
+    }
+
+    internal void RegisterDynamicDefinition(NodeTypeDefinition definition)
+    {
+        _definitions[definition.Type.GlobalId] = definition;
     }
 
     private static IReadOnlyCollection<Type> GetLoadableTypes(Assembly assembly)

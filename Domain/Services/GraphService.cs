@@ -6,6 +6,11 @@ namespace GraphData.Core.Services;
 public sealed class GraphService {
     const string SourcePortRole = "source";
     const string TargetPortRole = "target";
+    static readonly HashSet<string> ReservedDynamicTypeChildNames = new(StringComparer.OrdinalIgnoreCase) {
+        "Definition",
+        "Fields",
+        "Slots"
+    };
 
     readonly Graph graph;
     readonly GraphSearchService searchService;
@@ -21,6 +26,38 @@ public sealed class GraphService {
 
     public async Task<ServiceResult<Node>> CreateNode(NodeLocalId localId, NodeRef? path = null, NodeType? type = null, IDictionary<string, string>? attributes = null) {
         return await CreateNodeCore(graph, localId, path, type, attributes).ConfigureAwait(false);
+    }
+
+    public async Task<ServiceResult<NodeTypeDefinition>> CreateNodeType(
+        NodeLocalId localId,
+        bool isAbstract = false,
+        IEnumerable<NodeFieldDefinition>? fields = null,
+        IEnumerable<NodeSlotDefinition>? slots = null) {
+        var fieldArray = fields?.ToArray() ?? [];
+        var slotArray = slots?.ToArray() ?? [];
+
+        var validation = await ValidateNodeTypeDefinitionRequest(localId, fieldArray, slotArray).ConfigureAwait(false);
+        if (validation.Status != ServiceResultStatus.Ok)
+            return new ServiceResult<NodeTypeDefinition>(validation.Status, Error: validation.Error);
+
+        var storage = graph.Storage;
+        var existing = await storage.Get(graph.NodeTypes.GlobalId, localId).ConfigureAwait(false);
+        if (existing is not null)
+            return ServiceResult<NodeTypeDefinition>.Conflict($"Node type '{localId}' already exists.");
+
+        NodeBacking? created = null;
+        try {
+            created = await storage.Create(localId, graph.NodeTypes.GlobalId).ConfigureAwait(false);
+            var type = new NodeType(created);
+            var definition = CreateNodeTypeDefinition(type, isAbstract, fieldArray, slotArray);
+            await DynamicNodeTypeDefinitionStorage.WriteAsync(storage, definition).ConfigureAwait(false);
+            graph.RegisterNodeTypeDefinition(definition);
+            return ServiceResult<NodeTypeDefinition>.Ok(definition);
+        } catch (Exception ex) {
+            if (created is not null)
+                await storage.Delete(created).ConfigureAwait(false);
+            return ServiceResult<NodeTypeDefinition>.BadRequest(ex.Message);
+        }
     }
 
     public async Task<ServiceResult<Node>> CreateNode<TNodeType>(
@@ -373,6 +410,111 @@ public sealed class GraphService {
         return chars.Count == 0
             ? "typed-edge"
             : new string(chars.ToArray());
+    }
+
+    private async Task<ServiceResult> ValidateNodeTypeDefinitionRequest(
+        NodeLocalId localId,
+        IReadOnlyCollection<NodeFieldDefinition> fields,
+        IReadOnlyCollection<NodeSlotDefinition> slots) {
+        var localIdValidation = ValidateLocalId(localId, "Node type localId");
+        if (localIdValidation is not null)
+            return ServiceResult.BadRequest(localIdValidation);
+
+        var fieldNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var field in fields) {
+            var fieldNameValidation = ValidateLocalId(new NodeLocalId(field.Name), $"Field '{field.Name}'");
+            if (fieldNameValidation is not null)
+                return ServiceResult.BadRequest(fieldNameValidation);
+            if (ReservedDynamicTypeChildNames.Contains(field.Name))
+                return ServiceResult.BadRequest($"Field name '{field.Name}' is reserved.");
+            if (!fieldNames.Add(field.Name))
+                return ServiceResult.BadRequest($"Field '{field.Name}' is declared more than once.");
+            var cardinalityValidation = ValidateCardinality(field.Cardinality);
+            if (cardinalityValidation is not null)
+                return ServiceResult.BadRequest($"Field '{field.Name}' {cardinalityValidation}");
+            if (!field.IsCollection && field.Cardinality.Max is null or > 1)
+                return ServiceResult.BadRequest($"Field '{field.Name}' is not a collection, but allows more than one value.");
+
+            if (field.ValueKind == NodeFieldValueKind.Node) {
+                if (!typeof(Node).IsAssignableFrom(field.ClrType))
+                    return ServiceResult.BadRequest($"Field '{field.Name}' is a node field but has CLR type '{field.ClrType.FullName}'.");
+                if (field.NodeType is not null) {
+                    var typeValidation = await EnsureExistingNodeType(field.NodeType).ConfigureAwait(false);
+                    if (typeValidation.Status != ServiceResultStatus.Ok)
+                        return typeValidation;
+                }
+                continue;
+            }
+
+            if (typeof(Node).IsAssignableFrom(field.ClrType))
+                return ServiceResult.BadRequest($"Primitive field '{field.Name}' cannot use node CLR type '{field.ClrType.FullName}'.");
+            if (field.NodeType is not null)
+                return ServiceResult.BadRequest($"Primitive field '{field.Name}' cannot restrict a node type.");
+        }
+
+        var slotNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var slot in slots) {
+            var slotNameValidation = ValidateLocalId(new NodeLocalId(slot.Name), $"Slot '{slot.Name}'");
+            if (slotNameValidation is not null)
+                return ServiceResult.BadRequest(slotNameValidation);
+            if (ReservedDynamicTypeChildNames.Contains(slot.Name))
+                return ServiceResult.BadRequest($"Slot name '{slot.Name}' is reserved.");
+            if (!slotNames.Add(slot.Name))
+                return ServiceResult.BadRequest($"Slot '{slot.Name}' is declared more than once.");
+            var cardinalityValidation = ValidateCardinality(slot.Cardinality);
+            if (cardinalityValidation is not null)
+                return ServiceResult.BadRequest($"Slot '{slot.Name}' {cardinalityValidation}");
+            if (slot.AllowedTypes.Count == 0)
+                return ServiceResult.BadRequest($"Slot '{slot.Name}' must allow at least one node type.");
+            foreach (var allowedType in slot.AllowedTypes) {
+                var typeValidation = await EnsureExistingNodeType(allowedType).ConfigureAwait(false);
+                if (typeValidation.Status != ServiceResultStatus.Ok)
+                    return typeValidation;
+            }
+        }
+
+        return ServiceResult.Ok();
+    }
+
+    private static NodeTypeDefinition CreateNodeTypeDefinition(
+        NodeType type,
+        bool isAbstract,
+        IReadOnlyCollection<NodeFieldDefinition> fields,
+        IReadOnlyCollection<NodeSlotDefinition> slots) {
+        return new NodeTypeDefinition(
+            type,
+            isAbstract,
+            slots.Concat(fields.Select(static field => field.ToSlotDefinition()).OfType<NodeSlotDefinition>()).ToArray(),
+            fields.ToArray());
+    }
+
+    private async Task<ServiceResult> EnsureExistingNodeType(NodeType type) {
+        var state = await graph.Storage.Get(type.GlobalId).ConfigureAwait(false);
+        if (state is null)
+            return ServiceResult.NotFound($"Node type '{type.GlobalId}' was not found.");
+        var typeNode = await graph.AsNodeTypeAsync(state).ConfigureAwait(false);
+        return typeNode is null
+            ? ServiceResult.BadRequest($"Node '{type.GlobalId}' is not a node type.")
+            : ServiceResult.Ok();
+    }
+
+    private static string? ValidateLocalId(NodeLocalId id, string subject) {
+        var value = id.ToString();
+        if (string.IsNullOrWhiteSpace(value))
+            return $"{subject} is required.";
+        if (value is "." or "..")
+            return $"{subject} cannot be '.' or '..'.";
+        if (value.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || value.Contains('/') || value.Contains('\\'))
+            return $"{subject} contains characters that are not valid in node names.";
+        return null;
+    }
+
+    private static string? ValidateCardinality(NodeSlotCardinality cardinality) {
+        if (cardinality.Min < 0)
+            return "cardinality minimum cannot be negative.";
+        if (cardinality.Max is { } max && max < cardinality.Min)
+            return "cardinality maximum cannot be lower than minimum.";
+        return null;
     }
 
     private static ServiceResult<Subgraph> ToSubgraphResult(ServiceResult result) => new(result.Status, Error: result.Error);

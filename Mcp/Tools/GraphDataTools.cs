@@ -101,6 +101,30 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
     }
 
     [McpServerTool]
+    [Description("Creates a dynamic graph node type under NodeTypes. Field and slot nodeType references must point to existing type nodes; missing types are not created.")]
+    public async Task<string> CreateType(
+        [Description("LocalId for the new type node under NodeTypes.")] string localId,
+        [Description("Whether this type is abstract.")] bool isAbstract = false,
+        [Description("Optional JSON object or array of field definitions. Node fields use nodeType paths; primitive fields use clrType names such as string, int, bool, decimal.")] JsonElement? fields = null,
+        [Description("Optional JSON object or array of slot definitions. Each slot must specify allowedTypes or allowedType with existing type paths.")] JsonElement? slots = null) {
+        var fieldDefinitions = await ReadTypeFields(fields).ConfigureAwait(false);
+        if (fieldDefinitions.Status != ServiceResultStatus.Ok || fieldDefinitions.Value is null)
+            return ToJson(ToErrorResponse(fieldDefinitions.Status, fieldDefinitions.Error));
+
+        var slotDefinitions = await ReadTypeSlots(slots).ConfigureAwait(false);
+        if (slotDefinitions.Status != ServiceResultStatus.Ok || slotDefinitions.Value is null)
+            return ToJson(ToErrorResponse(slotDefinitions.Status, slotDefinitions.Error));
+
+        var result = await graph.CreateNodeType(
+            localId,
+            isAbstract,
+            fieldDefinitions.Value,
+            slotDefinitions.Value).ConfigureAwait(false);
+
+        return ToMutationJson(result, "type", static definition => ToTypeDefinitionResponse(definition));
+    }
+
+    [McpServerTool]
     [Description("Returns definitions for all currently known graph node types.")]
     public async Task<string> GetTypeDefinitions() {
         var types = await GetKnownTypeDefinitions().ConfigureAwait(false);
@@ -296,6 +320,357 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         }
 
         return ServiceResult<McpCreateNodePlan>.Ok(new McpCreateNodePlan(attributes, links));
+    }
+
+    private async Task<ServiceResult<IReadOnlyCollection<NodeFieldDefinition>>> ReadTypeFields(JsonElement? fields) {
+        var elements = ReadNamedDefinitionElements(fields, "Fields");
+        if (elements.Status != ServiceResultStatus.Ok || elements.Value is null)
+            return ServiceResult<IReadOnlyCollection<NodeFieldDefinition>>.From(elements);
+
+        var result = new List<NodeFieldDefinition>();
+        foreach (var item in elements.Value) {
+            var field = await ReadTypeField(item.Name, item.Value).ConfigureAwait(false);
+            if (field.Status != ServiceResultStatus.Ok || field.Value is null)
+                return ServiceResult<IReadOnlyCollection<NodeFieldDefinition>>.From(field);
+            result.Add(field.Value);
+        }
+
+        return ServiceResult<IReadOnlyCollection<NodeFieldDefinition>>.Ok(result);
+    }
+
+    private async Task<ServiceResult<NodeFieldDefinition>> ReadTypeField(string name, JsonElement value) {
+        if (value.ValueKind != JsonValueKind.Object)
+            return ServiceResult<NodeFieldDefinition>.BadRequest($"Field '{name}' definition must be a JSON object.");
+
+        var kindResult = ReadNodeFieldValueKind(value);
+        if (kindResult.Status != ServiceResultStatus.Ok)
+            return ServiceResult<NodeFieldDefinition>.From(kindResult);
+        var kind = kindResult.Value;
+
+        var cardinality = ReadTypeCardinality(value, defaultValue: NodeSlotCardinality.Required());
+        if (cardinality.Status != ServiceResultStatus.Ok)
+            return ServiceResult<NodeFieldDefinition>.From(cardinality);
+        var isCollection = ReadOptionalBool(value, "isCollection")
+            ?? cardinality.Value.Max is null or > 1;
+
+        if (kind == NodeFieldValueKind.Node) {
+            var nodeType = await ReadOptionalTypeReference(value, "nodeType").ConfigureAwait(false);
+            if (nodeType.Status != ServiceResultStatus.Ok)
+                return ServiceResult<NodeFieldDefinition>.From(nodeType);
+
+            var clrType = ReadOptionalClrType(value, defaultType: typeof(Node));
+            if (clrType.Status != ServiceResultStatus.Ok || clrType.Value is null)
+                return ServiceResult<NodeFieldDefinition>.From(clrType);
+            if (!typeof(Node).IsAssignableFrom(clrType.Value))
+                return ServiceResult<NodeFieldDefinition>.BadRequest($"Node field '{name}' clrType must be Node or NodeType.");
+
+            return ServiceResult<NodeFieldDefinition>.Ok(new NodeFieldDefinition(
+                name,
+                NodeFieldValueKind.Node,
+                clrType.Value,
+                cardinality.Value,
+                isCollection,
+                nodeType.Value));
+        }
+
+        var primitiveType = ReadOptionalClrType(value, defaultType: null);
+        if (primitiveType.Status != ServiceResultStatus.Ok || primitiveType.Value is null)
+            return ServiceResult<NodeFieldDefinition>.BadRequest($"Primitive field '{name}' must specify clrType.");
+        if (typeof(Node).IsAssignableFrom(primitiveType.Value))
+            return ServiceResult<NodeFieldDefinition>.BadRequest($"Primitive field '{name}' cannot use node clrType.");
+
+        return ServiceResult<NodeFieldDefinition>.Ok(new NodeFieldDefinition(
+            name,
+            NodeFieldValueKind.Primitive,
+            primitiveType.Value,
+            cardinality.Value,
+            isCollection));
+    }
+
+    private async Task<ServiceResult<IReadOnlyCollection<NodeSlotDefinition>>> ReadTypeSlots(JsonElement? slots) {
+        var elements = ReadNamedDefinitionElements(slots, "Slots");
+        if (elements.Status != ServiceResultStatus.Ok || elements.Value is null)
+            return ServiceResult<IReadOnlyCollection<NodeSlotDefinition>>.From(elements);
+
+        var result = new List<NodeSlotDefinition>();
+        foreach (var item in elements.Value) {
+            var slot = await ReadTypeSlot(item.Name, item.Value).ConfigureAwait(false);
+            if (slot.Status != ServiceResultStatus.Ok || slot.Value is null)
+                return ServiceResult<IReadOnlyCollection<NodeSlotDefinition>>.From(slot);
+            result.Add(slot.Value);
+        }
+
+        return ServiceResult<IReadOnlyCollection<NodeSlotDefinition>>.Ok(result);
+    }
+
+    private async Task<ServiceResult<NodeSlotDefinition>> ReadTypeSlot(string name, JsonElement value) {
+        if (value.ValueKind != JsonValueKind.Object)
+            return ServiceResult<NodeSlotDefinition>.BadRequest($"Slot '{name}' definition must be a JSON object.");
+
+        var cardinality = ReadTypeCardinality(value, defaultValue: NodeSlotCardinality.Required());
+        if (cardinality.Status != ServiceResultStatus.Ok)
+            return ServiceResult<NodeSlotDefinition>.From(cardinality);
+
+        var allowedTypes = await ReadRequiredTypeReferences(value, "allowedTypes", "allowedType").ConfigureAwait(false);
+        if (allowedTypes.Status != ServiceResultStatus.Ok || allowedTypes.Value is null)
+            return ServiceResult<NodeSlotDefinition>.From(allowedTypes);
+
+        return ServiceResult<NodeSlotDefinition>.Ok(new NodeSlotDefinition(
+            name,
+            allowedTypes.Value,
+            cardinality.Value));
+    }
+
+    private async Task<ServiceResult<NodeType?>> ReadOptionalTypeReference(JsonElement value, string propertyName) {
+        if (!TryGetProperty(value, propertyName, out var pathValue))
+            return ServiceResult<NodeType?>.Ok(null);
+
+        var path = ReadNodePathValue(pathValue);
+        if (path.Status != ServiceResultStatus.Ok || path.Value is null)
+            return ServiceResult<NodeType?>.From(path);
+
+        var type = await graph.GetTypeNode(path.Value).ConfigureAwait(false);
+        return type is null
+            ? ServiceResult<NodeType?>.NotFound($"Type node '{path.Value}' was not found or is not a node type.")
+            : ServiceResult<NodeType?>.Ok(type);
+    }
+
+    private async Task<ServiceResult<IReadOnlyCollection<NodeType>>> ReadRequiredTypeReferences(
+        JsonElement value,
+        string collectionPropertyName,
+        string singlePropertyName) {
+        var result = new List<NodeType>();
+        if (TryGetProperty(value, collectionPropertyName, out var collectionValue)) {
+            if (collectionValue.ValueKind != JsonValueKind.Array)
+                return ServiceResult<IReadOnlyCollection<NodeType>>.BadRequest($"'{collectionPropertyName}' must be an array.");
+            foreach (var item in collectionValue.EnumerateArray()) {
+                var path = ReadNodePathValue(item);
+                if (path.Status != ServiceResultStatus.Ok || path.Value is null)
+                    return ServiceResult<IReadOnlyCollection<NodeType>>.From(path);
+                var type = await graph.GetTypeNode(path.Value).ConfigureAwait(false);
+                if (type is null)
+                    return ServiceResult<IReadOnlyCollection<NodeType>>.NotFound($"Type node '{path.Value}' was not found or is not a node type.");
+                result.Add(type);
+            }
+        } else if (TryGetProperty(value, singlePropertyName, out var singleValue)) {
+            var path = ReadNodePathValue(singleValue);
+            if (path.Status != ServiceResultStatus.Ok || path.Value is null)
+                return ServiceResult<IReadOnlyCollection<NodeType>>.From(path);
+            var type = await graph.GetTypeNode(path.Value).ConfigureAwait(false);
+            if (type is null)
+                return ServiceResult<IReadOnlyCollection<NodeType>>.NotFound($"Type node '{path.Value}' was not found or is not a node type.");
+            result.Add(type);
+        }
+
+        return result.Count == 0
+            ? ServiceResult<IReadOnlyCollection<NodeType>>.BadRequest($"Slot must specify '{collectionPropertyName}' or '{singlePropertyName}'.")
+            : ServiceResult<IReadOnlyCollection<NodeType>>.Ok(result);
+    }
+
+    private static ServiceResult<IReadOnlyCollection<McpNamedJsonElement>> ReadNamedDefinitionElements(
+        JsonElement? value,
+        string subject) {
+        if (!HasJsonValue(value))
+            return ServiceResult<IReadOnlyCollection<McpNamedJsonElement>>.Ok(Array.Empty<McpNamedJsonElement>());
+
+        var root = value!.Value;
+        if (root.ValueKind == JsonValueKind.String) {
+            var text = root.GetString();
+            if (string.IsNullOrWhiteSpace(text))
+                return ServiceResult<IReadOnlyCollection<McpNamedJsonElement>>.Ok(Array.Empty<McpNamedJsonElement>());
+            try {
+                using var document = JsonDocument.Parse(text);
+                return ReadNamedDefinitionElements(document.RootElement.Clone(), subject);
+            } catch (JsonException ex) {
+                return ServiceResult<IReadOnlyCollection<McpNamedJsonElement>>.BadRequest($"{subject} must be a JSON object or array: {ex.Message}");
+            }
+        }
+
+        if (root.ValueKind == JsonValueKind.Object) {
+            var result = new List<McpNamedJsonElement>();
+            foreach (var property in root.EnumerateObject()) {
+                if (string.IsNullOrWhiteSpace(property.Name))
+                    return ServiceResult<IReadOnlyCollection<McpNamedJsonElement>>.BadRequest($"{subject} name cannot be empty.");
+                result.Add(new McpNamedJsonElement(property.Name.Trim(), property.Value.Clone()));
+            }
+            return ServiceResult<IReadOnlyCollection<McpNamedJsonElement>>.Ok(result);
+        }
+
+        if (root.ValueKind == JsonValueKind.Array) {
+            var result = new List<McpNamedJsonElement>();
+            foreach (var item in root.EnumerateArray()) {
+                if (item.ValueKind != JsonValueKind.Object)
+                    return ServiceResult<IReadOnlyCollection<McpNamedJsonElement>>.BadRequest($"{subject} array items must be JSON objects.");
+                if (!TryGetProperty(item, "name", out var nameValue) || nameValue.ValueKind != JsonValueKind.String)
+                    return ServiceResult<IReadOnlyCollection<McpNamedJsonElement>>.BadRequest($"{subject} array items must contain a string 'name'.");
+                var name = nameValue.GetString();
+                if (string.IsNullOrWhiteSpace(name))
+                    return ServiceResult<IReadOnlyCollection<McpNamedJsonElement>>.BadRequest($"{subject} name cannot be empty.");
+                result.Add(new McpNamedJsonElement(name.Trim(), item.Clone()));
+            }
+            return ServiceResult<IReadOnlyCollection<McpNamedJsonElement>>.Ok(result);
+        }
+
+        return ServiceResult<IReadOnlyCollection<McpNamedJsonElement>>.BadRequest($"{subject} must be a JSON object or array.");
+    }
+
+    private static ServiceResult<NodeFieldValueKind> ReadNodeFieldValueKind(JsonElement value) {
+        if (TryGetProperty(value, "valueKind", out var valueKind) || TryGetProperty(value, "kind", out valueKind)) {
+            if (valueKind.ValueKind != JsonValueKind.String
+                || !Enum.TryParse<NodeFieldValueKind>(valueKind.GetString(), ignoreCase: true, out var parsed))
+                return ServiceResult<NodeFieldValueKind>.BadRequest("Field valueKind must be 'Node' or 'Primitive'.");
+            return ServiceResult<NodeFieldValueKind>.Ok(parsed);
+        }
+
+        if (TryGetProperty(value, "nodeType", out _))
+            return ServiceResult<NodeFieldValueKind>.Ok(NodeFieldValueKind.Node);
+        if (TryGetProperty(value, "clrType", out _))
+            return ServiceResult<NodeFieldValueKind>.Ok(NodeFieldValueKind.Primitive);
+
+        return ServiceResult<NodeFieldValueKind>.BadRequest("Field must specify valueKind, nodeType, or clrType.");
+    }
+
+    private static ServiceResult<NodeSlotCardinality> ReadTypeCardinality(
+        JsonElement value,
+        NodeSlotCardinality defaultValue) {
+        if (TryGetProperty(value, "cardinality", out var cardinality))
+            return ReadCardinalityValue(cardinality);
+
+        var hasMin = TryGetProperty(value, "min", out var minValue);
+        var hasMax = TryGetProperty(value, "max", out var maxValue);
+        if (!hasMin && !hasMax)
+            return ServiceResult<NodeSlotCardinality>.Ok(defaultValue);
+
+        var min = hasMin ? ReadNonNegativeInt(minValue, "min") : ServiceResult<int>.Ok(defaultValue.Min);
+        if (min.Status != ServiceResultStatus.Ok)
+            return ServiceResult<NodeSlotCardinality>.From(min);
+        var max = hasMax ? ReadOptionalMax(maxValue) : ServiceResult<int?>.Ok(defaultValue.Max);
+        if (max.Status != ServiceResultStatus.Ok)
+            return ServiceResult<NodeSlotCardinality>.From(max);
+
+        return CreateCardinality(min.Value, max.Value);
+    }
+
+    private static ServiceResult<NodeSlotCardinality> ReadCardinalityValue(JsonElement value) {
+        if (value.ValueKind == JsonValueKind.String) {
+            var text = value.GetString()?.Trim();
+            if (string.Equals(text, "required", StringComparison.OrdinalIgnoreCase))
+                return ServiceResult<NodeSlotCardinality>.Ok(NodeSlotCardinality.Required());
+            if (string.Equals(text, "optional", StringComparison.OrdinalIgnoreCase))
+                return ServiceResult<NodeSlotCardinality>.Ok(NodeSlotCardinality.Optional());
+            if (string.Equals(text, "many", StringComparison.OrdinalIgnoreCase))
+                return ServiceResult<NodeSlotCardinality>.Ok(NodeSlotCardinality.Many());
+            if (string.Equals(text, "oneOrMore", StringComparison.OrdinalIgnoreCase))
+                return ServiceResult<NodeSlotCardinality>.Ok(NodeSlotCardinality.Many(1));
+            if (TryParseCardinalityRange(text, out var range))
+                return ServiceResult<NodeSlotCardinality>.Ok(range);
+            return ServiceResult<NodeSlotCardinality>.BadRequest("Cardinality string must be required, optional, many, oneOrMore, or a range like 1..1.");
+        }
+
+        if (value.ValueKind != JsonValueKind.Object)
+            return ServiceResult<NodeSlotCardinality>.BadRequest("Cardinality must be a string or object.");
+
+        var min = TryGetProperty(value, "min", out var minValue)
+            ? ReadNonNegativeInt(minValue, "min")
+            : ServiceResult<int>.Ok(0);
+        if (min.Status != ServiceResultStatus.Ok)
+            return ServiceResult<NodeSlotCardinality>.From(min);
+        var max = TryGetProperty(value, "max", out var maxValue)
+            ? ReadOptionalMax(maxValue)
+            : ServiceResult<int?>.Ok(null);
+        if (max.Status != ServiceResultStatus.Ok)
+            return ServiceResult<NodeSlotCardinality>.From(max);
+
+        return CreateCardinality(min.Value, max.Value);
+    }
+
+    private static ServiceResult<NodeSlotCardinality> CreateCardinality(int min, int? max) {
+        if (max is { } value && value < min)
+            return ServiceResult<NodeSlotCardinality>.BadRequest("Cardinality max cannot be lower than min.");
+        return ServiceResult<NodeSlotCardinality>.Ok(new NodeSlotCardinality(min, max));
+    }
+
+    private static bool TryParseCardinalityRange(string? value, out NodeSlotCardinality cardinality) {
+        cardinality = default;
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        var parts = value.Split("..", StringSplitOptions.TrimEntries);
+        if (parts.Length != 2)
+            return false;
+        if (!int.TryParse(parts[0], NumberStyles.None, CultureInfo.InvariantCulture, out var min) || min < 0)
+            return false;
+        if (parts[1] == "*") {
+            cardinality = new NodeSlotCardinality(min, null);
+            return true;
+        }
+        if (!int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var max) || max < min)
+            return false;
+        cardinality = new NodeSlotCardinality(min, max);
+        return true;
+    }
+
+    private static ServiceResult<int> ReadNonNegativeInt(JsonElement value, string propertyName) {
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var result) || result < 0)
+            return ServiceResult<int>.BadRequest($"'{propertyName}' must be a non-negative integer.");
+        return ServiceResult<int>.Ok(result);
+    }
+
+    private static ServiceResult<int?> ReadOptionalMax(JsonElement value) {
+        if (value.ValueKind == JsonValueKind.Null)
+            return ServiceResult<int?>.Ok(null);
+        if (value.ValueKind == JsonValueKind.String && value.GetString()?.Trim() == "*")
+            return ServiceResult<int?>.Ok(null);
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var result) || result < 0)
+            return ServiceResult<int?>.BadRequest("'max' must be a non-negative integer, null, or '*'.");
+        return ServiceResult<int?>.Ok(result);
+    }
+
+    private static ServiceResult<Type?> ReadOptionalClrType(JsonElement value, Type? defaultType) {
+        if (!TryGetProperty(value, "clrType", out var clrType))
+            return ServiceResult<Type?>.Ok(defaultType);
+        if (clrType.ValueKind != JsonValueKind.String)
+            return ServiceResult<Type?>.BadRequest("clrType must be a string.");
+        return ResolveClrType(clrType.GetString());
+    }
+
+    private static ServiceResult<Type?> ResolveClrType(string? value) {
+        if (string.IsNullOrWhiteSpace(value))
+            return ServiceResult<Type?>.BadRequest("clrType cannot be empty.");
+
+        var normalized = value.Trim();
+        var lower = normalized.ToLowerInvariant();
+        var type = lower switch {
+            "string" => typeof(string),
+            "int" or "integer" or "system.int32" => typeof(int),
+            "long" or "system.int64" => typeof(long),
+            "short" or "system.int16" => typeof(short),
+            "byte" or "system.byte" => typeof(byte),
+            "bool" or "boolean" or "system.boolean" => typeof(bool),
+            "decimal" or "system.decimal" => typeof(decimal),
+            "double" or "system.double" => typeof(double),
+            "float" or "single" or "system.single" => typeof(float),
+            "datetime" or "system.datetime" => typeof(DateTime),
+            "datetimeoffset" or "system.datetimeoffset" => typeof(DateTimeOffset),
+            "guid" or "system.guid" => typeof(Guid),
+            "node" => typeof(Node),
+            "nodetype" => typeof(NodeType),
+            _ => Type.GetType(normalized, throwOnError: false, ignoreCase: true)
+        };
+
+        return type is null
+            ? ServiceResult<Type?>.BadRequest($"CLR type '{value}' cannot be resolved.")
+            : ServiceResult<Type?>.Ok(type);
+    }
+
+    private static bool? ReadOptionalBool(JsonElement value, string propertyName) {
+        if (!TryGetProperty(value, propertyName, out var property))
+            return null;
+        return property.ValueKind switch {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => null
+        };
     }
 
     private async Task<ServiceResult<IReadOnlyCollection<NodePath>>> ReadNodeFieldLinks(
@@ -513,6 +888,20 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
     private static bool HasJsonValue(JsonElement? value) =>
         value is { ValueKind: not JsonValueKind.Undefined and not JsonValueKind.Null };
 
+    private static bool TryGetProperty(JsonElement value, string propertyName, out JsonElement property) {
+        if (value.ValueKind == JsonValueKind.Object) {
+            foreach (var candidate in value.EnumerateObject()) {
+                if (string.Equals(candidate.Name, propertyName, StringComparison.OrdinalIgnoreCase)) {
+                    property = candidate.Value;
+                    return true;
+                }
+            }
+        }
+
+        property = default;
+        return false;
+    }
+
     private static string FormatClrType(Type type) =>
         (Nullable.GetUnderlyingType(type) ?? type).FullName ?? type.Name;
 
@@ -654,6 +1043,10 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         NodeSlotCardinality Cardinality,
         bool IsCollection,
         IReadOnlyCollection<NodeType> AllowedTypes);
+
+    private sealed record McpNamedJsonElement(
+        string Name,
+        JsonElement Value);
 
     private sealed record McpNodeTypeDefinitionResponse {
         public required string LocalId { get; init; }

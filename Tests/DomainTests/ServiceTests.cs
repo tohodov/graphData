@@ -282,6 +282,61 @@ public sealed class ServiceTests : GraphServiceTests {
     }
 
     [TestMethod]
+    public async Task GraphService_CreateNodeType_PersistsDynamicDefinition() {
+        var countryResult = await Service.CreateNodeType("DynCountry");
+        Assert.AreEqual(ServiceResultStatus.Ok, countryResult.Status, countryResult.Error);
+        var countryType = countryResult.Value!.Type;
+
+        var manufacturerResult = await Service.CreateNodeType(
+            "DynManufacturer",
+            fields: [
+                new NodeFieldDefinition(
+                    "Country",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Required(),
+                    IsCollection: false,
+                    countryType),
+                new NodeFieldDefinition(
+                    "FoundedYear",
+                    NodeFieldValueKind.Primitive,
+                    typeof(int),
+                    NodeSlotCardinality.Required(),
+                    IsCollection: false)
+            ]);
+        Assert.AreEqual(ServiceResultStatus.Ok, manufacturerResult.Status, manufacturerResult.Error);
+        var manufacturerType = manufacturerResult.Value!.Type;
+
+        var bareManufacturer = (await Service.CreateNode("bare-manufacturer")).Value!;
+        var invalid = await Service.AssignNodeTypeAsync(bareManufacturer.GlobalId, manufacturerType.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.BadRequest, invalid.Status);
+        StringAssert.Contains(invalid.Error, "Country");
+
+        var country = (await Service.CreateNode("USSR", type: countryType)).Value!;
+        var manufacturer = (await Service.CreateNode("kalashnikov")).Value!;
+        await Service.ConnectNodesAsync(manufacturer.GlobalId, country.GlobalId);
+        var valid = await Service.AssignNodeTypeAsync(manufacturer.GlobalId, manufacturerType.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, valid.Status, valid.Error);
+
+        var reopenedGraph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
+        var reopenedService = new GraphData.Core.Services.GraphService(reopenedGraph, new GraphSearchService(Storage));
+        var reopenedType = await reopenedService.GetTypeNode(new NodePath("NodeTypes", "DynManufacturer"));
+        Assert.IsNotNull(reopenedType);
+
+        var reopenedDefinition = reopenedGraph.GetNodeTypeDefinition(reopenedType);
+        Assert.AreEqual("DynManufacturer", reopenedDefinition.Type.LocalId.ToString());
+        Assert.AreEqual(2, reopenedDefinition.Fields.Count);
+        Assert.IsTrue(reopenedDefinition.Slots.Any(slot =>
+            slot.Name == "Country"
+            && slot.AllowedTypes.Single().GlobalId == countryType.GlobalId
+            && slot.Cardinality == NodeSlotCardinality.Required()));
+        Assert.IsTrue(reopenedDefinition.Fields.Any(field =>
+            field.Name == "FoundedYear"
+            && field.ValueKind == NodeFieldValueKind.Primitive
+            && field.ClrType == typeof(int)));
+    }
+
+    [TestMethod]
     public async Task NodeTypeDefinition_DiscoversRichCSharpFields() {
         var result = await Service.GetNodeTypeDefinitionAsync<ManufacturerNodeType>();
 

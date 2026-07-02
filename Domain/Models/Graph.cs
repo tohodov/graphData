@@ -84,6 +84,11 @@ public sealed class Graph {
         return schemaRegistry.GetOrBuildDefinition(nodeType, GetRequiredRuntimeType);
     }
 
+    internal void RegisterNodeTypeDefinition(NodeTypeDefinition definition) {
+        EnsureOpen();
+        schemaRegistry.RegisterDynamicDefinition(definition);
+    }
+
     public TypedEdgeDefinition? GetTypedEdgeDefinition<TNodeType>()
         where TNodeType : NodeType {
         var nodeType = GetNodeTypeDefinition<TNodeType>();
