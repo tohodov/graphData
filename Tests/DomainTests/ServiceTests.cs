@@ -406,7 +406,7 @@ public sealed class ServiceTests : GraphServiceTests {
         var subgraph = (await Service.GetSubgraph([], 0)).Value!;
 
         CollectionAssert.AreEquivalent(
-            new[] { firstRoot.GlobalId, secondRoot.GlobalId },
+            new[] { firstRoot.GlobalId, secondRoot.GlobalId, Graph.NodeTypes.GlobalId },
             subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
         CollectionAssert.DoesNotContain(subgraph.Nodes.Select(static node => node.GlobalId).ToArray(), child.GlobalId);
         Assert.IsNotNull(await Storage.Get(child.GlobalId));
@@ -422,7 +422,7 @@ public sealed class ServiceTests : GraphServiceTests {
         var subgraph = (await Service.GetSubgraph([new NodePath()], 0)).Value!;
 
         CollectionAssert.AreEquivalent(
-            new[] { firstRoot.GlobalId, secondRoot.GlobalId },
+            new[] { firstRoot.GlobalId, secondRoot.GlobalId, Graph.NodeTypes.GlobalId },
             subgraph.Nodes.Select(static node => node.GlobalId).ToArray());
         Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "first", "child")));
     }

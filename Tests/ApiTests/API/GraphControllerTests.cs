@@ -452,7 +452,7 @@ public sealed class GraphControllerTests : ControllerTests {
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
         CollectionAssert.AreEquivalent(
-            new[] { firstRoot.GlobalId.ToString(), secondRoot.GlobalId.ToString() },
+            new string[] { firstRoot.GlobalId, secondRoot.GlobalId, Graph.NodeTypes.GlobalId },
             response.Nodes.Select(static node => node.InternalId).ToArray());
         Assert.AreEqual(0, response.Edges.Count);
 
@@ -479,7 +479,7 @@ public sealed class GraphControllerTests : ControllerTests {
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
         CollectionAssert.AreEquivalent(
-            new[] { firstRoot.GlobalId.ToString(), secondRoot.GlobalId.ToString() },
+            new string[] { firstRoot.GlobalId, secondRoot.GlobalId, Graph.NodeTypes.GlobalId },
             response.Nodes.Select(static node => node.InternalId).ToArray());
     }
 

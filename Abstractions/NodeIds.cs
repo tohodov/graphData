@@ -87,6 +87,7 @@ public abstract class NodeRef {
         }
 
         public static explicit operator InternalId?(string[]? path) => path is null ? null : new InternalId(path.Select(x => new NodeLocalId(x)));
+        public static implicit operator string(InternalId id) => id.ToString();
         public static bool operator ==(InternalId left, InternalId? right) => left.Equals(right);
         public static bool operator !=(InternalId left, InternalId? right) => !left.Equals(right);
 
