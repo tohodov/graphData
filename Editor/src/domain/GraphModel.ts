@@ -138,6 +138,7 @@ class EventedGraphNodeMap extends Map<string, GraphNode> {
 
   set(name: string, node: GraphNode | GraphNodeSnapshot | null | undefined): this {
     const rich = GraphNode.from(node);
+    this.owner.canonicalizeNodeEdges(rich);
     super.set(name, rich);
     this.changed({ kind: "node-upsert", reason: "node-upsert", name, node: rich });
     return this;
@@ -583,6 +584,64 @@ export class GraphModel {
     return rich;
   }
 
+  canonicalizeNodeEdges(node: GraphNode): GraphNode {
+    if ((node.edges ?? []).length === 0) {
+      return node;
+    }
+
+    node.edges = GraphEdge.mergeMany(node.edges)
+      .map(edge => this.sharedPrimitiveEdge(node.name, edge));
+    return node;
+  }
+
+  private sharedPrimitiveEdge(ownerName: string, edge: GraphEdge): GraphEdge {
+    this.attachNeighborLocalId(edge, ownerName, edge);
+
+    const existing = this.findSharedEdgeObject(edge.key, ownerName);
+    if (!existing || existing === edge) {
+      return edge;
+    }
+
+    this.mergePrimitiveEdge(existing, edge);
+    return existing;
+  }
+
+  private findSharedEdgeObject(key: string, ownerName: string): GraphEdge | null {
+    for (const [nodeName, node] of this.loaded.entries()) {
+      if (nodeName === ownerName) {
+        continue;
+      }
+
+      const edge = (node.edges ?? []).find(edge => edge.key === key);
+      if (edge) {
+        return edge;
+      }
+    }
+
+    const owner = this.loaded.get(ownerName);
+    return owner?.edges?.find(edge => edge.key === key) ?? null;
+  }
+
+  private mergePrimitiveEdge(target: GraphEdge, source: GraphEdge): void {
+    target.collapsed = target.collapsed || source.collapsed;
+    if (target.controlAngle === null && source.controlAngle !== null) {
+      target.controlAnchorGlobalId = source.controlAnchorGlobalId;
+      target.controlAngle = source.controlAngle;
+    }
+
+    for (const [anchorName, angle] of Object.entries(source.controlAnglesByAnchor)) {
+      target.setControlAngle(anchorName, angle);
+    }
+
+    for (const [anchorName, neighborLocalId] of Object.entries(source.neighborLocalIdsByAnchor)) {
+      target.setNeighborLocalIdFor(anchorName, neighborLocalId);
+    }
+  }
+
+  private attachNeighborLocalId(target: GraphEdge, ownerName: string, source: GraphEdge): void {
+    target.setNeighborLocalIdFor(ownerName, source.neighborLocalId ?? source.neighborLocalIdFor(ownerName));
+  }
+
   displayName(path: string): string {
     return this.loaded.get(path)?.displayName ?? path;
   }
@@ -616,41 +675,16 @@ export class GraphModel {
   }
 
   *primitiveEdgeViews(): IterableIterator<GraphEdge> {
-    const edges = new Map<string, GraphEdge>();
+    const emitted = new Set<string>();
     for (const node of this.loaded.values()) {
       for (const edge of node.edges ?? []) {
         const normalized = GraphEdge.from(edge);
-        const existing = edges.get(normalized.key);
-        edges.set(normalized.key, this.preferredPrimitiveEdge(existing, normalized));
+        if (!emitted.has(normalized.key)) {
+          emitted.add(normalized.key);
+          yield normalized.toViewEdge(this.edgeEndpointNodes(normalized)) as unknown as GraphEdge;
+        }
       }
     }
-
-    for (const edge of edges.values()) {
-      yield edge.toViewEdge(this.edgeEndpointNodes(edge)) as unknown as GraphEdge;
-    }
-  }
-
-  private preferredPrimitiveEdge(existing: GraphEdge | undefined, candidate: GraphEdge): GraphEdge {
-    if (!existing) {
-      return candidate;
-    }
-
-    return this.primitiveEdgeViewScore(candidate) > this.primitiveEdgeViewScore(existing)
-      ? candidate
-      : existing;
-  }
-
-  private primitiveEdgeViewScore(edge: GraphEdge): number {
-    const controlAnchorVisible = edge.controlAnchorGlobalId
-      ? this.isNodeVisible(edge.controlAnchorGlobalId)
-      : false;
-
-    return (controlAnchorVisible && edge.controlAngle !== null ? 1000 : 0)
-      + (edge.controlAngle !== null ? 100 : 0)
-      + (this.isNodeVisible(edge.node1InternalId) ? 10 : 0)
-      + (this.isNodeVisible(edge.node2InternalId) ? 10 : 0)
-      + (this.positions.has(edge.node1InternalId) ? 1 : 0)
-      + (this.positions.has(edge.node2InternalId) ? 1 : 0);
   }
 
   primitiveNodeCount(): number {

@@ -1485,7 +1485,7 @@ public sealed class GraphUiRegressionTests {
             const control = viewer.graph.edgeEndpointControl(edge, "root");
             const graphEdgeControl = viewer.graph.visibleGraph().edges.find(item => item.key === edge.key)?.controls?.[0];
             const rootPosition = viewer.graph.positions.get("root");
-            const angles = root.edges.map(item => item.controlAngle).sort((a, b) => a - b);
+            const angles = root.edges.map(item => item.controlAngleFor("root")).sort((a, b) => a - b);
             const step = Math.PI / 2;
             const evenlySpaced = angles.every((angle, index) => {
               const next = angles[(index + 1) % angles.length] + (index === angles.length - 1 ? Math.PI * 2 : 0);
@@ -1509,7 +1509,7 @@ public sealed class GraphUiRegressionTests {
               y: loadedPosition.y - rootPosition.y
             };
             const rootEdge = root.edges.find(item => item.node2InternalId === "root/a");
-            const angleAfterLoad = rootEdge.controlAngle;
+            const angleAfterLoad = rootEdge.controlAngleFor("root");
             viewer.graph.positions.set("root/a", { x: rootPosition.x + 204, y: rootPosition.y });
             viewer.refreshEdgeAngles();
 
@@ -1524,14 +1524,14 @@ public sealed class GraphUiRegressionTests {
               && Math.abs(loadedOffset.x) < 0.000001
               && Math.abs(loadedOffset.y + 204) < 0.000001
               && Math.abs(angleAfterLoad + Math.PI / 2) < 0.000001
-              && Math.abs(rootEdge.controlAngle) < 0.000001;
+              && Math.abs(rootEdge.controlAngleFor("root")) < 0.000001;
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
     }
 
     [TestMethod]
-    public void GraphModel_PrimitiveEdgeViewsPreferVisibleAnchorControlAngle() {
+    public void GraphModel_SharesPrimitiveEdgeObjectAcrossCachedEndpoints() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
             ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
@@ -1573,11 +1573,15 @@ public sealed class GraphUiRegressionTests {
             viewer.refreshEdgeAngles();
 
             const rootStoredEdge = viewer.graph.loaded.get("root").edges[0];
+            const childStoredEdge = viewer.graph.loaded.get("root/a").edges[0];
             const graphEdge = viewer.graph.visibleGraph().edges.find(edge =>
               edge.node1InternalId === "root" && edge.node2InternalId === "root/a");
             const control = graphEdge?.controls?.[0];
 
-            globalThis.__result = rootStoredEdge.controlAngleFor("root") !== null
+            globalThis.__result = rootStoredEdge === childStoredEdge
+              && rootStoredEdge.controlAngleFor("root") !== null
+              && rootStoredEdge.neighborLocalIdFor("root") === "a"
+              && rootStoredEdge.neighborLocalIdFor("root/a") === "root"
               && control?.action === "load-neighbor"
               && control?.anchorName === "root"
               && control?.otherName === "root/a"

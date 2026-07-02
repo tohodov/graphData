@@ -10,6 +10,7 @@ export type GraphEdgeSnapshot = {
   node2LocalId?: string | null;
   targetLocalId?: string | null;
   neighborLocalId?: string | null;
+  neighborLocalIdsByAnchor?: Record<string, string>;
   relationGlobalId?: string | null;
   typeGlobalId?: string | null;
   label?: string;
@@ -22,6 +23,7 @@ export type GraphEdgeSnapshot = {
   collapsed?: boolean;
   controlAnchorGlobalId?: string | null;
   controlAngle?: number | null;
+  controlAnglesByAnchor?: Record<string, number>;
   node1?: GraphNode | null;
   sourceNode?: GraphNode | null;
   node2?: GraphNode | null;
@@ -132,6 +134,7 @@ export class GraphEdge {
   node1LocalId: string | null;
   node2LocalId: string | null;
   neighborLocalId: string | null;
+  neighborLocalIdsByAnchor: Record<string, string>;
   relationGlobalId: string | null;
   typeGlobalId: string | null;
   label: string;
@@ -144,6 +147,7 @@ export class GraphEdge {
   collapsed: boolean;
   controlAnchorGlobalId: string | null;
   controlAngle: number | null;
+  controlAnglesByAnchor: Record<string, number>;
   node1: GraphNode | null;
   node2: GraphNode | null;
   node1Positioned: boolean;
@@ -159,6 +163,7 @@ export class GraphEdge {
     node2LocalId = null,
     targetLocalId = null,
     neighborLocalId = null,
+    neighborLocalIdsByAnchor = {},
     relationGlobalId = null,
     typeGlobalId = null,
     label = "",
@@ -171,6 +176,7 @@ export class GraphEdge {
     collapsed = false,
     controlAnchorGlobalId = null,
     controlAngle = null,
+    controlAnglesByAnchor = {},
     node1 = null,
     sourceNode = null,
     node2 = null,
@@ -183,6 +189,7 @@ export class GraphEdge {
     this.node1LocalId = node1LocalId || sourceLocalId;
     this.node2LocalId = node2LocalId || targetLocalId;
     this.neighborLocalId = neighborLocalId;
+    this.neighborLocalIdsByAnchor = { ...(neighborLocalIdsByAnchor ?? {}) };
     this.relationGlobalId = relationGlobalId;
     this.typeGlobalId = typeGlobalId;
     this.label = label;
@@ -195,6 +202,10 @@ export class GraphEdge {
     this.collapsed = Boolean(collapsed);
     this.controlAnchorGlobalId = controlAnchorGlobalId;
     this.controlAngle = Number.isFinite(controlAngle) ? controlAngle : null;
+    this.controlAnglesByAnchor = { ...(controlAnglesByAnchor ?? {}) };
+    if (controlAnchorGlobalId && this.controlAngle !== null) {
+      this.controlAnglesByAnchor[controlAnchorGlobalId] = this.controlAngle;
+    }
     this.node1 = node1 ?? sourceNode ?? null;
     this.node2 = node2 ?? targetNode ?? null;
     this.node1Positioned = Boolean(node1Positioned);
@@ -230,6 +241,16 @@ export class GraphEdge {
           normalized.controlAnchorGlobalId = existing.controlAnchorGlobalId;
           normalized.controlAngle = existing.controlAngle;
         }
+        if (existing) {
+          normalized.controlAnglesByAnchor = {
+            ...existing.controlAnglesByAnchor,
+            ...normalized.controlAnglesByAnchor
+          };
+          normalized.neighborLocalIdsByAnchor = {
+            ...existing.neighborLocalIdsByAnchor,
+            ...normalized.neighborLocalIdsByAnchor
+          };
+        }
         edges.set(normalized.key, normalized);
       }
     });
@@ -257,10 +278,22 @@ export class GraphEdge {
   }
 
 neighborLocalIdFor(anchorPath: string): string | null {
+    const mapped = this.neighborLocalIdsByAnchor[anchorPath];
+    if (mapped) {
+      return mapped;
+    }
     if (this.neighborLocalId) {
       return this.neighborLocalId;
     }
     return this.node1InternalId === anchorPath ? this.node2LocalId : this.node1LocalId;
+  }
+
+  setNeighborLocalIdFor(anchorPath: string, neighborLocalId: string | null): void {
+    if (!anchorPath || !neighborLocalId || !this.connects(anchorPath)) {
+      return;
+    }
+
+    this.neighborLocalIdsByAnchor[anchorPath] = neighborLocalId;
   }
 
 endpointNode(path: string): GraphNode | null {
@@ -285,16 +318,36 @@ endpointPositioned(path: string): boolean {
   }
 
   setControlAngle(anchorInternalId: string, angle: number | null): void {
-    this.controlAnchorGlobalId = anchorInternalId;
-    this.controlAngle = Number.isFinite(angle) ? angle : null;
+    if (!anchorInternalId) {
+      return;
+    }
+
+    if (Number.isFinite(angle)) {
+      const finiteAngle = angle as number;
+      this.controlAnglesByAnchor[anchorInternalId] = finiteAngle;
+      this.controlAnchorGlobalId = anchorInternalId;
+      this.controlAngle = finiteAngle;
+    } else {
+      delete this.controlAnglesByAnchor[anchorInternalId];
+      if (this.controlAnchorGlobalId === anchorInternalId) {
+        this.controlAnchorGlobalId = null;
+        this.controlAngle = null;
+      }
+    }
   }
 
   clearControlAngle(): void {
     this.controlAnchorGlobalId = null;
     this.controlAngle = null;
+    this.controlAnglesByAnchor = {};
   }
 
   controlAngleFor(anchorInternalId: string): number | null {
+    const mapped = this.controlAnglesByAnchor[anchorInternalId];
+    if (Number.isFinite(mapped)) {
+      return mapped;
+    }
+
     return this.controlAnchorGlobalId === anchorInternalId && Number.isFinite(this.controlAngle)
       ? this.controlAngle
       : null;
@@ -338,6 +391,8 @@ endpointPositioned(path: string): boolean {
       node2InternalId: this.node2InternalId,
       node1LocalId: this.node1LocalId,
       node2LocalId: this.node2LocalId,
+      neighborLocalId: this.neighborLocalId,
+      neighborLocalIdsByAnchor: { ...this.neighborLocalIdsByAnchor },
       relationGlobalId: this.relationGlobalId,
       typeGlobalId: this.typeGlobalId,
       label: this.label,
@@ -350,6 +405,7 @@ endpointPositioned(path: string): boolean {
       collapsed: this.collapsed,
       controlAnchorGlobalId: this.controlAnchorGlobalId,
       controlAngle: this.controlAngle,
+      controlAnglesByAnchor: { ...this.controlAnglesByAnchor },
       node1: this.node1,
       node2: this.node2,
       node1Positioned: this.node1Positioned,
