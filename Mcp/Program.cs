@@ -5,6 +5,7 @@ using Client;
 using GraphData.Core.Extensions;
 using GraphData.Core.Services;
 using GraphData.Mcp.Runtime;
+using GraphData.Mcp.Tools;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -36,13 +37,17 @@ builder.AddTracker();
 builder.Services.AddSingleton<ICancellationTokenAccessor, McpCancellationTokenAccessor>();
 builder.Services.AddDomain();
 builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
+builder.Services.AddScoped<GraphDataTools>();
+
+var toolProfile = McpToolProfileSelector.Read(builder.Configuration);
+var toolTypes = McpToolProfileSelector.GetToolTypes(toolProfile);
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()
     .WithMcpTrackerMessageFilters()
     .WithListResourcesHandler((_, _) => ValueTask.FromResult(new ListResourcesResult { Resources = [] }))
     .WithListResourceTemplatesHandler((_, _) => ValueTask.FromResult(new ListResourceTemplatesResult { ResourceTemplates = [] }))
-    .WithToolsFromAssembly(serializerOptions: CreateJsonOptions());
+    .WithTools(toolTypes, CreateJsonOptions());
 
 var app = builder.Build();
 await app.Services.GetRequiredService<Graph>().OpenAsync().ConfigureAwait(false);
