@@ -305,49 +305,6 @@ public sealed class GraphService {
             });
     }
 
-    public async Task<ServiceResult<IReadOnlyCollection<NodeTypeDefinition>>> GetTypeDefinitionsAsync(IEnumerable<NodeRef>? rootIds = null) {
-        var storage = graph.Storage;
-        var requestedRoots = rootIds?.ToArray() ?? [];
-        var queue = new Queue<NodeBacking>();
-        var queued = new HashSet<InternalId>();
-
-        if (requestedRoots.Length == 0) {
-            await EnqueueTypeCatalogChildrenAsync(graph.NodeTypes.Backing, queue, queued).ConfigureAwait(false);
-        } else {
-            foreach (var rootRef in requestedRoots) {
-                var root = await storage.Get(rootRef).ConfigureAwait(false);
-                if (root is null)
-                    return ServiceResult<IReadOnlyCollection<NodeTypeDefinition>>.NotFound();
-
-                if (root.GlobalId == graph.NodeTypes.GlobalId)
-                    await EnqueueTypeCatalogChildrenAsync(root, queue, queued).ConfigureAwait(false);
-                else
-                    Enqueue(root, queue, queued);
-            }
-        }
-
-        var definitions = new Dictionary<InternalId, NodeTypeDefinition>();
-        while (queue.Count > 0) {
-            var state = queue.Dequeue();
-            if (state.GlobalId == graph.NodeTypes.GlobalId || IsTypeDefinitionInfrastructureNode(state))
-                continue;
-
-            var type = new NodeType(state);
-            var definition = graph.GetNodeTypeDefinition(type);
-            if (!definitions.TryAdd(type.GlobalId, definition))
-                continue;
-
-            await EnqueueTypeCatalogChildrenAsync(state, queue, queued).ConfigureAwait(false);
-            foreach (var referencedType in GetReferencedTypes(definition))
-                Enqueue(referencedType.Backing, queue, queued);
-        }
-
-        return ServiceResult<IReadOnlyCollection<NodeTypeDefinition>>.Ok(
-            definitions.Values
-                .OrderBy(static definition => definition.Type.GlobalId.ToString(), StringComparer.OrdinalIgnoreCase)
-                .ToArray());
-    }
-
     public IAsyncEnumerable<NodeSearchMatch> SearchNodesStreamAsync(
         NodeSearchQuery query,
         CancellationToken cancellationToken = default) {
@@ -561,43 +518,6 @@ public sealed class GraphService {
     }
 
     private static ServiceResult<Subgraph> ToSubgraphResult(ServiceResult result) => new(result.Status, Error: result.Error);
-
-    private static async Task EnqueueTypeCatalogChildrenAsync(
-        NodeBacking owner,
-        Queue<NodeBacking> queue,
-        HashSet<InternalId> queued) {
-        await foreach (var neighbor in owner.Nodes.ConfigureAwait(false)) {
-            if (IsDirectChildOf(neighbor.GlobalId, owner.GlobalId) && !IsTypeDefinitionInfrastructureNode(neighbor))
-                Enqueue(neighbor, queue, queued);
-        }
-    }
-
-    private static void Enqueue(NodeBacking state, Queue<NodeBacking> queue, HashSet<InternalId> queued) {
-        if (queued.Add(state.GlobalId))
-            queue.Enqueue(state);
-    }
-
-    private static IEnumerable<NodeType> GetReferencedTypes(NodeTypeDefinition definition) {
-        foreach (var field in definition.Fields)
-            if (field.NodeType is not null)
-                yield return field.NodeType;
-
-        foreach (var slot in definition.Slots)
-            foreach (var allowedType in slot.AllowedTypes)
-                yield return allowedType;
-    }
-
-    private static bool IsDirectChildOf(InternalId nodeId, InternalId parentId) {
-        var nodeSegments = nodeId.Select(static segment => segment.ToString()).ToArray();
-        var parentSegments = parentId.Select(static segment => segment.ToString()).ToArray();
-        return nodeSegments.Length == parentSegments.Length + 1
-            && parentSegments.SequenceEqual(nodeSegments.Take(parentSegments.Length), StringComparer.Ordinal);
-    }
-
-    private static bool IsTypeDefinitionInfrastructureNode(NodeBacking node) {
-        var localId = node.LocalId.ToString();
-        return ReservedDynamicTypeChildNames.Contains(localId);
-    }
 
     public async Task<NodeType?> GetTypeNode(NodeRef id) {
         var state = await graph.Storage.Get(id).ConfigureAwait(false);

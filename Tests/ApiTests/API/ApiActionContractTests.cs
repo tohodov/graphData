@@ -68,7 +68,7 @@ public sealed class ApiActionContractTests
 
     private static IEnumerable<MethodInfo> GetPublicApiActions()
     {
-        return typeof(RawGraphController).Assembly
+        return typeof(GraphController).Assembly
             .GetTypes()
             .Where(static type => typeof(ControllerBase).IsAssignableFrom(type))
             .SelectMany(static type => type.GetMethods(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
@@ -77,7 +77,7 @@ public sealed class ApiActionContractTests
 
     private static IEnumerable<Type> GetPublicApiModelTypes()
     {
-        return typeof(RawGraphController).Assembly
+        return typeof(GraphController).Assembly
             .GetExportedTypes()
             .Where(static type => string.Equals(type.Namespace, "GraphData.Api.Models", StringComparison.Ordinal));
     }

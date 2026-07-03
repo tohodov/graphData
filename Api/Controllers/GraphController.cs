@@ -12,9 +12,8 @@ using Microsoft.AspNetCore.Mvc;
 namespace GraphData.Api.Controllers;
 
 [ApiController]
-[Route("api/graph/raw")]
 [Route("api/graph")]
-public sealed class RawGraphController(GraphService graph) : GraphControllerBase {
+public sealed class GraphController(GraphService graph) : ControllerBase {
     static readonly JsonSerializerOptions StreamJsonOptions = GraphJsonSerializerOptions.Create();
 
     readonly GraphService graph = graph;
@@ -48,7 +47,7 @@ public sealed class RawGraphController(GraphService graph) : GraphControllerBase
 
         if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
             var globalId = result.Value.GlobalId;
-            var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { globalId }) ?? $"/api/graph/raw/nodes?{string.Join('&', globalId.Select(static segment => $"globalId={Uri.EscapeDataString(segment)}"))}";
+            var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { globalId }) ?? $"/api/graph/nodes?{string.Join('&', globalId.Select(static segment => $"globalId={Uri.EscapeDataString(segment)}"))}";
             return Created(location, GraphResponseMapper.ToNodeResponse(result.Value));
         }
         return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
@@ -101,6 +100,21 @@ public sealed class RawGraphController(GraphService graph) : GraphControllerBase
         }
     }
 
+    [HttpPut("nodes/type")]
+    public async Task<ActionResult<SubgraphResponse>> AssignNodeTypeAsync([FromBody] AssignNodeTypeRequest request) {
+        var result = await graph.AssignNodeTypeAsync(new NodePath(request.InternalId.Select(x => new NodeLocalId(x))), new NodePath(request.TypeGlobalId.Select(x => new NodeLocalId(x))));
+        return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
+    }
+
+    [HttpPut("edges/type")]
+    public async Task<ActionResult<SubgraphResponse>> ChangeEdgeTypeAsync([FromBody] ChangeEdgeTypeRequest request) {
+        var result = await graph.ChangeEdgeTypeAsync(
+            new NodePath(request.Node1InternalId.Select(x => new NodeLocalId(x))),
+            new NodePath(request.Node2InternalId.Select(x => new NodeLocalId(x))),
+            new NodePath(request.TypeGlobalId.Select(x => new NodeLocalId(x))));
+        return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
+    }
+
     [HttpPost("subgraph")]
     public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request) {
         var result = await graph.GetSubgraph(request.Paths.Select(x => new NodePath(x)), request.MaxDepth);
@@ -147,4 +161,46 @@ public sealed class RawGraphController(GraphService graph) : GraphControllerBase
         }
     }
 
+    private ActionResult<TO> ToActionResult<FROM, TO>(ServiceResult<FROM> result, Func<FROM, TO> map) {
+        return result.Status switch {
+            ServiceResultStatus.Ok when result.Value is not null => Ok(map(result.Value)),
+            ServiceResultStatus.BadRequest => BadRequest(result.Error),
+            ServiceResultStatus.NotFound => NotFound(),
+            ServiceResultStatus.Conflict => Conflict(result.Error),
+            _ => StatusCode(StatusCodes.Status500InternalServerError)
+        };
+    }
+
+    private ActionResult<T> ToActionResult<T>(ServiceResult result) {
+        return ToActionResult<T>(result.Status, result.Error);
+    }
+
+    private ActionResult<T> ToActionResult<T>(ServiceResultStatus status, string? error) {
+        return status switch {
+            ServiceResultStatus.Ok => Ok(),
+            ServiceResultStatus.BadRequest => BadRequest(error),
+            ServiceResultStatus.NotFound => NotFound(),
+            ServiceResultStatus.Conflict => Conflict(error),
+            _ => StatusCode(StatusCodes.Status500InternalServerError)
+        };
+    }
+
+    private static bool TryCreateRequiredNodePath(
+        string[] globalId,
+        string[] path,
+        out NodePath nodePath,
+        out string? error) {
+        var segments = globalId.Length > 0
+            ? globalId
+            : path;
+        if (segments.Length == 0) {
+            nodePath = new NodePath();
+            error = "Node globalId is required.";
+            return false;
+        }
+
+        nodePath = new NodePath(segments);
+        error = null;
+        return true;
+    }
 }

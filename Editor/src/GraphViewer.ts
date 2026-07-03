@@ -30,8 +30,6 @@ import type {
   NodeSearchQueryRequest,
   SubgraphRequest,
   SubgraphResponse,
-  TypeCatalogRequest,
-  TypeCatalogResponse,
   UiSettingsResponse,
   UpdateNodeRequest
 } from "./generated/api-dtos.js";
@@ -539,7 +537,7 @@ export class GraphViewer {
   const select = options.select ?? true;
   this.setBusy(true);
   try {
-    const expansion = this.normalizeNodeResponse(await this.apiJson(`/api/graph/raw/nodes?${this.toGlobalIdQuery(name)}`));
+    const expansion = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(name)}`));
     this.storeNodeExpansion(expansion, fromName, { select, showed: true });
 
     this.render();
@@ -562,7 +560,7 @@ export class GraphViewer {
   this.setBusy(true);
   try {
     const expansion = this.normalizeNodeResponse(await this.apiJson(
-      `/api/graph/raw/nodes/${encodeURIComponent(anchorName)}/neighbor/${encodeURIComponent(neighborLocalId)}`));
+      `/api/graph/nodes/${encodeURIComponent(anchorName)}/neighbor/${encodeURIComponent(neighborLocalId)}`));
     const alreadyLoaded = this.graph.loaded.has(expansion.name);
       this.storeNodeExpansion(expansion, anchorName, { select: false, showed: undefined });
     this.revealLoadedNode(expansion.name, anchorName, { select: true });
@@ -655,7 +653,7 @@ export class GraphViewer {
     this.graph.loaded.set(created.name, created);
     this.seedPosition(created.name, seedFromName, seedIndex);
     if (typeGlobalId || linkedNodeNames.length > 0) {
-      const expanded = this.normalizeNodeResponse(await this.apiJson(`/api/graph/raw/nodes?${this.toGlobalIdQuery(created.path)}`));
+      const expanded = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(created.path)}`));
       this.storeNodeExpansion(expanded, null, { select: true });
     }
     this.render();
@@ -676,7 +674,7 @@ export class GraphViewer {
     parentPath: parentGlobalId ? this.parseGlobalId(parentGlobalId) : null,
     attributes
   };
-  return this.normalizeNodeResponse(await this.apiJson("/api/graph/raw/nodes", {
+  return this.normalizeNodeResponse(await this.apiJson("/api/graph/nodes", {
     method: "POST",
     body: JSON.stringify(request)
   }));
@@ -713,7 +711,7 @@ export class GraphViewer {
   this.setBusy(true);
   try {
     for (const nodeName of nodeNames) {
-      await this.apiJson(`/api/graph/raw/nodes?${this.toGlobalIdQuery(nodeName)}`, {
+      await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(nodeName)}`, {
         method: "DELETE",
         expectJson: false
       });
@@ -749,7 +747,7 @@ export class GraphViewer {
     for (const edge of edgesToDelete) {
       const relationGlobalId = edge.relationGlobalId ?? null;
       if (relationGlobalId) {
-        await this.apiJson(`/api/graph/raw/nodes?${this.toGlobalIdQuery(relationGlobalId)}`, {
+        await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(relationGlobalId)}`, {
           method: "DELETE",
           expectJson: false
         });
@@ -763,7 +761,7 @@ export class GraphViewer {
     }
 
     for (const nodeName of nodeNames) {
-      await this.apiJson(`/api/graph/raw/nodes?${this.toGlobalIdQuery(nodeName)}`, {
+      await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(nodeName)}`, {
         method: "DELETE",
         expectJson: false
       });
@@ -817,7 +815,7 @@ export class GraphViewer {
     node1InternalId: this.parseGlobalId(node1InternalId),
     node2InternalId: this.parseGlobalId(node2InternalId)
   };
-  await this.apiJson("/api/graph/raw/connections", {
+  await this.apiJson("/api/graph/connections", {
     method: "POST",
     body: JSON.stringify(request),
     expectJson: false
@@ -836,7 +834,7 @@ export class GraphViewer {
 
   this.setBusy(true);
   try {
-    const basisNode = this.normalizeNodeResponse(await this.apiJson(`/api/graph/raw/nodes?${this.toGlobalIdQuery(basisName)}`));
+    const basisNode = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(basisName)}`));
     const defaultBasis = this.graph.defaultBasis();
     this.graph.schema.basis = {
       nodeTypeRoot: basisNode.attributes?.nodeTypeRoot || defaultBasis.nodeTypeRoot,
@@ -914,24 +912,20 @@ export class GraphViewer {
       return;
     }
 
-    const typeCatalog = await this.loadTypeCatalog(roots);
-    const basisGraph = this.collectBasisGraphFromTypes(typeCatalog, roots);
+    const subgraphs = await Promise.all(roots.map(root => this.loadSubgraphForRoots([root], 4)));
+    const basisGraph = this.collectBasisGraph(subgraphs);
     this.storeBasisGraphNodes(basisGraph);
 
     for (const node of basisGraph.nodes.values()) {
-      const nodePath = node.path ?? node.internalId ?? "";
-      if (!nodePath) {
-        continue;
-      }
       const element = this.typeElementFromBasisNode(node, basisGraph.edgePairs);
       if (!element) {
         continue;
       }
 
       if (element === "edge") {
-        this.graph.schema.edgeTypes.set(nodePath, GraphType.fromNode(node, "edge"));
+        this.graph.schema.edgeTypes.set(node.path, GraphType.fromNode(node, "edge"));
       } else {
-        this.graph.schema.nodeTypes.set(nodePath, GraphType.fromNode(node, "node"));
+        this.graph.schema.nodeTypes.set(node.path, GraphType.fromNode(node, "node"));
       }
     }
 
@@ -953,136 +947,6 @@ export class GraphViewer {
   return [basis.nodeTypeRoot, basis.edgeTypeRoot]
     .map(root => String(root ?? "").trim())
     .filter((root, index, roots) => root && roots.indexOf(root) === index);
-
-  }
-
-  async loadTypeCatalog(roots: string[]): Promise<TypeCatalogResponse> {
-  const request: TypeCatalogRequest = {
-    roots: roots.map(root => this.parseGlobalId(root))
-  };
-
-  return (await this.apiJson<TypeCatalogResponse>("/api/graph/semantic/types", {
-    method: "POST",
-    body: JSON.stringify(request)
-  })) as TypeCatalogResponse;
-
-  }
-
-  collectBasisGraphFromTypes(catalog: TypeCatalogResponse, roots: string[]) {
-  const nodes = new Map<string, ViewerNodeSnapshot>();
-  const edgePairs = new Set<string>();
-  const ensureNode = (
-    path: string,
-    localId = GraphId.localId(path),
-    attributes: Record<string, string> = {}
-  ): ViewerNodeSnapshot => {
-    const existing = nodes.get(path);
-    if (existing) {
-      existing.attributes = {
-        ...(existing.attributes ?? {}),
-        ...attributes
-      };
-      return existing;
-    }
-
-    const node: ViewerNodeSnapshot = {
-      internalId: path,
-      path,
-      localId,
-      displayName: localId,
-      attributes: { ...attributes },
-      edges: []
-    };
-    nodes.set(path, node);
-    return node;
-  };
-  const addEdge = (left: string, right: string) => {
-    if (!left || !right || left === right) {
-      return;
-    }
-
-    const key = GraphEdge.keyFor(left, right);
-    if (edgePairs.has(key)) {
-      return;
-    }
-
-    const edge = {
-      node1InternalId: left,
-      node1LocalId: GraphId.localId(left),
-      node2InternalId: right,
-      node2LocalId: GraphId.localId(right)
-    };
-    edgePairs.add(key);
-    ensureNode(left).edges?.push(edge);
-    ensureNode(right).edges?.push(edge);
-  };
-
-  roots.forEach(root => ensureNode(root));
-
-  for (const type of catalog.types ?? []) {
-    const typeId = type.internalId;
-    if (!typeId) {
-      continue;
-    }
-
-    ensureNode(typeId, type.localId, type.attributes ?? {});
-    roots
-      .filter(root => this.isDirectChildPath(typeId, root))
-      .forEach(root => addEdge(root, typeId));
-
-    const definitionId = `${typeId}/Definition`;
-    const fieldsId = `${definitionId}/Fields`;
-    const slotsId = `${definitionId}/Slots`;
-    ensureNode(definitionId, "Definition");
-    ensureNode(fieldsId, "Fields");
-    ensureNode(slotsId, "Slots");
-    addEdge(typeId, definitionId);
-    addEdge(definitionId, fieldsId);
-    addEdge(definitionId, slotsId);
-
-    for (const field of type.fields ?? []) {
-      const fieldId = `${fieldsId}/${field.name}`;
-      ensureNode(fieldId, field.name, this.typeMemberAttributes(field));
-      addEdge(fieldsId, fieldId);
-      if (field.nodeTypeInternalId) {
-        ensureNode(field.nodeTypeInternalId);
-        addEdge(fieldId, field.nodeTypeInternalId);
-      }
-    }
-
-    for (const slot of type.slots ?? []) {
-      const slotId = `${slotsId}/${slot.name}`;
-      ensureNode(slotId, slot.name, this.typeMemberAttributes(slot, "Node"));
-      addEdge(slotsId, slotId);
-      for (const allowedTypeId of slot.allowedTypeInternalIds ?? []) {
-        ensureNode(allowedTypeId);
-        addEdge(slotId, allowedTypeId);
-      }
-    }
-  }
-
-  return { nodes, edgePairs };
-
-  }
-
-  typeMemberAttributes(member: any, fallbackValueKind = ""): Record<string, string> {
-  const attributes: Record<string, string> = {};
-  if (member.valueKind || fallbackValueKind) {
-    attributes.valueKind = member.valueKind ?? fallbackValueKind;
-  }
-  if (member.clrType) {
-    attributes.clrType = member.clrType;
-  }
-  if (member.cardinality) {
-    attributes.min = String(member.cardinality.min ?? 0);
-    if (member.cardinality.max !== null && member.cardinality.max !== undefined) {
-      attributes.max = String(member.cardinality.max);
-    }
-  }
-  if (member.isCollection !== undefined) {
-    attributes.isCollection = String(Boolean(member.isCollection));
-  }
-  return attributes;
 
   }
 
@@ -1139,11 +1003,7 @@ export class GraphViewer {
     return "node";
   }
 
-  if (this.isDirectBasisType(path, this.getBasis().edgeTypeRoot)) {
-    return "edge";
-  }
-
-  return this.isDirectBasisType(path, this.getBasis().nodeTypeRoot) ? "node" : null;
+  return this.isDirectBasisType(path) ? "node" : null;
 
   }
 
@@ -1152,23 +1012,13 @@ export class GraphViewer {
 
   }
 
-  isDirectChildPath(path: string, parentPath: string) {
-  if (!path || !parentPath || !GraphId.isChildOf(path, parentPath)) {
-    return false;
-  }
-
-  const parentSegments = parentPath.split("/").filter(Boolean).length;
-  const segments = path.split("/").filter(Boolean).length;
-  return segments === parentSegments + 1;
-
-  }
-
-  isDirectBasisType(path: string, basisRoot = "") {
-  if (basisRoot) {
-    return this.isDirectChildPath(path, basisRoot);
-  }
-
-  return this.basisTypeRoots().some(root => this.isDirectChildPath(path, root));
+  isDirectBasisType(path: string) {
+  return this.basisTypeRoots().some(root => {
+    const rootSegments = root.split("/").filter(Boolean);
+    const segments = String(path).split("/").filter(Boolean);
+    return segments.length === rootSegments.length + 1
+      && rootSegments.every((segment, index) => segment === segments[index]);
+  });
 
   }
 
@@ -1270,7 +1120,7 @@ export class GraphViewer {
     internalId: this.parseGlobalId(internalId),
     typeGlobalId: this.parseGlobalId(typeGlobalId)
   };
-  return (await this.apiJson<SubgraphResponse>("/api/graph/semantic/nodes/type", {
+  return (await this.apiJson<SubgraphResponse>("/api/graph/nodes/type", {
     method: "PUT",
     body: JSON.stringify(request)
   })) as SubgraphResponse;
@@ -1315,7 +1165,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     node2InternalId: this.parseGlobalId(edge.node2InternalId),
     typeGlobalId: this.parseGlobalId(typeGlobalId)
   };
-  return (await this.apiJson<SubgraphResponse>("/api/graph/semantic/edges/type", {
+  return (await this.apiJson<SubgraphResponse>("/api/graph/edges/type", {
     method: "PUT",
     body: JSON.stringify(request)
   })) as SubgraphResponse;
@@ -1352,7 +1202,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   async searchNodeMatches(query: NodeSearchQueryRequest) {
-  const response = await this.api.fetch("/api/graph/raw/search/nodes", {
+  const response = await this.api.fetch("/api/graph/search/nodes", {
     method: "POST",
     headers: {
       "Accept": "application/x-ndjson",
@@ -1362,8 +1212,8 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   });
 
   if (!response.ok) {
-    const error = await GraphApi.errorFromResponse(response, "/api/graph/raw/search/nodes", "POST");
-    this.showServerError(error, "POST /api/graph/raw/search/nodes");
+    const error = await GraphApi.errorFromResponse(response, "/api/graph/search/nodes", "POST");
+    this.showServerError(error, "POST /api/graph/search/nodes");
     throw error;
   }
 
@@ -1500,7 +1350,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   let count = 0;
   try {
-    const response = await this.api.fetch("/api/graph/raw/search/nodes", {
+    const response = await this.api.fetch("/api/graph/search/nodes", {
       method: "POST",
       headers: {
         "Accept": "application/x-ndjson",
@@ -1510,7 +1360,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       signal: controller.signal
     });
 
-    if (!response.ok) throw await GraphApi.errorFromResponse(response, "/api/graph/raw/search/nodes", "POST");
+    if (!response.ok) throw await GraphApi.errorFromResponse(response, "/api/graph/search/nodes", "POST");
 
     await this.readNdjsonStream(response, (match: any) => {
       count += 1;
@@ -1523,7 +1373,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     if (error.name === "AbortError") {
       this.setStatus(`Поиск остановлен: ${count}`);
     } else {
-      this.showServerError(error, "POST /api/graph/raw/search/nodes");
+      this.showServerError(error, "POST /api/graph/search/nodes");
       this.setStatus(error.message);
     }
   } finally {
@@ -1585,7 +1435,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       paths: roots.map((root: string) => this.parseGlobalId(root)),
       maxDepth: this.readNumber("#subgraph-depth", 1)
     };
-    const response = await this.apiJson<SubgraphResponse>("/api/graph/raw/subgraph", {
+    const response = await this.apiJson<SubgraphResponse>("/api/graph/subgraph", {
       method: "POST",
       body: JSON.stringify(request)
     }) as SubgraphResponse;
@@ -1754,7 +1604,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   async loadSubgraphForKeys(params: SubgraphRequest): Promise<ViewerSubgraphResponse> {
-  return (await this.apiJson<SubgraphResponse>("/api/graph/raw/subgraph", {
+  return (await this.apiJson<SubgraphResponse>("/api/graph/subgraph", {
     method: "POST",
     body: JSON.stringify(params)
   })) as SubgraphResponse;
@@ -1766,7 +1616,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     paths: roots.map(root => this.parseGlobalId(root)),
     maxDepth
   };
-  return (await this.apiJson<SubgraphResponse>("/api/graph/raw/subgraph", {
+  return (await this.apiJson<SubgraphResponse>("/api/graph/subgraph", {
     method: "POST",
     body: JSON.stringify(request)
   })) as SubgraphResponse;
@@ -2410,7 +2260,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     node1InternalId: this.parseGlobalId(node1InternalId),
     node2InternalId: this.parseGlobalId(node2InternalId)
   };
-  await this.apiJson("/api/graph/raw/connections", {
+  await this.apiJson("/api/graph/connections", {
     method: "DELETE",
     body: JSON.stringify(request),
     expectJson: false
@@ -2514,7 +2364,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   async refreshLoadedNodeForEditing(path: string) {
-  const expansion = this.normalizeNodeResponse(await this.apiJson(`/api/graph/raw/nodes?${this.toGlobalIdQuery(path)}`));
+  const expansion = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(path)}`));
   const incoming = GraphNode.from(expansion);
   const existing = this.graph.loaded.get(incoming.name);
   const showed = existing ? existing.showed : undefined;
@@ -3208,7 +3058,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       return Promise.resolve();
     }
 
-    return this.apiJson<NodeResponse>("/api/graph/raw/nodes?" + this.toGlobalIdQuery(path))
+    return this.apiJson<NodeResponse>("/api/graph/nodes?" + this.toGlobalIdQuery(path))
       .then(node => this.storeNodeExpansion(this.normalizeNodeResponse(node), null, { select: false }));
   }
 
@@ -3219,7 +3069,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
 
   async updateGraphNodeAttributes(path: string, attributes: any) {
     const request: UpdateNodeRequest = { attributes };
-    await this.apiJson("/api/graph/raw/nodes?" + this.toGlobalIdQuery(path), {
+    await this.apiJson("/api/graph/nodes?" + this.toGlobalIdQuery(path), {
       method: "PUT",
       body: JSON.stringify(request),
       expectJson: false

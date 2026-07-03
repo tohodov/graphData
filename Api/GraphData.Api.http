@@ -1,7 +1,7 @@
 @GraphData.Api_HostAddress = https://localhost:7257
 
 ### Create a node
-POST {{GraphData.Api_HostAddress}}/api/graph/raw/nodes
+POST {{GraphData.Api_HostAddress}}/api/graph/nodes
 Content-Type: application/json
 
 {
@@ -13,20 +13,20 @@ Content-Type: application/json
 
 ### Get node details
 # Repeat globalId for multi-segment ids, for example: ?globalId=Parent&globalId=Child
-GET {{GraphData.Api_HostAddress}}/api/graph/raw/nodes?globalId=Sample%20node
+GET {{GraphData.Api_HostAddress}}/api/graph/nodes?globalId=Sample%20node
 Accept: application/json
 
 ### Connect two nodes
-POST {{GraphData.Api_HostAddress}}/api/graph/raw/connections
+POST {{GraphData.Api_HostAddress}}/api/graph/connections
 Content-Type: application/json
 
 {
-  "node1InternalId": [ "Sample node" ],
-  "node2InternalId": [ "Another node" ]
+  "sourceGlobalId": [ "Sample node" ],
+  "targetGlobalId": [ "Another node" ]
 }
 
 ### Update node attributes
-PUT {{GraphData.Api_HostAddress}}/api/graph/raw/nodes?globalId=Sample%20node
+PUT {{GraphData.Api_HostAddress}}/api/graph/nodes?globalId=Sample%20node
 Content-Type: application/json
 
 {
@@ -36,10 +36,10 @@ Content-Type: application/json
 }
 
 ### Delete node
-DELETE {{GraphData.Api_HostAddress}}/api/graph/raw/nodes?globalId=Sample%20node
+DELETE {{GraphData.Api_HostAddress}}/api/graph/nodes?globalId=Sample%20node
 
 ### Search nodes
-POST {{GraphData.Api_HostAddress}}/api/graph/raw/search/nodes
+POST {{GraphData.Api_HostAddress}}/api/graph/search/nodes
 Content-Type: application/json
 Accept: application/x-ndjson
 
@@ -54,18 +54,10 @@ Accept: application/x-ndjson
 }
 
 ### Load subgraph
-POST {{GraphData.Api_HostAddress}}/api/graph/raw/subgraph
+POST {{GraphData.Api_HostAddress}}/api/graph/subgraph
 Content-Type: application/json
 
 {
   "paths": [[ "Sample node" ]],
   "maxDepth": 1
-}
-
-### Load semantic type catalog
-POST {{GraphData.Api_HostAddress}}/api/graph/semantic/types
-Content-Type: application/json
-
-{
-  "roots": [[ "NodeTypes" ]]
 }
