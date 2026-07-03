@@ -52,6 +52,15 @@ public static class GraphResponseMapper
         };
     }
 
+    public static TypeCatalogResponse ToTypeCatalogResponse(IReadOnlyCollection<NodeTypeDefinition> definitions)
+    {
+        return new TypeCatalogResponse
+        {
+            Types = definitions.Select(ToNodeTypeDefinitionResponse).ToArray(),
+            References = definitions.SelectMany(ToTypeReferenceResponses).ToArray()
+        };
+    }
+
     public static EdgeResponse ToEdgeResponse(Node source, Node target)
     {
         return string.Compare(source.GlobalId.ToString(), target.GlobalId.ToString(), StringComparison.OrdinalIgnoreCase) <= 0
@@ -93,4 +102,78 @@ public static class GraphResponseMapper
             ? $"{node1InternalId}\0{node2InternalId}"
             : $"{node2InternalId}\0{node1InternalId}";
     }
+
+    private static NodeTypeDefinitionResponse ToNodeTypeDefinitionResponse(NodeTypeDefinition definition)
+    {
+        return new NodeTypeDefinitionResponse
+        {
+            LocalId = definition.Type.LocalId.ToString(),
+            InternalId = definition.Type.GlobalId.ToString(),
+            Attributes = new Dictionary<string, string>(definition.Type.Attributes, StringComparer.OrdinalIgnoreCase),
+            IsAbstract = definition.IsAbstract,
+            Fields = definition.Fields.Select(static field => new NodeTypeFieldResponse
+            {
+                Name = field.Name,
+                ValueKind = field.ValueKind.ToString(),
+                ClrType = FormatClrType(field.ClrType),
+                Cardinality = ToCardinalityResponse(field.Cardinality),
+                IsCollection = field.IsCollection,
+                NodeTypeInternalId = field.NodeType?.GlobalId.ToString()
+            }).ToArray(),
+            Slots = definition.Slots.Select(static slot => new NodeTypeSlotResponse
+            {
+                Name = slot.Name,
+                Cardinality = ToCardinalityResponse(slot.Cardinality),
+                AllowedTypeInternalIds = slot.AllowedTypes
+                    .Select(static type => type.GlobalId.ToString())
+                    .ToArray()
+            }).ToArray()
+        };
+    }
+
+    private static IEnumerable<TypeReferenceResponse> ToTypeReferenceResponses(NodeTypeDefinition definition)
+    {
+        foreach (var field in definition.Fields)
+        {
+            if (field.NodeType is null)
+                continue;
+
+            yield return new TypeReferenceResponse
+            {
+                Kind = "schemaReference",
+                SourceTypeInternalId = definition.Type.GlobalId.ToString(),
+                MemberKind = "field",
+                MemberName = field.Name,
+                TargetTypeInternalId = field.NodeType.GlobalId.ToString()
+            };
+        }
+
+        foreach (var slot in definition.Slots)
+        {
+            foreach (var allowedType in slot.AllowedTypes)
+            {
+                yield return new TypeReferenceResponse
+                {
+                    Kind = "schemaReference",
+                    SourceTypeInternalId = definition.Type.GlobalId.ToString(),
+                    MemberKind = "slot",
+                    MemberName = slot.Name,
+                    TargetTypeInternalId = allowedType.GlobalId.ToString()
+                };
+            }
+        }
+    }
+
+    private static CardinalityResponse ToCardinalityResponse(NodeSlotCardinality cardinality)
+    {
+        return new CardinalityResponse
+        {
+            Min = cardinality.Min,
+            Max = cardinality.Max,
+            Text = cardinality.ToString()
+        };
+    }
+
+    private static string FormatClrType(Type type) =>
+        (Nullable.GetUnderlyingType(type) ?? type).FullName ?? type.Name;
 }

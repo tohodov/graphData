@@ -4,6 +4,126 @@
  */
 
 export interface paths {
+    "/api/graph/raw/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    globalId?: string[];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NodeResponse"];
+                        "application/json": components["schemas"]["NodeResponse"];
+                        "text/json": components["schemas"]["NodeResponse"];
+                    };
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: {
+                    globalId?: string[];
+                    path?: string[];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateNodeRequest"];
+                    "text/json": components["schemas"]["UpdateNodeRequest"];
+                    "application/*+json": components["schemas"]["UpdateNodeRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["OperationResponse"];
+                        "application/json": components["schemas"]["OperationResponse"];
+                        "text/json": components["schemas"]["OperationResponse"];
+                    };
+                };
+            };
+        };
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateNodeRequest"];
+                    "text/json": components["schemas"]["CreateNodeRequest"];
+                    "application/*+json": components["schemas"]["CreateNodeRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NodeResponse"];
+                        "application/json": components["schemas"]["NodeResponse"];
+                        "text/json": components["schemas"]["NodeResponse"];
+                    };
+                };
+            };
+        };
+        delete: {
+            parameters: {
+                query?: {
+                    globalId?: string[];
+                    path?: string[];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["OperationResponse"];
+                        "application/json": components["schemas"]["OperationResponse"];
+                        "text/json": components["schemas"]["OperationResponse"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/graph/nodes": {
         parameters: {
             query?: never;
@@ -124,6 +244,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/graph/raw/nodes/{globalId}/neighbor/{localId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    globalId: string;
+                    localId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NodeResponse"];
+                        "application/json": components["schemas"]["NodeResponse"];
+                        "text/json": components["schemas"]["NodeResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/graph/nodes/{globalId}/neighbor/{localId}": {
         parameters: {
             query?: never;
@@ -159,6 +319,76 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/graph/raw/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ConnectNodesRequest"];
+                    "text/json": components["schemas"]["ConnectNodesRequest"];
+                    "application/*+json": components["schemas"]["ConnectNodesRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["OperationResponse"];
+                        "application/json": components["schemas"]["OperationResponse"];
+                        "text/json": components["schemas"]["OperationResponse"];
+                    };
+                };
+            };
+        };
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ConnectNodesRequest"];
+                    "text/json": components["schemas"]["ConnectNodesRequest"];
+                    "application/*+json": components["schemas"]["ConnectNodesRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["OperationResponse"];
+                        "application/json": components["schemas"]["OperationResponse"];
+                        "text/json": components["schemas"]["OperationResponse"];
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;
@@ -234,6 +464,221 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/graph/raw/subgraph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SubgraphRequest"];
+                    "text/json": components["schemas"]["SubgraphRequest"];
+                    "application/*+json": components["schemas"]["SubgraphRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["SubgraphResponse"];
+                        "application/json": components["schemas"]["SubgraphResponse"];
+                        "text/json": components["schemas"]["SubgraphResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/graph/subgraph": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SubgraphRequest"];
+                    "text/json": components["schemas"]["SubgraphRequest"];
+                    "application/*+json": components["schemas"]["SubgraphRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["SubgraphResponse"];
+                        "application/json": components["schemas"]["SubgraphResponse"];
+                        "text/json": components["schemas"]["SubgraphResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/graph/raw/search/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["NodeSearchQueryRequest"];
+                    "text/json": components["schemas"]["NodeSearchQueryRequest"];
+                    "application/*+json": components["schemas"]["NodeSearchQueryRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NodeSearchMatchResponse"][];
+                        "application/json": components["schemas"]["NodeSearchMatchResponse"][];
+                        "text/json": components["schemas"]["NodeSearchMatchResponse"][];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/graph/search/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["NodeSearchQueryRequest"];
+                    "text/json": components["schemas"]["NodeSearchQueryRequest"];
+                    "application/*+json": components["schemas"]["NodeSearchQueryRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NodeSearchMatchResponse"][];
+                        "application/json": components["schemas"]["NodeSearchMatchResponse"][];
+                        "text/json": components["schemas"]["NodeSearchMatchResponse"][];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/graph/semantic/nodes/type": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AssignNodeTypeRequest"];
+                    "text/json": components["schemas"]["AssignNodeTypeRequest"];
+                    "application/*+json": components["schemas"]["AssignNodeTypeRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["SubgraphResponse"];
+                        "application/json": components["schemas"]["SubgraphResponse"];
+                        "text/json": components["schemas"]["SubgraphResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/graph/nodes/type": {
         parameters: {
             query?: never;
@@ -254,6 +699,49 @@ export interface paths {
                     "application/json": components["schemas"]["AssignNodeTypeRequest"];
                     "text/json": components["schemas"]["AssignNodeTypeRequest"];
                     "application/*+json": components["schemas"]["AssignNodeTypeRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["SubgraphResponse"];
+                        "application/json": components["schemas"]["SubgraphResponse"];
+                        "text/json": components["schemas"]["SubgraphResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/graph/semantic/edges/type": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ChangeEdgeTypeRequest"];
+                    "text/json": components["schemas"]["ChangeEdgeTypeRequest"];
+                    "application/*+json": components["schemas"]["ChangeEdgeTypeRequest"];
                 };
             };
             responses: {
@@ -320,14 +808,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/graph/subgraph": {
+    "/api/graph/semantic/types": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TypeCatalogResponse"];
+                        "application/json": components["schemas"]["TypeCatalogResponse"];
+                        "text/json": components["schemas"]["TypeCatalogResponse"];
+                    };
+                };
+            };
+        };
         put?: never;
         post: {
             parameters: {
@@ -338,9 +847,9 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["SubgraphRequest"];
-                    "text/json": components["schemas"]["SubgraphRequest"];
-                    "application/*+json": components["schemas"]["SubgraphRequest"];
+                    "application/json": components["schemas"]["TypeCatalogRequest"];
+                    "text/json": components["schemas"]["TypeCatalogRequest"];
+                    "application/*+json": components["schemas"]["TypeCatalogRequest"];
                 };
             };
             responses: {
@@ -350,9 +859,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "text/plain": components["schemas"]["SubgraphResponse"];
-                        "application/json": components["schemas"]["SubgraphResponse"];
-                        "text/json": components["schemas"]["SubgraphResponse"];
+                        "text/plain": components["schemas"]["TypeCatalogResponse"];
+                        "application/json": components["schemas"]["TypeCatalogResponse"];
+                        "text/json": components["schemas"]["TypeCatalogResponse"];
                     };
                 };
             };
@@ -363,14 +872,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/graph/search/nodes": {
+    "/api/graph/types": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TypeCatalogResponse"];
+                        "application/json": components["schemas"]["TypeCatalogResponse"];
+                        "text/json": components["schemas"]["TypeCatalogResponse"];
+                    };
+                };
+            };
+        };
         put?: never;
         post: {
             parameters: {
@@ -381,9 +911,9 @@ export interface paths {
             };
             requestBody: {
                 content: {
-                    "application/json": components["schemas"]["NodeSearchQueryRequest"];
-                    "text/json": components["schemas"]["NodeSearchQueryRequest"];
-                    "application/*+json": components["schemas"]["NodeSearchQueryRequest"];
+                    "application/json": components["schemas"]["TypeCatalogRequest"];
+                    "text/json": components["schemas"]["TypeCatalogRequest"];
+                    "application/*+json": components["schemas"]["TypeCatalogRequest"];
                 };
             };
             responses: {
@@ -393,9 +923,9 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content: {
-                        "text/plain": components["schemas"]["NodeSearchMatchResponse"][];
-                        "application/json": components["schemas"]["NodeSearchMatchResponse"][];
-                        "text/json": components["schemas"]["NodeSearchMatchResponse"][];
+                        "text/plain": components["schemas"]["TypeCatalogResponse"];
+                        "application/json": components["schemas"]["TypeCatalogResponse"];
+                        "text/json": components["schemas"]["TypeCatalogResponse"];
                     };
                 };
             };
@@ -450,6 +980,13 @@ export interface components {
         AssignNodeTypeRequest: {
             internalId: string[];
             typeGlobalId: string[];
+        };
+        CardinalityResponse: {
+            /** Format: int32 */
+            min?: number | string;
+            /** Format: int32 */
+            max?: null | number | string;
+            text: string;
         };
         ChangeEdgeTypeRequest: {
             typedEdgeGlobalId?: null | string[];
@@ -609,6 +1146,29 @@ export interface components {
             /** Format: int32 */
             limit?: number | string;
         };
+        NodeTypeDefinitionResponse: {
+            localId: string;
+            internalId: string;
+            attributes?: {
+                [key: string]: string;
+            };
+            isAbstract?: boolean;
+            fields?: components["schemas"]["NodeTypeFieldResponse"][];
+            slots?: components["schemas"]["NodeTypeSlotResponse"][];
+        };
+        NodeTypeFieldResponse: {
+            name: string;
+            valueKind: string;
+            clrType: string;
+            cardinality: components["schemas"]["CardinalityResponse"];
+            isCollection?: boolean;
+            nodeTypeInternalId?: null | string;
+        };
+        NodeTypeSlotResponse: {
+            name: string;
+            cardinality: components["schemas"]["CardinalityResponse"];
+            allowedTypeInternalIds?: string[];
+        };
         OperationResponse: Record<string, never>;
         SubgraphRequest: {
             paths: string[][];
@@ -618,6 +1178,20 @@ export interface components {
         SubgraphResponse: {
             nodes?: components["schemas"]["NodeResponse"][];
             edges?: components["schemas"]["EdgeResponse"][];
+        };
+        TypeCatalogRequest: {
+            roots?: string[][];
+        };
+        TypeCatalogResponse: {
+            types?: components["schemas"]["NodeTypeDefinitionResponse"][];
+            references?: components["schemas"]["TypeReferenceResponse"][];
+        };
+        TypeReferenceResponse: {
+            kind: string;
+            sourceTypeInternalId: string;
+            memberKind: string;
+            memberName: string;
+            targetTypeInternalId: string;
         };
         UiBasisResponse: {
             nodeTypeRoot: string;

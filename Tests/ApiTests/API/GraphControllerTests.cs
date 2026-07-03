@@ -4,6 +4,7 @@ using Abstractions;
 using GraphData.Api.Controllers;
 using GraphData.Api.Models;
 using GraphData.Api.Runtime;
+using GraphData.Core.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -111,7 +112,7 @@ public sealed class GraphControllerTests : ControllerTests {
 
         var created = result.Result as CreatedResult;
         Assert.IsNotNull(created);
-        StringAssert.Contains(created.Location, "/api/graph/nodes?globalId=new%20node");
+        StringAssert.Contains(created.Location, "/api/graph/raw/nodes?globalId=new%20node");
 
         var response = created.Value as NodeResponse;
         Assert.IsNotNull(response);
@@ -318,7 +319,7 @@ public sealed class GraphControllerTests : ControllerTests {
         var weaponType = await Storage.Create(new("Weapon"), typeRoot.GlobalId);
         var ak47 = await Storage.Create(new("ak-47"));
 
-        var result = await Controller.AssignNodeTypeAsync(new AssignNodeTypeRequest {
+        var result = await SemanticController.AssignNodeTypeAsync(new AssignNodeTypeRequest {
             InternalId = ak47.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = weaponType.GlobalId.Select(static segment => segment.ToString()).ToArray()
         });
@@ -344,7 +345,7 @@ public sealed class GraphControllerTests : ControllerTests {
         var target = await Storage.Create(new("target"));
         await Storage.Connect(source.GlobalId, target.GlobalId);
 
-        var result = await Controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
+        var result = await SemanticController.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
             Node1InternalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             Node2InternalId = target.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = newType.GlobalId.Select(static segment => segment.ToString()).ToArray()
@@ -378,13 +379,52 @@ public sealed class GraphControllerTests : ControllerTests {
 
         var replacementType = await Storage.Create(new("replacement-type"), typeRoot.GlobalId);
         await Storage.Update(storedRelation.GlobalId, new Dictionary<string, string> { ["note"] = "user note" });
-        var retyped = await Controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
+        var retyped = await SemanticController.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
             Node1InternalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             Node2InternalId = target.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = replacementType.GlobalId.Select(static segment => segment.ToString()).ToArray()
         });
         Assert.IsInstanceOfType(retyped.Result, typeof(OkObjectResult));
         Assert.IsFalse(await source.Nodes.AnyAsync(node => node.GlobalId == target.GlobalId));
+    }
+
+    [TestMethod]
+    public async Task GetTypesAsync_ReturnsTypeClosureWithoutInstances() {
+        var country = (await Service.CreateNodeType(new("CatalogCountry"))).Value!;
+        var manufacturer = (await Service.CreateNodeType(
+            new("CatalogManufacturer"),
+            fields: [
+                new NodeFieldDefinition(
+                    "Country",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Required(),
+                    IsCollection: false,
+                    country.Type)
+            ])).Value!;
+        var instance = await Storage.Create(new("USSR"));
+        await Service.AssignNodeTypeAsync(instance.GlobalId, country.Type.GlobalId);
+
+        var result = await SemanticController.GetTypesAsync(new TypeCatalogRequest {
+            Roots = [Graph.NodeTypes.GlobalId.Select(static segment => segment.ToString()).ToArray()]
+        });
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+        var response = ok.Value as TypeCatalogResponse;
+        Assert.IsNotNull(response);
+
+        var typeIds = response.Types.Select(static type => type.InternalId).ToHashSet(StringComparer.Ordinal);
+        Assert.IsTrue(typeIds.Contains(country.Type.GlobalId.ToString()));
+        Assert.IsTrue(typeIds.Contains(manufacturer.Type.GlobalId.ToString()));
+        Assert.IsFalse(typeIds.Contains(instance.GlobalId.ToString()));
+
+        Assert.IsTrue(response.References.Any(reference =>
+            reference.Kind == "schemaReference"
+            && reference.SourceTypeInternalId == manufacturer.Type.GlobalId.ToString()
+            && reference.MemberKind == "field"
+            && reference.MemberName == "Country"
+            && reference.TargetTypeInternalId == country.Type.GlobalId.ToString()));
     }
 
     [TestMethod]
@@ -584,7 +624,7 @@ public sealed class GraphControllerTests : ControllerTests {
     }
 
     private static async Task<IReadOnlyCollection<NodeSearchMatchResponse>> SearchNodesAsync(
-        GraphController Controller,
+        RawGraphController Controller,
         NodeSearchQueryRequest query) {
         var result = await Controller.SearchNodesAsync(query, CancellationToken.None);
 

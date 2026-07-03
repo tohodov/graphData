@@ -106,7 +106,7 @@ public sealed class GraphUiFullCycleTests
 
     static async Task CreateNode(HttpClient client, string localId, params string[] parentPath)
     {
-        using var response = await client.PostAsJsonAsync("/api/graph/nodes", new
+        using var response = await client.PostAsJsonAsync("/api/graph/raw/nodes", new
         {
             localId,
             parentPath = parentPath.Length == 0 ? null : parentPath
@@ -116,7 +116,7 @@ public sealed class GraphUiFullCycleTests
 
     static async Task Connect(HttpClient client, string left, string right)
     {
-        using var response = await client.PostAsJsonAsync("/api/graph/connections", new
+        using var response = await client.PostAsJsonAsync("/api/graph/raw/connections", new
         {
             node1InternalId = SplitId(left),
             node2InternalId = SplitId(right)
