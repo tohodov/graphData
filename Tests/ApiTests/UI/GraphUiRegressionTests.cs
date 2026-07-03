@@ -888,6 +888,7 @@ public sealed class GraphUiRegressionTests {
               && !names.has(definitionId)
               && !names.has(fieldsId)
               && !names.has(countryFieldId)
+              && !names.has("USSR")
               && recordNode?.typeGlobalId === typeId
               && recordNode?.typeLabel === "Weapon"
               && recordNode?.viewShape === "record"
@@ -898,6 +899,7 @@ public sealed class GraphUiRegressionTests {
               && countryFieldView?.value === "USSR"
               && countryFieldView?.typeLabel === "Country"
               && !graph.edges.some(edge => edge.node1InternalId === "FN_FAL" && edge.node2InternalId === typeId)
+              && !graph.edges.some(edge => edge.node1InternalId === "FN_FAL" && edge.node2InternalId === "USSR")
               && !graph.edges.some(edge => edge.node1InternalId === fieldsId || edge.node2InternalId === fieldsId);
             """);
 
