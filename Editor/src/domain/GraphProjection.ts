@@ -62,7 +62,7 @@ export class GraphProjection {
       const nodeType = nodeTypeAssignments.get(node.name ?? "");
       const collapsedNodeType = nodeType?.collapsed === true;
       const typeFields = collapsedNodeType
-        ? this.projectedNodeTypeFields(node, nodeType)
+        ? this.projectedNodeTypeFields(node, nodeType, source, nodeTypeAssignments)
         : [];
       return {
         ...node,
@@ -307,7 +307,12 @@ export class GraphProjection {
       .filter(name => name === definitionPath || GraphId.isChildOf(name, definitionPath));
   }
 
-  projectedNodeTypeFields(node: ProjectedGraphNode, nodeType: GraphType): ProjectedGraphNodeField[] {
+  projectedNodeTypeFields(
+    node: ProjectedGraphNode,
+    nodeType: GraphType,
+    source: ProjectedGraph,
+    nodeTypeAssignments: Map<string, GraphType>
+  ): ProjectedGraphNodeField[] {
     const fields = new Map<string, ProjectedGraphNodeField>();
     for (const field of this.definitionFields(nodeType.path, "Fields")) {
       fields.set(field.name.toLocaleLowerCase("ru"), field);
@@ -321,7 +326,7 @@ export class GraphProjection {
 
     return [...fields.values()].map(field => ({
       ...field,
-      value: this.projectedFieldValue(node, field)
+      value: this.projectedFieldValue(node, field, source, nodeTypeAssignments)
     }));
   }
 
@@ -361,15 +366,74 @@ export class GraphProjection {
       .filter((type): type is GraphType => Boolean(type));
   }
 
-  projectedFieldValue(node: ProjectedGraphNode, field: ProjectedGraphNodeField): string | undefined {
+  projectedFieldValue(
+    node: ProjectedGraphNode,
+    field: ProjectedGraphNodeField,
+    source: ProjectedGraph,
+    nodeTypeAssignments: Map<string, GraphType>
+  ): string | undefined {
     const value = this.attributeValue(node.attributes ?? {}, field.name);
     if (value) {
       return value;
     }
 
-    return field.valueKind === "Primitive"
-      ? ""
-      : undefined;
+    if (field.valueKind === "Primitive") {
+      return "";
+    }
+
+    return this.linkedNodeFieldValue(node, field, source, nodeTypeAssignments);
+  }
+
+  linkedNodeFieldValue(
+    node: ProjectedGraphNode,
+    field: ProjectedGraphNodeField,
+    source: ProjectedGraph,
+    nodeTypeAssignments: Map<string, GraphType>
+  ): string | undefined {
+    const nodeName = node.name ?? "";
+    const allowedTypeIds = new Set((field.typeGlobalId ?? "").split("|").filter(Boolean));
+    const nodeByName = new Map(source.nodes.map(item => [item.name ?? "", item]));
+    const values = source.edges
+      .filter(edge => edge.node1InternalId === nodeName || edge.node2InternalId === nodeName)
+      .map(edge => edge.node1InternalId === nodeName ? edge.node2InternalId : edge.node1InternalId)
+      .filter(neighborId => neighborId && !this.model.schema.nodeTypes.has(neighborId) && !this.model.schema.edgeTypes.has(neighborId))
+      .filter(neighborId => this.linkedNodeMatchesField(neighborId, allowedTypeIds, nodeTypeAssignments))
+      .map(neighborId => nodeByName.get(neighborId)?.displayName ?? this.model.displayName(neighborId))
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right, "ru"));
+
+    if (values.length === 0) {
+      return undefined;
+    }
+
+    return field.isCollection
+      ? [...new Set(values)].join(", ")
+      : values[0];
+  }
+
+  linkedNodeMatchesField(neighborId: string, allowedTypeIds: Set<string>, nodeTypeAssignments: Map<string, GraphType>): boolean {
+    if (allowedTypeIds.size === 0) {
+      return true;
+    }
+
+    const assignedType = nodeTypeAssignments.get(neighborId) ?? this.assignedNodeTypeFromCache(neighborId);
+    return Boolean(assignedType && allowedTypeIds.has(assignedType.path));
+  }
+
+  assignedNodeTypeFromCache(nodeId: string): GraphType | null {
+    const node = this.model.loaded.get(nodeId);
+    if (!node) {
+      return null;
+    }
+
+    for (const edge of node.edges ?? []) {
+      const type = this.model.schema.nodeTypes.get(edge.otherEndpoint(node.name));
+      if (type) {
+        return type;
+      }
+    }
+
+    return null;
   }
 
   attributeValue(attributes: Record<string, string>, key: string): string | undefined {

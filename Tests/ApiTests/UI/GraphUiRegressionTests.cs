@@ -814,12 +814,14 @@ public sealed class GraphUiRegressionTests {
             const countrySlot = new GraphEdge({ node1InternalId: slotsId, node2InternalId: countrySlotId });
             const countryFieldType = new GraphEdge({ node1InternalId: countryFieldId, node2InternalId: countryTypeId });
             const countrySlotType = new GraphEdge({ node1InternalId: countrySlotId, node2InternalId: countryTypeId });
+            const countryValue = new GraphEdge({ node1InternalId: "FN_FAL", node2InternalId: "USSR" });
+            const countryTypeAssignment = new GraphEdge({ node1InternalId: "USSR", node2InternalId: countryTypeId });
 
             model.putNode(new GraphNode({
               globalId: "FN_FAL",
               displayName: "FN_FAL",
               attributes: { FoundedYear: "1953" },
-              edges: [assignment]
+              edges: [assignment, countryValue]
             }));
             model.putNode(new GraphNode({
               globalId: typeId,
@@ -829,7 +831,12 @@ public sealed class GraphUiRegressionTests {
             model.putNode(new GraphNode({
               globalId: countryTypeId,
               displayName: "Country",
-              edges: [countryFieldType, countrySlotType]
+              edges: [countryFieldType, countrySlotType, countryTypeAssignment]
+            }));
+            model.putNode(new GraphNode({
+              globalId: "USSR",
+              displayName: "USSR",
+              edges: [countryValue, countryTypeAssignment]
             }));
             model.putNode(new GraphNode({
               globalId: definitionId,
@@ -888,6 +895,7 @@ public sealed class GraphUiRegressionTests {
               && recordNode?.viewHeight > 0
               && fieldNames === "Country,FoundedYear"
               && yearFieldView?.value === "1953"
+              && countryFieldView?.value === "USSR"
               && countryFieldView?.typeLabel === "Country"
               && !graph.edges.some(edge => edge.node1InternalId === "FN_FAL" && edge.node2InternalId === typeId)
               && !graph.edges.some(edge => edge.node1InternalId === fieldsId || edge.node2InternalId === fieldsId);
