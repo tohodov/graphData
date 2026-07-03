@@ -1,6 +1,8 @@
 import type { GraphNode } from "./GraphNode.js";
 
 export type GraphEdgeSnapshot = {
+  kind?: string | null;
+  attributes?: Record<string, string>;
   node1InternalId?: string;
   sourceGlobalId?: string;
   node2InternalId?: string;
@@ -129,6 +131,8 @@ class GraphEdgeControl {
 }
 
 export class GraphEdge {
+  kind: string | null;
+  attributes: Record<string, string>;
   node1InternalId: string;
   node2InternalId: string;
   node1LocalId: string | null;
@@ -154,6 +158,8 @@ export class GraphEdge {
   node2Positioned: boolean;
   key: string;
   constructor({
+    kind = null,
+    attributes = {},
     node1InternalId = "",
     sourceGlobalId = "",
     node2InternalId = "",
@@ -184,6 +190,8 @@ export class GraphEdge {
     node1Positioned = false,
     node2Positioned = false
   }: GraphEdgeSnapshot) {
+    this.kind = kind ?? null;
+    this.attributes = { ...(attributes ?? {}) };
     this.node1InternalId = node1InternalId || sourceGlobalId;
     this.node2InternalId = node2InternalId || targetGlobalId;
     this.node1LocalId = node1LocalId || sourceLocalId;
@@ -210,7 +218,7 @@ export class GraphEdge {
     this.node2 = node2 ?? targetNode ?? null;
     this.node1Positioned = Boolean(node1Positioned);
     this.node2Positioned = Boolean(node2Positioned);
-    this.key = GraphEdge.keyFor(this.node1InternalId, this.node2InternalId, relationGlobalId ?? typeGlobalId ?? "");
+    this.key = GraphEdge.keyFor(this.node1InternalId, this.node2InternalId, relationGlobalId ?? typeGlobalId ?? kind ?? "");
   }
 
   static fromApi(edge: GraphEdgeSnapshot | null | undefined): GraphEdge {
@@ -387,6 +395,8 @@ endpointPositioned(path: string): boolean {
   toViewEdge(extra: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       key: this.key,
+      kind: this.kind,
+      attributes: { ...this.attributes },
       node1InternalId: this.node1InternalId,
       node2InternalId: this.node2InternalId,
       node1LocalId: this.node1LocalId,

@@ -28,6 +28,8 @@ import type {
   NodeSearchMatchResponse,
   NodeSearchNodeSelectorRequest,
   NodeSearchQueryRequest,
+  GraphObservationResponse,
+  GraphTraversalRequest,
   SubgraphRequest,
   SubgraphResponse,
   UiSettingsResponse,
@@ -58,6 +60,7 @@ export type GraphViewerOptions = {
   relationGlobalId?: string;
   fromName?: string;
   linkedNodeNames?: string[];
+  hideSchemaRoots?: boolean;
 };
 
 export class GraphViewer {
@@ -517,7 +520,7 @@ export class GraphViewer {
   try {
     const response = await this.loadSubgraphForRoots([], 0);
     const nodes = response.nodes ?? [];
-    this.loadSubgraphIntoViewer(response, [], { selectRoot: false });
+    this.loadSubgraphIntoViewer(response, [], { selectRoot: false, hideSchemaRoots: true });
     this.renderSubgraphResults(response);
     this.renderTypeControls();
     this.setEmptyState(nodes.length === 0 ? "Корневые узлы не найдены" : "Узел не выбран");
@@ -912,8 +915,8 @@ export class GraphViewer {
       return;
     }
 
-    const subgraphs = await Promise.all(roots.map(root => this.loadSubgraphForRoots([root], 4)));
-    const basisGraph = this.collectBasisGraph(subgraphs);
+    const observation = await this.loadGraphTraversal(roots, "type-closure");
+    const basisGraph = this.collectBasisGraph([observation]);
     this.storeBasisGraphNodes(basisGraph);
 
     for (const node of basisGraph.nodes.values()) {
@@ -947,6 +950,19 @@ export class GraphViewer {
   return [basis.nodeTypeRoot, basis.edgeTypeRoot]
     .map(root => String(root ?? "").trim())
     .filter((root, index, roots) => root && roots.indexOf(root) === index);
+
+  }
+
+  async loadGraphTraversal(roots: string[], traversal: string): Promise<GraphObservationResponse> {
+  const request: GraphTraversalRequest = {
+    roots: roots.map(root => this.parseGlobalId(root)),
+    traversal
+  };
+
+  return (await this.apiJson<GraphObservationResponse>("/api/graph/semantic/traverse", {
+    method: "POST",
+    body: JSON.stringify(request)
+  })) as GraphObservationResponse;
 
   }
 
@@ -1029,6 +1045,11 @@ export class GraphViewer {
     || path === systemIds.nodeTypeRoot
     || path === systemIds.edgeTypeRoot
     || path === systemIds.relationRoot;
+
+  }
+
+  isSchemaNode(path: string) {
+  return this.graph.isSchemaRoot(path) || this.isSystemTypeRoot(path);
 
   }
 
@@ -1455,6 +1476,9 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   const basisNodes = this.cachedBasisNodes();
   const nodes = (response.nodes ?? []).map(node => this.normalizeNodeResponse(node));
   const edges = (response.edges ?? []).map(edge => this.normalizeEdgeResponse(edge));
+  const isVisibleRootNode = (node: import("./domain/GraphNode.js").GraphNode) =>
+    !(options.hideSchemaRoots === true && this.isSchemaNode(node.name));
+  const visibleNodes = nodes.filter(node => isVisibleRootNode(node));
   const edgesByNode = new Map();
   edges.forEach(edge => {
     [edge.node1InternalId, edge.node2InternalId].forEach(name => {
@@ -1464,7 +1488,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       edgesByNode.get(name).push(edge);
     });
   });
-  this.graph.rootName = roots[0] ?? nodes[0]?.name ?? null;
+  this.graph.rootName = roots[0] ?? visibleNodes[0]?.name ?? nodes[0]?.name ?? null;
   this.graph.selectedName = options.selectRoot === false ? null : this.graph.rootName;
 
   this.graph.batchPrimitiveChanges("subgraph-loaded", () => {
@@ -1475,13 +1499,18 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     this.graph.positions.clear();
     this.graph.velocities.clear();
     this.restoreBasisNodes(basisNodes);
-    nodes.forEach((node, index) => {
+    let visibleIndex = 0;
+    nodes.forEach(node => {
+      const showed = isVisibleRootNode(node);
       this.graph.loaded.set(node.name, GraphNode.from({
         ...node,
         edges: this.mergeEdges(node.edges, edgesByNode.get(node.name) ?? []),
-        showed: true
+        showed
       }));
-      this.seedSubgraphPosition(node.name, index, nodes.length);
+      if (showed) {
+        this.seedSubgraphPosition(node.name, visibleIndex, visibleNodes.length);
+        visibleIndex += 1;
+      }
     });
   });
 

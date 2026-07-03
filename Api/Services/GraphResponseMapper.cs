@@ -52,6 +52,41 @@ public static class GraphResponseMapper
         };
     }
 
+    public static GraphObservationResponse ToGraphObservationResponse(GraphObservation observation)
+    {
+        var edges = observation.Edges
+            .Select(ToEdgeResponse)
+            .ToArray();
+        var edgesByNode = edges
+            .SelectMany(edge => new[]
+            {
+                new { NodeId = edge.Node1InternalId, Edge = edge with { NeighborLocalId = edge.Node2LocalId } },
+                new { NodeId = edge.Node2InternalId, Edge = edge with { NeighborLocalId = edge.Node1LocalId } }
+            })
+            .GroupBy(static item => item.NodeId, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                static group => group.Key,
+                static group => group.Select(static item => item.Edge).ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+
+        return new GraphObservationResponse
+        {
+            Traversal = observation.Traversal,
+            Exhaustive = observation.Exhaustive,
+            Nodes = observation.Nodes
+                .Select(node => ToNodeResponse(node, edgesByNode.TryGetValue(node.InternalId, out var nodeEdges) ? nodeEdges : []))
+                .ToArray(),
+            Edges = edges,
+            Boundary = observation.Boundary
+                .Select(static item => new GraphObservationBoundaryResponse
+                {
+                    InternalId = item.InternalId,
+                    Reason = item.Reason
+                })
+                .ToArray()
+        };
+    }
+
     public static EdgeResponse ToEdgeResponse(Node source, Node target)
     {
         return string.Compare(source.GlobalId.ToString(), target.GlobalId.ToString(), StringComparison.OrdinalIgnoreCase) <= 0
@@ -62,6 +97,30 @@ public static class GraphResponseMapper
     private static EdgeResponse ToEdgeResponse(Edge edge)
     {
         return ToEdgeResponse(edge.Node1, edge.Node2);
+    }
+
+    private static EdgeResponse ToEdgeResponse(GraphObservationEdge edge)
+    {
+        return new EdgeResponse
+        {
+            Kind = edge.Kind,
+            Attributes = new Dictionary<string, string>(edge.Attributes, StringComparer.OrdinalIgnoreCase),
+            Node1LocalId = edge.Node1LocalId,
+            Node1InternalId = edge.Node1InternalId,
+            Node2LocalId = edge.Node2LocalId,
+            Node2InternalId = edge.Node2InternalId
+        };
+    }
+
+    private static NodeResponse ToNodeResponse(GraphObservationNode node, IReadOnlyCollection<EdgeResponse> edges)
+    {
+        return new NodeResponse
+        {
+            LocalId = node.LocalId,
+            InternalId = node.InternalId,
+            Attributes = new Dictionary<string, string>(node.Attributes, StringComparer.OrdinalIgnoreCase),
+            Edges = edges
+        };
     }
 
     private static EdgeResponse ToNodeEdgeResponse(Node node, Edge edge)

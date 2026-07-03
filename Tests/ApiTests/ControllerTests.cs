@@ -6,11 +6,22 @@ using Microsoft.AspNetCore.Mvc;
 
 public class ControllerTests : GraphServiceTests {
     GraphController? controller;
+    SemanticGraphController? semanticController;
 
     protected GraphController Controller => controller ??= CreateController(Service);
+    protected SemanticGraphController SemanticController => semanticController ??= CreateSemanticController(Service);
 
     internal static GraphController CreateController(GraphService service) {
         var controller = new GraphController(service);
+        controller.ControllerContext = new ControllerContext {
+            HttpContext = new DefaultHttpContext()
+        };
+        controller.ControllerContext.HttpContext.Response.Body = new MemoryStream();
+        return controller;
+    }
+
+    internal static SemanticGraphController CreateSemanticController(GraphService service) {
+        var controller = new SemanticGraphController(service);
         controller.ControllerContext = new ControllerContext {
             HttpContext = new DefaultHttpContext()
         };

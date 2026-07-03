@@ -305,6 +305,17 @@ public sealed class GraphService {
             });
     }
 
+    public async Task<ServiceResult<GraphObservation>> TraverseAsync(
+        IEnumerable<NodeRef> rootIds,
+        string traversal,
+        int? maxNodes = null,
+        int? maxEdges = null) {
+        if (!string.Equals(traversal, "type-closure", StringComparison.OrdinalIgnoreCase))
+            return ServiceResult<GraphObservation>.BadRequest($"Traversal '{traversal}' is not supported.");
+
+        return await TraverseTypeClosureAsync(rootIds, maxNodes ?? 1000, maxEdges ?? 5000).ConfigureAwait(false);
+    }
+
     public IAsyncEnumerable<NodeSearchMatch> SearchNodesStreamAsync(
         NodeSearchQuery query,
         CancellationToken cancellationToken = default) {
@@ -518,6 +529,324 @@ public sealed class GraphService {
     }
 
     private static ServiceResult<Subgraph> ToSubgraphResult(ServiceResult result) => new(result.Status, Error: result.Error);
+
+    private async Task<ServiceResult<GraphObservation>> TraverseTypeClosureAsync(
+        IEnumerable<NodeRef> rootIds,
+        int maxNodes,
+        int maxEdges) {
+        if (maxNodes <= 0)
+            return ServiceResult<GraphObservation>.BadRequest("maxNodes must be greater than zero.");
+        if (maxEdges <= 0)
+            return ServiceResult<GraphObservation>.BadRequest("maxEdges must be greater than zero.");
+
+        var storage = graph.Storage;
+        var requestedRoots = rootIds.ToArray();
+        var builder = new GraphObservationBuilder("type-closure", maxNodes, maxEdges);
+        var queued = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var queue = new Queue<(NodeBacking Node, string? Parent, string EdgeKind)>();
+
+        if (requestedRoots.Length == 0) {
+            builder.AddNode(graph.NodeTypes.Backing, TypeRootAttributes());
+            await EnqueueTypeChildrenAsync(graph.NodeTypes.Backing, "catalogChild", builder, queue, queued).ConfigureAwait(false);
+        } else {
+            foreach (var rootRef in requestedRoots) {
+                var root = await storage.Get(rootRef).ConfigureAwait(false);
+                if (root is null)
+                    return ServiceResult<GraphObservation>.NotFound();
+
+                if (string.Equals(StableId(root), StableId(graph.NodeTypes.Backing), StringComparison.OrdinalIgnoreCase)) {
+                    builder.AddNode(root, TypeRootAttributes());
+                    await EnqueueTypeChildrenAsync(root, "catalogChild", builder, queue, queued).ConfigureAwait(false);
+                } else {
+                    EnqueueType(root, parent: null, "root", queue, queued);
+                }
+            }
+        }
+
+        while (queue.Count > 0 && builder.CanGrow) {
+            var (state, parent, edgeKind) = queue.Dequeue();
+            if (string.Equals(StableId(state), StableId(graph.NodeTypes.Backing), StringComparison.OrdinalIgnoreCase)
+                || IsTypeDefinitionInfrastructureNode(state))
+                continue;
+
+            var type = new NodeType(state);
+            var definition = graph.GetNodeTypeDefinition(type);
+            AddTypeDefinitionObservation(builder, definition);
+            if (parent is not null)
+                builder.AddEdge(parent, StableId(state), edgeKind);
+
+            await EnqueueTypeChildrenAsync(state, "catalogChild", builder, queue, queued).ConfigureAwait(false);
+            foreach (var referencedType in GetReferencedTypes(definition))
+                EnqueueType(referencedType.Backing, parent: null, "schemaReference", queue, queued);
+        }
+
+        if (queue.Count > 0)
+            foreach (var (node, _, _) in queue)
+                builder.AddBoundary(StableId(node), "quota");
+
+        return ServiceResult<GraphObservation>.Ok(builder.Build());
+    }
+
+    private static async Task EnqueueTypeChildrenAsync(
+        NodeBacking owner,
+        string edgeKind,
+        GraphObservationBuilder builder,
+        Queue<(NodeBacking Node, string? Parent, string EdgeKind)> queue,
+        HashSet<string> queued) {
+        var ownerId = StableId(owner);
+        await foreach (var neighbor in owner.Nodes.ConfigureAwait(false)) {
+            if (!IsDirectChildOf(StableId(neighbor), ownerId) || IsTypeDefinitionInfrastructureNode(neighbor))
+                continue;
+
+            builder.AddNode(neighbor, TypeReferencePlaceholderAttributes());
+            builder.AddEdge(ownerId, StableId(neighbor), edgeKind);
+            EnqueueType(neighbor, ownerId, edgeKind, queue, queued);
+        }
+    }
+
+    private static void EnqueueType(
+        NodeBacking state,
+        string? parent,
+        string edgeKind,
+        Queue<(NodeBacking Node, string? Parent, string EdgeKind)> queue,
+        HashSet<string> queued) {
+        if (queued.Add(StableId(state)))
+            queue.Enqueue((state, parent, edgeKind));
+    }
+
+    private static void AddTypeDefinitionObservation(GraphObservationBuilder builder, NodeTypeDefinition definition) {
+        var typeId = StableId(definition.Type.Backing);
+
+        builder.AddNode(definition.Type.Backing, TypeNodeAttributes(definition));
+
+        foreach (var field in definition.Fields) {
+            var fieldId = SchemaMemberId(typeId, "field", field.Name);
+            builder.AddNode(fieldId, field.Name, FieldAttributes(field));
+            builder.AddEdge(typeId, fieldId, "schemaMember", MemberEdgeAttributes("field", field.Name));
+            if (field.NodeType is not null) {
+                builder.AddNode(field.NodeType.Backing, TypeReferencePlaceholderAttributes());
+                builder.AddEdge(fieldId, StableId(field.NodeType.Backing), "schemaReference", MemberEdgeAttributes("field", field.Name));
+            }
+        }
+
+        foreach (var slot in definition.Slots) {
+            var slotId = SchemaMemberId(typeId, "slot", slot.Name);
+            builder.AddNode(slotId, slot.Name, SlotAttributes(slot));
+            builder.AddEdge(typeId, slotId, "schemaMember", MemberEdgeAttributes("slot", slot.Name));
+            foreach (var allowedType in slot.AllowedTypes) {
+                builder.AddNode(allowedType.Backing, TypeReferencePlaceholderAttributes());
+                builder.AddEdge(slotId, StableId(allowedType.Backing), "schemaReference", MemberEdgeAttributes("slot", slot.Name));
+            }
+        }
+    }
+
+    private static string SchemaMemberId(string typeId, string memberKind, string memberName) =>
+        $"{typeId}/@{memberKind}.{memberName}";
+
+    private static Dictionary<string, string> MemberEdgeAttributes(string memberKind, string memberName) =>
+        new(StringComparer.OrdinalIgnoreCase) {
+            ["memberKind"] = memberKind,
+            ["memberName"] = memberName
+        };
+
+    private static IEnumerable<NodeType> GetReferencedTypes(NodeTypeDefinition definition) {
+        foreach (var field in definition.Fields)
+            if (field.NodeType is not null)
+                yield return field.NodeType;
+
+        foreach (var slot in definition.Slots)
+            foreach (var allowedType in slot.AllowedTypes)
+                yield return allowedType;
+    }
+
+    private static Dictionary<string, string> TypeRootAttributes() =>
+        new(StringComparer.OrdinalIgnoreCase) {
+            ["graph.kind"] = "type-root"
+        };
+
+    private static Dictionary<string, string> TypeNodeAttributes(NodeTypeDefinition definition) {
+        var attributes = new Dictionary<string, string>(definition.Type.Attributes, StringComparer.OrdinalIgnoreCase) {
+            ["graph.kind"] = "type",
+            ["isAbstract"] = definition.IsAbstract.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+        if (!attributes.ContainsKey("graph.element"))
+            attributes["graph.element"] = TypedEdgeDefinition.TryCreate(definition, out _) ? "edge" : "node";
+        return attributes;
+    }
+
+    private static Dictionary<string, string> TypeReferencePlaceholderAttributes() =>
+        new(StringComparer.OrdinalIgnoreCase) {
+            ["graph.kind"] = "type",
+            ["graph.element"] = "node"
+        };
+
+    private static Dictionary<string, string> FieldAttributes(NodeFieldDefinition field) {
+        var attributes = CardinalityAttributes(field.Cardinality);
+        attributes["graph.kind"] = "schema-member";
+        attributes["graph.role"] = "field";
+        attributes["memberKind"] = "field";
+        attributes["memberName"] = field.Name;
+        attributes["valueKind"] = field.ValueKind.ToString();
+        attributes["clrType"] = FormatClrType(field.ClrType);
+        attributes["isCollection"] = field.IsCollection.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return attributes;
+    }
+
+    private static Dictionary<string, string> SlotAttributes(NodeSlotDefinition slot) {
+        var attributes = CardinalityAttributes(slot.Cardinality);
+        attributes["graph.kind"] = "schema-member";
+        attributes["graph.role"] = "slot";
+        attributes["memberKind"] = "slot";
+        attributes["memberName"] = slot.Name;
+        attributes["valueKind"] = NodeFieldValueKind.Node.ToString();
+        attributes["isCollection"] = (slot.Cardinality.Max is null or > 1).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return attributes;
+    }
+
+    private static Dictionary<string, string> CardinalityAttributes(NodeSlotCardinality cardinality) {
+        var attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+            ["min"] = cardinality.Min.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+        if (cardinality.Max is { } max)
+            attributes["max"] = max.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return attributes;
+    }
+
+    private static string FormatClrType(Type type) =>
+        (Nullable.GetUnderlyingType(type) ?? type).FullName ?? type.Name;
+
+    private static bool IsDirectChildOf(string nodeId, string parentId) {
+        var nodeSegments = nodeId.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var parentSegments = parentId.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return nodeSegments.Length == parentSegments.Length + 1
+            && parentSegments.SequenceEqual(nodeSegments.Take(parentSegments.Length), StringComparer.Ordinal);
+    }
+
+    private static bool IsTypeDefinitionInfrastructureNode(NodeBacking node) =>
+        ReservedDynamicTypeChildNames.Contains(node.LocalId.ToString());
+
+#pragma warning disable CS0618
+    private static string StableId(NodeBacking node) => node.GlobalId.ToString();
+#pragma warning restore CS0618
+
+    private sealed class GraphObservationBuilder {
+        readonly string traversal;
+        readonly int maxNodes;
+        readonly int maxEdges;
+        readonly Dictionary<string, GraphObservationNode> nodes = new(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, GraphObservationEdge> edges = new(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, GraphObservationBoundary> boundary = new(StringComparer.OrdinalIgnoreCase);
+        bool exhaustive = true;
+
+        public GraphObservationBuilder(string traversal, int maxNodes, int maxEdges) {
+            this.traversal = traversal;
+            this.maxNodes = maxNodes;
+            this.maxEdges = maxEdges;
+        }
+
+        public bool CanGrow => exhaustive && nodes.Count < maxNodes && edges.Count < maxEdges;
+
+        public bool AddNode(NodeBacking node, IReadOnlyDictionary<string, string>? attributes = null) {
+            return AddNode(
+                StableId(node),
+                node.LocalId.ToString(),
+                MergeAttributes(node.Attributes, attributes));
+        }
+
+        public bool AddNode(
+            string internalId,
+            string localId,
+            IEnumerable<KeyValuePair<string, string>>? attributes = null) {
+            if (!nodes.TryGetValue(internalId, out var existing) && nodes.Count >= maxNodes) {
+                AddBoundary(internalId, "maxNodes");
+                exhaustive = false;
+                return false;
+            }
+
+            var merged = new Dictionary<string, string>(
+                existing?.Attributes ?? new Dictionary<string, string>(),
+                StringComparer.OrdinalIgnoreCase);
+            if (attributes is not null)
+                foreach (var attribute in attributes)
+                    merged[attribute.Key] = attribute.Value;
+
+            nodes[internalId] = new GraphObservationNode(
+                localId,
+                internalId,
+                merged);
+            return true;
+        }
+
+        public bool AddEdge(
+            string left,
+            string right,
+            string kind,
+            IEnumerable<KeyValuePair<string, string>>? attributes = null) {
+            if (string.Equals(left, right, StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (!nodes.ContainsKey(left) || !nodes.ContainsKey(right))
+                return false;
+
+            var key = EdgeKey(left, right, kind);
+            if (!edges.ContainsKey(key) && edges.Count >= maxEdges) {
+                AddBoundary($"{left} -> {right}", "maxEdges");
+                exhaustive = false;
+                return false;
+            }
+
+            edges[key] = new GraphObservationEdge(
+                LocalIdFromInternalId(left),
+                left,
+                LocalIdFromInternalId(right),
+                right,
+                kind,
+                attributes?.ToDictionary(static attribute => attribute.Key, static attribute => attribute.Value, StringComparer.OrdinalIgnoreCase)
+                    ?? new Dictionary<string, string>());
+            return true;
+        }
+
+        public void AddBoundary(string internalId, string reason) {
+            boundary[internalId] = new GraphObservationBoundary(internalId, reason);
+        }
+
+        public GraphObservation Build() {
+            return new GraphObservation(
+                traversal,
+                nodes.Values
+                    .OrderBy(static node => node.InternalId, StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                edges.Values
+                    .OrderBy(static edge => edge.Node1InternalId, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(static edge => edge.Node2InternalId, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(static edge => edge.Kind, StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                boundary.Values
+                    .OrderBy(static item => item.InternalId, StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                exhaustive);
+        }
+
+        private static Dictionary<string, string> MergeAttributes(
+            IDictionary<string, string> first,
+            IReadOnlyDictionary<string, string>? second) {
+            var result = new Dictionary<string, string>(first, StringComparer.OrdinalIgnoreCase);
+            if (second is not null)
+                foreach (var item in second)
+                    result[item.Key] = item.Value;
+            return result;
+        }
+
+        private static string EdgeKey(string left, string right, string kind) {
+            return string.Compare(left, right, StringComparison.OrdinalIgnoreCase) <= 0
+                ? $"{kind}\0{left}\0{right}"
+                : $"{kind}\0{right}\0{left}";
+        }
+
+        private static string LocalIdFromInternalId(string internalId) {
+            var segments = internalId.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return segments.Length == 0 ? internalId : segments[^1];
+        }
+    }
 
     public async Task<NodeType?> GetTypeNode(NodeRef id) {
         var state = await graph.Storage.Get(id).ConfigureAwait(false);

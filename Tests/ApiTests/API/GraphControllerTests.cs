@@ -4,6 +4,7 @@ using Abstractions;
 using GraphData.Api.Controllers;
 using GraphData.Api.Models;
 using GraphData.Api.Runtime;
+using GraphData.Core.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -385,6 +386,53 @@ public sealed class GraphControllerTests : ControllerTests {
         });
         Assert.IsInstanceOfType(retyped.Result, typeof(OkObjectResult));
         Assert.IsFalse(await source.Nodes.AnyAsync(node => node.GlobalId == target.GlobalId));
+    }
+
+    [TestMethod]
+    public async Task TraverseSemanticAsync_TypeClosureReturnsGraphObservationWithoutInstances() {
+        var country = (await Service.CreateNodeType(new("CatalogCountry"))).Value!;
+        var manufacturer = (await Service.CreateNodeType(
+            new("CatalogManufacturer"),
+            fields: [
+                new NodeFieldDefinition(
+                    "Country",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Required(),
+                    IsCollection: false,
+                    country.Type)
+            ])).Value!;
+        var instance = await Storage.Create(new("USSR"));
+        await Service.AssignNodeTypeAsync(instance.GlobalId, country.Type.GlobalId);
+
+        var result = await SemanticController.TraverseAsync(new GraphTraversalRequest {
+            Roots = [Graph.NodeTypes.GlobalId.Select(static segment => segment.ToString()).ToArray()],
+            Traversal = "type-closure"
+        });
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+        var response = ok.Value as GraphObservationResponse;
+        Assert.IsNotNull(response);
+        Assert.AreEqual("type-closure", response.Traversal);
+        Assert.IsTrue(response.Exhaustive);
+
+        var nodeIds = response.Nodes.Select(static node => node.InternalId).ToHashSet(StringComparer.Ordinal);
+        Assert.IsTrue(nodeIds.Contains(country.Type.GlobalId.ToString()));
+        Assert.IsTrue(nodeIds.Contains(manufacturer.Type.GlobalId.ToString()));
+        var countryFieldId = $"{manufacturer.Type.GlobalId}/@field.Country";
+        Assert.IsTrue(nodeIds.Contains(countryFieldId));
+        Assert.IsFalse(nodeIds.Contains(instance.GlobalId.ToString()));
+
+        Assert.IsTrue(response.Edges.Any(edge =>
+            edge.Kind == "schemaReference"
+            && edge.Attributes.TryGetValue("memberKind", out var memberKind)
+            && memberKind == "field"
+            && HasEndpoints(edge, countryFieldId, country.Type.GlobalId.ToString())));
+
+        var countryField = response.Nodes.Single(node => node.InternalId == countryFieldId);
+        Assert.AreEqual("schema-member", countryField.Attributes["graph.kind"]);
+        Assert.IsTrue(countryField.Edges.Any(edge => edge.Kind == "schemaReference"));
     }
 
     [TestMethod]

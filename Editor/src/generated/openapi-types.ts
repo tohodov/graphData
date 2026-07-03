@@ -406,6 +406,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/graph/semantic/traverse": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["GraphTraversalRequest"];
+                    "text/json": components["schemas"]["GraphTraversalRequest"];
+                    "application/*+json": components["schemas"]["GraphTraversalRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["GraphObservationResponse"];
+                        "application/json": components["schemas"]["GraphObservationResponse"];
+                        "text/json": components["schemas"]["GraphObservationResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ui/settings": {
         parameters: {
             query?: never;
@@ -474,11 +517,34 @@ export interface components {
             };
         };
         EdgeResponse: {
+            kind?: null | string;
+            attributes?: {
+                [key: string]: string;
+            };
             neighborLocalId?: null | string;
             node1LocalId: string;
             node1InternalId: string;
             node2LocalId: string;
             node2InternalId: string;
+        };
+        GraphObservationBoundaryResponse: {
+            internalId: string;
+            reason: string;
+        };
+        GraphObservationResponse: {
+            traversal: string;
+            exhaustive?: boolean;
+            nodes?: components["schemas"]["NodeResponse"][];
+            edges?: components["schemas"]["EdgeResponse"][];
+            boundary?: components["schemas"]["GraphObservationBoundaryResponse"][];
+        };
+        GraphTraversalRequest: {
+            roots?: string[][];
+            traversal?: string;
+            /** Format: int32 */
+            maxNodes?: null | number | string;
+            /** Format: int32 */
+            maxEdges?: null | number | string;
         };
         NodeResponse: {
             localId: string;
