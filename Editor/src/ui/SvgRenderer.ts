@@ -1,6 +1,7 @@
 import type { GraphRenderer, GraphRendererHost, GraphRenderMemory, GraphView } from "./GraphRenderer.js";
 
 const svgNs = "http://www.w3.org/2000/svg";
+const nodeVertexStride = 12;
 
 export class SvgRenderer implements GraphRenderer {
   mode = "svg";
@@ -87,26 +88,38 @@ export class SvgRenderer implements GraphRenderer {
     const fragment = this.document.createDocumentFragment();
     const data = memory.nodeVertexData;
 
-    for (let index = 0; index < data.length; index += 8) {
-      const node = memory.nodes[index / 8];
+    for (let index = 0; index < data.length; index += nodeVertexStride) {
+      const node = memory.nodes[index / nodeVertexStride];
       const selected = data[index + 7] > 0.5;
       const radius = (data[index + 6] + (selected ? 4 : 0)) * view.scale;
+      const shape = data[index + 10] > 0.5 ? "record" : "circle";
       const group = this.createSvg("g", {
         class: `graph-svg-node${selected ? " selected" : ""}`,
         transform: `translate(${data[index + 0] * view.scale + view.x} ${data[index + 1] * view.scale + view.y})`
       });
       const title = this.createSvg("title", {});
       title.textContent = node?.path ?? node?.name ?? "";
-      const circle = this.createSvg("circle", {
-        class: "graph-svg-node-shell",
-        r: radius,
-        cx: 0,
-        cy: 0,
-        stroke: selected
-          ? "#f6c447"
-          : rgba(data[index + 2], data[index + 3], data[index + 4], data[index + 5])
-      });
-      group.append(title, circle);
+      const stroke = selected
+        ? "#f6c447"
+        : rgba(data[index + 2], data[index + 3], data[index + 4], data[index + 5]);
+      const shell = shape === "record"
+        ? this.createSvg("rect", {
+            class: "graph-svg-node-shell graph-svg-node-record",
+            x: -(data[index + 8] + (selected ? 4 : 0)) * view.scale,
+            y: -(data[index + 9] + (selected ? 4 : 0)) * view.scale,
+            width: (data[index + 8] + (selected ? 4 : 0)) * view.scale * 2,
+            height: (data[index + 9] + (selected ? 4 : 0)) * view.scale * 2,
+            rx: Math.min(8, 8 * view.scale),
+            stroke
+          })
+        : this.createSvg("circle", {
+            class: "graph-svg-node-shell",
+            r: radius,
+            cx: 0,
+            cy: 0,
+            stroke
+          });
+      group.append(title, shell);
       fragment.append(group);
     }
 

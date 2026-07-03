@@ -912,7 +912,7 @@ export class GraphViewer {
       return;
     }
 
-    const subgraphs = await Promise.all(roots.map(root => this.loadSubgraphForRoots([root], 2)));
+    const subgraphs = await Promise.all(roots.map(root => this.loadSubgraphForRoots([root], 4)));
     const basisGraph = this.collectBasisGraph(subgraphs);
     this.storeBasisGraphNodes(basisGraph);
 
@@ -1531,8 +1531,9 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     ...this.graph.schema.edgeTypes.keys(),
     ...this.basisTypeRoots()
   ].filter(Boolean));
-  return [...ids]
-    .map(id => this.graph.loaded.get(id))
+  const basisIds = [...ids];
+  return [...this.graph.loaded.values()]
+    .filter(node => ids.has(node.name) || basisIds.some(id => GraphId.isChildOf(node.name, id)))
     .filter(Boolean)
     .map(node => GraphNode.from(node));
 

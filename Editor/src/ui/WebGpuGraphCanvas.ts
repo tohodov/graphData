@@ -12,6 +12,8 @@ const maxLabels = 280;
 const endpointControlPadding = 9;
 const edgePickThreshold = 9;
 const rendererModes = ["webgpu", "svg", "html-canvas"];
+const nodeVertexStride = 12;
+const recordNodeShape = 1;
 
 export class WebGpuGraphCanvas {
   document: Document;
@@ -777,7 +779,7 @@ export class WebGpuGraphCanvas {
       nodeIndexByName,
       nodeCount: nodes.length,
       edgeCount: edges.length,
-      nodeVertexData: new Float32Array(nodes.length * 8),
+      nodeVertexData: new Float32Array(nodes.length * nodeVertexStride),
       edgeVertexData: new Float32Array(edges.length * 12),
       byteLength: 0
     };
@@ -790,16 +792,20 @@ export class WebGpuGraphCanvas {
     memory.nodes.forEach((node, index) => {
       const position = this.positions.get(node.name ?? "") ?? { x: 0, y: 0 };
       const color = parseColor(node.color, defaultNodeStrokeColor);
-      const radius = (typeof node.viewRadius === "number" && Number.isFinite(node.viewRadius)) ? node.viewRadius : nodeRadius;
-      const base = index * 8;
+      const size = graphNodeSize(node);
+      const base = index * nodeVertexStride;
       memory.nodeVertexData[base + 0] = position.x;
       memory.nodeVertexData[base + 1] = position.y;
       memory.nodeVertexData[base + 2] = color[0];
       memory.nodeVertexData[base + 3] = color[1];
       memory.nodeVertexData[base + 4] = color[2];
       memory.nodeVertexData[base + 5] = color[3];
-      memory.nodeVertexData[base + 6] = radius;
+      memory.nodeVertexData[base + 6] = size.radius;
       memory.nodeVertexData[base + 7] = this.callbacks.isNodeSelected?.(node.name ?? "") ? 1 : 0;
+      memory.nodeVertexData[base + 8] = size.width / 2;
+      memory.nodeVertexData[base + 9] = size.height / 2;
+      memory.nodeVertexData[base + 10] = size.shape;
+      memory.nodeVertexData[base + 11] = 0;
     });
 
     memory.edges.forEach((edge, index) => {
@@ -880,8 +886,8 @@ export class WebGpuGraphCanvas {
 
         const x = position.x * this.view.scale + this.view.x;
         const y = position.y * this.view.scale + this.view.y;
-        const radius = screenNodeRadius(node, this.view.scale);
-        const margin = Math.max(80, radius + 40);
+        const bounds = screenNodeBounds(node, this.view.scale);
+        const margin = Math.max(80, bounds.radius + 40);
         return x >= -margin && x <= rect.width + margin && y >= -margin && y <= rect.height + margin;
       })
       .sort((left, right) =>
@@ -894,20 +900,64 @@ export class WebGpuGraphCanvas {
         return;
       }
 
-      const radius = screenNodeRadius(node, this.view.scale);
+      const bounds = screenNodeBounds(node, this.view.scale);
       const x = position.x * this.view.scale + this.view.x;
       const y = position.y * this.view.scale + this.view.y;
       const selected = this.callbacks.isNodeSelected(node.name ?? "");
       const label = this.document.createElement("div");
-      label.className = `graph-node-label${selected ? " selected" : ""}`;
-      label.textContent = node.displayName ?? node.localId ?? node.name ?? "";
+      const record = node.viewShape === "record";
+      label.className = `graph-node-label${record ? " record" : ""}${selected ? " selected" : ""}`;
+      if (record) {
+        this.renderRecordNodeLabel(label, node);
+      } else {
+        label.textContent = node.displayName ?? node.localId ?? node.name ?? "";
+      }
       label.title = node.path ?? node.name ?? "";
-      label.style.width = `${Math.max(28, radius * 2 - 16)}px`;
+      label.style.width = `${Math.max(28, bounds.width - 16)}px`;
       label.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
       fragment.append(label);
     });
 
     this.labelLayer.append(fragment);
+  }
+
+  renderRecordNodeLabel(label: HTMLElement, node: import("../domain/GraphModel.js").ProjectedGraphNode) {
+    const title = this.document.createElement("div");
+    title.className = "graph-node-record-title";
+    title.textContent = node.displayName ?? node.localId ?? node.name ?? "";
+    label.append(title);
+
+    if (node.typeLabel) {
+      const type = this.document.createElement("div");
+      type.className = "graph-node-record-type";
+      type.textContent = node.typeLabel;
+      label.append(type);
+    }
+
+    const fields = (node.typeFields ?? []).slice(0, 6);
+    if (fields.length === 0) {
+      return;
+    }
+
+    const fieldList = this.document.createElement("div");
+    fieldList.className = "graph-node-record-fields";
+    fields.forEach(field => {
+      const row = this.document.createElement("div");
+      row.className = "graph-node-record-field";
+      const name = this.document.createElement("span");
+      name.textContent = field.label;
+      const value = this.document.createElement("strong");
+      value.textContent = field.value || field.typeLabel || field.cardinality || "";
+      row.append(name, value);
+      fieldList.append(row);
+    });
+    if ((node.typeFields?.length ?? 0) > fields.length) {
+      const rest = this.document.createElement("div");
+      rest.className = "graph-node-record-more";
+      rest.textContent = `+${(node.typeFields?.length ?? 0) - fields.length}`;
+      fieldList.append(rest);
+    }
+    label.append(fieldList);
   }
 
   renderEdgeEndpointControls(fragment: DocumentFragment, rect: DOMRect) {
@@ -1039,8 +1089,7 @@ export class WebGpuGraphCanvas {
       }
 
       const center = this.graphToScreen(position);
-      const radius = Math.max(4, screenNodeRadius(node, this.view.scale));
-      if (circleIntersectsRect(center, radius, rect)) {
+      if (nodeIntersectsRect(node, center, this.view.scale, rect)) {
         selectedNodes.push(node);
       }
     });
@@ -1080,9 +1129,15 @@ export class WebGpuGraphCanvas {
 
       const sx = position.x * this.view.scale + this.view.x;
       const sy = position.y * this.view.scale + this.view.y;
-      const radius = Math.max(12, screenNodeRadius(node, this.view.scale) + 10);
+      const bounds = screenNodeBounds(node, this.view.scale);
       const distance = (sx - x) ** 2 + (sy - y) ** 2;
-      if (distance <= radius ** 2 && distance < bestDistance) {
+      const hit = node.viewShape === "record"
+        ? x >= sx - bounds.width / 2 - 10
+          && x <= sx + bounds.width / 2 + 10
+          && y >= sy - bounds.height / 2 - 10
+          && y <= sy + bounds.height / 2 + 10
+        : distance <= Math.max(12, bounds.radius + 10) ** 2;
+      if (hit && distance < bestDistance) {
         bestDistance = distance;
         best = node;
       }
@@ -1234,8 +1289,37 @@ function pointAtAngle(anchor: {x: number, y: number}, angle: number, radius: num
 }
 
 function screenNodeRadius(node: any, scale: number) {
+  return screenNodeBounds(node, scale).radius;
+}
+
+function screenNodeBounds(node: any, scale: number) {
+  const size = graphNodeSize(node);
+  return {
+    width: size.width * scale,
+    height: size.height * scale,
+    radius: size.radius * scale
+  };
+}
+
+function graphNodeSize(node: any) {
   const radius = Number.isFinite(node?.viewRadius) ? node.viewRadius : nodeRadius;
-  return radius * scale;
+  if (node?.viewShape === "record") {
+    const width = Number.isFinite(node?.viewWidth) ? Math.max(96, node.viewWidth) : Math.max(150, radius * 2);
+    const height = Number.isFinite(node?.viewHeight) ? Math.max(72, node.viewHeight) : Math.max(92, radius * 1.35);
+    return {
+      radius: Math.max(radius, Math.hypot(width / 2, height / 2)),
+      width,
+      height,
+      shape: recordNodeShape
+    };
+  }
+
+  return {
+    radius,
+    width: radius * 2,
+    height: radius * 2,
+    shape: 0
+  };
 }
 
 function normalizeClientRect(box: { startX: number, startY: number, x: number, y: number }) {
@@ -1251,6 +1335,18 @@ function circleIntersectsRect(center: {x: number, y: number}, radius: number, re
   const closestX = clamp(center.x, rect.left, rect.right);
   const closestY = clamp(center.y, rect.top, rect.bottom);
   return (center.x - closestX) ** 2 + (center.y - closestY) ** 2 <= radius ** 2;
+}
+
+function nodeIntersectsRect(node: any, center: {x: number, y: number}, scale: number, rect: any) {
+  const bounds = screenNodeBounds(node, scale);
+  if (node?.viewShape === "record") {
+    return center.x + bounds.width / 2 >= rect.left
+      && center.x - bounds.width / 2 <= rect.right
+      && center.y + bounds.height / 2 >= rect.top
+      && center.y - bounds.height / 2 <= rect.bottom;
+  }
+
+  return circleIntersectsRect(center, Math.max(4, bounds.radius), rect);
 }
 
 function segmentIntersectsRect(a: {x: number, y: number}, b: {x: number, y: number}, rect: any) {

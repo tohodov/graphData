@@ -560,6 +560,10 @@ textarea:focus {
   box-shadow: 0 8px 12px rgba(21, 31, 36, 0.08);
 }
 
+.graph-html-canvas-layer > .html-canvas-node.record {
+  border-radius: 7px;
+}
+
 .graph-html-canvas-layer > .html-canvas-node.selected {
   border-color: #f6c447;
   border-width: 3.2px;
@@ -615,6 +619,73 @@ textarea:focus {
 
 .graph-node-label.selected {
   color: var(--accent-strong);
+}
+
+.graph-node-label.record {
+  display: grid;
+  gap: 3px;
+  padding: 0 8px;
+  overflow: hidden;
+  text-align: left;
+  text-shadow: none;
+  white-space: normal;
+}
+
+.graph-node-record-title,
+.graph-node-record-type,
+.graph-node-record-field span,
+.graph-node-record-field strong,
+.graph-node-record-more {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-node-record-title {
+  color: #172124;
+  font-size: 13px;
+  font-weight: 760;
+  text-align: center;
+}
+
+.graph-node-record-type {
+  color: var(--accent-strong);
+  font-size: 11px;
+  font-weight: 720;
+  text-align: center;
+}
+
+.graph-node-record-fields {
+  display: grid;
+  gap: 2px;
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(157, 170, 178, 0.42);
+}
+
+.graph-node-record-field {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 6px;
+  align-items: center;
+  min-height: 17px;
+  color: var(--text-soft);
+  font-size: 10px;
+  line-height: 1.05;
+}
+
+.graph-node-record-field strong {
+  color: #172124;
+  font-weight: 650;
+  text-align: right;
+}
+
+.graph-node-record-more {
+  color: var(--text-soft);
+  font-size: 10px;
+  font-weight: 650;
+  text-align: center;
 }
 
 .graph-edge-control {

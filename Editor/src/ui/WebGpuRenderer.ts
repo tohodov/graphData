@@ -161,13 +161,15 @@ export class WebGpuRenderer implements GraphRenderer {
         module: this.device!.createShaderModule({ code: nodeShader }),
         entryPoint: "vs",
         buffers: [{
-          arrayStride: 32,
+          arrayStride: 48,
           stepMode: "instance",
           attributes: [
             { shaderLocation: 0, offset: 0, format: "float32x2" },
             { shaderLocation: 1, offset: 8, format: "float32x4" },
             { shaderLocation: 2, offset: 24, format: "float32" },
-            { shaderLocation: 3, offset: 28, format: "float32" }
+            { shaderLocation: 3, offset: 28, format: "float32" },
+            { shaderLocation: 4, offset: 32, format: "float32x2" },
+            { shaderLocation: 5, offset: 40, format: "float32" }
           ]
         }]
       },

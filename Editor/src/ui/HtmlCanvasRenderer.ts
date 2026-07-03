@@ -1,5 +1,7 @@
 import type { GraphRenderer, GraphRendererHost, GraphRenderMemory, GraphView } from "./GraphRenderer.js";
 
+const nodeVertexStride = 12;
+
 type HtmlCanvasElement = HTMLCanvasElement & {
   layoutSubtree?: boolean;
   requestPaint?: () => void;
@@ -94,7 +96,7 @@ export class HtmlCanvasRenderer implements GraphRenderer {
 
     memory.nodes.forEach((node, index) => {
       const element = this.document.createElement("div");
-      element.className = "html-canvas-node";
+      element.className = `html-canvas-node${node?.viewShape === "record" ? " record" : ""}`;
       element.title = node?.path ?? node?.name ?? "";
       this.nodeElements.push(element);
       this.nodeKeys.push(node?.name ?? String(index));
@@ -166,18 +168,21 @@ export class HtmlCanvasRenderer implements GraphRenderer {
       context.restore();
     }
 
-    for (let index = 0; index < memory.nodeVertexData.length; index += 8) {
-      const element = this.nodeElements[index / 8];
+    for (let index = 0; index < memory.nodeVertexData.length; index += nodeVertexStride) {
+      const element = this.nodeElements[index / nodeVertexStride];
       if (!element) {
         continue;
       }
 
       const selected = memory.nodeVertexData[index + 7] > 0.5;
-      const radius = (memory.nodeVertexData[index + 6] + (selected ? 4 : 0)) * view.scale;
-      const diameter = radius * 2;
-      const x = memory.nodeVertexData[index + 0] * view.scale + view.x - radius;
-      const y = memory.nodeVertexData[index + 1] * view.scale + view.y - radius;
-      const transform = context.drawElementImage(element, x, y, diameter, diameter);
+      const record = memory.nodeVertexData[index + 10] > 0.5;
+      const halfWidth = (record ? memory.nodeVertexData[index + 8] : memory.nodeVertexData[index + 6]) + (selected ? 4 : 0);
+      const halfHeight = (record ? memory.nodeVertexData[index + 9] : memory.nodeVertexData[index + 6]) + (selected ? 4 : 0);
+      const width = halfWidth * view.scale * 2;
+      const height = halfHeight * view.scale * 2;
+      const x = memory.nodeVertexData[index + 0] * view.scale + view.x - width / 2;
+      const y = memory.nodeVertexData[index + 1] * view.scale + view.y - height / 2;
+      const transform = context.drawElementImage(element, x, y, width, height);
       element.style.transform = transform?.toString?.() ?? "";
     }
   }
@@ -217,13 +222,15 @@ export class HtmlCanvasRenderer implements GraphRenderer {
       return;
     }
 
-    const base = index * 8;
+    const base = index * nodeVertexStride;
     const selected = memory.nodeVertexData[base + 7] > 0.5;
-    const radius = memory.nodeVertexData[base + 6] + (selected ? 4 : 0);
-    const diameter = `${radius * 2}px`;
+    const record = memory.nodeVertexData[base + 10] > 0.5;
+    const halfWidth = (record ? memory.nodeVertexData[base + 8] : memory.nodeVertexData[base + 6]) + (selected ? 4 : 0);
+    const halfHeight = (record ? memory.nodeVertexData[base + 9] : memory.nodeVertexData[base + 6]) + (selected ? 4 : 0);
     element.classList.toggle("selected", selected);
-    element.style.width = diameter;
-    element.style.height = diameter;
+    element.classList.toggle("record", record);
+    element.style.width = `${halfWidth * 2}px`;
+    element.style.height = `${halfHeight * 2}px`;
     element.style.setProperty("--node-stroke", rgba(
       memory.nodeVertexData[base + 2],
       memory.nodeVertexData[base + 3],

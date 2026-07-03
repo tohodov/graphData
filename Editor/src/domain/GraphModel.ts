@@ -201,12 +201,27 @@ export type PrimitiveGraphChangeEvent = PrimitiveGraphChange & { primitiveRevisi
 export type ProjectedGraphNode = import("./GraphNode.js").GraphNodeSnapshot & {
   viewRank?: number;
   viewRadius?: number;
+  viewWidth?: number;
+  viewHeight?: number;
+  viewShape?: "circle" | "record";
   viewRankReason?: string;
   typeGlobalId?: string;
   typeLabel?: string;
   typeRank?: number;
+  typeFields?: ProjectedGraphNodeField[];
   color?: string;
   displayName?: string;
+};
+
+export type ProjectedGraphNodeField = {
+  name: string;
+  label: string;
+  value?: string;
+  valueKind?: string;
+  typeGlobalId?: string;
+  typeLabel?: string;
+  cardinality?: string;
+  isCollection?: boolean;
 };
 
 export type ProjectedGraphEdge = {

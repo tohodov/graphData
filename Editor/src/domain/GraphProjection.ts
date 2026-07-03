@@ -5,6 +5,7 @@ import { GraphNode } from "./GraphNode.js";
 import { GraphType } from "./GraphType.js";
 
 import type { GraphModel, ProjectedGraph } from "./GraphModel.js";
+import type { ProjectedGraphNode, ProjectedGraphNodeField } from "./GraphModel.js";
 
 export type RelationInstance = {
   relationGlobalId: string;
@@ -40,6 +41,7 @@ export class GraphProjection {
     const relationInstances = this.relations(source);
     const collapsedRelations = relationInstances.filter(relation => this.shouldCollapseRelation(relation));
     const hiddenRelations = relationInstances.filter(relation => this.shouldHideRelation(relation) || this.shouldCollapseRelation(relation));
+    const nodeTypeAssignments = this.nodeTypeAssignments(source);
     const hidden = new Set();
     for (const relation of hiddenRelations) {
       hidden.add(relation.relationGlobalId);
@@ -48,22 +50,28 @@ export class GraphProjection {
     for (const type of [...this.model.schema.nodeTypes.values(), ...this.model.schema.edgeTypes.values()]) {
       if (type.collapsed === true || type.visible === false) {
         hidden.add(type.path);
+        this.hiddenTypeDefinitionNodes(type.path, source.nodes).forEach(name => hidden.add(name));
       }
     }
 
-    const nodeTypeAssignments = this.nodeTypeAssignments(source);
     const visibleNodes = source.nodes
       .filter(node => !hidden.has(node.name ?? ""))
       .filter(node => nodeTypeAssignments.get(node.name ?? "")?.visible !== false);
     const visibleNodeIds = new Set(visibleNodes.map(node => node.name ?? ""));
     const typedNodes = visibleNodes.map(node => {
       const nodeType = nodeTypeAssignments.get(node.name ?? "");
+      const collapsedNodeType = nodeType?.collapsed === true;
+      const typeFields = collapsedNodeType
+        ? this.projectedNodeTypeFields(node, nodeType)
+        : [];
       return {
         ...node,
         typeGlobalId: nodeType?.path,
         typeLabel: nodeType?.label,
         typeRank: nodeType?.rank,
         color: nodeType?.color,
+        viewShape: collapsedNodeType ? "record" as const : "circle" as const,
+        typeFields: collapsedNodeType ? typeFields : undefined,
         displayName: this.model.formatProjectedNodeName(node as any, nodeType ?? {})
       };
     });
@@ -175,6 +183,10 @@ export class GraphProjection {
       const rootBoost = node.name === this.model.rootName ? 18 : 0;
       const selectedBoost = node.name === this.model.selectedName ? 30 : 0;
       const rank = GraphType.roundRank(typePriority + degreeScore + rootBoost + selectedBoost + (stats?.focusBoost ?? 0));
+      const typeFields = node.typeFields ?? [];
+      const recordSize = node.viewShape === "record"
+        ? this.recordNodeSize(node, typeFields)
+        : null;
       const reasons = [
         node.typeLabel ? "type " + node.typeLabel + ": " + GraphType.formatRank(typePriority) : "untyped: " + GraphType.formatRank(typePriority),
         "links: " + GraphType.formatRank(degreeScore)
@@ -185,12 +197,30 @@ export class GraphProjection {
       return {
         ...node,
         viewRank: rank,
-        viewRadius: GraphType.rankToRadius(rank),
+        viewRadius: recordSize
+          ? Math.ceil(Math.hypot(recordSize.width / 2, recordSize.height / 2))
+          : GraphType.rankToRadius(rank),
+        viewWidth: recordSize?.width,
+        viewHeight: recordSize?.height,
         viewRankReason: reasons.join(", ")
       };
     });
 
     return { nodes: rankedNodes, edges: rankedEdges };
+  }
+
+  recordNodeSize(node: ProjectedGraphNode, typeFields: ProjectedGraphNodeField[]): { width: number; height: number } {
+    const visibleFieldCount = Math.min(typeFields.length, 6) + (typeFields.length > 6 ? 1 : 0);
+    const labels = [
+      node.displayName ?? node.localId ?? node.name ?? "",
+      node.typeLabel ?? "",
+      ...typeFields.map(field => [field.label, field.value, field.typeLabel].filter(Boolean).join(" "))
+    ];
+    const longest = Math.max(12, ...labels.map(label => String(label).length));
+    return {
+      width: Math.max(156, Math.min(286, longest * 7 + 34)),
+      height: Math.max(92, 54 + visibleFieldCount * 22)
+    };
   }
 
   relations(physical: ProjectedGraph): RelationInstance[] {
@@ -268,5 +298,100 @@ export class GraphProjection {
       else if (targetType && !sourceType) result.set(edge.node1InternalId, targetType);
     }
     return result;
+  }
+
+  hiddenTypeDefinitionNodes(typePath: string, nodes: ProjectedGraphNode[]): string[] {
+    const definitionPath = `${typePath}/Definition`;
+    return nodes
+      .map(node => node.name ?? node.path ?? "")
+      .filter(name => name === definitionPath || GraphId.isChildOf(name, definitionPath));
+  }
+
+  projectedNodeTypeFields(node: ProjectedGraphNode, nodeType: GraphType): ProjectedGraphNodeField[] {
+    const fields = new Map<string, ProjectedGraphNodeField>();
+    for (const field of this.definitionFields(nodeType.path, "Fields")) {
+      fields.set(field.name.toLocaleLowerCase("ru"), field);
+    }
+    for (const field of this.definitionFields(nodeType.path, "Slots")) {
+      const key = field.name.toLocaleLowerCase("ru");
+      if (!fields.has(key)) {
+        fields.set(key, field);
+      }
+    }
+
+    return [...fields.values()].map(field => ({
+      ...field,
+      value: this.projectedFieldValue(node, field)
+    }));
+  }
+
+  definitionFields(typePath: string, containerName: "Fields" | "Slots"): ProjectedGraphNodeField[] {
+    const containerPath = `${typePath}/Definition/${containerName}`;
+    const fields = [...this.model.loaded.values()]
+      .filter(node => this.isDirectChild(node.name ?? node.path, containerPath))
+      .map(node => {
+        const allowedTypes = this.fieldAllowedTypes(node);
+        return {
+          name: node.localId ?? GraphId.localId(node.name ?? node.path),
+          label: node.displayName ?? node.localId ?? GraphId.localId(node.name ?? node.path),
+          valueKind: node.attributes?.valueKind ?? (containerName === "Slots" ? "Node" : undefined),
+          typeGlobalId: allowedTypes.map(type => type.path).join("|") || undefined,
+          typeLabel: allowedTypes.map(type => type.label).join(" | ") || undefined,
+          cardinality: this.fieldCardinality(node.attributes ?? {}),
+          isCollection: String(node.attributes?.isCollection ?? "").toLowerCase() === "true"
+        };
+      });
+    return fields.sort((left, right) => left.label.localeCompare(right.label, "ru"));
+  }
+
+  isDirectChild(path: string | null | undefined, parentPath: string): boolean {
+    if (!path || !GraphId.isChildOf(path, parentPath)) {
+      return false;
+    }
+
+    const parentSegments = parentPath.split("/").filter(Boolean).length;
+    const segments = String(path).split("/").filter(Boolean).length;
+    return segments === parentSegments + 1;
+  }
+
+  fieldAllowedTypes(fieldNode: GraphNode): GraphType[] {
+    return (fieldNode.edges ?? [])
+      .map(edge => edge.otherEndpoint(fieldNode.name))
+      .map(path => this.model.schema.nodeTypes.get(path))
+      .filter((type): type is GraphType => Boolean(type));
+  }
+
+  projectedFieldValue(node: ProjectedGraphNode, field: ProjectedGraphNodeField): string | undefined {
+    const value = this.attributeValue(node.attributes ?? {}, field.name);
+    if (value) {
+      return value;
+    }
+
+    return field.valueKind === "Primitive"
+      ? ""
+      : undefined;
+  }
+
+  attributeValue(attributes: Record<string, string>, key: string): string | undefined {
+    if (attributes[key]) {
+      return attributes[key];
+    }
+
+    const match = Object.keys(attributes).find(name => name.localeCompare(key, "ru", { sensitivity: "accent" }) === 0);
+    return match ? attributes[match] : undefined;
+  }
+
+  fieldCardinality(attributes: Record<string, string>): string | undefined {
+    const min = attributes.min;
+    const max = attributes.max;
+    if (!min && !max) {
+      return undefined;
+    }
+
+    if (!max) {
+      return `${min || "0"}..*`;
+    }
+
+    return min === max ? min : `${min || "0"}..${max}`;
   }
 }

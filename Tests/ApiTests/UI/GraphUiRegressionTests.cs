@@ -770,6 +770,133 @@ public sealed class GraphUiRegressionTests {
     }
 
     [TestMethod]
+    public void GraphProjection_CollapsedNodeTypeBecomesRecordNodeWithFields() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            const typeId = "NodeTypes/Weapon";
+            const countryTypeId = "NodeTypes/Country";
+            const definitionId = typeId + "/Definition";
+            const fieldsId = definitionId + "/Fields";
+            const slotsId = definitionId + "/Slots";
+            const countryFieldId = fieldsId + "/Country";
+            const yearFieldId = fieldsId + "/FoundedYear";
+            const countrySlotId = slotsId + "/Country";
+
+            model.schema.nodeTypes.set(typeId, {
+              path: typeId,
+              label: "Weapon",
+              visible: true,
+              collapsed: true,
+              rank: 50,
+              color: "#0f766e"
+            });
+            model.schema.nodeTypes.set(countryTypeId, {
+              path: countryTypeId,
+              label: "Country",
+              visible: true,
+              collapsed: false,
+              rank: 50
+            });
+
+            const assignment = new GraphEdge({ node1InternalId: "FN_FAL", node2InternalId: typeId });
+            const typeDefinition = new GraphEdge({ node1InternalId: typeId, node2InternalId: definitionId });
+            const definitionFields = new GraphEdge({ node1InternalId: definitionId, node2InternalId: fieldsId });
+            const definitionSlots = new GraphEdge({ node1InternalId: definitionId, node2InternalId: slotsId });
+            const countryField = new GraphEdge({ node1InternalId: fieldsId, node2InternalId: countryFieldId });
+            const yearField = new GraphEdge({ node1InternalId: fieldsId, node2InternalId: yearFieldId });
+            const countrySlot = new GraphEdge({ node1InternalId: slotsId, node2InternalId: countrySlotId });
+            const countryFieldType = new GraphEdge({ node1InternalId: countryFieldId, node2InternalId: countryTypeId });
+            const countrySlotType = new GraphEdge({ node1InternalId: countrySlotId, node2InternalId: countryTypeId });
+
+            model.putNode(new GraphNode({
+              globalId: "FN_FAL",
+              displayName: "FN_FAL",
+              attributes: { FoundedYear: "1953" },
+              edges: [assignment]
+            }));
+            model.putNode(new GraphNode({
+              globalId: typeId,
+              displayName: "Weapon",
+              edges: [assignment, typeDefinition]
+            }));
+            model.putNode(new GraphNode({
+              globalId: countryTypeId,
+              displayName: "Country",
+              edges: [countryFieldType, countrySlotType]
+            }));
+            model.putNode(new GraphNode({
+              globalId: definitionId,
+              displayName: "Definition",
+              edges: [typeDefinition, definitionFields, definitionSlots]
+            }));
+            model.putNode(new GraphNode({
+              globalId: fieldsId,
+              displayName: "Fields",
+              edges: [definitionFields, countryField, yearField]
+            }));
+            model.putNode(new GraphNode({
+              globalId: slotsId,
+              displayName: "Slots",
+              edges: [definitionSlots, countrySlot]
+            }));
+            model.putNode(new GraphNode({
+              globalId: countryFieldId,
+              displayName: "Country",
+              attributes: { valueKind: "Node", min: "1", max: "1" },
+              edges: [countryField, countryFieldType]
+            }));
+            model.putNode(new GraphNode({
+              globalId: yearFieldId,
+              displayName: "FoundedYear",
+              attributes: { valueKind: "Primitive", clrType: "int", min: "1", max: "1" },
+              edges: [yearField]
+            }));
+            model.putNode(new GraphNode({
+              globalId: countrySlotId,
+              displayName: "Country",
+              attributes: { min: "1", max: "1" },
+              edges: [countrySlot, countrySlotType]
+            }));
+
+            for (const node of model.loaded.values()) {
+              node.showed = true;
+            }
+
+            const graph = model.visibleGraph();
+            const names = new Set(graph.nodes.map(node => node.name));
+            const recordNode = graph.nodes.find(node => node.name === "FN_FAL");
+            const fieldNames = (recordNode?.typeFields ?? []).map(field => field.name).sort().join(",");
+            const yearFieldView = recordNode?.typeFields?.find(field => field.name === "FoundedYear");
+            const countryFieldView = recordNode?.typeFields?.find(field => field.name === "Country");
+
+            globalThis.__result = names.has("FN_FAL")
+              && !names.has(typeId)
+              && !names.has(definitionId)
+              && !names.has(fieldsId)
+              && !names.has(countryFieldId)
+              && recordNode?.typeGlobalId === typeId
+              && recordNode?.typeLabel === "Weapon"
+              && recordNode?.viewShape === "record"
+              && recordNode?.viewWidth > 0
+              && recordNode?.viewHeight > 0
+              && fieldNames === "Country,FoundedYear"
+              && yearFieldView?.value === "1953"
+              && countryFieldView?.typeLabel === "Country"
+              && !graph.edges.some(edge => edge.node1InternalId === "FN_FAL" && edge.node2InternalId === typeId)
+              && !graph.edges.some(edge => edge.node1InternalId === fieldsId || edge.node2InternalId === fieldsId);
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphModel_RebuildProjectionPublishesIntermediateGraph() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
