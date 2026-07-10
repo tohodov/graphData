@@ -4,6 +4,7 @@ using Abstractions;
 using GraphData.Api.Controllers;
 using GraphData.Api.Models;
 using GraphData.Api.Runtime;
+using GraphData.Core.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -242,7 +243,7 @@ public sealed class GraphControllerTests : ControllerTests {
     }
 
     [TestMethod]
-    public async Task ConnectNodesAsync_ReturnsNoContentForExistingHierarchyConnectionWithSymLinkStorage() {
+    public async Task ConnectNodesAsync_ReturnsBadRequestForExistingHierarchyConnectionWithSymLinkStorage() {
         var root = await Storage.Create(new("small_arms_test_graph"));
         await Storage.Create(new("weapons"), root.GlobalId);
 
@@ -251,7 +252,9 @@ public sealed class GraphControllerTests : ControllerTests {
             Node2InternalId = ["small_arms_test_graph", "weapons"]
         });
 
-        Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
+        var badRequest = result.Result as BadRequestObjectResult;
+        Assert.IsNotNull(badRequest);
+        StringAssert.Contains((string)badRequest.Value!, "hierarchy connection");
 
         var rootPath = Path.Combine(StorageOptions.RootPath, "small_arms_test_graph");
         var childPath = Path.Combine(rootPath, "weapons");
@@ -293,7 +296,7 @@ public sealed class GraphControllerTests : ControllerTests {
     }
 
     [TestMethod]
-    public async Task ConnectNodesAsync_ReturnsInternalErrorDetailsWhenConnectFails() {
+    public async Task ConnectNodesAsync_ReturnsBadRequestWhenConnectFails() {
         var source = await Storage.Create(new("source"));
         var target = await Storage.Create(new("target"));
         var controller = await CreateController(new ConnectThrowingGraphStorage(Storage));
@@ -303,12 +306,10 @@ public sealed class GraphControllerTests : ControllerTests {
             Node2InternalId = [target.LocalId.ToString()]
         });
 
-        var objectResult = result.Result as ObjectResult;
-        Assert.IsNotNull(objectResult);
-        Assert.AreEqual(StatusCodes.Status500InternalServerError, objectResult.StatusCode);
-        var message = objectResult.Value as string;
+        var badRequest = result.Result as BadRequestObjectResult;
+        Assert.IsNotNull(badRequest);
+        var message = badRequest.Value as string;
         Assert.IsNotNull(message);
-        StringAssert.Contains(message, "InvalidOperationException");
         StringAssert.Contains(message, "diagnostic connect failure");
     }
 
@@ -338,8 +339,22 @@ public sealed class GraphControllerTests : ControllerTests {
 
     [TestMethod]
     public async Task ChangeEdgeTypeAsync_CreatesTypedEdgeSubgraphForBasicEdgeAndReturnsIt() {
-        var typeRoot = await GetTypesRoot();
-        var newType = await Storage.Create(new("new-type"), typeRoot.GlobalId);
+        var newType = (await Service.CreateNodeType(
+            new("new-type"),
+            fields: [
+                new NodeFieldDefinition(
+                    "Source",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Required(),
+                    IsCollection: false),
+                new NodeFieldDefinition(
+                    "Target",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Required(),
+                    IsCollection: false)
+            ])).Value!.Type;
         var source = await Storage.Create(new("source"));
         var target = await Storage.Create(new("target"));
         await Storage.Connect(source.GlobalId, target.GlobalId);
@@ -355,8 +370,8 @@ public sealed class GraphControllerTests : ControllerTests {
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
 
-        var relation = response.Nodes.Single(node => node.InternalId == "typed-edge-1");
-        Assert.AreEqual("typed-edge-1", relation.InternalId);
+        var relation = response.Nodes.Single(node => node.InternalId == "new-type-1");
+        Assert.AreEqual("new-type-1", relation.InternalId);
         Assert.AreEqual(0, relation.Attributes.Count);
 
         var returnedIds = response.Nodes.Select(static node => node.InternalId).ToHashSet(StringComparer.Ordinal);
@@ -368,15 +383,38 @@ public sealed class GraphControllerTests : ControllerTests {
             .Where(node => GraphIdIsChildOf(node.InternalId, relation.InternalId) && node.InternalId != relation.InternalId)
             .ToArray();
         Assert.AreEqual(2, endpointPorts.Length);
+        Assert.IsTrue(endpointPorts.All(endpoint =>
+            endpoint.InternalId.StartsWith("new-type-1/member-new-type-1-", StringComparison.Ordinal)));
+        Assert.AreEqual(2, endpointPorts.Select(static endpoint => endpoint.LocalId).Distinct().Count());
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, relation.InternalId, newType.GlobalId.ToString())));
         Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, source.GlobalId.ToString()))));
         Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, target.GlobalId.ToString()))));
 
-        var storedRelation = await Storage.Get(new NodePath("typed-edge-1"));
+        var storedRelation = await Storage.Get(new NodePath("new-type-1"));
         Assert.IsNotNull(storedRelation);
         Assert.AreEqual(0, storedRelation.Attributes.Count);
 
-        var replacementType = await Storage.Create(new("replacement-type"), typeRoot.GlobalId);
+        var semanticEdge = await Service.GetTypedEdgeInstanceAsync(storedRelation.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, semanticEdge.Status, semanticEdge.Error);
+        Assert.AreEqual(source.GlobalId, semanticEdge.Value!.Endpoint("Source").Participant.GlobalId);
+        Assert.AreEqual(target.GlobalId, semanticEdge.Value.Endpoint("Target").Participant.GlobalId);
+
+        var replacementType = (await Service.CreateNodeType(
+            new("replacement-type"),
+            fields: [
+                new NodeFieldDefinition(
+                    "Left",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Required(),
+                    IsCollection: false),
+                new NodeFieldDefinition(
+                    "Right",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Required(),
+                    IsCollection: false)
+            ])).Value!.Type;
         await Storage.Update(storedRelation.GlobalId, new Dictionary<string, string> { ["note"] = "user note" });
         var retyped = await Controller.ChangeEdgeTypeAsync(new ChangeEdgeTypeRequest {
             Node1InternalId = source.GlobalId.Select(static segment => segment.ToString()).ToArray(),
@@ -384,6 +422,13 @@ public sealed class GraphControllerTests : ControllerTests {
             TypeGlobalId = replacementType.GlobalId.Select(static segment => segment.ToString()).ToArray()
         });
         Assert.IsInstanceOfType(retyped.Result, typeof(OkObjectResult));
+        Assert.IsNull(await Storage.Get(storedRelation.GlobalId));
+        var replacementRelation = await Storage.Get(new NodePath("replacement-type-1"));
+        Assert.IsNotNull(replacementRelation);
+        var replacementEdge = await Service.GetTypedEdgeInstanceAsync(replacementRelation.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, replacementEdge.Status, replacementEdge.Error);
+        Assert.AreEqual(source.GlobalId, replacementEdge.Value!.Endpoint("Left").Participant.GlobalId);
+        Assert.AreEqual(target.GlobalId, replacementEdge.Value.Endpoint("Right").Participant.GlobalId);
         Assert.IsFalse(await source.Nodes.AnyAsync(node => node.GlobalId == target.GlobalId));
     }
 

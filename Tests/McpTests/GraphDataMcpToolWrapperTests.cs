@@ -8,7 +8,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 [RelevantTestClass]
 public sealed class GraphDataMcpToolWrapperTests : StorageTests {
     [TestMethod]
-    public async Task RawTools_CreateConnectReadAndDeleteUntypedNodes() {
+    public async Task RawTools_CreateConnectDisconnectReadAndDeleteUntypedNodes() {
         var rawTools = new GraphDataRawTools(await CreateTools());
 
         AssertSuccess(await rawTools.CreateNode("RawA"));
@@ -27,6 +27,14 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
             Assert.IsTrue(nodeIds.Contains("RawA"), subgraphJson);
             Assert.IsTrue(nodeIds.Contains("RawB"), subgraphJson);
             Assert.AreEqual(1, root.GetProperty("edges").EnumerateArray().Count(), subgraphJson);
+        }
+
+        AssertSuccess(await rawTools.DisconnectNodes(["RawA"], ["RawB"]));
+        var disconnectedSubgraphJson = await rawTools.GetSubgraph([["RawA"]], maxDepth: 1);
+        using (var disconnectedDocument = JsonDocument.Parse(disconnectedSubgraphJson)) {
+            var root = disconnectedDocument.RootElement;
+            Assert.IsTrue(root.GetProperty("success").GetBoolean(), disconnectedSubgraphJson);
+            Assert.AreEqual(0, root.GetProperty("edges").EnumerateArray().Count(), disconnectedSubgraphJson);
         }
 
         AssertSuccess(await rawTools.DeleteNode(["RawB"]));
@@ -64,7 +72,94 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
 
         AssertSuccess(createJson);
         using var getDocument = JsonDocument.Parse(await semanticTools.GetNode(["SemanticKalashnikov"]));
-        Assert.IsTrue(getDocument.RootElement.GetProperty("found").GetBoolean());
+        var root = getDocument.RootElement;
+        Assert.IsTrue(root.GetProperty("found").GetBoolean());
+        var node = root.GetProperty("node");
+        Assert.AreEqual("SemanticKalashnikov", node.GetProperty("localId").GetString());
+        Assert.AreEqual("SemanticKalashnikov", node.GetProperty("internalId").GetString());
+        var types = node.GetProperty("types").EnumerateArray().ToArray();
+        Assert.AreEqual(1, types.Length);
+        Assert.AreEqual("NodeTypes/SemanticManufacturer", types[0].GetProperty("typeInternalId").GetString());
+        Assert.IsTrue(types[0].GetProperty("isMaterialized").GetBoolean());
+        Assert.IsFalse(string.IsNullOrWhiteSpace(types[0].GetProperty("witnessInternalId").GetString()));
+    }
+
+    [TestMethod]
+    public async Task SemanticTools_CreateTypeWithRequires_ProjectsRequiredAndMaterializedTypes() {
+        var semanticTools = new GraphDataSemanticTools(await CreateTools());
+
+        AssertSuccess(await semanticTools.CreateType("RequiredBase"));
+        AssertSuccess(await semanticTools.CreateType(
+            "RequiredDerived",
+            requires: ["NodeTypes/RequiredBase"]));
+
+        using (var definitionsDocument = JsonDocument.Parse(await semanticTools.GetTypeDefinitions())) {
+            var derived = definitionsDocument.RootElement
+                .GetProperty("types")
+                .EnumerateArray()
+                .Single(type => type.GetProperty("internalId").GetString() == "NodeTypes/RequiredDerived");
+            var requiredTypeIds = derived
+                .GetProperty("requiredTypeInternalIds")
+                .EnumerateArray()
+                .Select(static value => value.GetString())
+                .ToArray();
+            CollectionAssert.AreEqual(
+                new[] { "NodeTypes/RequiredBase" },
+                requiredTypeIds);
+        }
+
+        AssertSuccess(await semanticTools.CreateNode(
+            "RequiredInstance",
+            type: "NodeTypes/RequiredDerived"));
+
+        using var nodeDocument = JsonDocument.Parse(await semanticTools.GetNode(["RequiredInstance"]));
+        var nodeTypes = nodeDocument.RootElement
+            .GetProperty("node")
+            .GetProperty("types")
+            .EnumerateArray()
+            .ToArray();
+        CollectionAssert.AreEquivalent(
+            new[] { "NodeTypes/RequiredBase", "NodeTypes/RequiredDerived" },
+            nodeTypes.Select(static type => type.GetProperty("typeInternalId").GetString()).ToArray());
+        Assert.IsTrue(nodeTypes.All(static type => type.GetProperty("isMaterialized").GetBoolean()));
+        Assert.IsTrue(nodeTypes.All(static type =>
+            !string.IsNullOrWhiteSpace(type.GetProperty("witnessInternalId").GetString())));
+    }
+
+    [TestMethod]
+    public async Task SemanticTools_CreateNode_ValidatesFieldsFromRequiredTypes() {
+        var semanticTools = new GraphDataSemanticTools(await CreateTools());
+        var baseFields = JsonSerializer.SerializeToElement(new {
+            BaseCode = new {
+                valueKind = "Primitive",
+                clrType = "string",
+                cardinality = "required"
+            }
+        });
+        AssertSuccess(await semanticTools.CreateType("FieldBase", fields: baseFields));
+        AssertSuccess(await semanticTools.CreateType(
+            "FieldDerived",
+            requires: ["NodeTypes/FieldBase"]));
+
+        var invalid = await semanticTools.CreateNode(
+            "MissingBaseField",
+            type: "NodeTypes/FieldDerived");
+        AssertFailure(invalid, nameof(ServiceResultStatus.BadRequest));
+        AssertNodeNotFound(await semanticTools.GetNode(["MissingBaseField"]));
+
+        var fields = JsonSerializer.SerializeToElement(new { BaseCode = "base-value" });
+        var valid = await semanticTools.CreateNode(
+            "WithBaseField",
+            type: "NodeTypes/FieldDerived",
+            fields: fields);
+        AssertSuccess(valid);
+        using var document = JsonDocument.Parse(await semanticTools.GetNode(["WithBaseField"]));
+        CollectionAssert.AreEquivalent(
+            new[] { "NodeTypes/FieldBase", "NodeTypes/FieldDerived" },
+            document.RootElement.GetProperty("node").GetProperty("types")
+                .EnumerateArray()
+                .Select(static type => type.GetProperty("typeInternalId").GetString())
+                .ToArray());
     }
 
     [TestMethod]
@@ -126,10 +221,43 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
             Country = "USSR"
         });
 
-        var createJson = await semanticTools.CreateNode("FieldsWithoutType", fields: fields);
+        var createJson = await semanticTools.CreateNode("FieldsWithoutType", type: "", fields: fields);
 
         AssertFailure(createJson, "BadRequest");
         AssertNodeNotFound(await semanticTools.GetNode(["FieldsWithoutType"]));
+    }
+
+    [TestMethod]
+    public async Task SemanticTools_ReportAllMissingRequiredFieldsWithExpectedTypes() {
+        var semanticTools = new GraphDataSemanticTools(await CreateTools());
+
+        AssertSuccess(await semanticTools.CreateType("ValidationCountry"));
+        var fields = JsonSerializer.SerializeToElement(new {
+            Country = new {
+                valueKind = "Node",
+                nodeType = "NodeTypes/ValidationCountry",
+                cardinality = "required"
+            },
+            FoundedYear = new {
+                valueKind = "Primitive",
+                clrType = "int",
+                cardinality = "required"
+            }
+        });
+        AssertSuccess(await semanticTools.CreateType("ValidationManufacturer", fields: fields));
+
+        var createJson = await semanticTools.CreateNode(
+            "MissingRequiredFields",
+            type: "NodeTypes/ValidationManufacturer");
+
+        AssertFailure(createJson, "BadRequest");
+        using (var document = JsonDocument.Parse(createJson)) {
+            var error = document.RootElement.GetProperty("error").GetString();
+            StringAssert.Contains(error, "Missing required fields for type 'NodeTypes/ValidationManufacturer'");
+            StringAssert.Contains(error, "Country (Node: NodeTypes/ValidationCountry)");
+            StringAssert.Contains(error, "FoundedYear (Primitive: Int32)");
+        }
+        AssertNodeNotFound(await semanticTools.GetNode(["MissingRequiredFields"]));
     }
 
     private async Task<GraphDataTools> CreateTools() {

@@ -38,7 +38,7 @@ internal static class DynamicNodeTypeDefinitionStorage
         }
 
         var slotsNode = await storage.Create(SlotsNodeId, definitionNode.GlobalId).ConfigureAwait(false);
-        foreach (var slot in definition.Slots) {
+        foreach (var slot in definition.Slots.Where(slot => !IsDerivedFromField(slot, definition.Fields))) {
             var slotNode = await storage.Create(
                 new NodeLocalId(slot.Name),
                 slotsNode.GlobalId,
@@ -61,9 +61,13 @@ internal static class DynamicNodeTypeDefinitionStorage
         var fields = fieldsNode is null
             ? Array.Empty<NodeFieldDefinition>()
             : ReadFields(fieldsNode, nodeTypesRoot).ToArray();
-        var slots = slotsNode is null
+        var explicitSlots = slotsNode is null
             ? Array.Empty<NodeSlotDefinition>()
             : ReadSlots(slotsNode, nodeTypesRoot).ToArray();
+        var slots = explicitSlots
+            .Concat(fields.Select(static field => field.ToSlotDefinition()).OfType<NodeSlotDefinition>())
+            .DistinctBy(SlotIdentity)
+            .ToArray();
 
         return new NodeTypeDefinition(
             typeNode,
@@ -212,5 +216,25 @@ internal static class DynamicNodeTypeDefinitionStorage
         return type.AssemblyQualifiedName
             ?? type.FullName
             ?? type.Name;
+    }
+
+    private static bool IsDerivedFromField(
+        NodeSlotDefinition slot,
+        IReadOnlyCollection<NodeFieldDefinition> fields) {
+        return fields
+            .Select(static field => field.ToSlotDefinition())
+            .OfType<NodeSlotDefinition>()
+            .Any(fieldSlot => SlotIdentity(fieldSlot) == SlotIdentity(slot));
+    }
+
+    private static string SlotIdentity(NodeSlotDefinition slot) {
+        return string.Join(
+            "\0",
+            slot.Name,
+            slot.Cardinality.Min,
+            slot.Cardinality.Max?.ToString() ?? "*",
+            string.Join(",", slot.AllowedTypes
+                .Select(static type => type.GlobalId.ToString())
+                .Order(StringComparer.Ordinal)));
     }
 }

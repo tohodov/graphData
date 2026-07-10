@@ -37,6 +37,38 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         });
     }
 
+    public async Task<string> GetSemanticNode(string[] path, string[]? basisTypes = null) {
+        IEnumerable<NodeRef>? basis = null;
+        if (basisTypes is not null) {
+            var paths = new List<NodeRef>(basisTypes.Length);
+            foreach (var basisType in basisTypes) {
+                var basisPath = ParseNodePath(basisType);
+                if (basisPath is null)
+                    return ToJson(ToErrorResponse(
+                        ServiceResultStatus.BadRequest,
+                        "Basis type paths cannot be empty."));
+                paths.Add(basisPath);
+            }
+            basis = paths;
+        }
+
+        var result = await graph.GetSemanticNodeAsync(new NodePath(path), basis).ConfigureAwait(false);
+        if (result.Status is ServiceResultStatus.Ok && result.Value is not null) {
+            return ToJson(new {
+                found = true,
+                node = ToSemanticNodeResponse(result.Value)
+            });
+        }
+
+        if (result.Status is ServiceResultStatus.NotFound)
+            return ToJson(new { found = false, path });
+
+        return ToJson(new {
+            found = false,
+            error = GetError(result.Status, result.Error)
+        });
+    }
+
     [McpServerTool]
     [Description("Creates a graph node, optionally under an existing parent node. When type is provided, fields are validated against the type definition before creation.")]
     public async Task<string> CreateNode(
@@ -60,8 +92,10 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         if (typeNode is null)
             return ToJson(ToErrorResponse(ServiceResultStatus.NotFound, $"Type node '{type}' was not found or is not a node type."));
 
-        var definition = schemaGraph.GetNodeTypeDefinition(typeNode);
-        var plan = await BuildCreateNodePlan(definition, fields).ConfigureAwait(false);
+        var effectiveDefinitions = await graph.GetEffectiveTypeDefinitionsAsync(typeNode.GlobalId).ConfigureAwait(false);
+        if (effectiveDefinitions.Status != ServiceResultStatus.Ok || effectiveDefinitions.Value is null)
+            return ToJson(ToErrorResponse(effectiveDefinitions.Status, effectiveDefinitions.Error));
+        var plan = await BuildCreateNodePlan(typeNode, effectiveDefinitions.Value, fields).ConfigureAwait(false);
         if (plan.Status != ServiceResultStatus.Ok || plan.Value is null)
             return ToJson(ToErrorResponse(plan.Status, plan.Error));
 
@@ -89,8 +123,10 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
             if (assign.Status != ServiceResultStatus.Ok)
                 throw new TypedCreateException(assign.Status, GetError(assign.Status, assign.Error));
 
-            var reload = await graph.GetNode(createdPath).ConfigureAwait(false);
-            return ToMutationJson(reload, "node", static node => ToNodeResponse(node));
+            var reload = await graph.GetSemanticNodeAsync(createdPath).ConfigureAwait(false);
+            if (reload.Status != ServiceResultStatus.Ok || reload.Value is null)
+                throw new TypedCreateException(reload.Status, GetError(reload.Status, reload.Error));
+            return ToMutationJson(reload, "node", static node => ToSemanticNodeResponse(node));
         } catch (TypedCreateException ex) {
             await graph.DeleteNode(createdPath).ConfigureAwait(false);
             return ToJson(ToErrorResponse(ex.Status, $"Typed node creation was rolled back: {ex.Message}"));
@@ -101,12 +137,13 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
     }
 
     [McpServerTool]
-    [Description("Creates a dynamic graph node type under NodeTypes. Field and slot nodeType references must point to existing type nodes; missing types are not created.")]
+    [Description("Creates a dynamic graph node type under NodeTypes. Field, slot, and required type references must point to existing type nodes; missing types are not created.")]
     public async Task<string> CreateType(
         [Description("LocalId for the new type node under NodeTypes.")] string localId,
         [Description("Whether this type is abstract.")] bool isAbstract = false,
         [Description("Optional JSON object or array of field definitions. Node fields use nodeType paths; primitive fields use clrType names such as string, int, bool, decimal.")] JsonElement? fields = null,
-        [Description("Optional JSON object or array of slot definitions. Each slot must specify allowedTypes or allowedType with existing type paths.")] JsonElement? slots = null) {
+        [Description("Optional JSON object or array of slot definitions. Each slot must specify allowedTypes or allowedType with existing type paths.")] JsonElement? slots = null,
+        [Description("Optional slash-separated paths of node types required by the new type.")] string[]? requires = null) {
         var fieldDefinitions = await ReadTypeFields(fields).ConfigureAwait(false);
         if (fieldDefinitions.Status != ServiceResultStatus.Ok || fieldDefinitions.Value is null)
             return ToJson(ToErrorResponse(fieldDefinitions.Status, fieldDefinitions.Error));
@@ -115,11 +152,27 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         if (slotDefinitions.Status != ServiceResultStatus.Ok || slotDefinitions.Value is null)
             return ToJson(ToErrorResponse(slotDefinitions.Status, slotDefinitions.Error));
 
+        var requiredTypes = new List<NodeType>();
+        foreach (var requiredTypePath in requires ?? []) {
+            var path = ParseNodePath(requiredTypePath);
+            if (path is null)
+                return ToJson(ToErrorResponse(ServiceResultStatus.BadRequest, "Required type path is required."));
+
+            var requiredType = await graph.GetTypeNode(path).ConfigureAwait(false);
+            if (requiredType is null)
+                return ToJson(ToErrorResponse(
+                    ServiceResultStatus.NotFound,
+                    $"Required type node '{requiredTypePath}' was not found or is not a node type."));
+
+            requiredTypes.Add(requiredType);
+        }
+
         var result = await graph.CreateNodeType(
             localId,
             isAbstract,
             fieldDefinitions.Value,
-            slotDefinitions.Value).ConfigureAwait(false);
+            slotDefinitions.Value,
+            requiredTypes).ConfigureAwait(false);
 
         return ToMutationJson(result, "type", static definition => ToTypeDefinitionResponse(definition));
     }
@@ -150,6 +203,22 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         [Description("NodePath segments of the first node.")] string[] sourceGlobalId,
         [Description("NodePath segments of the second node.")] string[] targetGlobalId) {
         var result = await graph.ConnectNodesAsync(new NodePath(sourceGlobalId), new NodePath(targetGlobalId));
+
+        return result.Status == ServiceResultStatus.Ok
+            ? ToJson(new {
+                success = true,
+                sourceGlobalId,
+                targetGlobalId
+            })
+            : ToJson(ToErrorResponse(result.Status, result.Error));
+    }
+
+    [McpServerTool]
+    [Description("Removes an existing undirected connection between two graph nodes without deleting either node.")]
+    public async Task<string> DisconnectNodes(
+        [Description("NodePath segments of the first node.")] string[] sourceGlobalId,
+        [Description("NodePath segments of the second node.")] string[] targetGlobalId) {
+        var result = await graph.Disconnect(new NodePath(sourceGlobalId), new NodePath(targetGlobalId));
 
         return result.Status == ServiceResultStatus.Ok
             ? ToJson(new {
@@ -263,6 +332,9 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
             LocalId = definition.Type.LocalId.ToString(),
             InternalId = definition.Type.GlobalId.ToString(),
             IsAbstract = definition.IsAbstract,
+            RequiredTypeInternalIds = definition.RequiredTypes
+                .Select(static type => type.GlobalId.ToString())
+                .ToArray(),
             Fields = definition.Fields.Select(static field => new McpNodeTypeFieldResponse {
                 Name = field.Name,
                 ValueKind = field.ValueKind.ToString(),
@@ -282,28 +354,52 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
     }
 
     private async Task<ServiceResult<McpCreateNodePlan>> BuildCreateNodePlan(
-        NodeTypeDefinition definition,
+        NodeType selectedType,
+        IReadOnlyCollection<NodeTypeDefinition> effectiveDefinitions,
         JsonElement? fields) {
         var fieldsResult = ReadFieldsObject(fields);
         if (fieldsResult.Status != ServiceResultStatus.Ok || fieldsResult.Value is null)
             return ServiceResult<McpCreateNodePlan>.From(fieldsResult);
 
         var providedFields = fieldsResult.Value;
-        var contracts = BuildFieldContracts(definition);
+        var contractsByType = effectiveDefinitions
+            .Select(definition => new {
+                Definition = definition,
+                Contracts = BuildFieldContracts(definition)
+            })
+            .ToArray();
+        var ambiguousField = contractsByType
+            .SelectMany(item => item.Contracts.Keys.Select(name => new {
+                Name = name,
+                Type = item.Definition.Type
+            }))
+            .GroupBy(static item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .FirstOrDefault(static group => group.Count() > 1);
+        if (ambiguousField is not null)
+            return ServiceResult<McpCreateNodePlan>.BadRequest(
+                $"Field '{ambiguousField.Key}' is ambiguous across effective types: {string.Join(", ", ambiguousField.Select(static item => item.Type.GlobalId))}.");
+
+        var contracts = contractsByType
+            .SelectMany(static item => item.Contracts)
+            .ToDictionary(static pair => pair.Key, static pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         foreach (var name in providedFields.Keys)
             if (!contracts.ContainsKey(name))
                 return ServiceResult<McpCreateNodePlan>.BadRequest(
-                    $"Type '{definition.Type.GlobalId}' does not define field '{name}'.");
+                    $"Type '{selectedType.GlobalId}' and its required types do not define field '{name}'.");
+
+        var missingFields = contracts.Values
+            .Where(contract => !contract.Cardinality.Contains(0) && !providedFields.ContainsKey(contract.Name))
+            .Select(FormatRequiredField)
+            .ToArray();
+        if (missingFields.Length > 0)
+            return ServiceResult<McpCreateNodePlan>.BadRequest(
+                $"Missing required fields for type '{selectedType.GlobalId}': {string.Join(", ", missingFields)}.");
 
         var links = new List<NodePath>();
         var attributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var contract in contracts.Values) {
-            if (!providedFields.TryGetValue(contract.Name, out var value)) {
-                if (!contract.Cardinality.Contains(0))
-                    return ServiceResult<McpCreateNodePlan>.BadRequest(
-                        $"Field '{contract.Name}' is required by type '{definition.Type.GlobalId}'.");
+            if (!providedFields.TryGetValue(contract.Name, out var value))
                 continue;
-            }
 
             if (contract.ValueKind == NodeFieldValueKind.Node) {
                 var nodePlan = await ReadNodeFieldLinks(contract, value).ConfigureAwait(false);
@@ -320,6 +416,17 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         }
 
         return ServiceResult<McpCreateNodePlan>.Ok(new McpCreateNodePlan(attributes, links));
+    }
+
+    private static string FormatRequiredField(McpFieldContract contract) {
+        if (contract.ValueKind == NodeFieldValueKind.Node) {
+            var typeSuffix = contract.AllowedTypes.Count == 0
+                ? string.Empty
+                : $": {FormatTypeList(contract.AllowedTypes)}";
+            return $"{contract.Name} (Node{typeSuffix})";
+        }
+
+        return $"{contract.Name} (Primitive: {contract.ClrType.Name})";
     }
 
     private async Task<ServiceResult<IReadOnlyCollection<NodeFieldDefinition>>> ReadTypeFields(JsonElement? fields) {
@@ -688,10 +795,12 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
 
         var links = new List<NodePath>();
         foreach (var path in paths.Value) {
-            var node = await graph.GetNode(path).ConfigureAwait(false);
+            var node = await graph.GetSemanticNodeAsync(path).ConfigureAwait(false);
             if (node.Status != ServiceResultStatus.Ok || node.Value is null)
-                return ServiceResult<IReadOnlyCollection<NodePath>>.NotFound(
-                    $"Field '{contract.Name}' references node '{path}', but it was not found.");
+                return node.Status == ServiceResultStatus.NotFound
+                    ? ServiceResult<IReadOnlyCollection<NodePath>>.NotFound(
+                        $"Field '{contract.Name}' references node '{path}', but it was not found.")
+                    : new ServiceResult<IReadOnlyCollection<NodePath>>(node.Status, Error: node.Error);
 
             if (contract.AllowedTypes.Count > 0 && !HasAnyType(node.Value, contract.AllowedTypes))
                 return ServiceResult<IReadOnlyCollection<NodePath>>.BadRequest(
@@ -880,11 +989,11 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         return segments.Length == 0 ? null : new NodePath(segments);
     }
 
-    private static bool HasAnyType(Node node, IReadOnlyCollection<NodeType> allowedTypes) {
+    private static bool HasAnyType(InstanceNode node, IReadOnlyCollection<NodeType> allowedTypes) {
         var allowedTypeIds = allowedTypes
             .Select(static type => type.GlobalId)
             .ToHashSet();
-        return node.Nodes.Any(neighbor => allowedTypeIds.Contains(neighbor.GlobalId));
+        return node.AssignedTypes.Any(type => allowedTypeIds.Contains(type.GlobalId));
     }
 
     private static bool HasJsonValue(JsonElement? value) =>
@@ -941,6 +1050,21 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
             LocalId = node.LocalId.ToString(),
             InternalId = node.GlobalId.ToString(),
             Edges = node.Edges.Select(edge => ToNodeEdgeResponse(node, edge)).ToArray()
+        };
+    }
+
+    private static McpSemanticNodeResponse ToSemanticNodeResponse(InstanceNode node) {
+        return new McpSemanticNodeResponse {
+            LocalId = node.LocalId.ToString(),
+            InternalId = node.GlobalId.ToString(),
+            Types = node.TypeInstances
+                .OrderBy(static instance => instance.Type.GlobalId.ToString(), StringComparer.OrdinalIgnoreCase)
+                .Select(static instance => new McpSemanticNodeTypeResponse {
+                    TypeInternalId = instance.Type.GlobalId.ToString(),
+                    WitnessInternalId = instance.Witness?.GlobalId.ToString(),
+                    IsMaterialized = instance.IsMaterialized
+                })
+                .ToArray()
         };
     }
 
@@ -1057,6 +1181,9 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
 
         public bool IsAbstract { get; init; }
 
+        public IReadOnlyCollection<string> RequiredTypeInternalIds { get; init; } =
+            Array.Empty<string>();
+
         public IReadOnlyCollection<McpNodeTypeFieldResponse> Fields { get; init; } =
             Array.Empty<McpNodeTypeFieldResponse>();
 
@@ -1101,6 +1228,23 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         public required string InternalId { get; init; }
 
         public IReadOnlyCollection<McpEdgeResponse> Edges { get; init; } = Array.Empty<McpEdgeResponse>();
+    }
+
+    private sealed record McpSemanticNodeResponse {
+        public required string LocalId { get; init; }
+
+        public required string InternalId { get; init; }
+
+        public IReadOnlyCollection<McpSemanticNodeTypeResponse> Types { get; init; } =
+            Array.Empty<McpSemanticNodeTypeResponse>();
+    }
+
+    private sealed record McpSemanticNodeTypeResponse {
+        public required string TypeInternalId { get; init; }
+
+        public string? WitnessInternalId { get; init; }
+
+        public bool IsMaterialized { get; init; }
     }
 
     private sealed record McpEdgeResponse {

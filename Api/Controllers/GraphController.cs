@@ -82,7 +82,7 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
             var result = await graph.ConnectNodesAsync(new NodePath(request.Node1InternalId.Select(x => new NodeLocalId(x))), new NodePath(request.Node2InternalId.Select(x => new NodeLocalId(x))));
             return result.Status == ServiceResultStatus.Ok ? NoContent() : ToActionResult<OperationResponse>(result);
         } catch (InvalidOperationException ex) {
-            return StatusCode(StatusCodes.Status500InternalServerError, $"{ex.GetType().Name}: {ex.Message}");
+            return BadRequest(ex.Message);
         } catch (Exception ex) {
             return BadRequest(ex.Message);
         }

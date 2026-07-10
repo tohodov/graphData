@@ -39,6 +39,14 @@ public sealed class GraphDataRawTools(GraphDataTools tools) {
     }
 
     [McpServerTool]
+    [Description("Removes an existing undirected connection between two graph nodes without deleting either node.")]
+    public Task<string> DisconnectNodes(
+        [Description("NodePath segments of the first node.")] string[] sourceGlobalId,
+        [Description("NodePath segments of the second node.")] string[] targetGlobalId) {
+        return tools.DisconnectNodes(sourceGlobalId, targetGlobalId);
+    }
+
+    [McpServerTool]
     [Description("Returns a subgraph with nodes plus top-level edges.")]
     public Task<string> GetSubgraph(
         [Description("Root nodes NodePath segments for graph traversal.")] string[][] rootPaths,

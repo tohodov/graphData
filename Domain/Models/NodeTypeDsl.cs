@@ -31,8 +31,11 @@ public sealed record NodeSlotDefinition(
         var allowedTypeIds = AllowedTypes
             .Select(static type => type.GlobalId)
             .ToHashSet();
+        var assignedTypeIds = instance.AssignedTypes
+            .Select(static type => type.GlobalId)
+            .ToHashSet();
         var count = instance.Nodes.Count(neighbor =>
-            neighbor.GlobalId != instance.Type.GlobalId
+            !assignedTypeIds.Contains(neighbor.GlobalId)
             && neighbor.Nodes.Any(type => allowedTypeIds.Contains(type.GlobalId)));
         if (!Cardinality.Contains(count))
             throw new InvalidOperationException($"Slot '{Name}' expects {Cardinality} linked nodes, but found {count}.");
@@ -59,8 +62,21 @@ public sealed record NodeTypeDefinition(
     IReadOnlyCollection<NodeSlotDefinition> Slots,
     IReadOnlyCollection<NodeFieldDefinition> Fields)
 {
+    public IReadOnlyCollection<NodeType> RequiredTypes { get; init; } = Array.Empty<NodeType>();
+
     public void EnsureSatisfiedBy(InstanceNode instance)
     {
+        var assignedTypeIds = instance.AssignedTypes
+            .Select(static type => type.GlobalId)
+            .ToHashSet();
+        var missingRequiredTypes = RequiredTypes
+            .Where(type => !assignedTypeIds.Contains(type.GlobalId))
+            .Select(static type => type.GlobalId.ToString())
+            .ToArray();
+        if (missingRequiredTypes.Length > 0)
+            throw new InvalidOperationException(
+                $"Node '{instance.GlobalId}' is missing required graph types: {string.Join(", ", missingRequiredTypes)}.");
+
         foreach (var slot in Slots)
             slot.EnsureSatisfiedBy(instance);
     }
@@ -72,6 +88,7 @@ public sealed class NodeTypeBuilder
     private readonly Func<Type, NodeType> _resolveType;
     private readonly List<NodeSlotDefinition> _slots = [];
     private readonly List<NodeFieldDefinition> _fields = [];
+    private readonly List<NodeType> _requiredTypes = [];
     private bool _isAbstract;
 
     internal NodeTypeBuilder(NodeType type, Func<Type, NodeType> resolveType)
@@ -96,6 +113,20 @@ public sealed class NodeTypeBuilder
             [allowedType],
             cardinality ?? NodeSlotCardinality.Required()));
         return this;
+    }
+
+    public NodeTypeBuilder Requires(NodeType requiredType)
+    {
+        ArgumentNullException.ThrowIfNull(requiredType);
+        if (_requiredTypes.All(type => type.GlobalId != requiredType.GlobalId))
+            _requiredTypes.Add(requiredType);
+        return this;
+    }
+
+    public NodeTypeBuilder Requires<TNodeType>()
+        where TNodeType : NodeType
+    {
+        return Requires(_resolveType(typeof(TNodeType)));
     }
 
     public NodeTypeBuilder RequiresSlot<TNodeType>(
@@ -134,7 +165,9 @@ public sealed class NodeTypeBuilder
         _type,
         _isAbstract,
         _slots.ToArray(),
-        _fields.ToArray());
+        _fields.ToArray()) {
+        RequiredTypes = _requiredTypes.ToArray()
+    };
 
     private static string RequireName(string value)
     {

@@ -45,11 +45,13 @@ public abstract class Incidence<TEdge> : Incidence
 internal sealed class InstanceOf : Edge {
     public InstanceEnd Instance { get; }
     public TypeEnd Type { get; }
+    public Node? Witness { get; }
 
     public Node InstanceNode => Instance.Node;
     public Node TypeNode => Type.Node;
 
-    public InstanceOf(EdgeBacking state, Node instance, Node type) : base(state) {
+    public InstanceOf(EdgeBacking state, Node instance, Node type, Node? witness = null) : base(state) {
+        Witness = witness;
         Instance = Attach(new InstanceEnd(instance, this));
         Type = Attach(new TypeEnd(type, this));
     }

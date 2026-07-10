@@ -100,7 +100,6 @@ public sealed class GraphUiFullCycleTests
         await CreateNode(client, "a");
         await CreateNode(client, "b");
         await CreateNode(client, "x", "a");
-        await Connect(client, "a", "a/x");
         await Connect(client, "a/x", "b");
     }
 

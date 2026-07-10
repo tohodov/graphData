@@ -2,6 +2,7 @@ using System.Text.Json;
 using Abstractions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using InternalId = Abstractions.NodeRef.InternalId;
 
 namespace Storage;
 
@@ -50,19 +51,18 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
     }
 
     public Task Delete(NodeBacking node) => Delete((NodeFileSystem)node);
-    async Task Delete(NodeFileSystem node) {
+    Task Delete(NodeFileSystem node) {
         if (IsStorageRoot(node.FolderPath))
             throw new InvalidOperationException("Storage root cannot be deleted.");
 
-        var connections = await node.Edges
-            .Select(edge => edge.Node1.GlobalId == node.GlobalId ? edge.Node2 : edge.Node1)
-            .Where(neighbor => neighbor.GlobalId != node.GlobalId)
-            .GroupBy(static neighbor => neighbor.GlobalId)
-            .Select(static group => group.First())
-            .ToArrayAsync();
-        foreach (var connection in connections)
-            DeleteLinkIfExists(Path.Combine(GetNodePath(connection), GetLinkName(node.LocalId)));
+        var externalBacklinks = CollectLinksTargetingSubtree(node.FolderPath)
+            .Where(link => !IsSameOrDescendantPath(link.LinkPath, node.FolderPath))
+            .ToArray();
+        foreach (var backlink in externalBacklinks)
+            DeleteLinkIfExists(backlink.LinkPath);
+
         DeleteDirectoryWithoutFollowingLinks(node.GetInfo());
+        return Task.CompletedTask;
     }
     public Task Delete(NodeRef path) {
         var node = FindNode(path);
@@ -83,7 +83,8 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         var right = FindNode(rightPath);
         if (left is null || right is null)
             return Task.FromResult(false);
-        return Task.FromResult(ConnectNodes(left, right));
+        ConnectNodes(left, right);
+        return Task.CompletedTask;
     }
 
     public async Task Disconnect(NodeRef leftPath, NodeRef rightPath) {
@@ -108,8 +109,8 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         if (IsHierarchyConnection(left.FolderPath, right.FolderPath))
             throw new InvalidOperationException("Only direct hierarchy connections can be disconnected.");
 
-        DeleteLinkIfExists(Path.Combine(GetNodePath(left), GetLinkName(right.LocalId)));
-        DeleteLinkIfExists(Path.Combine(GetNodePath(right), GetLinkName(left.LocalId)));
+        DeleteLinksToTarget(GetNodePath(left), right.FolderPath);
+        DeleteLinksToTarget(GetNodePath(right), left.FolderPath);
     }
 
     public async IAsyncEnumerable<NodeBacking> EnumerateNodesAsync(
@@ -159,29 +160,42 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         if (IsStorageRoot(node.FolderPath))
             throw new InvalidOperationException("Storage root cannot be moved.");
 
-        var newParent = (await node.Nodes
+        var possibleParents = (await node.Nodes
                 .OfType<NodeFileSystem>()
                 .Where(neighbor => !IsHierarchyConnection(node.FolderPath, neighbor.FolderPath))
                 .DistinctBy(neighbor => neighbor.GlobalId)
                 .OrderBy(neighbor => neighbor.GlobalId.ToString(), StringComparer.Ordinal)
+                .Take(2)
                 .ToArrayAsync())
-            .FirstOrDefault();
-        if (newParent is null)
+            .ToArray();
+        if (possibleParents.Length == 0)
             throw new InvalidOperationException($"Node '{node.GlobalId}' has no non-hierarchy connections to move through.");
+        if (possibleParents.Length > 1)
+            throw new InvalidOperationException(
+                $"Node '{node.GlobalId}' has more than one non-hierarchy connection; relocation is ambiguous.");
+        var newParent = possibleParents[0];
 
         var sourcePath = NormalizeDirectoryPath(node.FolderPath);
         var destinationPath = NormalizeDirectoryPath(Path.Combine(newParent.FolderPath, node.LocalId.ToString()));
 
-        var selectedParentBackLink = Path.Combine(newParent.FolderPath, GetLinkName(node.LocalId));
-        DeleteLinkIfExists(Path.Combine(node.FolderPath, GetLinkName(newParent.LocalId)));
-        DeleteLinkIfExists(selectedParentBackLink);
-
-        if (FileSystemEntryExists(destinationPath))
+        var nodeToParentLinks = FindLinksToTarget(node.FolderPath, newParent.FolderPath);
+        var parentToNodeLinks = FindLinksToTarget(newParent.FolderPath, node.FolderPath);
+        if (FileSystemEntryExists(destinationPath)
+            && !parentToNodeLinks.Any(linkPath => PathsEqual(linkPath, destinationPath)))
             throw new InvalidOperationException($"Destination node path '{destinationPath}' already exists.");
 
-        var linksToRewrite = CollectLinksTargetingSubtree(sourcePath)
-            .Where(link => !PathsEqual(link.LinkPath, selectedParentBackLink))
+        var selectedConnectionLinks = nodeToParentLinks
+            .Concat(parentToNodeLinks)
             .ToArray();
+        var linksToRewrite = CollectLinksTargetingSubtree(sourcePath)
+            .Where(link => !selectedConnectionLinks.Any(selected => PathsEqual(selected, link.LinkPath)))
+            .ToArray();
+        if (linksToRewrite.Any(link => BecomesHierarchyConnectionAfterMove(link, sourcePath, destinationPath)))
+            throw new InvalidOperationException(
+                $"Moving node '{node.GlobalId}' under '{newParent.GlobalId}' would turn an existing graph edge into an ancestor-descendant connection.");
+
+        foreach (var linkPath in selectedConnectionLinks)
+            DeleteLinkIfExists(linkPath);
 
         foreach (var link in linksToRewrite)
             DeleteLinkIfExists(link.LinkPath);
@@ -242,16 +256,25 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         return true;
     }
 
-    private bool ConnectNodes(NodeFileSystem left, NodeFileSystem right) {
+    private void ConnectNodes(NodeFileSystem left, NodeFileSystem right) {
         if (left.GlobalId == right.GlobalId)
-            return false;
+            return;
         if (IsHierarchyConnection(left.FolderPath, right.FolderPath))
-            return false;
+            throw new InvalidOperationException("Nodes already have a hierarchy connection.");
         var sourcePath = GetNodePath(left);
         var targetPath = GetNodePath(right);
-        CreateLinkIfMissing(sourcePath, targetPath, right.LocalId);
-        CreateLinkIfMissing(targetPath, sourcePath, left.LocalId);
-        return true;
+        var sourceLinkPath = GetLinkPath(sourcePath, right.LocalId);
+        var targetLinkPath = GetLinkPath(targetPath, left.LocalId);
+        EnsureLinkSlotIsAvailable(sourceLinkPath, targetPath, left.GlobalId, right.GlobalId);
+        EnsureLinkSlotIsAvailable(targetLinkPath, sourcePath, left.GlobalId, right.GlobalId);
+
+        Directory.CreateSymbolicLink(sourceLinkPath, Path.GetFullPath(targetPath));
+        try {
+            Directory.CreateSymbolicLink(targetLinkPath, Path.GetFullPath(sourcePath));
+        } catch {
+            DeleteLinkIfExists(sourceLinkPath);
+            throw;
+        }
     }
 
     private string GetNodePath(string name) {
@@ -331,7 +354,17 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
             return path;
 
         var relative = Path.GetRelativePath(oldRoot, path);
-        return NodeFileSystem.ResolveDirectoryPath(Path.Combine(newRoot, relative));
+        return Path.GetFullPath(Path.Combine(newRoot, relative));
+    }
+
+    private static bool BecomesHierarchyConnectionAfterMove(LinkRewrite link, string oldRoot, string newRoot) {
+        var linkOwnerPath = Path.GetDirectoryName(link.LinkPath);
+        if (linkOwnerPath is null)
+            return false;
+
+        var rewrittenOwner = RewritePathIfInsideSubtree(linkOwnerPath, oldRoot, newRoot);
+        var rewrittenTarget = RewritePathIfInsideSubtree(link.TargetPath, oldRoot, newRoot);
+        return IsHierarchyConnection(rewrittenOwner, rewrittenTarget);
     }
 
     private static bool IsSameOrDescendantPath(string candidate, string ancestor) {
@@ -355,13 +388,45 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
 
     private sealed record LinkRewrite(string LinkPath, string TargetPath);
 
-    private void CreateLinkIfMissing(string sourcePath, string targetPath, string targetNodeName) {
-        var linkPath = Path.Combine(sourcePath, GetLinkName(targetNodeName));
-        if (FileSystemEntryExists(linkPath))
+    private static string GetLinkPath(string sourcePath, NodeLocalId targetNodeName) {
+        return Path.Combine(sourcePath, GetLinkName(targetNodeName.ToString()));
+    }
+
+    private static void EnsureLinkSlotIsAvailable(
+        string linkPath,
+        string expectedTargetPath,
+        InternalId left,
+        InternalId right) {
+        if (!FileSystemEntryExists(linkPath))
             return;
 
+        var existingTarget = NodeFileSystem.GetResolvedLinkTarget(new DirectoryInfo(linkPath));
+        if (existingTarget is not null && PathsEqual(existingTarget, expectedTargetPath))
+            throw new InvalidOperationException($"Nodes '{left}' and '{right}' are already connected.");
+
+        throw new InvalidOperationException(
+            $"Connection namespace entry '{linkPath}' is already occupied by another node while connecting '{left}' and '{right}' to '{expectedTargetPath}'.");
+    }
+
+    private static void DeleteLinksToTarget(string sourcePath, string targetPath) {
+        foreach (var linkPath in FindLinksToTarget(sourcePath, targetPath))
+            DeleteLinkIfExists(linkPath);
+    }
+
+    private static IReadOnlyCollection<string> FindLinksToTarget(string sourcePath, string targetPath) {
+        if (!Directory.Exists(sourcePath))
+            return Array.Empty<string>();
+
         var targetFullPath = Path.GetFullPath(targetPath);
-        Directory.CreateSymbolicLink(linkPath, targetFullPath);
+        var result = new List<string>();
+        foreach (var entry in new DirectoryInfo(sourcePath).EnumerateFileSystemInfos().ToArray()) {
+            if ((entry.Attributes & FileAttributes.ReparsePoint) == 0)
+                continue;
+            var existingTarget = NodeFileSystem.GetResolvedLinkTarget(entry);
+            if (existingTarget is not null && PathsEqual(existingTarget, targetFullPath))
+                result.Add(entry.FullName);
+        }
+        return result;
     }
 
     private static bool FileSystemEntryExists(string path) {

@@ -12,9 +12,7 @@ public sealed class McpToolSurfaceTests {
                 "CreateNode",
                 "CreateType",
                 "GetNode",
-                "GetSubgraph",
-                "GetTypeDefinitions",
-                "SearchNodes"
+                "GetTypeDefinitions"
             },
             GetToolMethodNames(typeof(GraphDataSemanticTools)));
     }
@@ -26,6 +24,7 @@ public sealed class McpToolSurfaceTests {
                 "ConnectNodes",
                 "CreateNode",
                 "DeleteNode",
+                "DisconnectNodes",
                 "GetNode",
                 "GetSubgraph",
                 "SearchNodes"
@@ -41,6 +40,7 @@ public sealed class McpToolSurfaceTests {
                 "CreateNode",
                 "CreateType",
                 "DeleteNode",
+                "DisconnectNodes",
                 "GetNode",
                 "GetSubgraph",
                 "GetTypeDefinitions",
@@ -59,6 +59,41 @@ public sealed class McpToolSurfaceTests {
             .ToArray();
 
         CollectionAssert.AreEqual(new[] { "localId", "path" }, parameterNames);
+    }
+
+    [TestMethod]
+    public void SemanticCreateNode_RequiresTypeParameter() {
+        var createNode = typeof(GraphDataSemanticTools).GetMethod(nameof(GraphDataSemanticTools.CreateNode));
+        Assert.IsNotNull(createNode);
+
+        var type = createNode.GetParameters().Single(static parameter => parameter.Name == "type");
+
+        Assert.IsFalse(type.HasDefaultValue);
+        Assert.AreEqual(typeof(string), type.ParameterType);
+    }
+
+    [TestMethod]
+    public void SemanticGetNode_ExposesOptionalBasisPaths() {
+        var getNode = typeof(GraphDataSemanticTools).GetMethod(nameof(GraphDataSemanticTools.GetNode));
+        Assert.IsNotNull(getNode);
+
+        var basisTypes = getNode.GetParameters().Single(static parameter => parameter.Name == "basisTypes");
+
+        Assert.IsTrue(basisTypes.HasDefaultValue);
+        Assert.IsNull(basisTypes.DefaultValue);
+        Assert.AreEqual(typeof(string[]), basisTypes.ParameterType);
+    }
+
+    [TestMethod]
+    public void SemanticCreateType_ExposesOptionalRequiresPaths() {
+        var createType = typeof(GraphDataSemanticTools).GetMethod(nameof(GraphDataSemanticTools.CreateType));
+        Assert.IsNotNull(createType);
+
+        var requires = createType.GetParameters().Single(static parameter => parameter.Name == "requires");
+
+        Assert.IsTrue(requires.HasDefaultValue);
+        Assert.IsNull(requires.DefaultValue);
+        Assert.AreEqual(typeof(string[]), requires.ParameterType);
     }
 
     private static string[] GetToolMethodNames(Type toolType) {

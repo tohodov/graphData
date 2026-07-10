@@ -68,7 +68,7 @@ public sealed class GraphSchemaRegistry
             .Distinct()
             .Where(static type =>
                 typeof(NodeType).IsAssignableFrom(type)
-                && type is { IsAbstract: false, ContainsGenericParameters: false }
+                && type is { ContainsGenericParameters: false }
                 && (type.IsPublic || type.IsNestedPublic))
             .Except([typeof(NodeType)])
             .Select(static x => new RuntimeGraphTypeDefinition(x, NodeType.CreateDefaultLocalId(x)))
@@ -95,6 +95,11 @@ public sealed class GraphSchemaRegistry
             if (TryGetClrType(localId, out var clrType))
             {
                 var builder = new NodeTypeBuilder(typeNode, resolveType);
+                builder.Abstract(clrType.IsAbstract);
+                if (clrType.BaseType is { } baseType
+                    && baseType != typeof(NodeType)
+                    && typeof(NodeType).IsAssignableFrom(baseType))
+                    builder.Requires(resolveType(baseType));
                 NodeTypeFieldDiscovery.AddDiscoveredFields(clrType, builder, resolveType);
                 return builder.Build();
             }

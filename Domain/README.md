@@ -1,94 +1,104 @@
 # Domain
 
-## Текущее видение DSL
+## Назначение
 
-`Domain` отвечает за типизированный смысл графа. `IGraphStorage` остается низкоуровневым контрактом хранения:
-он знает узлы, связи, пути и атрибуты, но не должен решать, что такое тип, инстанс, слот или инвариант.
+`Domain` отвечает за типизированный смысл графа. `IGraphStorage` остается низкоуровневым контрактом carrier-графа: он хранит узлы, одинаковые неориентированные raw-связи, пути и атрибуты, но не знает, что такое тип, type-instance, member или semantic edge. Для одной пары различных узлов carrier допускает только одно неориентированное ребро: существующая hierarchy-связь и junction не образуют параллельных ребер, а повторное соединение — ошибка. Целевое видение не требует расширять storage-контракт.
 
-Главный принцип DSL: типы и инстансы должны быть выражены самим графом и доменными объектами, а не строковыми
-атрибутами и не отдельными снимками "схемы всего мира".
+Типовая семантика выражается самим графом и доменными runtime-объектами, а не строковыми attributes и не snapshot-схемой всего условно бесконечного графа.
 
-### Принципы
+## Фактически реализованный переходный срез
 
-- Внешний DSL типизации узлов выражается обычной C#-иерархией `Node -> NodeType -> ...`.
-- Идентичность runtime-типа узла назначается каталогом регистрации. Пользовательский `NodeType` не объявляет
-  `StaticTypeId` и не должен заранее знать свой graph id.
-- Типизированный взгляд на обычный узел - это `InstanceNode`. Не нужен отдельный `TypedNodeInstance`, потому что
-  инстанс уже может прочитать назначенные типы и соседние инстансы из своего backing-состояния.
-- `Graph` является источником runtime DSL: открывает storage, материализует служебный подграф типов возле root
-  и отдает внешнему коду доменные `Node`/`NodeType`, а не константы путей.
-- Граф условно бесконечен, поэтому `Domain` не должен строить и хранить `NodeTypeSchema` как полный snapshot.
-  Операция читает через `GraphService` только тот фрагмент storage, который ей нужен.
-- `GraphService` является границей доменных операций: он получает открытый `Graph`, работает асинхронно через
-  backing/storage API и не вызывает синхронный DSL `Node`/`Edge` для storage-backed узлов.
-- Внутренний `GraphBackupService` - техническое исключение для файлового бэкапа: он читает полный граф через
-  `GraphService`, сохраняет иерархию, атрибуты и дополнительные связи в JSON и восстанавливает их обратно.
-- `NodeBacking.Attributes` - нетипизированный временный escape hatch. Атрибуты нельзя использовать как источник
-  логики, feature branching, портов, слотов или типовой семантики.
+Этот раздел описывает текущий сквозной срез, а не финальную метамодель.
 
-### Текущий слой типов узлов
+- `Graph` открывает storage и материализует зарегистрированные C#-типы в дефолтном каталоге `NodeTypes`.
+- `GraphSchemaRegistry` и `NodeTypeFieldDiscovery` читают public C# fields/properties классов `NodeType`. `NodeTypeDefinition`, `NodeFieldDefinition`, `NodeTypeBuilder`, `NodeSlotDefinition` и `NodeSlotCardinality` описывают локальный DSL одного типа.
+- Dynamic type definitions пока хранятся в подграфе `Definition/Fields/Slots`; это переходное кодирование локальной дефиниции, а не полный schema snapshot.
+- `GraphService.AssignNodeTypeAsync` строит для каждого effective type отдельный typed `InstanceOf` subgraph. Прямая raw-связь `node — type` пока дублируется как legacy/UI compatibility index; semantic read предпочитает materialized witness.
+- `RequiresConnectionNodeType` описывает `requires` обычным typed edge. `GraphService` материализует closure с `visited`, не дублирует общий base в diamond и завершает обход на циклах.
+- Slot validation пока считает любых соседей допустимого типа. Два именованных typed-member с пересекающимся target type заранее отклоняются как неоднозначные до появления member instances; plain `Node`-поля и primitive values всё ещё остаются переходным нестрогим срезом.
+- `TypedEdgeSubgraphCodec` создаёт и читает переходную raw-грамматику relation node. Каждый endpoint occurrence связан с отдельным member classifier; имя occurrence технически уникально в relation node и не кодирует доменный смысл endpoint. `GetTypedEdgeInstanceAsync` восстанавливает `TypedEdgeInstance` и проверяет endpoint cardinality.
+- Обе формы `ChangeEdgeTypeAsync` используют этот codec. При повторной типизации один найденный carrier заменяется, а несколько carrier с теми же участниками считаются неоднозначностью и не изменяются.
+- `GetSemanticNodeAsync` строит runtime `InstanceNode` с коллекцией `NodeTypeInstance`, восстанавливает materialized witnesses после повторного открытия `Graph` и принимает явный basis вне `NodeTypes`.
+- `Node` и `Edge` остаются важными активными сущностями над backing-состоянием. Raw `GetNode` всегда возвращает обычный `Node`, чтобы carrier API оставался доступен даже при повреждённой семантике. Явный `GetSemanticNodeAsync` возвращает `InstanceNode`; его `InstanceOf` incidences восстанавливаются из прочитанных type-instances.
+- Raw `GetSubgraph(maxDepth)` и `GraphSearchService` остаются корректными инструментами исследования carrier-графа. Их depth не должен определять type closure.
 
-- Класс-наследник `NodeType` описывает тип через публичные поля/свойства C#: кастомные `NodeType`, обычные
-  `Node`, примитивы, nullable-ссылки и коллекции.
-- `NodeTypeBuilder` остается точкой расширения для дополнительных правил и слотов.
-- `NodeTypeDefinition` описывает один зарегистрированный `NodeType`, а не всю схему графа.
-- `NodeFieldDefinition` фиксирует C#-поле типа: kind значения, CLR-тип, cardinality и зарегистрированный
-  `NodeType`, если поле указывает на типизированный узел.
-- `NodeSlotDefinition` описывает slot-инвариант через имя, допустимые `NodeType` и cardinality, а также умеет
-  проверить этот слот на конкретном `InstanceNode`.
-- `NodeSlotCardinality` задает ограничения количества связанных инстансов.
-- `InstanceNode.AssignedTypes` читает назначенные типы из связей с узлами, которые сами находятся в графе типов.
-  Расположение и форма `InternalId` при этом не участвуют в классификации.
-- `InstanceNode.NeighborInstances` читает соседние обычные инстансы, которые участвуют в проверке слотов.
-- `NodeTypeDefinition.EnsureSatisfiedBy(...)` проверяет минимальные инварианты типа против `InstanceNode` и
-  бросает исключение при нарушении.
+## Согласованная runtime-проекция
 
-### Текущий слой типизированных связей
+Semantic layer определяется не самим storage, а парой:
 
-- Типизированная связь в домене - это не отдельный `Relation`/`EdgeType`, а metadata-free промежуточный узел,
-  которому назначен обычный `NodeType`.
-- Внешний DSL типизации такой связи выражается тем же C#-слоем `Node -> NodeType -> ...`: класс-наследник
-  `NodeType` описывает endpoints публичными полями/свойствами `Node` или кастомных `NodeType`.
-- Если зарегистрированный `NodeType` содержит минимум два node-поля, `TypedEdgeDefinition` может прочитать из
-  него endpoint-контракт. Такой тип дополнительно связывается с зарегистрированным connection node type,
-  чтобы UI мог отличить типы, которые можно сворачивать в отображаемые ребра.
-- `GraphService.ChangeEdgeTypeAsync<TNodeType>` превращает связь между выбранными узлами в typed edge subgraph:
-  metadata-free узел-инстанс связи, назначение ему выбранного node type, metadata-free endpoint-узлы,
-  назначение endpoint-узлам зарегистрированного endpoint node type и связи endpoint-узлов с выбранными инстансами и
-  endpoint-спеками в дереве типов.
-- Endpoint-спеки живут под node type зарегистрированного typed edge и связываются с node type-узлами, если
-  endpoint объявлен через кастомный `NodeType`.
-- Низкоуровневые source/target port-узлы типизируются через зарегистрированный port node type.
+```text
+available raw graph fragment + selected basis
+```
 
-### Граница мутаций
+Базис — выбранный набор storage nodes, которые в текущей проекции считаются типами и запускают интерпретацию. Каталог `NodeTypes` может остаться дефолтным базисом для совместимости, но он не является единственным возможным type root.
 
-`GraphService.AssignNodeTypeAsync<TNodeType>` назначает тип через связь `InstanceNode -> NodeType`, перечитывает
-инстанс из storage и валидирует результат. Если инварианты не выполняются, новая связь откатывается.
+### Runtime identity и raw locators
 
-`GraphService.ChangeEdgeTypeAsync<TNodeType>` читает выбранные endpoint-узлы как `InstanceNode`, валидирует их
-против зарегистрированного `TypedEdgeDefinition` и только после этого создает typed edge subgraph. Для бинарного
-случая существующая обычная связь между двумя выбранными узлами удаляется.
+Semantic node/edge не является persisted aggregate. Ему не требуются:
 
-Будущие операции должны следовать тому же правилу: сначала читать нужные узлы как доменные объекты, затем
-проверять инварианты DSL, и только после этого подтверждать изменение.
+- новый persisted semantic ID;
+- один выделенный raw-root;
+- эксклюзивное владение raw-фрагментом;
+- общий semantic root для всех storage roots и компонент.
 
-### Что не возвращать
+В runtime объект имеет обычную reference identity C#/JS. Существующие raw `GlobalId`/`NodeRef` — это locator'ы для перехода в carrier-граф, дедупликации обхода и ленивой догрузки. Они не становятся новой доменной системой semantic IDs.
 
-Не нужно возвращать прежний схематизаторский подход:
+### Type instances и `requires`
 
-- `NodeTypeId` как отдельную типизацию id вместо зарегистрированного `NodeType`.
-- `NodeTypeSchema` как snapshot всех типов графа.
-- `TypedNodeInstance`/`TypedNodeNeighbor` как дубли `InstanceNode` и его соседей.
-- `FixedGraphTopology`/публичные id-константы как отдельный словарь внутренностей `Graph`.
-- `NodeTypeSchemaMaterializer` как слой между `GraphService` и `IGraphStorage` для базового чтения типов.
+Каждый effective type semantic object должен быть материализован отдельным type-instance/facet в raw-графе. Для пары `(semantic object, type)` ожидается не более одного type-instance.
 
-### Оставшийся долг
+`requires(derived, base)` означает: если semantic object реализует `derived`, у него физически материализован и type-instance `base`. Множественное наследование имеет set/virtual-семантику:
 
-- DSL поля пока читаются из C# типа, а не из пользовательского графа типов. Поля с кастомными `NodeType`
-  уже дают slot-инварианты; хранение и редактирование примитивных и стандартных `Node`-полей еще должно быть
-  доведено до полноценных доменных операций.
-- Обратное чтение уже созданного typed edge subgraph пока не материализовано в отдельный доменный объект; API
-  пока разбирает уже созданный подграф напрямую по его связям.
-- Операция смены типа связи пока создает новый typed edge subgraph по DSL выбранного типа и не переиспользует
-  совместимые старые части существующего подграфа.
-- API и UI должны получать применимость операций и ошибки валидации из домена, а не повторять правила на клиенте.
+- общий base в diamond материализуется один раз;
+- число путей к типу не влияет на число facets;
+- циклы типов образуют конечные взаимосвязанные подграфы;
+- closure читается обычным обходом с `visited` по raw locator, а не по фиксированной глубине.
+
+В первой версии нет C++ non-virtual bases, MRO, override и автоматического слияния одноимённых fields. Состояние типа живёт в его собственном facet.
+
+### Typed semantic edges и members
+
+Semantic edge — тот же класс semantic object, а не особое типовое исключение. Оно имеет те же type-instances и может участвовать в `requires`. Его участники задаются endpoint/member instances:
+
+```text
+endpoint instance
+  implements a concrete endpoint/member type
+  references a participant through its backing raw locator
+```
+
+Идентичность member — это конкретный member type в объявившем его типе, а не глобальный `Role`, не raw local id occurrence и не один target type. Поэтому `Flight.origin : City` и `Flight.destination : City` различаются по member classifier. Бинарные связи, направленные связи и гиперребра используют один механизм с разными endpoint types и cardinality.
+
+Type graph хранится в том же carrier-графе: types, edge types, endpoint/member types и `requires` сами являются semantic objects и typed edges. Рекурсия метауровня может замкнуться конечным циклическим подграфом. Начальную интерпретацию даёт basis; отдельный hardcoded `GraphKernel` не предполагается.
+
+### Lazy read и неоднозначность
+
+Проекция ленива: semantic node догружает types, members или incident semantic edges только по запросу. Она не строит «полный semantic subgraph» и не загружает всю связную компоненту.
+
+Если по локальному контракту ожидается ровно один type-instance, classifier, endpoint или member value, а найдено ноль или несколько, первая реализация бросает обычное исключение. Специальная иерархия semantic exceptions и автоматический repair добавятся только при реальной необходимости.
+
+## Границы публичных контрактов
+
+- Storage API и raw-поведение `Create/Get/Connect/Disconnect/GetSubgraph/Search` не меняются ради semantic projection.
+- `GraphService` остаётся async-границей доменных операций для API и MCP.
+- Активные сущности `Node` и `Edge` остаются важным публичным способом работы с `Domain`; они и `GraphService` должны давать одну и ту же semantic interpretation.
+- Выбор basis является входом runtime-проекции, а не глобальной мутацией storage.
+- `NodeBacking.Attributes` остаются raw user data/escape hatch и не являются источником типовой логики.
+
+## Чего не добавлять
+
+- Persisted semantic ID поверх raw `NodeRef` без конкретной необходимости.
+- Обязательный root/ownership boundary для semantic object.
+- `NodeTypeSchema` или другой snapshot всех типов графа.
+- Публичный словарь hardcoded graph IDs/`GraphKernel`, подменяющий basis.
+- Универсальный `Role`, если тот же смысл выражается конкретным member/endpoint type.
+- Fixed-depth raw traversal как ответ на вопрос о типе или member value.
+
+## Дальнейший долг
+
+- Довести переходную raw-грамматику до однородного самоописания type-instance, typed semantic edge, endpoint/member instance и `requires`; classifier relation-node пока еще задаётся прямой raw-связью.
+- Расширить проекцию с type-instances и typed endpoints на конкретные member occurrences, primitive values и произвольные semantic edge types.
+- Заменить плоскую slot-валидацию на чтение конкретных member instances.
+- Передавать явный basis и в semantic mutations/cleanup; сейчас basis вне дефолтного каталога поддержан reader'ами, а назначение типов и каскадная очистка работают по зарегистрированному `NodeTypes`.
+- Удалить оставшиеся `PortNodeType` и UI-ветви legacy source/target после окончательного перехода сохранённых старых графов на `TypedEdgeSubgraphCodec`.
+- Расширить Domain и semantic MCP reader с node type-instances на semantic edges и members, сохранив raw API и ленивую frontier-загрузку UI.
+- Отдельно решить, нужно ли хранить происхождение direct и materialized-through-`requires` types для удаления и редактирования.

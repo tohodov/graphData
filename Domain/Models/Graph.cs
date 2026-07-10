@@ -81,7 +81,16 @@ public sealed class Graph {
 
     public NodeTypeDefinition GetNodeTypeDefinition(NodeType nodeType) {
         EnsureOpen();
-        return schemaRegistry.GetOrBuildDefinition(nodeType, GetRequiredRuntimeType);
+        var definition = schemaRegistry.GetOrBuildDefinition(nodeType, GetRequiredRuntimeType);
+        var requiredTypes = definition.RequiredTypes
+            .Concat(NodeTypeInheritanceReader.ReadRequiredTypes(nodeType))
+            .DistinctBy(static type => type.GlobalId)
+            .ToArray();
+        return requiredTypes.Length == definition.RequiredTypes.Count
+            && requiredTypes.Select(static type => type.GlobalId)
+                .SequenceEqual(definition.RequiredTypes.Select(static type => type.GlobalId))
+            ? definition
+            : definition with { RequiredTypes = requiredTypes };
     }
 
     internal void RegisterNodeTypeDefinition(NodeTypeDefinition definition) {

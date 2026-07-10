@@ -6,6 +6,20 @@ namespace GraphData.Tests.GraphService;
 
 public sealed class NodeTypes {
 
+    public abstract class EquipmentNodeType : NodeType {
+        public string SerialNumber = "";
+
+        internal EquipmentNodeType(NodeBacking state) : base(state) {
+        }
+    }
+
+    public sealed class RifleNodeType : EquipmentNodeType {
+        public string Caliber = "";
+
+        internal RifleNodeType(NodeBacking state) : base(state) {
+        }
+    }
+
     public sealed class WeaponNodeType : NodeType {
         public ManufacturerNodeType Manufacturer = null!;
 

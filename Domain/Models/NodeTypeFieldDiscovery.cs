@@ -56,21 +56,14 @@ internal static class NodeTypeFieldDiscovery
 
     private static IEnumerable<MemberInfo> GetDslMembers(Type nodeType)
     {
-        var stack = new Stack<Type>();
-        for (var current = nodeType; current is not null && current != typeof(NodeType) && current != typeof(Node); current = current.BaseType)
-            stack.Push(current);
+        foreach (var field in nodeType.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)) {
+            if (!field.IsStatic)
+                yield return field;
+        }
 
-        while (stack.Count > 0) {
-            var current = stack.Pop();
-            foreach (var field in current.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)) {
-                if (!field.IsStatic)
-                    yield return field;
-            }
-
-            foreach (var property in current.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)) {
-                if (property.GetMethod is not null && property.GetIndexParameters().Length == 0)
-                    yield return property;
-            }
+        foreach (var property in nodeType.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly)) {
+            if (property.GetMethod is not null && property.GetIndexParameters().Length == 0)
+                yield return property;
         }
     }
 

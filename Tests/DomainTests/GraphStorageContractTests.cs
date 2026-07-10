@@ -1,7 +1,9 @@
 using Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
+using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Storage;
 
 [RelevantTestClass]
 public class GraphStorageContractTests : StorageTests {
@@ -185,6 +187,119 @@ public class GraphStorageContractTests : StorageTests {
         Assert.IsNull(deleted);
         Assert.IsFalse(await first.Nodes.AnyAsync(x => x.LocalId == second.LocalId));
         Assert.IsFalse(await third.Nodes.AnyAsync(x => x.LocalId == second.LocalId));
+    }
+
+    [TestMethod]
+    public async Task DeleteSubtree_RemovesExternalBacklinksAfterReopen() {
+        var owner = await Storage.Create("subtree-owner");
+        var child = await Storage.Create("subtree-child", owner.GlobalId);
+        var external = await Storage.Create("subtree-external");
+        await Storage.Connect(child.GlobalId, external.GlobalId);
+
+        Assert.IsTrue(await external.Nodes.AnyAsync(node => node.GlobalId == child.GlobalId));
+
+        await Storage.Delete(owner.GlobalId);
+
+        IGraphStorage reopened = new SymLinkGraphStorage(
+            Options.Create(StorageOptions),
+            new CancellationTokensAccessorMock());
+        var reopenedExternal = await reopened.Get(external.GlobalId);
+        Assert.IsNotNull(reopenedExternal);
+        Assert.IsNull(await reopened.Get(child.GlobalId));
+        Assert.IsFalse(await reopenedExternal.Nodes.AnyAsync(node => node.GlobalId == child.GlobalId));
+        Assert.IsFalse(new DirectoryInfo(Path.Combine(StorageOptions.RootPath, external.LocalId))
+            .EnumerateFileSystemInfos()
+            .Any(entry => entry.Attributes.HasFlag(FileAttributes.ReparsePoint)));
+    }
+
+    [TestMethod]
+    public async Task MoveSubtree_RejectsEdgeThatWouldBecomeHierarchicalWithoutMutation() {
+        var oldParent = await Storage.Create("move-old-parent");
+        var moving = await Storage.Create("move-root", oldParent.GlobalId);
+        var descendant = await Storage.Create("move-descendant", moving.GlobalId);
+        var newParent = await Storage.Create("move-new-parent");
+        await Storage.Connect(moving.GlobalId, newParent.GlobalId);
+        await Storage.Connect(descendant.GlobalId, newParent.GlobalId);
+
+        var error = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => Storage.Disconnect(oldParent.GlobalId, moving.GlobalId));
+        StringAssert.Contains(error.Message, "ancestor-descendant connection");
+
+        IGraphStorage reopened = new SymLinkGraphStorage(
+            Options.Create(StorageOptions),
+            new CancellationTokensAccessorMock());
+        var reopenedOldParent = await reopened.Get(oldParent.GlobalId);
+        var reopenedMoving = await reopened.Get(moving.GlobalId);
+        var reopenedDescendant = await reopened.Get(descendant.GlobalId);
+        var reopenedNewParent = await reopened.Get(newParent.GlobalId);
+        Assert.IsNotNull(reopenedOldParent);
+        Assert.IsNotNull(reopenedMoving);
+        Assert.IsNotNull(reopenedDescendant);
+        Assert.IsNotNull(reopenedNewParent);
+        var selectedConnectionPath = Path.Combine(
+            StorageOptions.RootPath,
+            "move-new-parent",
+            "move-root");
+        Assert.IsTrue(File.GetAttributes(selectedConnectionPath).HasFlag(FileAttributes.ReparsePoint));
+        Assert.IsTrue(Directory.Exists(Path.Combine(
+            StorageOptions.RootPath,
+            "move-old-parent",
+            "move-root")));
+        Assert.IsTrue(await reopenedOldParent.Nodes.AnyAsync(node => node.GlobalId == moving.GlobalId));
+        Assert.IsTrue(await reopenedMoving.Nodes.AnyAsync(node => node.GlobalId == newParent.GlobalId));
+        Assert.IsTrue(await reopenedDescendant.Nodes.AnyAsync(node => node.GlobalId == newParent.GlobalId));
+        Assert.IsTrue(await reopenedNewParent.Nodes.AnyAsync(node => node.GlobalId == moving.GlobalId));
+        Assert.IsTrue(await reopenedNewParent.Nodes.AnyAsync(node => node.GlobalId == descendant.GlobalId));
+    }
+
+    [TestMethod]
+    public async Task Connections_RejectDistinctNeighborsWithSameLocalId() {
+        var firstOwner = await Storage.Create("first-owner");
+        var secondOwner = await Storage.Create("second-owner");
+        var firstEndpoint = await Storage.Create("endpoint", firstOwner.GlobalId);
+        var secondEndpoint = await Storage.Create("endpoint", secondOwner.GlobalId);
+        var participant = await Storage.Create("participant");
+
+        await Storage.Connect(participant.GlobalId, firstEndpoint.GlobalId);
+        var error = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => Storage.Connect(participant.GlobalId, secondEndpoint.GlobalId));
+        StringAssert.Contains(error.Message, "namespace entry");
+
+        var neighbors = await participant.Nodes
+            .Where(node => node.LocalId == "endpoint")
+            .Select(static node => node.GlobalId)
+            .ToArrayAsync();
+        CollectionAssert.AreEquivalent(new[] { firstEndpoint.GlobalId }, neighbors);
+        Assert.IsFalse(new DirectoryInfo(Path.Combine(StorageOptions.RootPath, participant.LocalId))
+            .EnumerateFileSystemInfos()
+            .Any(entry => entry.Name.Contains('~')));
+    }
+
+    [TestMethod]
+    public async Task Connections_RejectSecondHierarchyEdge() {
+        var parent = await Storage.Create("duplicate-hierarchy-parent");
+        var child = await Storage.Create("duplicate-hierarchy-child", parent.GlobalId);
+
+        var error = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => Storage.Connect(parent.GlobalId, child.GlobalId));
+
+        StringAssert.Contains(error.Message, "hierarchy connection");
+        Assert.AreEqual(1, await parent.Nodes.CountAsync(node => node.GlobalId == child.GlobalId));
+        Assert.AreEqual(1, await child.Nodes.CountAsync(node => node.GlobalId == parent.GlobalId));
+    }
+
+    [TestMethod]
+    public async Task Connections_RejectSecondJunctionEdge() {
+        var left = await Storage.Create("duplicate-junction-left");
+        var right = await Storage.Create("duplicate-junction-right");
+        await Storage.Connect(left.GlobalId, right.GlobalId);
+
+        var error = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
+            () => Storage.Connect(left.GlobalId, right.GlobalId));
+
+        StringAssert.Contains(error.Message, "already connected");
+        Assert.AreEqual(1, await left.Nodes.CountAsync(node => node.GlobalId == right.GlobalId));
+        Assert.AreEqual(1, await right.Nodes.CountAsync(node => node.GlobalId == left.GlobalId));
     }
 
     [TestMethod]
