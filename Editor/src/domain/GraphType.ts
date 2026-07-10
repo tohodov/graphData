@@ -1,5 +1,4 @@
 import {
-  graphElementAttribute,
   nodeRadius,
   projectionCollapsedAttribute,
   projectionColorAttribute,
@@ -53,14 +52,14 @@ export class GraphType {
     this.attributes = { ...(options.attributes ?? {}) };
   }
 
-  static fromNode(node: import("./GraphNode.js").GraphNodeSnapshot, fallbackElement = "node"): GraphType {
-    const fallbackRank = fallbackElement === "edge" ? 30 : 50;
+  static fromNode(node: import("./GraphNode.js").GraphNodeSnapshot, element: "node" | "edge"): GraphType {
+    const fallbackRank = element === "edge" ? 30 : 50;
     return new GraphType({
       path: node.path,
       localId: node.localId,
       label: node.attributes?.label || node.localId,
       color: node.attributes?.[projectionColorAttribute] || node.attributes?.color,
-      element: node.attributes?.[graphElementAttribute] || fallbackElement,
+      element,
       visible: String(node.attributes?.[projectionVisibleAttribute] ?? "true").toLowerCase() !== "false",
       collapsed: String(node.attributes?.[projectionCollapsedAttribute] ?? "false").toLowerCase() === "true",
       infoAttribute: node.attributes?.[projectionInfoAttribute] || "",

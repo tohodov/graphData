@@ -60,9 +60,8 @@ public sealed class Graph {
         }
     }
 
-    public NodeType? GetRuntimeType<TNodeType>()
-        where TNodeType : NodeType {
-        return GetRuntimeType(typeof(TNodeType));
+    public NodeType? GetRuntimeType<TGraphType>() {
+        return GetRuntimeType(typeof(TGraphType));
     }
 
     public NodeType? GetRuntimeType(Type clrType) {
@@ -73,9 +72,8 @@ public sealed class Graph {
             : null;
     }
 
-    public NodeTypeDefinition? GetNodeTypeDefinition<TNodeType>()
-        where TNodeType : NodeType {
-        var type = GetRuntimeType<TNodeType>();
+    public NodeTypeDefinition? GetNodeTypeDefinition<TGraphType>() {
+        var type = GetRuntimeType<TGraphType>();
         return type is null ? null : GetNodeTypeDefinition(type);
     }
 
@@ -98,9 +96,9 @@ public sealed class Graph {
         schemaRegistry.RegisterDynamicDefinition(definition);
     }
 
-    public TypedEdgeDefinition? GetTypedEdgeDefinition<TNodeType>()
-        where TNodeType : NodeType {
-        var nodeType = GetNodeTypeDefinition<TNodeType>();
+    public TypedEdgeDefinition? GetTypedEdgeDefinition<TEdgeType>()
+        where TEdgeType : Edge {
+        var nodeType = GetNodeTypeDefinition<TEdgeType>();
         if (nodeType is null)
             return null;
 
@@ -109,9 +107,8 @@ public sealed class Graph {
             : null;
     }
 
-    internal NodeType GetRequiredRuntimeType<TNodeType>()
-        where TNodeType : NodeType {
-        return GetRequiredRuntimeType(typeof(TNodeType));
+    internal NodeType GetRequiredRuntimeType<TGraphType>() {
+        return GetRequiredRuntimeType(typeof(TGraphType));
     }
 
     internal NodeType GetRequiredRuntimeType(Type clrType) {

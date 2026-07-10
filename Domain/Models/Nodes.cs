@@ -11,6 +11,8 @@ public class NodeType : Node {
         var name = type.Name;
         if (name.EndsWith(nameof(NodeType), StringComparison.Ordinal))
             name = name[..^nameof(NodeType).Length];
+        else if (name.EndsWith(nameof(Edge), StringComparison.Ordinal))
+            name = name[..^nameof(Edge).Length];
         else if (name.EndsWith(nameof(Node), StringComparison.Ordinal))
             name = name[..^nameof(Node).Length];
 

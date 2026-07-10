@@ -35,13 +35,13 @@ public sealed class GraphRuntimeTypeOptions
 
 public sealed class GraphSchemaRegistry
 {
-    private readonly IReadOnlyDictionary<NodeLocalId, Type> _nodeTypeDescriptors;
+    private readonly IReadOnlyDictionary<NodeLocalId, RuntimeGraphTypeDefinition> _typeDescriptors;
     private readonly ConcurrentDictionary<InternalId, NodeTypeDefinition> _definitions = new();
 
     private GraphSchemaRegistry(IReadOnlyCollection<RuntimeGraphTypeDefinition> types)
     {
         Types = types;
-        _nodeTypeDescriptors = Types.ToDictionary(static x => x.Id, static x => x.ClrType);
+        _typeDescriptors = Types.ToDictionary(static x => x.Id);
         Fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", types.Select(static type => type.ClrType.AssemblyQualifiedName)))));
     }
 
@@ -67,11 +67,14 @@ public sealed class GraphSchemaRegistry
             .Concat(options.Types)
             .Distinct()
             .Where(static type =>
-                typeof(NodeType).IsAssignableFrom(type)
+                (typeof(NodeType).IsAssignableFrom(type) || typeof(Edge).IsAssignableFrom(type))
                 && type is { ContainsGenericParameters: false }
                 && (type.IsPublic || type.IsNestedPublic))
-            .Except([typeof(NodeType)])
-            .Select(static x => new RuntimeGraphTypeDefinition(x, NodeType.CreateDefaultLocalId(x)))
+            .Except([typeof(NodeType), typeof(Edge)])
+            .Select(static x => new RuntimeGraphTypeDefinition(
+                x,
+                NodeType.CreateDefaultLocalId(x),
+                typeof(Edge).IsAssignableFrom(x) ? GraphElementKind.Edge : GraphElementKind.Node))
             .ToArray();
         var duplicate = candidateTypes
             .GroupBy(static type => type.Id)
@@ -84,7 +87,12 @@ public sealed class GraphSchemaRegistry
 
     public bool TryGetClrType(NodeLocalId typeId, out Type type)
     {
-        return _nodeTypeDescriptors.TryGetValue(typeId, out type!);
+        if (_typeDescriptors.TryGetValue(typeId, out var descriptor)) {
+            type = descriptor.ClrType;
+            return true;
+        }
+        type = null!;
+        return false;
     }
 
     public NodeTypeDefinition GetOrBuildDefinition(NodeType typeNode, Func<Type, NodeType> resolveType)
@@ -92,16 +100,20 @@ public sealed class GraphSchemaRegistry
         return _definitions.GetOrAdd(typeNode.GlobalId, id =>
         {
             var localId = typeNode.LocalId;
-            if (TryGetClrType(localId, out var clrType))
+            if (_typeDescriptors.TryGetValue(localId, out var descriptor))
             {
+                var clrType = descriptor.ClrType;
                 var builder = new NodeTypeBuilder(typeNode, resolveType);
                 builder.Abstract(clrType.IsAbstract);
+                var hierarchyRoot = descriptor.ElementKind == GraphElementKind.Edge
+                    ? typeof(Edge)
+                    : typeof(NodeType);
                 if (clrType.BaseType is { } baseType
-                    && baseType != typeof(NodeType)
-                    && typeof(NodeType).IsAssignableFrom(baseType))
+                    && baseType != hierarchyRoot
+                    && hierarchyRoot.IsAssignableFrom(baseType))
                     builder.Requires(resolveType(baseType));
                 NodeTypeFieldDiscovery.AddDiscoveredFields(clrType, builder, resolveType);
-                return builder.Build();
+                return builder.Build() with { ElementKind = descriptor.ElementKind };
             }
 
             var dynamicDefinition = DynamicNodeTypeDefinitionStorage.TryRead(typeNode);
@@ -131,4 +143,4 @@ public sealed class GraphSchemaRegistry
     }
 }
 
-public sealed record RuntimeGraphTypeDefinition(Type ClrType, NodeLocalId Id);
+public sealed record RuntimeGraphTypeDefinition(Type ClrType, NodeLocalId Id, GraphElementKind ElementKind);

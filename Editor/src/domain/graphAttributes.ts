@@ -6,7 +6,6 @@ export const defaultBasis = {
   relationRoot: ""
 };
 export const graphKindAttribute = "graph.kind";
-export const graphElementAttribute = "graph.element";
 export const graphRoleAttribute = "graph.role";
 export const graphTypeNameAttribute = "graph.typeName";
 export const projectionVisibleAttribute = "projection.visible";

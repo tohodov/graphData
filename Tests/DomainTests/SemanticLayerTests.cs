@@ -7,6 +7,27 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 public sealed class SemanticLayerTests : GraphServiceTests
 {
     [TestMethod]
+    public async Task TypedEdgeDefinition_DoesNotInferEdgeFromNodeFields()
+    {
+        var nodeType = (await Service.CreateNodeType(
+            "TwoReferencesAreStillNodeType",
+            fields: [
+                new NodeFieldDefinition("First", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false),
+                new NodeFieldDefinition("Second", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false)
+            ])).Value!;
+
+        Assert.IsFalse(TypedEdgeDefinition.TryCreate(nodeType, out _));
+        var create = await Service.CreateEdgeType(
+            "TwoReferencesAreEdgeType",
+            fields: [
+                new NodeFieldDefinition("First", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false),
+                new NodeFieldDefinition("Second", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false)
+            ]);
+        Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
+        Assert.IsTrue(TypedEdgeDefinition.TryCreate(create.Value!, out _));
+    }
+
+    [TestMethod]
     public async Task AssignNodeType_MaterializesMultipleTypesIdempotently()
     {
         var weapon = (await Service.CreateNodeType("SemanticWeapon")).Value!.Type;
@@ -23,7 +44,7 @@ public sealed class SemanticLayerTests : GraphServiceTests
         Assert.IsTrue(firstRead.TypeInstances.All(static instance => instance.IsMaterialized));
         var witnesses = firstRead.TypeInstances.Select(static instance => instance.Witness!.GlobalId).ToArray();
         var instanceOfDefinition = TypedEdgeDefinition.Create(
-            Graph.GetNodeTypeDefinition(Graph.GetRuntimeType<InstanceOfConnectionNodeType>()!));
+            Graph.GetNodeTypeDefinition(Graph.GetRuntimeType<InstanceOfEdge>()!));
         var endpointOccurrences = firstRead.TypeInstances
             .SelectMany(static instance => instance.Witness!.Nodes)
             .Where(node => witnesses.Any(witnessId =>
@@ -36,11 +57,11 @@ public sealed class SemanticLayerTests : GraphServiceTests
         Assert.IsTrue(endpointOccurrences.Any(node => TypedEdgeSubgraphCodec.HasMemberClassifier(
             node,
             instanceOfDefinition.Endpoints.Single(endpoint =>
-                endpoint.Name == nameof(InstanceOfConnectionNodeType.Instance)).MemberTypeId)));
+                endpoint.Name == nameof(InstanceOfEdge.Instance)).MemberTypeId)));
         Assert.IsTrue(endpointOccurrences.Any(node => TypedEdgeSubgraphCodec.HasMemberClassifier(
             node,
             instanceOfDefinition.Endpoints.Single(endpoint =>
-                endpoint.Name == nameof(InstanceOfConnectionNodeType.Type)).MemberTypeId)));
+                endpoint.Name == nameof(InstanceOfEdge.Type)).MemberTypeId)));
 
         Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(ak47.GlobalId, weapon.GlobalId)).Status);
         var secondRead = (await Service.GetSemanticNodeAsync(ak47.GlobalId)).Value!;
@@ -71,18 +92,18 @@ public sealed class SemanticLayerTests : GraphServiceTests
     {
         var first = (await Service.CreateNode("delete-endpoint-first")).Value!;
         var second = (await Service.CreateNode("delete-endpoint-second")).Value!;
-        var create = await Service.ChangeEdgeTypeAsync<InstanceOfConnectionNodeType>(
+        var create = await Service.ChangeEdgeTypeAsync<InstanceOfEdge>(
             [first.GlobalId, second.GlobalId]);
         Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
         var relation = create.Value!.Nodes.Single(node =>
             node.GlobalId.Count() == 1
             && node.LocalId.ToString().StartsWith("instance-of-", StringComparison.Ordinal));
         var definition = TypedEdgeDefinition.Create(
-            Graph.GetNodeTypeDefinition(Graph.GetRuntimeType<InstanceOfConnectionNodeType>()!));
+            Graph.GetNodeTypeDefinition(Graph.GetRuntimeType<InstanceOfEdge>()!));
         var endpoint = await FindEndpointAsync(
             (await Storage.Get(relation.GlobalId))!,
             definition,
-            nameof(InstanceOfConnectionNodeType.Instance));
+            nameof(InstanceOfEdge.Instance));
 
         var delete = await Service.DeleteNode(endpoint.GlobalId);
 
@@ -189,7 +210,7 @@ public sealed class SemanticLayerTests : GraphServiceTests
     {
         var externalType = (await Service.CreateNode("external-basis-type")).Value!;
         var instance = (await Service.CreateNode("external-basis-instance")).Value!;
-        var materialize = await Service.ChangeEdgeTypeAsync<InstanceOfConnectionNodeType>(
+        var materialize = await Service.ChangeEdgeTypeAsync<InstanceOfEdge>(
             [instance.GlobalId, externalType.GlobalId]);
         Assert.AreEqual(ServiceResultStatus.Ok, materialize.Status, materialize.Error);
 
@@ -222,17 +243,17 @@ public sealed class SemanticLayerTests : GraphServiceTests
         var first = (await Service.CreateNode("reader-first")).Value!;
         var second = (await Service.CreateNode("reader-second")).Value!;
         var extra = (await Service.CreateNode("reader-extra")).Value!;
-        var create = await Service.ChangeEdgeTypeAsync<InstanceOfConnectionNodeType>([first.GlobalId, second.GlobalId]);
+        var create = await Service.ChangeEdgeTypeAsync<InstanceOfEdge>([first.GlobalId, second.GlobalId]);
         Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
         var relation = create.Value!.Nodes.Single(node =>
             node.LocalId.ToString().StartsWith("instance-of-", StringComparison.Ordinal)
             && node.GlobalId.ToString() == node.LocalId.ToString());
         var definition = TypedEdgeDefinition.Create(
-            Graph.GetNodeTypeDefinition(Graph.GetRuntimeType<InstanceOfConnectionNodeType>()!));
+            Graph.GetNodeTypeDefinition(Graph.GetRuntimeType<InstanceOfEdge>()!));
         var instanceEndpoint = await FindEndpointAsync(
             (await Storage.Get(relation.GlobalId))!,
             definition,
-            nameof(InstanceOfConnectionNodeType.Instance));
+            nameof(InstanceOfEdge.Instance));
         await Storage.Connect(instanceEndpoint.GlobalId, extra.GlobalId);
 
         var read = await Service.GetTypedEdgeInstanceAsync(relation.GlobalId);
@@ -246,15 +267,15 @@ public sealed class SemanticLayerTests : GraphServiceTests
         var type = (await Service.CreateNodeType("AmbiguousSemanticType")).Value!.Type;
         var node = (await Service.CreateNode("ambiguous-semantic-node")).Value!;
         Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(node.GlobalId, type.GlobalId)).Status);
-        var instanceOfType = Graph.GetRuntimeType<InstanceOfConnectionNodeType>()!;
+        var instanceOfType = Graph.GetRuntimeType<InstanceOfEdge>()!;
         var instanceOfDefinition = TypedEdgeDefinition.Create(Graph.GetNodeTypeDefinition(instanceOfType));
         await TypedEdgeSubgraphCodec.CreateAsync(
             Storage,
             "duplicate-instance-of",
             instanceOfDefinition,
             new Dictionary<string, IReadOnlyCollection<NodeBacking>>(StringComparer.Ordinal) {
-                [nameof(InstanceOfConnectionNodeType.Instance)] = [node.Backing],
-                [nameof(InstanceOfConnectionNodeType.Type)] = [type.Backing]
+                [nameof(InstanceOfEdge.Instance)] = [node.Backing],
+                [nameof(InstanceOfEdge.Type)] = [type.Backing]
             });
 
         var raw = await Service.GetNode(node.GlobalId);
@@ -297,10 +318,10 @@ public sealed class SemanticLayerTests : GraphServiceTests
             NodeSlotCardinality.Required(),
             IsCollection: false);
 
-        var oldDefinition = (await Service.CreateNodeType(
+        var oldDefinition = (await Service.CreateEdgeType(
             "AmbiguousOldEdge",
             fields: [Endpoint("Source"), Endpoint("Target")])).Value!;
-        var replacement = (await Service.CreateNodeType(
+        var replacement = (await Service.CreateEdgeType(
             "AmbiguousReplacementEdge",
             fields: [Endpoint("Left"), Endpoint("Right")])).Value!;
         var source = (await Service.CreateNode("ambiguous-edge-source")).Value!;

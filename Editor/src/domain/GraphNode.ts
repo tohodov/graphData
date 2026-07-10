@@ -1,4 +1,4 @@
-import { graphElementAttribute, graphKindAttribute, graphTypeNameAttribute } from "./graphAttributes.js";
+import { graphKindAttribute, graphTypeNameAttribute } from "./graphAttributes.js";
 import { GraphEdge, type GraphEdgeSnapshot } from "./GraphEdge.js";
 import { GraphId } from "./GraphId.js";
 
@@ -117,10 +117,6 @@ export class GraphNode {
     return this.attribute(graphKindAttribute) === kind;
   }
 
-  graphElement(fallback = "node"): string {
-    return this.attribute(graphElementAttribute) ?? fallback;
-  }
-
   assignedTypePath(): string {
     return this.attribute(graphTypeNameAttribute) ?? "";
   }
@@ -132,8 +128,7 @@ export class GraphNode {
   }
 
   isRelationInstance(basis: { relationRoot: string }): boolean {
-    return this.hasKind("edge-instance")
-      || (this.attribute(graphElementAttribute) === "edge" && Boolean(this.attribute(graphTypeNameAttribute)));
+    return this.hasKind("edge-instance");
   }
 
   isChildOf(parentPath: string): boolean {

@@ -6,7 +6,7 @@ namespace GraphData.Core.Services;
 internal static class NodeTypeInheritanceReader
 {
     private static readonly NodeLocalId RequiresTypeLocalId =
-        NodeType.CreateDefaultLocalId(typeof(RequiresConnectionNodeType));
+        NodeType.CreateDefaultLocalId(typeof(RequiresEdge));
 
     public static IReadOnlyCollection<NodeType> ReadRequiredTypes(NodeType derivedType)
     {
@@ -24,10 +24,10 @@ internal static class NodeTypeInheritanceReader
         var requiresNodeType = new NodeType(requiresType.Backing);
         var derivedMemberTypeId = TypedEdgeSubgraphCodec.MemberTypeId(
             requiresNodeType,
-            nameof(RequiresConnectionNodeType.Derived));
+            nameof(RequiresEdge.Derived));
         var requiredMemberTypeId = TypedEdgeSubgraphCodec.MemberTypeId(
             requiresNodeType,
-            nameof(RequiresConnectionNodeType.Required));
+            nameof(RequiresEdge.Required));
         var result = new Dictionary<InternalId, NodeType>();
         foreach (var derivedEndpoint in derivedType.Nodes
                      .Where(node => TypedEdgeSubgraphCodec.HasMemberClassifier(node, derivedMemberTypeId))) {

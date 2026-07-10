@@ -214,6 +214,8 @@ export type ProjectedGraphNode = import("./GraphNode.js").GraphNodeSnapshot & {
 };
 
 export type ProjectedGraphNodeField = {
+  facetPath: string;
+  facetLabel: string;
   name: string;
   label: string;
   value?: string;
@@ -876,7 +878,7 @@ export class GraphModel {
     return new GraphProjection(this).portEndpoint(portGlobalId, edgesByNode, relationGlobalId);
   }
 
-  nodeTypeAssignments(physical: ProjectedGraph | null = null): Map<string, GraphType> {
+  nodeTypeAssignments(physical: ProjectedGraph | null = null): Map<string, GraphType[]> {
     return physical
       ? new GraphProjection(this).nodeTypeAssignments(physical)
       : new GraphProjection(this).nodeTypeAssignmentsFromCache();

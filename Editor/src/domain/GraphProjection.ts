@@ -66,36 +66,43 @@ export class GraphProjection {
     const recordFieldsByNode = new Map<string, ProjectedGraphNodeField[]>();
     for (const node of source.nodes) {
       const nodeName = node.name ?? "";
-      const nodeType = nodeTypeAssignments.get(nodeName);
-      if (!nodeName || hidden.has(nodeName) || nodeType?.visible === false || nodeType?.collapsed !== true) {
+      const nodeFacets = nodeTypeAssignments.get(nodeName) ?? [];
+      const collapsedFacets = nodeFacets.filter(type => type.visible !== false && type.collapsed === true);
+      if (!nodeName || hidden.has(nodeName) || collapsedFacets.length === 0) {
         continue;
       }
 
       recordFieldsByNode.set(
         nodeName,
-        this.projectedNodeTypeFields(node, nodeType, source, nodeTypeAssignments, consumedFieldValues));
+        this.projectedNodeTypeFields(node, collapsedFacets, source, nodeTypeAssignments, consumedFieldValues));
     }
     consumedFieldValues.nodeIds.forEach(name => hidden.add(name));
 
     const visibleNodes = source.nodes
       .filter(node => !hidden.has(node.name ?? ""))
-      .filter(node => nodeTypeAssignments.get(node.name ?? "")?.visible !== false);
+      .filter(node => {
+        const facets = nodeTypeAssignments.get(node.name ?? "") ?? [];
+        return facets.length === 0 || facets.some(type => type.visible !== false);
+      });
     const visibleNodeIds = new Set(visibleNodes.map(node => node.name ?? ""));
     const typedNodes = visibleNodes.map(node => {
-      const nodeType = nodeTypeAssignments.get(node.name ?? "");
-      const collapsedNodeType = nodeType?.collapsed === true;
+      const nodeFacets = nodeTypeAssignments.get(node.name ?? "") ?? [];
+      const visibleFacets = nodeFacets.filter(type => type.visible !== false);
+      const collapsedFacets = visibleFacets.filter(type => type.collapsed === true);
+      const primaryFacet = visibleFacets[0];
+      const collapsedNodeType = collapsedFacets.length > 0;
       const typeFields = collapsedNodeType
         ? recordFieldsByNode.get(node.name ?? "") ?? []
         : [];
       return {
         ...node,
-        typeGlobalId: nodeType?.path,
-        typeLabel: nodeType?.label,
-        typeRank: nodeType?.rank,
-        color: nodeType?.color,
+        typeGlobalId: primaryFacet?.path,
+        typeLabel: visibleFacets.map(type => type.label).join(" · ") || undefined,
+        typeRank: primaryFacet?.rank,
+        color: primaryFacet?.color,
         viewShape: collapsedNodeType ? "record" as const : "circle" as const,
         typeFields: collapsedNodeType ? typeFields : undefined,
-        displayName: this.model.formatProjectedNodeName(node as any, nodeType ?? {})
+        displayName: this.model.formatProjectedNodeName(node as any, primaryFacet ?? {})
       };
     });
 
@@ -104,9 +111,11 @@ export class GraphProjection {
       relation.physicalEdgeKeys.forEach(key => hiddenPhysicalEdges.add(key));
     }
     consumedFieldValues.edgeKeys.forEach(key => hiddenPhysicalEdges.add(key));
-    for (const [nodeId, nodeType] of nodeTypeAssignments) {
-      if (nodeType.collapsed === true || nodeType.visible === false) {
-        hiddenPhysicalEdges.add(GraphEdge.keyFor(nodeId, nodeType.path));
+    for (const [nodeId, nodeFacets] of nodeTypeAssignments) {
+      for (const nodeType of nodeFacets) {
+        if (nodeType.collapsed === true || nodeType.visible === false) {
+          hiddenPhysicalEdges.add(GraphEdge.keyFor(nodeId, nodeType.path));
+        }
       }
     }
 
@@ -167,7 +176,7 @@ export class GraphProjection {
     return this.relations(this.visiblePrimitiveGraph(this.model.primitiveNodeViews(), this.model.primitiveEdgeViews()));
   }
 
-  nodeTypeAssignmentsFromCache(): Map<string, GraphType> {
+  nodeTypeAssignmentsFromCache(): Map<string, GraphType[]> {
     return this.nodeTypeAssignments(this.visiblePrimitiveGraph(this.model.primitiveNodeViews(), this.model.primitiveEdgeViews()));
   }
 
@@ -234,11 +243,13 @@ export class GraphProjection {
   }
 
   recordNodeSize(node: ProjectedGraphNode, typeFields: ProjectedGraphNodeField[]): { width: number; height: number } {
-    const visibleFieldCount = Math.min(typeFields.length, 6) + (typeFields.length > 6 ? 1 : 0);
+    const visibleFields = typeFields.slice(0, 6);
+    const facetHeadings = new Set(visibleFields.map(field => field.facetPath)).size;
+    const visibleFieldCount = visibleFields.length + facetHeadings + (typeFields.length > visibleFields.length ? 1 : 0);
     const labels = [
       node.displayName ?? node.localId ?? node.name ?? "",
       node.typeLabel ?? "",
-      ...typeFields.map(field => [field.label, field.value, field.typeLabel].filter(Boolean).join(" "))
+      ...typeFields.map(field => [field.facetLabel, field.label, field.value, field.typeLabel].filter(Boolean).join(" "))
     ];
     const longest = Math.max(12, ...labels.map(label => String(label).length));
     return {
@@ -313,13 +324,21 @@ export class GraphProjection {
     return edge.node1InternalId === portGlobalId ? edge.node2InternalId : edge.node1InternalId;
   }
 
-  nodeTypeAssignments(physical: ProjectedGraph): Map<string, GraphType> {
-    const result = new Map();
+  nodeTypeAssignments(physical: ProjectedGraph): Map<string, GraphType[]> {
+    const result = new Map<string, GraphType[]>();
+    const addFacet = (nodeId: string, type: GraphType) => {
+      const facets = result.get(nodeId) ?? [];
+      if (!facets.some(existing => existing.path === type.path)) {
+        facets.push(type);
+        facets.sort((left, right) => left.path.localeCompare(right.path, "ru"));
+      }
+      result.set(nodeId, facets);
+    };
     for (const edge of physical.edges) {
       const sourceType = this.model.schema.nodeTypes.get(edge.node1InternalId);
       const targetType = this.model.schema.nodeTypes.get(edge.node2InternalId);
-      if (sourceType && !targetType) result.set(edge.node2InternalId, sourceType);
-      else if (targetType && !sourceType) result.set(edge.node1InternalId, targetType);
+      if (sourceType && !targetType) addFacet(edge.node2InternalId, sourceType);
+      else if (targetType && !sourceType) addFacet(edge.node1InternalId, targetType);
     }
     return result;
   }
@@ -333,26 +352,31 @@ export class GraphProjection {
 
   projectedNodeTypeFields(
     node: ProjectedGraphNode,
-    nodeType: GraphType,
+    nodeFacets: GraphType[],
     source: ProjectedGraph,
-    nodeTypeAssignments: Map<string, GraphType>,
+    nodeTypeAssignments: Map<string, GraphType[]>,
     consumed: FieldValueConsumption
   ): ProjectedGraphNodeField[] {
-    const fields = new Map<string, ProjectedGraphNodeField>();
-    for (const field of this.definitionFields(nodeType.path, "Fields")) {
-      fields.set(field.name.toLocaleLowerCase("ru"), field);
-    }
-    for (const field of this.definitionFields(nodeType.path, "Slots")) {
-      const key = field.name.toLocaleLowerCase("ru");
-      if (!fields.has(key)) {
-        fields.set(key, field);
+    const result: ProjectedGraphNodeField[] = [];
+    for (const nodeType of nodeFacets) {
+      const fields = new Map<string, ProjectedGraphNodeField>();
+      for (const field of this.definitionFields(nodeType.path, "Fields")) {
+        fields.set(field.name.toLocaleLowerCase("ru"), field);
       }
+      for (const field of this.definitionFields(nodeType.path, "Slots")) {
+        const key = field.name.toLocaleLowerCase("ru");
+        if (!fields.has(key)) {
+          fields.set(key, field);
+        }
+      }
+      result.push(...[...fields.values()].map(field => ({
+        ...field,
+        facetPath: nodeType.path,
+        facetLabel: nodeType.label,
+        value: this.projectedFieldValue(node, field, source, nodeTypeAssignments, consumed)
+      })));
     }
-
-    return [...fields.values()].map(field => ({
-      ...field,
-      value: this.projectedFieldValue(node, field, source, nodeTypeAssignments, consumed)
-    }));
+    return result;
   }
 
   definitionFields(typePath: string, containerName: "Fields" | "Slots"): ProjectedGraphNodeField[] {
@@ -362,6 +386,8 @@ export class GraphProjection {
       .map(node => {
         const allowedTypes = this.fieldAllowedTypes(node);
         return {
+          facetPath: "",
+          facetLabel: "",
           name: node.localId ?? GraphId.localId(node.name ?? node.path),
           label: node.displayName ?? node.localId ?? GraphId.localId(node.name ?? node.path),
           valueKind: node.attributes?.valueKind ?? (containerName === "Slots" ? "Node" : undefined),
@@ -395,7 +421,7 @@ export class GraphProjection {
     node: ProjectedGraphNode,
     field: ProjectedGraphNodeField,
     source: ProjectedGraph,
-    nodeTypeAssignments: Map<string, GraphType>,
+    nodeTypeAssignments: Map<string, GraphType[]>,
     consumed: FieldValueConsumption
   ): string | undefined {
     const value = this.attributeValue(node.attributes ?? {}, field.name);
@@ -414,7 +440,7 @@ export class GraphProjection {
     node: ProjectedGraphNode,
     field: ProjectedGraphNodeField,
     source: ProjectedGraph,
-    nodeTypeAssignments: Map<string, GraphType>,
+    nodeTypeAssignments: Map<string, GraphType[]>,
     consumed: FieldValueConsumption
   ): string | undefined {
     const nodeName = node.name ?? "";
@@ -445,29 +471,24 @@ export class GraphProjection {
       : values[0];
   }
 
-  linkedNodeMatchesField(neighborId: string, allowedTypeIds: Set<string>, nodeTypeAssignments: Map<string, GraphType>): boolean {
+  linkedNodeMatchesField(neighborId: string, allowedTypeIds: Set<string>, nodeTypeAssignments: Map<string, GraphType[]>): boolean {
     if (allowedTypeIds.size === 0) {
       return true;
     }
 
-    const assignedType = nodeTypeAssignments.get(neighborId) ?? this.assignedNodeTypeFromCache(neighborId);
-    return Boolean(assignedType && allowedTypeIds.has(assignedType.path));
+    const assignedTypes = nodeTypeAssignments.get(neighborId) ?? this.assignedNodeTypesFromCache(neighborId);
+    return assignedTypes.some(type => allowedTypeIds.has(type.path));
   }
 
-  assignedNodeTypeFromCache(nodeId: string): GraphType | null {
+  assignedNodeTypesFromCache(nodeId: string): GraphType[] {
     const node = this.model.loaded.get(nodeId);
     if (!node) {
-      return null;
+      return [];
     }
 
-    for (const edge of node.edges ?? []) {
-      const type = this.model.schema.nodeTypes.get(edge.otherEndpoint(node.name));
-      if (type) {
-        return type;
-      }
-    }
-
-    return null;
+    return (node.edges ?? [])
+      .map(edge => this.model.schema.nodeTypes.get(edge.otherEndpoint(node.name)))
+      .filter((type): type is GraphType => Boolean(type));
   }
 
   attributeValue(attributes: Record<string, string>, key: string): string | undefined {

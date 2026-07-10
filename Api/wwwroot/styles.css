@@ -633,6 +633,7 @@ textarea:focus {
 
 .graph-node-record-title,
 .graph-node-record-type,
+.graph-node-record-facet,
 .graph-node-record-field span,
 .graph-node-record-field strong,
 .graph-node-record-more {
@@ -662,6 +663,15 @@ textarea:focus {
   margin-top: 2px;
   padding-top: 4px;
   border-top: 1px solid rgba(157, 170, 178, 0.42);
+}
+
+.graph-node-record-facet {
+  color: var(--accent-strong);
+  font-size: 9px;
+  font-weight: 760;
+  letter-spacing: 0.03em;
+  margin-top: 2px;
+  text-transform: uppercase;
 }
 
 .graph-node-record-field {

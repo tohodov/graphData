@@ -543,7 +543,7 @@ public sealed class GraphUiRegressionTests {
             model.putNode(new GraphNode({
               globalId: relationId,
               displayName: "R",
-              attributes: { [graphKindAttribute]: "edge-instance", [graphElementAttribute]: "edge" },
+              attributes: { [graphKindAttribute]: "edge-instance" },
               edges: [
                 { node1InternalId: relationId, node2InternalId: targetPortId },
                 { node1InternalId: relationId, node2InternalId: typePortId }
@@ -652,7 +652,7 @@ public sealed class GraphUiRegressionTests {
             }));
             model.putNode(new GraphNode({
               globalId: relationId,
-              attributes: { [graphKindAttribute]: "edge-instance", [graphElementAttribute]: "edge" },
+              attributes: { [graphKindAttribute]: "edge-instance" },
               edges: [
                 { node1InternalId: relationId, node2InternalId: targetPortId },
                 { node1InternalId: relationId, node2InternalId: typePortId }
@@ -733,7 +733,7 @@ public sealed class GraphUiRegressionTests {
             }));
             model.putNode(new GraphNode({
               globalId: relationId,
-              attributes: { [graphKindAttribute]: "edge-instance", [graphElementAttribute]: "edge" },
+              attributes: { [graphKindAttribute]: "edge-instance" },
               edges: [
                 { node1InternalId: relationId, node2InternalId: targetPortId },
                 { node1InternalId: relationId, node2InternalId: typePortId }
@@ -898,9 +898,67 @@ public sealed class GraphUiRegressionTests {
               && yearFieldView?.value === "1953"
               && countryFieldView?.value === "USSR"
               && countryFieldView?.typeLabel === "Country"
+              && countryFieldView?.facetPath === typeId
+              && countryFieldView?.facetLabel === "Weapon"
               && !graph.edges.some(edge => edge.node1InternalId === "FN_FAL" && edge.node2InternalId === typeId)
               && !graph.edges.some(edge => edge.node1InternalId === "FN_FAL" && edge.node2InternalId === "USSR")
               && !graph.edges.some(edge => edge.node1InternalId === fieldsId || edge.node2InternalId === fieldsId);
+            """);
+
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void GraphProjection_CombinesCollapsedNodeTypeFacetsIntoGroupedRecordFields() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"));
+
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            const weapon = "NodeTypes/Weapon";
+            const classification = "NodeTypes/Classification";
+            model.schema.nodeTypes.set(weapon, { path: weapon, label: "Weapon", visible: true, collapsed: true, rank: 50 });
+            model.schema.nodeTypes.set(classification, { path: classification, label: "Classification", visible: true, collapsed: true, rank: 50 });
+
+            const links = (left, right) => new GraphEdge({ node1InternalId: left, node2InternalId: right });
+            const aWeapon = links("AK47", weapon);
+            const aClassification = links("AK47", classification);
+            const weaponDefinition = links(weapon, weapon + "/Definition");
+            const weaponFields = links(weapon + "/Definition", weapon + "/Definition/Fields");
+            const weaponYear = links(weapon + "/Definition/Fields", weapon + "/Definition/Fields/IntroducedYear");
+            const classificationDefinition = links(classification, classification + "/Definition");
+            const classificationFields = links(classification + "/Definition", classification + "/Definition/Fields");
+            const classificationCaliber = links(classification + "/Definition/Fields", classification + "/Definition/Fields/Caliber");
+            const nodes = [
+              ["AK47", "AK47", { IntroducedYear: "1949", Caliber: "7.62" }, [aWeapon, aClassification]],
+              [weapon, "Weapon", {}, [aWeapon, weaponDefinition]],
+              [weapon + "/Definition", "Definition", {}, [weaponDefinition, weaponFields]],
+              [weapon + "/Definition/Fields", "Fields", {}, [weaponFields, weaponYear]],
+              [weapon + "/Definition/Fields/IntroducedYear", "IntroducedYear", { valueKind: "Primitive" }, [weaponYear]],
+              [classification, "Classification", {}, [aClassification, classificationDefinition]],
+              [classification + "/Definition", "Definition", {}, [classificationDefinition, classificationFields]],
+              [classification + "/Definition/Fields", "Fields", {}, [classificationFields, classificationCaliber]],
+              [classification + "/Definition/Fields/Caliber", "Caliber", { valueKind: "Primitive" }, [classificationCaliber]]
+            ];
+            nodes.forEach(([globalId, displayName, attributes, edges]) => {
+              const node = new GraphNode({ globalId, displayName, attributes, edges });
+              node.showed = true;
+              model.putNode(node);
+            });
+
+            const graph = model.visibleGraph();
+            const record = graph.nodes.find(node => node.name === "AK47");
+            const fields = record?.typeFields ?? [];
+            globalThis.__result = record?.viewShape === "record"
+              && record?.typeLabel === "Classification · Weapon"
+              && fields.length === 2
+              && fields.some(field => field.name === "IntroducedYear" && field.value === "1949" && field.facetLabel === "Weapon")
+              && fields.some(field => field.name === "Caliber" && field.value === "7.62" && field.facetLabel === "Classification")
+              && !graph.nodes.some(node => node.name === weapon || node.name === classification);
             """);
 
         Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
@@ -1120,7 +1178,6 @@ public sealed class GraphUiRegressionTests {
         var engine = new Engine();
         engine.Execute(
             """
-            const graphElementAttribute = "graphElement";
             const projectionCollapsedAttribute = "projectionCollapsed";
             const projectionColorAttribute = "projectionColor";
             const projectionDirectedAttribute = "projectionDirected";
@@ -2129,7 +2186,6 @@ public sealed class GraphUiRegressionTests {
         var engine = new Engine();
         engine.Execute(
             """
-            const graphElementAttribute = "graphElement";
             const graphKindAttribute = "graphKind";
             const graphTypeNameAttribute = "graphTypeName";
             const projectionCollapsedAttribute = "projectionCollapsed";

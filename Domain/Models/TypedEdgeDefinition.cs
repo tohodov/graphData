@@ -42,6 +42,11 @@ public sealed record TypedEdgeDefinition(
 
     public static bool TryCreate(NodeTypeDefinition nodeType, out TypedEdgeDefinition definition)
     {
+        if (nodeType.ElementKind != GraphElementKind.Edge) {
+            definition = default!;
+            return false;
+        }
+
         var endpoints = nodeType.Fields
             .Where(static field => field.ValueKind == NodeFieldValueKind.Node)
             .Where(static field => typeof(Node).IsAssignableFrom(field.ClrType))
@@ -69,7 +74,7 @@ public sealed record TypedEdgeDefinition(
             return definition;
 
         throw new InvalidOperationException(
-            $"Node type '{nodeType.Type.GlobalId}' must define at least two node endpoints to be used as a typed edge.");
+            $"Edge type '{nodeType.Type.GlobalId}' must define at least two node endpoints.");
     }
 
     public static InternalId MemberTypeId(NodeType relationType, string memberName) {

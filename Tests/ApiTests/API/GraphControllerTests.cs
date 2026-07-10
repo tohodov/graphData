@@ -339,7 +339,7 @@ public sealed class GraphControllerTests : ControllerTests {
 
     [TestMethod]
     public async Task ChangeEdgeTypeAsync_CreatesTypedEdgeSubgraphForBasicEdgeAndReturnsIt() {
-        var newType = (await Service.CreateNodeType(
+        var newType = (await Service.CreateEdgeType(
             new("new-type"),
             fields: [
                 new NodeFieldDefinition(
@@ -399,7 +399,7 @@ public sealed class GraphControllerTests : ControllerTests {
         Assert.AreEqual(source.GlobalId, semanticEdge.Value!.Endpoint("Source").Participant.GlobalId);
         Assert.AreEqual(target.GlobalId, semanticEdge.Value.Endpoint("Target").Participant.GlobalId);
 
-        var replacementType = (await Service.CreateNodeType(
+        var replacementType = (await Service.CreateEdgeType(
             new("replacement-type"),
             fields: [
                 new NodeFieldDefinition(

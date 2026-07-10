@@ -941,7 +941,15 @@ export class WebGpuGraphCanvas {
 
     const fieldList = this.document.createElement("div");
     fieldList.className = "graph-node-record-fields";
+    let previousFacetPath = "";
     fields.forEach(field => {
+      if (field.facetPath !== previousFacetPath) {
+        const facet = this.document.createElement("div");
+        facet.className = "graph-node-record-facet";
+        facet.textContent = field.facetLabel;
+        fieldList.append(facet);
+        previousFacetPath = field.facetPath;
+      }
       const row = this.document.createElement("div");
       row.className = "graph-node-record-field";
       const name = this.document.createElement("span");

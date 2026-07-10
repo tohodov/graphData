@@ -11,6 +11,7 @@ internal static class DynamicNodeTypeDefinitionStorage
     private static readonly NodeLocalId SlotsNodeId = new("Slots");
 
     private const string IsAbstractAttribute = "isAbstract";
+    private const string ElementKindAttribute = "elementKind";
     private const string ValueKindAttribute = "valueKind";
     private const string ClrTypeAttribute = "clrType";
     private const string MinAttribute = "min";
@@ -24,6 +25,7 @@ internal static class DynamicNodeTypeDefinitionStorage
             definition.Type.GlobalId,
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
                 [IsAbstractAttribute] = definition.IsAbstract.ToString(CultureInfo.InvariantCulture)
+                , [ElementKindAttribute] = definition.ElementKind.ToString()
             }).ConfigureAwait(false);
 
         var fieldsNode = await storage.Create(FieldsNodeId, definitionNode.GlobalId).ConfigureAwait(false);
@@ -73,7 +75,9 @@ internal static class DynamicNodeTypeDefinitionStorage
             typeNode,
             ReadBool(definitionNode.Attributes, IsAbstractAttribute),
             slots,
-            fields);
+            fields) {
+            ElementKind = ReadElementKind(definitionNode.Attributes)
+        };
     }
 
     private static IEnumerable<NodeFieldDefinition> ReadFields(Node fieldsNode, Node? nodeTypesRoot)
@@ -209,6 +213,14 @@ internal static class DynamicNodeTypeDefinitionStorage
         return attributes.TryGetValue(key, out var value)
             && bool.TryParse(value, out var parsed)
             && parsed;
+    }
+
+    private static GraphElementKind ReadElementKind(IDictionary<string, string> attributes)
+    {
+        if (!attributes.TryGetValue(ElementKindAttribute, out var value)
+            || !Enum.TryParse<GraphElementKind>(value, ignoreCase: true, out var kind))
+            throw new InvalidOperationException($"Dynamic graph type is missing valid '{ElementKindAttribute}'.");
+        return kind;
     }
 
     private static string SerializeClrType(Type type)

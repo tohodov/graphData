@@ -58,22 +58,22 @@ public sealed class NodeTypes {
         }
     }
 
-    public sealed class ManufacturedByConnectionNodeType : NodeType {
+    public sealed class ManufacturedByEdge : Edge {
         public EdgeWeaponNodeType Weapon = null!;
         public EdgeManufacturerNodeType Manufacturer = null!;
 
-        internal ManufacturedByConnectionNodeType(NodeBacking state) : base(state) {
+        internal ManufacturedByEdge(EdgeBacking state) : base(state) {
         }
     }
 
-    public sealed class ShipmentConnectionNodeType : NodeType {
+    public sealed class ShipmentEdge : Edge {
         public EdgeWeaponNodeType Weapon = null!;
         public Node Counterparty = null!;
         public Node? OptionalWaypoint = null;
         public IReadOnlyCollection<EdgeManufacturerNodeType> Manufacturers = [];
         public string Note = "";
 
-        internal ShipmentConnectionNodeType(NodeBacking state) : base(state) {
+        internal ShipmentEdge(EdgeBacking state) : base(state) {
         }
     }
 }

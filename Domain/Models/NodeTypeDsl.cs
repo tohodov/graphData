@@ -8,6 +8,17 @@ public enum NodeFieldValueKind
     Primitive
 }
 
+/// <summary>
+/// The semantic class of a type declaration. Storage still carries every
+/// declaration as a node; this value is derived from the CLR hierarchy or
+/// persisted for a dynamic declaration, never inferred from its fields.
+/// </summary>
+public enum GraphElementKind
+{
+    Node,
+    Edge
+}
+
 public readonly record struct NodeSlotCardinality(int Min, int? Max)
 {
     public static NodeSlotCardinality Optional() => new(0, 1);
@@ -62,6 +73,8 @@ public sealed record NodeTypeDefinition(
     IReadOnlyCollection<NodeSlotDefinition> Slots,
     IReadOnlyCollection<NodeFieldDefinition> Fields)
 {
+    public GraphElementKind ElementKind { get; init; } = GraphElementKind.Node;
+
     public IReadOnlyCollection<NodeType> RequiredTypes { get; init; } = Array.Empty<NodeType>();
 
     public void EnsureSatisfiedBy(InstanceNode instance)

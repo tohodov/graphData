@@ -1,5 +1,4 @@
 import {
-  graphElementAttribute,
   graphKindAttribute,
   projectionCollapsedAttribute,
   projectionColorAttribute,
@@ -847,6 +846,7 @@ export class GraphViewer {
     this.render();
     this.setStatus(`Базис загружен: ${basisName}`);
   } catch (error) {
+    this.showProjectionError(error, "Загрузка базиса");
     this.setStatus((error as Error).message);
   } finally {
     this.setBusy(false);
@@ -859,13 +859,11 @@ export class GraphViewer {
   try {
     this.readBasisInputs();
     const basis = this.getBasis();
-    await this.ensurePath(basis.nodeTypeRoot, { [graphKindAttribute]: "type-root", [graphElementAttribute]: "node" });
-
-    await this.upsertGraphType(basis.nodeTypeRoot, "Type", "Type", "#334155", "node", false, 90);
-    await this.upsertGraphType(basis.nodeTypeRoot, "Instance", "Instance", "#0f766e", "node", false, 70);
-    await this.upsertGraphType(basis.nodeTypeRoot, "Connection", "Connection", "#7c2d12", "edge", true, 60);
-    await this.upsertGraphType(basis.nodeTypeRoot, "Endpoint", "Endpoint", "#0f766e", "node", false, 45);
-    await this.upsertGraphType(basis.nodeTypeRoot, "Port", "Port", "#0f766e", "node", false, 45);
+    if (!basis.nodeTypeRoot || !basis.edgeTypeRoot) {
+      throw new Error("Для базиса должны быть явно заданы корни NodeType и Edge.");
+    }
+    await this.ensurePath(basis.nodeTypeRoot, { [graphKindAttribute]: "type-root" });
+    await this.ensurePath(basis.edgeTypeRoot, { [graphKindAttribute]: "type-root" });
 
     const basisName = this.basisNodeInput.value.trim();
     if (basisName) {
@@ -887,6 +885,7 @@ export class GraphViewer {
     this.render();
     this.setStatus("Базовый базис создан или обновлен");
   } catch (error) {
+    this.showProjectionError(error, "Создание базиса");
     this.setStatus((error as Error).message);
   } finally {
     this.setBusy(false);
@@ -917,7 +916,7 @@ export class GraphViewer {
     this.storeBasisGraphNodes(basisGraph);
 
     for (const node of basisGraph.nodes.values()) {
-      const element = this.typeElementFromBasisNode(node, basisGraph.edgePairs);
+      const element = this.typeElementFromBasisNode(node);
       if (!element) {
         continue;
       }
@@ -933,6 +932,7 @@ export class GraphViewer {
     this.renderTypeControls();
     this.setStatus(`Типы из корня: ${this.graph.schema.nodeTypes.size} узлов, ${this.graph.schema.edgeTypes.size} связей`);
   } catch (error) {
+    this.showProjectionError(error, "Построение проекции по базису");
     this.setStatus((error as Error).message);
   } finally {
     if (!options.preserveBusy) {
@@ -989,36 +989,48 @@ export class GraphViewer {
 
   }
 
-  typeElementFromBasisNode(node: any, edgePairs: Set<string>): "node" | "edge" | null {
+  typeElementFromBasisNode(node: any): "node" | "edge" | null {
   const path = node.path;
   if (!path || this.graph.isSchemaRoot(path) || this.isSystemTypeRoot(path)) {
     return null;
   }
 
-  const element = node.attributes?.[graphElementAttribute];
-  if (element === "edge" || element === "relation") {
-    return "edge";
-  }
-  if (element === "node") {
-    return "node";
+  const element = this.basisElementForPath(path);
+  if (element) {
+    return element;
   }
 
-  return this.isDirectBasisType(path) ? "node" : null;
-
+  if (this.isTypeDefinitionInfrastructure(path)) {
+    return null;
   }
 
-  hasBasisEdge(edgePairs: Set<string>, left: string, right: string) {
-  return Boolean(left && right && edgePairs.has(GraphEdge.keyFor(left, right)));
+  throw new Error(`Узел базиса '${path}' не является прямым наследником NodeType или Edge.`);
 
   }
 
-  isDirectBasisType(path: string) {
-  return this.basisTypeRoots().some(root => {
+  basisElementForPath(path: string): "node" | "edge" | null {
+  const basis = this.getBasis();
+  const candidates: Array<[string, "node" | "edge"]> = [
+    [basis.nodeTypeRoot, "node"],
+    [basis.edgeTypeRoot, "edge"]
+  ];
+  const matches = candidates.filter(([root]) => {
+    if (!root) return false;
     const rootSegments = root.split("/").filter(Boolean);
     const segments = String(path).split("/").filter(Boolean);
     return segments.length === rootSegments.length + 1
       && rootSegments.every((segment, index) => segment === segments[index]);
   });
+  if (matches.length > 1) {
+    throw new Error(`Тип '${path}' одновременно наследует NodeType и Edge.`);
+  }
+  return matches[0]?.[1] ?? null;
+
+  }
+
+  isTypeDefinitionInfrastructure(path: string) {
+  const segments = String(path).split("/").filter(Boolean);
+  return segments.includes("Definition") || segments.includes("Fields") || segments.includes("Slots");
 
   }
 
@@ -1169,21 +1181,6 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     method: "PUT",
     body: JSON.stringify(request)
   })) as SubgraphResponse;
-
-  }
-
-  async upsertGraphType(rootGlobalId: string, localId: string, label: string, color: string, element: string, directed = false, rank = element === "node" ? 50 : 30) {
-  const attrs: Record<string, string> = {
-    [graphKindAttribute]: "type",
-    [graphElementAttribute]: element,
-    label,
-    color,
-    [projectionRankAttribute]: String(rank)
-  };
-  if (element === "edge") {
-    attrs.directed = directed ? "true" : "false";
-  }
-  return this.createGraphNode(localId, rootGlobalId, attrs);
 
   }
 
@@ -2605,9 +2602,14 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       });
 
       const applyRules = () => {
-        const rulesSnapshot = readRules();
-        swatch.style.background = GraphType.normalizeColor(rulesSnapshot.color) || "#9daab2";
-        this.applyTypeProjectionRules(type.path, element, rulesSnapshot);
+        try {
+          const rulesSnapshot = readRules();
+          swatch.style.background = GraphType.normalizeColor(rulesSnapshot.color) || "#9daab2";
+          this.applyTypeProjectionRules(type.path, element, rulesSnapshot);
+        } catch (error) {
+          this.showProjectionError(error, "Применение правил базиса");
+          this.setStatus((error as Error).message);
+        }
       };
 
       [visible.input, collapsed.input, extraControls.directed?.input, extraControls.labelVisible?.input]
@@ -2641,9 +2643,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   applyTypeProjectionRules(path: string, element: string, rules: any) {
   const typeMap = element === "node" ? this.graph.schema.nodeTypes : this.graph.schema.edgeTypes;
   const current = typeMap.get(path);
-  if (!current) {
-    return;
-  }
+  if (!current) throw new Error(`Тип '${path}' отсутствует в загруженном базисе.`);
 
   typeMap.set(path, new GraphType({
     ...current,
@@ -2694,7 +2694,6 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     if (!loaded) throw new Error("Node not loaded");
     const attributes = { ...(loaded.attributes ?? {}) };
     attributes[graphKindAttribute] = attributes[graphKindAttribute] || "type";
-    attributes[graphElementAttribute] = element;
     attributes[projectionVisibleAttribute] = rules.visible ? "true" : "false";
     attributes[projectionCollapsedAttribute] = rules.collapsed ? "true" : "false";
     if (rules.color) {
@@ -2880,6 +2879,11 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   setStatus(message: string) {
   this.statusOutput.value = message;
   this.statusOutput.textContent = message;
+
+  }
+
+  showProjectionError(error: unknown, operation: string) {
+  this.showServerError(error, operation);
 
   }
 
