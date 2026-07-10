@@ -68,16 +68,16 @@ public sealed class GraphUiFullCycleTests
         });
 
         await page.GotoAsync($"{server.BaseUri}?renderer=svg");
-        await ExpectVisibleNodes(page, "a", "b");
+        await ExpectVisibleNodes(page, "NodeTypes", "a", "b");
 
         await ClickEdgeControl(page, "a", "a/x", "load-neighbor");
-        await ExpectVisibleNodes(page, "a", "b", "x");
+        await ExpectVisibleNodes(page, "NodeTypes", "a", "b", "x");
 
         await ClickEdgeControl(page, "a", "a/x", "collapse-edge");
-        await ExpectVisibleNodes(page, "a", "b");
+        await ExpectVisibleNodes(page, "NodeTypes", "a", "b");
 
         await ClickAnyEdgeControl(page, "a", "a/x");
-        await ExpectVisibleNodes(page, "a", "b", "x");
+        await ExpectVisibleNodes(page, "NodeTypes", "a", "b", "x");
         await ExpectEdgeControl(page, "a", "a/x", "collapse-edge");
     }
 

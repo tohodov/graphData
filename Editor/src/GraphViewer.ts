@@ -518,10 +518,6 @@ export class GraphViewer {
     const response = await this.loadSubgraphForRoots([], 0);
     const nodes = response.nodes ?? [];
     this.loadSubgraphIntoViewer(response, [], { selectRoot: false });
-    const nodeTypeRoot = this.graph.schema.systemNodeIds?.nodeTypeRoot;
-    if (nodeTypeRoot) {
-      this.removeLocalNode(nodeTypeRoot, false, false);
-    }
     this.renderSubgraphResults(response);
     this.renderTypeControls();
     this.setEmptyState(nodes.length === 0 ? "Корневые узлы не найдены" : "Узел не выбран");

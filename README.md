@@ -53,7 +53,7 @@ Storage-state типы и storage-контракты закрыты как `inte
 - `requires` хранится обычным typed-edge subgraph. Замыкание материализуется с `visited`, схлопывает diamond и завершается на циклах.
 - `GetSemanticNodeAsync` строит runtime `InstanceNode` с несколькими materialized `NodeTypeInstance` и принимает явный basis вне дефолтного каталога.
 - `TypedEdgeSubgraphCodec` централизует переходную raw-грамматику typed edges: смысл endpoint задаёт отдельный member classifier, а raw-узел его конкретного occurrence имеет техническое уникальное имя. `GetTypedEdgeInstanceAsync` восстанавливает typed edge без fixed-depth parsing.
-- HTTP API сохраняет прежний raw-контракт. `GetSemanticNodeAsync` используют Domain и semantic-профиль MCP; он принимает явный basis, а при его отсутствии использует дефолтный каталог. Semantic MCP намеренно не публикует raw depth/search как будто это семантические операции. Web UI остаётся raw-клиентом и строит свою существующую локальную проекцию по выбранному basis; системный `NodeTypes` не показывается как пользовательский корневой узел.
+- HTTP API сохраняет прежний raw-контракт. `GetSemanticNodeAsync` используют Domain и semantic-профиль MCP; он принимает явный basis, а при его отсутствии использует дефолтный каталог. Semantic MCP намеренно не публикует raw depth/search как будто это семантические операции. Web UI остаётся raw-клиентом и строит свою существующую локальную проекцию по выбранному basis; `NodeTypes` остаётся обычным top-level raw-узлом и подчиняется общим правилам basis.
 
 Этот срез сохраняется ради совместимости API, MCP и активных сущностей `Node`/`Edge`; он не фиксирует финальную метамодель.
 
