@@ -372,7 +372,7 @@ public sealed class ServiceTests : GraphServiceTests {
     public async Task GraphService_ChangeEdgeTypeAsync_ValidatesDynamicTypedEdgeEndpoints() {
         var loopStepType = (await Service.CreateNodeType("StalkovLoopStep")).Value!.Type;
         var playerActionType = (await Service.CreateNodeType("StalkovPlayerAction")).Value!.Type;
-        var transitionType = (await Service.CreateNodeType(
+        var transitionType = (await Service.CreateEdgeType(
             "StalkovStepTransition",
             fields: [
                 new NodeFieldDefinition(
