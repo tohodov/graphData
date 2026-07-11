@@ -18,7 +18,7 @@ public sealed class ServiceTests : GraphServiceTests {
     [TestMethod]
     public async Task SemanticNode_ReadsMaterializedTypeInstancesAfterReload() {
         var typesRoot = await GetTypesRoot();
-        var weaponTypeBaseNode = await Create("weapon", typesRoot.GlobalId)!;
+        var weaponTypeBaseNode = await Create("semantic-weapon", typesRoot.GlobalId)!;
         var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
         var nodeResult = await Service.CreateNode("ak47", path: null, weaponType);
         Assert.AreEqual(ServiceResultStatus.Ok, nodeResult.Status, nodeResult.Error);
@@ -30,7 +30,7 @@ public sealed class ServiceTests : GraphServiceTests {
             var reread = await Service.GetSemanticNodeAsync(instance.GlobalId);
             Assert.AreEqual(ServiceResultStatus.Ok, reread.Status, reread.Error);
             var typeInstance = reread.Value!.TypeInstances.Single();
-            Assert.AreEqual<NodeLocalId>("weapon", typeInstance.Type.LocalId);
+            Assert.AreEqual<NodeLocalId>("semantic-weapon", typeInstance.Type.LocalId);
             Assert.IsTrue(typeInstance.IsMaterialized);
             Assert.IsNotNull(typeInstance.Witness);
         }

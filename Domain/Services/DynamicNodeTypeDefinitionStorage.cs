@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using Abstractions;
 using GraphData.Core.Models;
 
@@ -17,6 +18,8 @@ internal static class DynamicNodeTypeDefinitionStorage
     private const string MinAttribute = "min";
     private const string MaxAttribute = "max";
     private const string IsCollectionAttribute = "isCollection";
+    private const string NodeTypePathAttribute = "nodeTypePath";
+    private const string AllowedTypePathsAttribute = "allowedTypePaths";
 
     public static async Task WriteAsync(IGraphStorage storage, NodeTypeDefinition definition)
     {
@@ -35,8 +38,6 @@ internal static class DynamicNodeTypeDefinitionStorage
                 fieldsNode.GlobalId,
                 CreateFieldAttributes(field)).ConfigureAwait(false);
 
-            if (field.NodeType is not null)
-                await storage.Connect(fieldNode.GlobalId, field.NodeType.GlobalId).ConfigureAwait(false);
         }
 
         var slotsNode = await storage.Create(SlotsNodeId, definitionNode.GlobalId).ConfigureAwait(false);
@@ -44,10 +45,8 @@ internal static class DynamicNodeTypeDefinitionStorage
             var slotNode = await storage.Create(
                 new NodeLocalId(slot.Name),
                 slotsNode.GlobalId,
-                CreateCardinalityAttributes(slot.Cardinality)).ConfigureAwait(false);
+                CreateCardinalityAttributes(slot.Cardinality, slot.AllowedTypes)).ConfigureAwait(false);
 
-            foreach (var allowedType in slot.AllowedTypes)
-                await storage.Connect(slotNode.GlobalId, allowedType.GlobalId).ConfigureAwait(false);
         }
     }
 
@@ -88,7 +87,11 @@ internal static class DynamicNodeTypeDefinitionStorage
             var clrType = ReadClrType(attributes);
             var cardinality = ReadCardinality(attributes);
             var isCollection = ReadBool(attributes, IsCollectionAttribute);
-            var allowedTypes = ReadLinkedNodeTypes(fieldNode, nodeTypesRoot, fieldsNode.GlobalId).ToArray();
+            var allowedTypes = ReadStoredNodeTypes(
+                attributes,
+                NodeTypePathAttribute,
+                nodeTypesRoot,
+                () => ReadLinkedNodeTypes(fieldNode, nodeTypesRoot, fieldsNode.GlobalId)).ToArray();
             var nodeType = allowedTypes.Length switch {
                 0 => null,
                 1 => allowedTypes[0],
@@ -109,7 +112,11 @@ internal static class DynamicNodeTypeDefinitionStorage
     private static IEnumerable<NodeSlotDefinition> ReadSlots(Node slotsNode, Node? nodeTypesRoot)
     {
         foreach (var slotNode in slotsNode.Nodes.Where(node => node.LocalId != DefinitionNodeId)) {
-            var allowedTypes = ReadLinkedNodeTypes(slotNode, nodeTypesRoot, slotsNode.GlobalId).ToArray();
+            var allowedTypes = ReadStoredNodeTypes(
+                slotNode.Attributes,
+                AllowedTypePathsAttribute,
+                nodeTypesRoot,
+                () => ReadLinkedNodeTypes(slotNode, nodeTypesRoot, slotsNode.GlobalId)).ToArray();
             yield return new NodeSlotDefinition(
                 slotNode.LocalId.ToString(),
                 allowedTypes,
@@ -156,6 +163,8 @@ internal static class DynamicNodeTypeDefinitionStorage
         attributes[ValueKindAttribute] = field.ValueKind.ToString();
         attributes[ClrTypeAttribute] = SerializeClrType(field.ClrType);
         attributes[IsCollectionAttribute] = field.IsCollection.ToString(CultureInfo.InvariantCulture);
+        if (field.NodeType is not null)
+            attributes[NodeTypePathAttribute] = field.NodeType.GlobalId.ToString();
         return attributes;
     }
 
@@ -167,6 +176,36 @@ internal static class DynamicNodeTypeDefinitionStorage
         if (cardinality.Max is { } max)
             attributes[MaxAttribute] = max.ToString(CultureInfo.InvariantCulture);
         return attributes;
+    }
+
+    private static Dictionary<string, string> CreateCardinalityAttributes(NodeSlotCardinality cardinality, IEnumerable<NodeType> allowedTypes)
+    {
+        var attributes = CreateCardinalityAttributes(cardinality);
+        attributes[AllowedTypePathsAttribute] = JsonSerializer.Serialize(
+            allowedTypes.Select(static type => type.GlobalId.ToString()));
+        return attributes;
+    }
+
+    private static IEnumerable<NodeType> ReadStoredNodeTypes(
+        IDictionary<string, string> attributes,
+        string attributeName,
+        Node? nodeTypesRoot,
+        Func<IEnumerable<NodeType>> fallback)
+    {
+        if (!attributes.TryGetValue(attributeName, out var serializedPaths))
+            return fallback();
+        if (nodeTypesRoot is null)
+            return [];
+
+        var paths = attributeName == NodeTypePathAttribute
+            ? [serializedPaths]
+            : JsonSerializer.Deserialize<string[]>(serializedPaths)
+                ?? throw new InvalidOperationException($"Dynamic node definition has invalid '{attributeName}'.");
+        return paths.Select(path => nodeTypesRoot.Nodes
+            .SingleOrDefault(node => node.GlobalId.ToString() == path)
+            ?? throw new InvalidOperationException(
+                $"Dynamic node definition references unknown node type '{path}'."))
+            .Select(static node => new NodeType(node.Backing));
     }
 
     private static NodeFieldValueKind ReadValueKind(IDictionary<string, string> attributes)

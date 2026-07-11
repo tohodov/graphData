@@ -52,6 +52,17 @@ public sealed class Graph {
                 runtimeTypesByClrType[type.ClrType] = new NodeType(nodeType);
             }
 
+            foreach (var type in schemaRegistry.Types) {
+                var nodeType = runtimeTypesByClrType[type.ClrType];
+                if (DynamicNodeTypeDefinitionStorage.TryRead(nodeType) is not null)
+                    continue;
+
+                var definition = schemaRegistry.GetOrBuildDefinition(
+                    nodeType,
+                    GetMaterializedRuntimeType);
+                await DynamicNodeTypeDefinitionStorage.WriteAsync(storage, definition).ConfigureAwait(false);
+            }
+
             root = new Node(storage.Root);
             nodeTypes = new NodeType(nodeTypesRoot);
             isOpen = true;
@@ -115,6 +126,12 @@ public sealed class Graph {
         var type = GetRuntimeType(clrType);
         return type
             ?? throw new InvalidOperationException($"Runtime graph type '{clrType.FullName}' is not present in the graph.");
+    }
+
+    private NodeType GetMaterializedRuntimeType(Type clrType) {
+        return runtimeTypesByClrType.TryGetValue(clrType, out var type)
+            ? type
+            : throw new InvalidOperationException($"Runtime graph type '{clrType.FullName}' is not present in the graph.");
     }
 
     internal async Task<NodeType?> AsNodeTypeAsync(NodeBacking node) {
