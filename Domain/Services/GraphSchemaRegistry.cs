@@ -35,13 +35,15 @@ public sealed class GraphRuntimeTypeOptions
 
 public sealed class GraphSchemaRegistry
 {
-    private readonly IReadOnlyDictionary<NodeLocalId, RuntimeGraphTypeDefinition> _typeDescriptors;
+    private readonly IReadOnlyDictionary<string, RuntimeGraphTypeDefinition> _typeDescriptors;
     private readonly ConcurrentDictionary<InternalId, NodeTypeDefinition> _definitions = new();
 
     private GraphSchemaRegistry(IReadOnlyCollection<RuntimeGraphTypeDefinition> types)
     {
         Types = types;
-        _typeDescriptors = Types.ToDictionary(static x => x.Id);
+        _typeDescriptors = Types.ToDictionary(
+            static x => x.Id.ToString(),
+            StringComparer.OrdinalIgnoreCase);
         Fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", types.Select(static type => type.ClrType.AssemblyQualifiedName)))));
     }
 
@@ -77,7 +79,7 @@ public sealed class GraphSchemaRegistry
                 typeof(Edge).IsAssignableFrom(x) ? GraphElementKind.Edge : GraphElementKind.Node))
             .ToArray();
         var duplicate = candidateTypes
-            .GroupBy(static type => type.Id)
+            .GroupBy(static type => type.Id.ToString(), StringComparer.OrdinalIgnoreCase)
             .FirstOrDefault(static group => group.Count() > 1);
         if (duplicate is not null)
             throw new InvalidOperationException($"Runtime graph type id '{duplicate.Key}' is declared more than once: {string.Join(", ", duplicate.Select(static type => type.ClrType.FullName))}.");
@@ -87,7 +89,7 @@ public sealed class GraphSchemaRegistry
 
     public bool TryGetClrType(NodeLocalId typeId, out Type type)
     {
-        if (_typeDescriptors.TryGetValue(typeId, out var descriptor)) {
+        if (_typeDescriptors.TryGetValue(typeId.ToString(), out var descriptor)) {
             type = descriptor.ClrType;
             return true;
         }
@@ -100,7 +102,7 @@ public sealed class GraphSchemaRegistry
         return _definitions.GetOrAdd(typeNode.GlobalId, id =>
         {
             var localId = typeNode.LocalId;
-            if (_typeDescriptors.TryGetValue(localId, out var descriptor))
+            if (_typeDescriptors.TryGetValue(localId.ToString(), out var descriptor))
             {
                 var clrType = descriptor.ClrType;
                 var builder = new NodeTypeBuilder(typeNode, resolveType);

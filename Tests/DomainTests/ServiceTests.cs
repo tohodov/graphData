@@ -18,19 +18,35 @@ public sealed class ServiceTests : GraphServiceTests {
     [TestMethod]
     public async Task SemanticNode_ReadsMaterializedTypeInstancesAfterReload() {
         var typesRoot = await GetTypesRoot();
-        var weaponTypeBaseNode = await Create("semantic-weapon", typesRoot.GlobalId)!;
-        var weaponType = (await Service.GetTypeNode(weaponTypeBaseNode))!;
-        var nodeResult = await Service.CreateNode("ak47", path: null, weaponType);
-        Assert.AreEqual(ServiceResultStatus.Ok, nodeResult.Status, nodeResult.Error);
-        var node = nodeResult.Value!;
-        var m16 = (await Service.CreateNode("m16", path: null, weaponType)).Value!;
-        var mp5 = (await Service.CreateNode("mp5", path: null, weaponType)).Value!;
+        var weaponType = await Service.GetTypeNode(new NodePath("NodeTypes", "weapon"));
+        Assert.IsNotNull(weaponType);
+
+        var country = await Service.CreateNode<CountryNodeType>("reload-country");
+        Assert.AreEqual(ServiceResultStatus.Ok, country.Status, country.Error);
+        var headquarters = (await Service.CreateNode("reload-headquarters")).Value!;
+        var manufacturer = (await Service.CreateNode(
+            "reload-manufacturer",
+            attributes: new Dictionary<string, string> {
+                [nameof(ManufacturerNodeType.LegalName)] = "Reload Arms",
+                [nameof(ManufacturerNodeType.FoundedYear)] = "1807",
+                [nameof(ManufacturerNodeType.IsActive)] = "true"
+            })).Value!;
+        Assert.AreEqual(ServiceResultStatus.Ok,
+            (await Service.ConnectNodesAsync(manufacturer.GlobalId, country.Value!.GlobalId)).Status);
+        Assert.AreEqual(ServiceResultStatus.Ok,
+            (await Service.ConnectNodesAsync(manufacturer.GlobalId, headquarters.GlobalId)).Status);
+        var assignManufacturer = await Service.AssignNodeTypeAsync<ManufacturerNodeType>(manufacturer.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, assignManufacturer.Status, assignManufacturer.Error);
+
+        var node = await CreateWeapon("ak47");
+        var m16 = await CreateWeapon("m16");
+        var mp5 = await CreateWeapon("mp5");
 
         foreach (var instance in new[] { node, m16, mp5 }) {
             var reread = await Service.GetSemanticNodeAsync(instance.GlobalId);
             Assert.AreEqual(ServiceResultStatus.Ok, reread.Status, reread.Error);
             var typeInstance = reread.Value!.TypeInstances.Single();
-            Assert.AreEqual<NodeLocalId>("semantic-weapon", typeInstance.Type.LocalId);
+            Assert.AreEqual(weaponType.GlobalId, typeInstance.Type.GlobalId);
             Assert.IsTrue(typeInstance.IsMaterialized);
             Assert.IsNotNull(typeInstance.Witness);
         }
@@ -39,7 +55,18 @@ public sealed class ServiceTests : GraphServiceTests {
         Assert.IsNotNull(storedNode);
         Assert.IsTrue(await storedNode.Nodes.AnyAsync(neighbor => neighbor.GlobalId == weaponType.GlobalId));
         Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "ak47")));
-        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, typesRoot.LocalId.ToString(), "weapon")));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, typesRoot.LocalId.ToString(), weaponType.LocalId.ToString())));
+
+        async Task<Node> CreateWeapon(NodeLocalId localId) {
+            var create = await Service.CreateNode(localId);
+            Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
+            var weapon = create.Value!;
+            var connect = await Service.ConnectNodesAsync(weapon.GlobalId, manufacturer.GlobalId);
+            Assert.AreEqual(ServiceResultStatus.Ok, connect.Status, connect.Error);
+            var assign = await Service.AssignNodeTypeAsync(weapon.GlobalId, weaponType.GlobalId);
+            Assert.AreEqual(ServiceResultStatus.Ok, assign.Status, assign.Error);
+            return weapon;
+        }
     }
 
     [TestMethod]
