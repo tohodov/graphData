@@ -109,12 +109,12 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($repoRoot)) {
 }
 
 $repoRoot = [System.IO.Path]::GetFullPath($repoRoot.Trim())
-$toolProject = Join-UnderRoot -Root $repoRoot -RelativePath "TestImpactOnCoverage\src\relevant-tests\relevant-tests.csproj"
+$toolProject = Join-UnderRoot -Root $repoRoot -RelativePath "Tests\RelevantTests\src\relevant-tests\relevant-tests.csproj"
 
 if (-not (Test-Path -LiteralPath $toolProject)) {
     Invoke-Checked `
         -FilePath "git" `
-        -Arguments @("submodule", "update", "--init", "--recursive", "TestImpactOnCoverage") `
+        -Arguments @("submodule", "update", "--init", "--recursive", "Tests/RelevantTests") `
         -WorkingDirectory $repoRoot
 }
 
@@ -125,20 +125,25 @@ if (-not (Test-Path -LiteralPath $toolProject)) {
 $testSuites = @(
     [pscustomobject]@{
         Name = "DomainTests"
-        Project = "DomainTests\DomainTests.csproj"
+        Project = "Tests\DomainTests\DomainTests.csproj"
     },
     [pscustomobject]@{
         Name = "ApiTests"
-        Project = "ApiTests\ApiTests.csproj"
+        Project = "Tests\ApiTests\ApiTests.csproj"
+    },
+    [pscustomobject]@{
+        Name = "CompilerTests"
+        Project = "Tests\CompilerTests\CompilerTests.csproj"
     }
 )
 
 $productProjectSuites = @{
-    "Abstractions/Abstractions.csproj" = @("DomainTests", "ApiTests")
-    "Domain/Domain.csproj" = @("DomainTests", "ApiTests")
-    "SymLinkStorage/SymLinkStorage.csproj" = @("DomainTests", "ApiTests")
-    "Api/Api.csproj" = @("ApiTests")
-    "Mcp/Mcp.csproj" = @("ApiTests")
+    "Abstractions/Abstractions.csproj" = @("DomainTests", "ApiTests", "CompilerTests")
+    "Domain/1_ Domain.csproj" = @("DomainTests", "ApiTests", "CompilerTests")
+    "SymLinkStorage/1_SymLinkStorage.csproj" = @("DomainTests", "ApiTests")
+    "Api/0_Api.csproj" = @("ApiTests")
+    "Mcp/0_Mcp.csproj" = @("ApiTests")
+    "Compiler/GraphCompiler.csproj" = @("CompilerTests")
 }
 
 $artifactsRoot = if ([System.IO.Path]::IsPathRooted($ArtifactsDir)) {
@@ -166,17 +171,22 @@ foreach ($suite in $testSuites) {
 foreach ($changedFile in $changedFiles) {
     $path = $changedFile.Replace("\", "/")
 
-    if (Test-PathPrefix -Path $path -Prefix "DomainTests/") {
+    if (Test-PathPrefix -Path $path -Prefix "Tests/DomainTests/") {
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "DomainTests" -Reason "DomainTests changed"
     }
 
-    if (Test-PathPrefix -Path $path -Prefix "ApiTests/") {
+    if (Test-PathPrefix -Path $path -Prefix "Tests/ApiTests/") {
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "ApiTests" -Reason "ApiTests changed"
     }
 
-    if (Test-PathPrefix -Path $path -Prefix "TestSupport/") {
+    if (Test-PathPrefix -Path $path -Prefix "Tests/CompilerTests/") {
+        Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "CompilerTests" -Reason "CompilerTests changed"
+    }
+
+    if (Test-PathPrefix -Path $path -Prefix "Tests/TestSupport/") {
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "DomainTests" -Reason "shared test support changed"
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "ApiTests" -Reason "shared test support changed"
+        Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "CompilerTests" -Reason "shared test support changed"
     }
 
     if (Test-PathPrefix -Path $path -Prefix "Api/wwwroot/") {
@@ -189,9 +199,10 @@ foreach ($changedFile in $changedFiles) {
         }
     }
 
-    if ($path -eq "GraphData.sln" -or $path -like "Directory.Build.*" -or $path -like "Directory.Packages.*" -or $path -like "*.runsettings") {
+    if ($path -eq "GraphData.slnx" -or $path -like "Directory.Build.*" -or $path -like "Directory.Packages.*" -or $path -like "*.runsettings") {
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "DomainTests" -Reason "test infrastructure changed"
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "ApiTests" -Reason "test infrastructure changed"
+        Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "CompilerTests" -Reason "test infrastructure changed"
     }
 }
 

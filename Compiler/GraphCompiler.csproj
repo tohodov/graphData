@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>GraphCompiler</AssemblyName>
+    <AssemblyTitle>GraphCompiler</AssemblyTitle>
+    <RootNamespace>GraphData.Compiler</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Domain\1_ Domain.csproj" />
+  </ItemGroup>
+
+</Project>

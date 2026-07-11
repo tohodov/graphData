@@ -22,6 +22,7 @@ graphData - исследовательский прототип графовой
 
 - `Abstractions` - минимальные контракты и backing-состояния графа (`IGraphStorage`, `NodeBacking`, `EdgeBacking`, id-типы, `ServiceResult`). Реализации storage зависят только от этого уровня и не знают доменные `Node`/`Edge`.
 - `Domain` - доменная модель (`Graph`, `Node`, `Edge`, типы графовых элементов, query/search/subgraph-модели) и фасад `GraphService`, который выполняет async-операции над открытым графом.
+- `GraphCompiler` - downstream-компилятор конечного типизированного snapshot в канонические dense/CSR tensors, message-passing execution plan и HLSL-артефакт. CPU reference executor служит oracle для GPU backend'ов; подробности находятся в `Compiler/README.md`.
 
 Исполняемые входы (`Api`, `Mcp`) должны работать через `GraphService`, а не через `IGraphStorage`. Storage-проект `SymLinkStorage` остается ниже домена и ссылается только на `Abstractions`.
 Storage-state типы и storage-контракты закрыты как `internal`; доступ к ним выдается только `Domain`, storage-проектам и тестовым сборкам через `InternalsVisibleTo`.
@@ -152,11 +153,12 @@ typed edge node остаются read-only по атрибутам, но мог�
 
 ## Tests
 
-В репозитории есть три основные тестовые сборки и отдельное консольное приложение для замеров:
+В репозитории есть четыре основные тестовые сборки и отдельное консольное приложение для замеров:
 
 - `DomainTests` - проверка доменных сервисов и активных DDD-сущностей `Node`/`Edge`.
 - `ApiTests` - проверка HTTP API и UI, который живет внутри проекта `Api`.
 - `McpTests` - проверка раздельных raw/semantic MCP-поверхностей и типизированных mutation-сценариев.
+- `GraphCompilerTests` - проверка канонического CSR IR, CPU reference execution, raw lowering и GPU source artifacts.
 - `PerformanceTests` - консольный раннер измерительных сценариев производительности.
 
 Unit-тестовой сборки в проекте намеренно нет: корректность должна подтверждаться функциональными тестами, которые проверяют поведение через реальные сервисы и хранилища.

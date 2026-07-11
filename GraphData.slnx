@@ -13,6 +13,7 @@
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="Tests/ApiTests/ApiTests.csproj" />
+    <Project Path="Tests/CompilerTests/CompilerTests.csproj" />
     <Project Path="Tests/DomainTests/DomainTests.csproj" />
     <Project Path="Tests/McpTests/McpTests.csproj" />
     <Project Path="Tests/PerformanceTests/PerformanceTests.csproj" />
@@ -27,6 +28,7 @@
   </Folder>
   <Project Path="Abstractions/Abstractions.csproj" />
   <Project Path="Api/0_Api.csproj" />
+  <Project Path="Compiler/GraphCompiler.csproj" />
   <Project Path="Domain/1_ Domain.csproj" />
   <Project Path="Editor/Editor.esproj">
     <BuildDependency Project="Api/0_Api.csproj" />
