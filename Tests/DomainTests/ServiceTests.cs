@@ -342,6 +342,32 @@ public sealed class ServiceTests : GraphServiceTests {
     }
 
     [TestMethod]
+    public async Task Graph_OpenAsync_PersistsRuntimeTypeDefinitionForIndependentHost() {
+        var runtimeDefinition = (await Service.GetNodeTypeDefinitionAsync<ManufacturerNodeType>()).Value!;
+        Assert.AreEqual(11, runtimeDefinition.Fields.Count);
+
+        var independentGraph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
+        var independentService = new GraphData.Core.Services.GraphService(
+            independentGraph,
+            new GraphSearchService(Storage));
+        var persistedType = await independentService.GetTypeNode(
+            new NodePath("NodeTypes", "Manufacturer"));
+
+        Assert.IsNotNull(persistedType);
+        var persistedDefinition = independentGraph.GetNodeTypeDefinition(persistedType);
+
+        Assert.AreEqual(11, persistedDefinition.Fields.Count,
+            "A host that has not loaded the CLR type must still read its materialized schema.");
+        Assert.IsTrue(persistedDefinition.Fields.Any(field =>
+            field.Name == nameof(ManufacturerNodeType.LegalName)
+            && field.ValueKind == NodeFieldValueKind.Primitive
+            && field.ClrType == typeof(string)));
+        Assert.IsTrue(persistedDefinition.Slots.Any(slot =>
+            slot.Name == nameof(ManufacturerNodeType.Country)
+            && slot.Cardinality == NodeSlotCardinality.Required()));
+    }
+
+    [TestMethod]
     public async Task NodeTypeDefinition_DiscoversRichCSharpFields() {
         var result = await Service.GetNodeTypeDefinitionAsync<ManufacturerNodeType>();
 
