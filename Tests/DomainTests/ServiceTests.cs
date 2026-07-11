@@ -342,6 +342,42 @@ public sealed class ServiceTests : GraphServiceTests {
     }
 
     [TestMethod]
+    public async Task GraphService_ChangeEdgeTypeAsync_ValidatesDynamicTypedEdgeEndpoints() {
+        var loopStepType = (await Service.CreateNodeType("StalkovLoopStep")).Value!.Type;
+        var playerActionType = (await Service.CreateNodeType("StalkovPlayerAction")).Value!.Type;
+        var transitionType = (await Service.CreateNodeType(
+            "StalkovStepTransition",
+            fields: [
+                new NodeFieldDefinition(
+                    "From",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Required(),
+                    IsCollection: false,
+                    loopStepType),
+                new NodeFieldDefinition(
+                    "To",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Required(),
+                    IsCollection: false,
+                    loopStepType)
+            ])).Value!.Type;
+
+        var preparation = (await Service.CreateNode("preparation", type: loopStepType)).Value!;
+        var extract = (await Service.CreateNode("extract", type: playerActionType)).Value!;
+
+        var result = await Service.ChangeEdgeTypeAsync(
+            preparation.GlobalId,
+            extract.GlobalId,
+            transitionType.GlobalId);
+
+        Assert.AreEqual(ServiceResultStatus.BadRequest, result.Status,
+            "A dynamic StalkovStepTransition only permits StalkovLoopStep endpoints.");
+        StringAssert.Contains(result.Error, "To");
+    }
+
+    [TestMethod]
     public async Task Graph_OpenAsync_PersistsRuntimeTypeDefinitionForIndependentHost() {
         var runtimeDefinition = (await Service.GetNodeTypeDefinitionAsync<ManufacturerNodeType>()).Value!;
         Assert.AreEqual(11, runtimeDefinition.Fields.Count);
