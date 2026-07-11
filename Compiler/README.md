@@ -42,7 +42,7 @@ TypedGraphSnapshot
 
 CPU executor намеренно имеет прозрачный детерминированный порядок вычисления. Это oracle для будущих GPU runtime backend'ов: результат конкретного backend должен совпадать с ним в пределах выбранного float tolerance.
 
-HLSL backend выдаёт исходник compute shader, размеры dispatch, constants и уже упакованные CSR/transform buffers. Он пока не вызывает DXC, не создаёт Direct3D device и не запускает shader. Такая граница позволяет тестировать компиляцию без GPU и драйвера; DXIL/runtime должен быть отдельным backend-проектом.
+HLSL backend выдаёт исходник compute shader, размеры dispatch, constants и уже упакованные CSR/transform buffers. Сам `GraphCompiler` остаётся GPU-независимым; Direct3D 12 execution находится в отдельном `GraphCompiler.Runtime` и использует этот artefact без дублирования семантики.
 
 ## Пример
 
@@ -88,6 +88,6 @@ var expected = new CpuMessagePassingExecutor().Execute(program);
 - нет lowering гиперрёбер в incidence matrices;
 - нет распознавания dense/block-sparse областей и kernel fusion cost model;
 - нет incremental recompilation;
-- HLSL ещё не компилируется в DXIL и не исполняется на устройстве.
+- Direct3D 12 execution требует отдельный Windows runtime и `dxc.exe`; core compiler не должен вводить эту зависимость.
 
-Следующий практический шаг — отдельный Direct3D 12/ComputeSharp или ILGPU runtime backend, проверяемый теми же тестовыми векторами против `CpuMessagePassingExecutor`.
+Дополнительные backend'ы могут использовать тот же `CompiledMessagePassingProgram` и проверяться теми же тестовыми векторами против `CpuMessagePassingExecutor`.

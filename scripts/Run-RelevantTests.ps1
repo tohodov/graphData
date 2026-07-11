@@ -134,16 +134,21 @@ $testSuites = @(
     [pscustomobject]@{
         Name = "CompilerTests"
         Project = "Tests\CompilerTests\CompilerTests.csproj"
+    },
+    [pscustomobject]@{
+        Name = "RuntimeTests"
+        Project = "Tests\RuntimeTests\RuntimeTests.csproj"
     }
 )
 
 $productProjectSuites = @{
-    "Abstractions/Abstractions.csproj" = @("DomainTests", "ApiTests", "CompilerTests")
-    "Domain/1_ Domain.csproj" = @("DomainTests", "ApiTests", "CompilerTests")
+    "Abstractions/Abstractions.csproj" = @("DomainTests", "ApiTests", "CompilerTests", "RuntimeTests")
+    "Domain/1_ Domain.csproj" = @("DomainTests", "ApiTests", "CompilerTests", "RuntimeTests")
     "SymLinkStorage/1_SymLinkStorage.csproj" = @("DomainTests", "ApiTests")
     "Api/0_Api.csproj" = @("ApiTests")
     "Mcp/0_Mcp.csproj" = @("ApiTests")
-    "Compiler/GraphCompiler.csproj" = @("CompilerTests")
+    "Compiler/GraphCompiler.csproj" = @("CompilerTests", "RuntimeTests")
+    "Runtime/GraphCompiler.Runtime.csproj" = @("RuntimeTests")
 }
 
 $artifactsRoot = if ([System.IO.Path]::IsPathRooted($ArtifactsDir)) {
@@ -183,10 +188,15 @@ foreach ($changedFile in $changedFiles) {
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "CompilerTests" -Reason "CompilerTests changed"
     }
 
+    if (Test-PathPrefix -Path $path -Prefix "Tests/RuntimeTests/") {
+        Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "RuntimeTests" -Reason "RuntimeTests changed"
+    }
+
     if (Test-PathPrefix -Path $path -Prefix "Tests/TestSupport/") {
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "DomainTests" -Reason "shared test support changed"
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "ApiTests" -Reason "shared test support changed"
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "CompilerTests" -Reason "shared test support changed"
+        Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "RuntimeTests" -Reason "shared test support changed"
     }
 
     if (Test-PathPrefix -Path $path -Prefix "Api/wwwroot/") {
@@ -203,6 +213,7 @@ foreach ($changedFile in $changedFiles) {
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "DomainTests" -Reason "test infrastructure changed"
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "ApiTests" -Reason "test infrastructure changed"
         Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "CompilerTests" -Reason "test infrastructure changed"
+        Add-FullRunReason -ReasonsBySuite $fullRunReasonsBySuite -SuiteName "RuntimeTests" -Reason "test infrastructure changed"
     }
 }
 

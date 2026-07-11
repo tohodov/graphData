@@ -17,6 +17,7 @@
     <Project Path="Tests/DomainTests/DomainTests.csproj" />
     <Project Path="Tests/McpTests/McpTests.csproj" />
     <Project Path="Tests/PerformanceTests/PerformanceTests.csproj" />
+    <Project Path="Tests/RuntimeTests/RuntimeTests.csproj" />
   </Folder>
   <Folder Name="/Tests/RelevantTests/">
     <Project Path="Tests/RelevantTests/src/relevant-tests/relevant-tests.csproj" />
@@ -37,5 +38,6 @@
     <Deploy />
   </Project>
   <Project Path="Mcp/0_Mcp.csproj" />
+  <Project Path="Runtime/GraphCompiler.Runtime.csproj" />
   <Project Path="SymLinkStorage/1_SymLinkStorage.csproj" />
 </Solution>
