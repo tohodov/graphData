@@ -647,9 +647,14 @@ public sealed class GraphService {
     private async Task<NodeBacking> CreateTypeInstanceRelationAsync(NodeBacking instance, NodeType type) {
         var instanceOfType = graph.GetRequiredRuntimeType<InstanceOfEdge>();
         var definition = TypedEdgeDefinition.Create(graph.GetNodeTypeDefinition(instanceOfType));
+        var relationLocalId = TypeInstanceRelationLocalId(instance.GlobalId, type.LocalId);
+        if (await graph.Storage.Get(new NodePath(relationLocalId)).ConfigureAwait(false) is not null)
+            throw new InvalidOperationException(
+                $"Materialized instance of type '{type.GlobalId}' for node '{instance.GlobalId}' already exists.");
+
         return await TypedEdgeSubgraphCodec.CreateAsync(
             graph.Storage,
-            await NextAvailableRootLocalIdAsync(RelationPrefix(instanceOfType.LocalId)).ConfigureAwait(false),
+            relationLocalId,
             definition,
             new Dictionary<string, IReadOnlyCollection<NodeBacking>>(StringComparer.Ordinal) {
                 [nameof(InstanceOfEdge.Instance)] = [instance],
@@ -893,6 +898,16 @@ public sealed class GraphService {
         if (value.EndsWith("Connection", StringComparison.Ordinal))
             value = value[..^"Connection".Length];
 
+        return ToKebabIdentifier(value);
+    }
+
+    private static NodeLocalId TypeInstanceRelationLocalId(InternalId instanceId, NodeLocalId typeId) {
+        var instanceName = string.Join("-", instanceId.Select(static segment => segment.ToString()));
+        return new NodeLocalId(
+            $"instance-of-{ToKebabIdentifier(typeId.ToString())}-for-{ToKebabIdentifier(instanceName)}");
+    }
+
+    private static string ToKebabIdentifier(string value) {
         var chars = new List<char>();
         for (var index = 0; index < value.Length; index++) {
             var current = value[index];

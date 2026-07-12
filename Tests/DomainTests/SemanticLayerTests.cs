@@ -43,6 +43,14 @@ public sealed class SemanticLayerTests : GraphServiceTests
             firstRead.AssignedTypes.Select(static type => type.GlobalId).ToArray());
         Assert.IsTrue(firstRead.TypeInstances.All(static instance => instance.IsMaterialized));
         var witnesses = firstRead.TypeInstances.Select(static instance => instance.Witness!.GlobalId).ToArray();
+        CollectionAssert.AreEquivalent(
+            new[] {
+                "instance-of-semantic-weapon-for-semantic-ak47",
+                "instance-of-semantic-selectable-for-semantic-ak47"
+            },
+            firstRead.TypeInstances
+                .Select(static instance => instance.Witness!.LocalId.ToString())
+                .ToArray());
         var instanceOfDefinition = TypedEdgeDefinition.Create(
             Graph.GetNodeTypeDefinition(Graph.GetRuntimeType<InstanceOfEdge>()!));
         var endpointOccurrences = firstRead.TypeInstances
