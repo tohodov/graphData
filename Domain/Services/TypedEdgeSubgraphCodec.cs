@@ -4,51 +4,43 @@ using GraphData.Core.Models;
 namespace GraphData.Core.Services;
 
 /// <summary>
-/// Transitional carrier grammar for typed semantic edges. The semantic reader
-/// is centralized here so API, MCP and active domain entities do not reproduce
-/// fixed-depth traversal heuristics.
+/// Maps typed edge domain objects to canonical semantic relation records.
+/// The simple nodes exposed by <see cref="IGraphStorage"/> are used only as a
+/// compatibility projection for existing Domain models and callers.
 /// </summary>
 internal static class TypedEdgeSubgraphCodec
 {
-    private static readonly NodeLocalId DefinitionLocalId = new("Definition");
-    private static readonly NodeLocalId FieldsLocalId = new("Fields");
-
     public static async Task<NodeBacking> CreateAsync(
         IGraphStorage storage,
         NodeLocalId relationLocalId,
         TypedEdgeDefinition definition,
         IReadOnlyDictionary<string, IReadOnlyCollection<NodeBacking>> participants)
     {
+        var semanticStorage = RequireSemanticStorage(storage);
+        var members = new List<SemanticRelationMember>(definition.Endpoints.Count);
+
         foreach (var endpoint in definition.Endpoints) {
             if (!participants.TryGetValue(endpoint.Name, out var endpointParticipants))
                 throw new InvalidOperationException($"Endpoint '{endpoint.Name}' is missing.");
-            if (!endpoint.Cardinality.Contains(endpointParticipants.Count))
+
+            var participantIds = endpointParticipants
+                .DistinctBy(static participant => participant.GlobalId)
+                .Select(static participant => participant.GlobalId)
+                .ToArray();
+            if (!endpoint.Cardinality.Contains(participantIds.Length))
                 throw new InvalidOperationException(
-                    $"Endpoint '{endpoint.Name}' expects {endpoint.Cardinality} participants, but got {endpointParticipants.Count}.");
+                    $"Endpoint '{endpoint.Name}' expects {endpoint.Cardinality} participants, but got {participantIds.Length}.");
+
+            members.Add(new SemanticRelationMember(
+                endpoint.Name,
+                endpoint.MemberTypeId,
+                participantIds));
         }
 
-        NodeBacking? relation = null;
-        try {
-            relation = await storage.Create(relationLocalId).ConfigureAwait(false);
-            await storage.Connect(relation.GlobalId, definition.Type.GlobalId).ConfigureAwait(false);
-
-            var endpointIndex = 0;
-            foreach (var endpoint in definition.Endpoints) {
-                var memberType = await EnsureMemberTypeAsync(storage, definition.Type, endpoint).ConfigureAwait(false);
-                var endpointNode = await storage.Create(
-                    EndpointOccurrenceLocalId(relationLocalId, endpointIndex++),
-                    relation.GlobalId).ConfigureAwait(false);
-                await storage.Connect(endpointNode.GlobalId, memberType.GlobalId).ConfigureAwait(false);
-                foreach (var participant in participants[endpoint.Name].DistinctBy(static node => node.GlobalId))
-                    await storage.Connect(endpointNode.GlobalId, participant.GlobalId).ConfigureAwait(false);
-            }
-
-            return relation;
-        } catch {
-            if (relation is not null)
-                await storage.Delete(relation).ConfigureAwait(false);
-            throw;
-        }
+        return await semanticStorage.CreateRelationAsync(
+            relationLocalId,
+            definition.Type.GlobalId,
+            members).ConfigureAwait(false);
     }
 
     public static async Task<TypedEdgeInstance> ReadAsync(
@@ -56,81 +48,133 @@ internal static class TypedEdgeSubgraphCodec
         NodeBacking relation,
         TypedEdgeDefinition definition)
     {
-        if (!await HasClassifierAsync(relation, definition.Type.GlobalId).ConfigureAwait(false))
+        var compatibilityStorage = graph.Storage;
+        var semanticStorage = RequireSemanticStorage(compatibilityStorage);
+        var persisted = await semanticStorage.GetRelationAsync(relation.GlobalId).ConfigureAwait(false)
+            ?? throw new InvalidOperationException(
+                $"Semantic relation '{relation.GlobalId}' was not found.");
+
+        if (!persisted.TypeIds.Contains(definition.Type.GlobalId))
             throw new InvalidOperationException(
                 $"Relation '{relation.GlobalId}' is not classified by typed edge type '{definition.Type.GlobalId}'.");
 
-        var relationNeighbors = await relation.Nodes.ToArrayAsync().ConfigureAwait(false);
         var endpoints = new List<TypedEdgeEndpointInstance>(definition.Endpoints.Count);
+        var endpointIndex = 0;
         foreach (var endpoint in definition.Endpoints) {
-            var endpointNodes = new List<NodeBacking>();
-            foreach (var candidate in relationNeighbors) {
-                if (!IsDirectChildOf(candidate.GlobalId, relation.GlobalId))
-                    continue;
-                if (await HasMemberClassifierAsync(candidate, endpoint.MemberTypeId).ConfigureAwait(false))
-                    endpointNodes.Add(candidate);
-            }
-            if (endpointNodes.Count != 1)
-                throw new InvalidOperationException(
-                    $"Typed edge '{relation.GlobalId}' must contain exactly one endpoint instance for member '{endpoint.Name}', but found {endpointNodes.Count}.");
-
-            var endpointNode = endpointNodes[0];
-            var participantStates = (await endpointNode.Nodes.ToArrayAsync().ConfigureAwait(false))
-                .Where(node => node.GlobalId != relation.GlobalId)
-                .Where(node => node.GlobalId != endpoint.MemberTypeId)
-                .Where(node => !IsDirectChildOf(node.GlobalId, endpointNode.GlobalId))
-                .DistinctBy(static node => node.GlobalId)
+            var matchingMembers = persisted.Members
+                .Where(member => string.Equals(member.Name, endpoint.Name, StringComparison.Ordinal))
+                .Where(member => member.MemberTypeId == endpoint.MemberTypeId)
                 .ToArray();
-            if (!endpoint.Cardinality.Contains(participantStates.Length))
+            if (matchingMembers.Length != 1)
                 throw new InvalidOperationException(
-                    $"Endpoint '{endpoint.Name}' of typed edge '{relation.GlobalId}' expects {endpoint.Cardinality} participants, but found {participantStates.Length}.");
+                    $"Typed edge '{relation.GlobalId}' must contain exactly one semantic member '{endpoint.Name}' "
+                    + $"with member type '{endpoint.MemberTypeId}', but found {matchingMembers.Length}.");
+
+            var member = matchingMembers[0];
+            var participantIds = member.ParticipantIds
+                .Distinct()
+                .ToArray();
+            if (!endpoint.Cardinality.Contains(participantIds.Length))
+                throw new InvalidOperationException(
+                    $"Endpoint '{endpoint.Name}' of typed edge '{relation.GlobalId}' expects {endpoint.Cardinality} participants, but found {participantIds.Length}.");
+
+            var participantStates = new List<NodeBacking>(participantIds.Length);
+            foreach (var participantId in participantIds) {
+                var participant = await compatibilityStorage.Get(participantId).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException(
+                        $"Participant '{participantId}' of semantic relation '{relation.GlobalId}' was not found in the compatibility projection.");
+                participantStates.Add(participant);
+            }
+
+            var endpointLocalId = EndpointOccurrenceLocalId(relation.LocalId, endpointIndex++);
+            var endpointNode = await compatibilityStorage
+                .Get(relation.GlobalId, endpointLocalId)
+                .ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    $"Semantic member projection '{relation.GlobalId}/{endpointLocalId}' was not found.");
 
             endpoints.Add(new TypedEdgeEndpointInstance(
                 endpoint,
                 new Node(endpointNode),
-                participantStates.Select(static node => new Node(node)).ToArray()));
+                participantStates.Select(static participant => new Node(participant)).ToArray()));
         }
 
         return new TypedEdgeInstance(new Node(relation), definition, endpoints);
     }
 
+    /// <summary>
+    /// Finds relations through the canonical participant incidence index. The
+    /// compatibility storage is needed only to materialize legacy NodeBacking
+    /// wrappers for the returned semantic relation ids.
+    /// </summary>
     public static async Task<IReadOnlyCollection<NodeBacking>> FindIncidentRelationsAsync(
+        IGraphStorage compatibilityStorage,
         NodeBacking participant,
         TypedEdgeDefinition definition,
         TypedEdgeEndpointDefinition endpoint)
     {
+        var semanticStorage = RequireSemanticStorage(compatibilityStorage);
         var relations = new Dictionary<InternalId, NodeBacking>();
-        await foreach (var endpointNode in participant.Nodes.ConfigureAwait(false)) {
-            if (!await HasMemberClassifierAsync(endpointNode, endpoint.MemberTypeId).ConfigureAwait(false))
+        await foreach (var candidate in semanticStorage.FindIncidentRelationsAsync(
+                           participant.GlobalId,
+                           definition.Type.GlobalId,
+                           endpoint.Name).ConfigureAwait(false)) {
+            if (!candidate.TypeIds.Contains(definition.Type.GlobalId))
                 continue;
 
-            await foreach (var relation in endpointNode.Nodes.ConfigureAwait(false)) {
-                if (!IsDirectChildOf(endpointNode.GlobalId, relation.GlobalId))
-                    continue;
-                if (await HasClassifierAsync(relation, definition.Type.GlobalId).ConfigureAwait(false))
-                    relations[relation.GlobalId] = relation;
-            }
+            var matchingMembers = candidate.Members
+                .Where(member => string.Equals(member.Name, endpoint.Name, StringComparison.Ordinal))
+                .Where(member => member.MemberTypeId == endpoint.MemberTypeId)
+                .Where(member => member.ParticipantIds.Contains(participant.GlobalId))
+                .ToArray();
+            if (matchingMembers.Length == 0)
+                continue;
+            if (matchingMembers.Length > 1)
+                throw new InvalidOperationException(
+                    $"Semantic relation '{candidate.Id}' contains member '{endpoint.Name}' more than once.");
+
+            var relation = await compatibilityStorage.Get(candidate.Id).ConfigureAwait(false)
+                ?? throw new InvalidOperationException(
+                    $"Semantic relation '{candidate.Id}' is missing from the compatibility projection.");
+            relations[relation.GlobalId] = relation;
         }
 
         return relations.Values.ToArray();
     }
 
-    public static async Task<bool> HasClassifierAsync(NodeBacking relation, InternalId typeId)
+    /// <summary>
+    /// Kept temporarily so callers fail explicitly instead of silently falling
+    /// back to compatibility-topology traversal. Callers must pass their
+    /// compatibility storage to use the semantic incidence index.
+    /// </summary>
+    [Obsolete("Pass IGraphStorage as the first argument so the semantic incidence index can be used.")]
+    public static Task<IReadOnlyCollection<NodeBacking>> FindIncidentRelationsAsync(
+        NodeBacking participant,
+        TypedEdgeDefinition definition,
+        TypedEdgeEndpointDefinition endpoint)
     {
-        return await relation.Nodes
-            .AnyAsync(node => node.GlobalId == typeId)
-            .ConfigureAwait(false);
+        throw new InvalidOperationException(
+            "Semantic incidence lookup requires the compatibility storage. "
+            + "Use FindIncidentRelationsAsync(storage, participant, definition, endpoint).");
     }
 
-    public static async Task<bool> HasMemberClassifierAsync(NodeBacking endpoint, InternalId memberTypeId)
+    public static Task<bool> HasClassifierAsync(NodeBacking relation, InternalId typeId)
     {
-        return await endpoint.Nodes
-            .AnyAsync(node => node.GlobalId == memberTypeId)
-            .ConfigureAwait(false);
+        return Task.FromResult(
+            relation is ISemanticNodeBacking semantic
+            && semantic.DeclaredTypeIds.Contains(typeId));
+    }
+
+    public static Task<bool> HasMemberClassifierAsync(NodeBacking endpoint, InternalId memberTypeId)
+    {
+        return Task.FromResult(
+            endpoint is ISemanticNodeBacking semantic
+            && semantic.RelationMembers.Any(member => member.MemberTypeId == memberTypeId));
     }
 
     public static bool HasMemberClassifier(Node endpoint, InternalId memberTypeId) =>
-        endpoint.Nodes.Any(node => node.GlobalId == memberTypeId);
+        endpoint.Backing is ISemanticNodeBacking semantic
+        && semantic.RelationMembers.Any(member => member.MemberTypeId == memberTypeId);
 
     public static InternalId MemberTypeId(NodeType relationType, string memberName) {
         return TypedEdgeDefinition.MemberTypeId(relationType, memberName);
@@ -144,27 +188,14 @@ internal static class TypedEdgeSubgraphCodec
             && parentSegments.SequenceEqual(nodeSegments.Take(parentSegments.Length));
     }
 
-    private static async Task<NodeBacking> EnsureMemberTypeAsync(
-        IGraphStorage storage,
-        NodeType relationType,
-        TypedEdgeEndpointDefinition endpoint)
+    private static ISemanticGraphStorage RequireSemanticStorage(IGraphStorage storage)
     {
-        var definition = await storage.Get(relationType.GlobalId, DefinitionLocalId).ConfigureAwait(false)
-            ?? await storage.Create(DefinitionLocalId, relationType.GlobalId).ConfigureAwait(false);
-        var fields = await storage.Get(definition.GlobalId, FieldsLocalId).ConfigureAwait(false)
-            ?? await storage.Create(FieldsLocalId, definition.GlobalId).ConfigureAwait(false);
-        var fieldDefinition = await storage.Get(fields.GlobalId, new NodeLocalId(endpoint.Name)).ConfigureAwait(false)
-            ?? await storage.Create(new NodeLocalId(endpoint.Name), fields.GlobalId).ConfigureAwait(false);
-        var memberTypeLocalId = endpoint.MemberTypeId.Last();
-        var memberType = await storage.Get(fieldDefinition.GlobalId, memberTypeLocalId).ConfigureAwait(false)
-            ?? await storage.Create(memberTypeLocalId, fieldDefinition.GlobalId).ConfigureAwait(false);
-        if (memberType.GlobalId != endpoint.MemberTypeId)
-            throw new InvalidOperationException(
-                $"Member type '{endpoint.Name}' of relation type '{relationType.GlobalId}' has unexpected raw identity '{memberType.GlobalId}'.");
-        return memberType;
+        return storage as ISemanticGraphStorage
+            ?? throw new InvalidOperationException(
+                $"Graph storage '{storage.GetType().FullName}' does not implement {nameof(ISemanticGraphStorage)}.");
     }
 
     private static NodeLocalId EndpointOccurrenceLocalId(NodeLocalId relationLocalId, int index) {
-        return new NodeLocalId($"member-{relationLocalId}-{index + 1}");
+        return new NodeLocalId($"@member-{relationLocalId}-{index + 1}");
     }
 }

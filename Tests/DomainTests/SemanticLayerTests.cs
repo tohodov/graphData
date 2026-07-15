@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Text.Json;
 using Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
@@ -11,24 +13,19 @@ public sealed class SemanticLayerTests : GraphServiceTests
     {
         var nodeType = (await Service.CreateNodeType(
             "TwoReferencesAreStillNodeType",
-            fields: [
-                new NodeFieldDefinition("First", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false),
-                new NodeFieldDefinition("Second", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false)
-            ])).Value!;
+            fields: [Endpoint("First"), Endpoint("Second")])).Value!;
 
         Assert.IsFalse(TypedEdgeDefinition.TryCreate(nodeType, out _));
-        var create = await Service.CreateEdgeType(
+        var edgeType = await Service.CreateEdgeType(
             "TwoReferencesAreEdgeType",
-            fields: [
-                new NodeFieldDefinition("First", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false),
-                new NodeFieldDefinition("Second", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false)
-            ]);
-        Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
-        Assert.IsTrue(TypedEdgeDefinition.TryCreate(create.Value!, out _));
+            fields: [Endpoint("First"), Endpoint("Second")]);
+
+        Assert.AreEqual(ServiceResultStatus.Ok, edgeType.Status, edgeType.Error);
+        Assert.IsTrue(TypedEdgeDefinition.TryCreate(edgeType.Value!, out _));
     }
 
     [TestMethod]
-    public async Task AssignNodeType_MaterializesMultipleTypesIdempotently()
+    public async Task AssignNodeType_PersistsLocalTypeRefsIdempotentlyWithoutCarrierWitnesses()
     {
         var weapon = (await Service.CreateNodeType("SemanticWeapon")).Value!.Type;
         var selectable = (await Service.CreateNodeType("SemanticSelectable")).Value!.Type;
@@ -36,112 +33,35 @@ public sealed class SemanticLayerTests : GraphServiceTests
 
         Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(ak47.GlobalId, weapon.GlobalId)).Status);
         Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(ak47.GlobalId, selectable.GlobalId)).Status);
+        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(ak47.GlobalId, weapon.GlobalId)).Status);
 
-        var firstRead = (await Service.GetSemanticNodeAsync(ak47.GlobalId)).Value!;
+        var semantic = (await Service.GetSemanticNodeAsync(ak47.GlobalId)).Value!;
         CollectionAssert.AreEquivalent(
             new[] { weapon.GlobalId, selectable.GlobalId },
-            firstRead.AssignedTypes.Select(static type => type.GlobalId).ToArray());
-        Assert.IsTrue(firstRead.TypeInstances.All(static instance => instance.IsMaterialized));
-        var witnesses = firstRead.TypeInstances.Select(static instance => instance.Witness!.GlobalId).ToArray();
+            semantic.DeclaredTypes.Select(static type => type.GlobalId).ToArray());
+        Assert.IsTrue(semantic.TypeInstances.All(static instance => !instance.IsMaterialized));
+
+        var metadataPath = Path.Combine(
+            StorageOptions.RootPath,
+            "instances",
+            ak47.LocalId,
+            "instance.json");
+        using var document = JsonDocument.Parse(await File.ReadAllTextAsync(metadataPath));
         CollectionAssert.AreEquivalent(
-            new[] {
-                "instance-of-semantic-weapon-for-semantic-ak47",
-                "instance-of-semantic-selectable-for-semantic-ak47"
-            },
-            firstRead.TypeInstances
-                .Select(static instance => instance.Witness!.LocalId.ToString())
+            new[] { weapon.GlobalId.ToString(), selectable.GlobalId.ToString() },
+            document.RootElement.GetProperty("typeIds")
+                .EnumerateArray()
+                .Select(static value => value.GetString())
                 .ToArray());
-        var instanceOfDefinition = TypedEdgeDefinition.Create(
-            Graph.GetNodeTypeDefinition(Graph.GetRuntimeType<InstanceOfEdge>()!));
-        var endpointOccurrences = firstRead.TypeInstances
-            .SelectMany(static instance => instance.Witness!.Nodes)
-            .Where(node => witnesses.Any(witnessId =>
-                TypedEdgeSubgraphCodec.IsDirectChildOf(node.GlobalId, witnessId)))
-            .ToArray();
-        Assert.AreEqual(4, endpointOccurrences.Length);
-        Assert.AreEqual(4, endpointOccurrences.Select(static node => node.LocalId).Distinct().Count());
-        Assert.IsTrue(endpointOccurrences.All(node =>
-            node.LocalId.ToString().StartsWith("member-instance-of-", StringComparison.Ordinal)));
-        Assert.IsTrue(endpointOccurrences.Any(node => TypedEdgeSubgraphCodec.HasMemberClassifier(
-            node,
-            instanceOfDefinition.Endpoints.Single(endpoint =>
-                endpoint.Name == nameof(InstanceOfEdge.Instance)).MemberTypeId)));
-        Assert.IsTrue(endpointOccurrences.Any(node => TypedEdgeSubgraphCodec.HasMemberClassifier(
-            node,
-            instanceOfDefinition.Endpoints.Single(endpoint =>
-                endpoint.Name == nameof(InstanceOfEdge.Type)).MemberTypeId)));
-
-        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(ak47.GlobalId, weapon.GlobalId)).Status);
-        var secondRead = (await Service.GetSemanticNodeAsync(ak47.GlobalId)).Value!;
-        CollectionAssert.AreEquivalent(
-            witnesses,
-            secondRead.TypeInstances.Select(static instance => instance.Witness!.GlobalId).ToArray());
+        Assert.IsFalse(Directory.EnumerateFiles(
+                StorageOptions.RootPath,
+                "instance-of-*",
+                SearchOption.AllDirectories)
+            .Any());
     }
 
     [TestMethod]
-    public async Task DeleteNode_RemovesMaterializedTypeInstanceSubgraphs()
-    {
-        var type = (await Service.CreateNodeType("SemanticDisposable")).Value!.Type;
-        var node = (await Service.CreateNode("semantic-disposable")).Value!;
-        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(node.GlobalId, type.GlobalId)).Status);
-        var witnessIds = (await Service.GetSemanticNodeAsync(node.GlobalId)).Value!.TypeInstances
-            .Select(static instance => instance.Witness!.GlobalId)
-            .ToArray();
-
-        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.DeleteNode(node.GlobalId)).Status);
-
-        Assert.IsNull(await Storage.Get(node.GlobalId));
-        foreach (var witnessId in witnessIds)
-            Assert.IsNull(await Storage.Get(witnessId));
-    }
-
-    [TestMethod]
-    public async Task DeleteNode_DeletingEndpointInstanceRemovesOwningTypedEdgeCarrier()
-    {
-        var first = (await Service.CreateNode("delete-endpoint-first")).Value!;
-        var second = (await Service.CreateNode("delete-endpoint-second")).Value!;
-        var create = await Service.ChangeEdgeTypeAsync<InstanceOfEdge>(
-            [first.GlobalId, second.GlobalId]);
-        Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
-        var relation = create.Value!.Nodes.Single(node =>
-            node.GlobalId.Count() == 1
-            && node.LocalId.ToString().StartsWith("instance-of-", StringComparison.Ordinal));
-        var definition = TypedEdgeDefinition.Create(
-            Graph.GetNodeTypeDefinition(Graph.GetRuntimeType<InstanceOfEdge>()!));
-        var endpoint = await FindEndpointAsync(
-            (await Storage.Get(relation.GlobalId))!,
-            definition,
-            nameof(InstanceOfEdge.Instance));
-
-        var delete = await Service.DeleteNode(endpoint.GlobalId);
-
-        Assert.AreEqual(ServiceResultStatus.Ok, delete.Status, delete.Error);
-        Assert.IsNull(await Storage.Get(relation.GlobalId));
-        Assert.IsNull(await Storage.Get(endpoint.GlobalId));
-        Assert.IsNotNull(await Storage.Get(first.GlobalId));
-        Assert.IsNotNull(await Storage.Get(second.GlobalId));
-    }
-
-    [TestMethod]
-    public async Task DisconnectHierarchy_DoesNotRelocateTypedNodeThroughSemanticInfrastructure()
-    {
-        var type = (await Service.CreateNodeType("SemanticHierarchyType")).Value!.Type;
-        var oldParent = (await Service.CreateNode("semantic-old-parent")).Value!;
-        var newParent = (await Service.CreateNode("semantic-new-parent")).Value!;
-        var child = (await Service.CreateNode("semantic-child", oldParent.GlobalId)).Value!;
-        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(child.GlobalId, type.GlobalId)).Status);
-        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.ConnectNodesAsync(child.GlobalId, newParent.GlobalId)).Status);
-
-        var error = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
-            () => Service.Disconnect(oldParent.GlobalId, child.GlobalId));
-
-        StringAssert.Contains(error.Message, "relocation is ambiguous");
-        Assert.IsNotNull(await Storage.Get(child.GlobalId));
-        Assert.IsNotNull(await Storage.Get(oldParent.GlobalId, child.LocalId));
-    }
-
-    [TestMethod]
-    public async Task AssignNodeType_MaterializesDiamondOnceAndTerminatesOnCycleAfterReopen()
+    public async Task RequiredTypes_AreEffectiveButOnlyLeafIsDeclared_AfterReopenAndCycle()
     {
         var root = (await Service.CreateNodeType("SemanticRoot")).Value!.Type;
         var left = (await Service.CreateNodeType("SemanticLeft", requiredTypes: [root])).Value!.Type;
@@ -150,48 +70,26 @@ public sealed class SemanticLayerTests : GraphServiceTests
         Assert.AreEqual(
             ServiceResultStatus.Ok,
             (await Service.AddNodeTypeRequirementAsync(root.GlobalId, leaf.GlobalId)).Status);
+        var instance = (await Service.CreateNode("semantic-cycle-instance")).Value!;
 
-        var ak47 = (await Service.CreateNode("semantic-cycle-ak47")).Value!;
-        var assignment = await Service.AssignNodeTypeAsync(ak47.GlobalId, leaf.GlobalId);
+        var assignment = await Service.AssignNodeTypeAsync(instance.GlobalId, leaf.GlobalId);
         Assert.AreEqual(ServiceResultStatus.Ok, assignment.Status, assignment.Error);
 
-        var expected = new[] { root.GlobalId, left.GlobalId, right.GlobalId, leaf.GlobalId };
-        var projected = (await Service.GetSemanticNodeAsync(ak47.GlobalId)).Value!;
-        CollectionAssert.AreEquivalent(expected, projected.AssignedTypes.Select(static type => type.GlobalId).ToArray());
-        Assert.AreEqual(4, projected.TypeInstances.Count);
+        var expectedEffective = new[] { root.GlobalId, left.GlobalId, right.GlobalId, leaf.GlobalId };
+        var first = (await Service.GetSemanticNodeAsync(instance.GlobalId)).Value!;
+        CollectionAssert.AreEqual(new[] { leaf.GlobalId }, first.DeclaredTypes.Select(static type => type.GlobalId).ToArray());
+        CollectionAssert.AreEquivalent(expectedEffective, first.AssignedTypes.Select(static type => type.GlobalId).ToArray());
 
         var reopenedGraph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
         var reopenedService = new GraphService(reopenedGraph, new GraphSearchService(Storage));
-        var reopened = await reopenedService.GetSemanticNodeAsync(ak47.GlobalId);
+        var reopened = await reopenedService.GetSemanticNodeAsync(instance.GlobalId);
         Assert.AreEqual(ServiceResultStatus.Ok, reopened.Status, reopened.Error);
-        CollectionAssert.AreEquivalent(expected, reopened.Value!.AssignedTypes.Select(static type => type.GlobalId).ToArray());
-        Assert.AreEqual(4, reopened.Value.TypeInstances.Count);
+        CollectionAssert.AreEqual(new[] { leaf.GlobalId }, reopened.Value!.DeclaredTypes.Select(static type => type.GlobalId).ToArray());
+        CollectionAssert.AreEquivalent(expectedEffective, reopened.Value.AssignedTypes.Select(static type => type.GlobalId).ToArray());
     }
 
     [TestMethod]
-    public async Task AssignNodeType_RejectsDirectAbstractTypeButMaterializesItAsRequiredBase()
-    {
-        var abstractBase = (await Service.CreateNodeType("SemanticAbstractBase", isAbstract: true)).Value!.Type;
-        var concrete = (await Service.CreateNodeType(
-            "SemanticConcrete",
-            requiredTypes: [abstractBase])).Value!.Type;
-        var node = (await Service.CreateNode("semantic-concrete-instance")).Value!;
-
-        var invalid = await Service.AssignNodeTypeAsync(node.GlobalId, abstractBase.GlobalId);
-        Assert.AreEqual(ServiceResultStatus.BadRequest, invalid.Status);
-        StringAssert.Contains(invalid.Error, "cannot be assigned directly");
-
-        var valid = await Service.AssignNodeTypeAsync(node.GlobalId, concrete.GlobalId);
-        Assert.AreEqual(ServiceResultStatus.Ok, valid.Status, valid.Error);
-        CollectionAssert.AreEquivalent(
-            new[] { abstractBase.GlobalId, concrete.GlobalId },
-            (await Service.GetSemanticNodeAsync(node.GlobalId)).Value!.AssignedTypes
-                .Select(static type => type.GlobalId)
-                .ToArray());
-    }
-
-    [TestMethod]
-    public async Task AddingRequirement_InvalidatesOldProjectionUntilFacetsAreMaterialized()
+    public async Task AddingRequirement_ChangesEffectiveClosureWithoutRewritingInstances()
     {
         var required = (await Service.CreateNodeType("LateRequired")).Value!.Type;
         var derived = (await Service.CreateNodeType("LateDerived")).Value!.Type;
@@ -201,182 +99,244 @@ public sealed class SemanticLayerTests : GraphServiceTests
         Assert.AreEqual(
             ServiceResultStatus.Ok,
             (await Service.AddNodeTypeRequirementAsync(derived.GlobalId, required.GlobalId)).Status);
-        var stale = await Service.GetSemanticNodeAsync(node.GlobalId);
-        Assert.AreEqual(ServiceResultStatus.BadRequest, stale.Status);
-        StringAssert.Contains(stale.Error, "missing materialized required types");
 
-        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(node.GlobalId, derived.GlobalId)).Status);
+        var semantic = (await Service.GetSemanticNodeAsync(node.GlobalId)).Value!;
+        CollectionAssert.AreEqual(new[] { derived.GlobalId }, semantic.DeclaredTypes.Select(static type => type.GlobalId).ToArray());
         CollectionAssert.AreEquivalent(
-            new[] { required.GlobalId, derived.GlobalId },
-            (await Service.GetSemanticNodeAsync(node.GlobalId)).Value!.AssignedTypes
-                .Select(static type => type.GlobalId)
-                .ToArray());
+            new[] { derived.GlobalId, required.GlobalId },
+            semantic.AssignedTypes.Select(static type => type.GlobalId).ToArray());
     }
 
     [TestMethod]
-    public async Task SemanticProjection_UsesExplicitBasisOutsideDefaultTypeCatalog()
+    public async Task AssignNodeType_RejectsDirectAbstractTypeButIncludesItInEffectiveClosure()
     {
-        var externalType = (await Service.CreateNode("external-basis-type")).Value!;
-        var instance = (await Service.CreateNode("external-basis-instance")).Value!;
-        var materialize = await Service.ChangeEdgeTypeAsync<InstanceOfEdge>(
-            [instance.GlobalId, externalType.GlobalId]);
-        Assert.AreEqual(ServiceResultStatus.Ok, materialize.Status, materialize.Error);
+        var abstractBase = (await Service.CreateNodeType("SemanticAbstractBase", isAbstract: true)).Value!.Type;
+        var concrete = (await Service.CreateNodeType(
+            "SemanticConcrete",
+            requiredTypes: [abstractBase])).Value!.Type;
+        var node = (await Service.CreateNode("semantic-concrete-instance")).Value!;
 
-        var defaultProjection = (await Service.GetSemanticNodeAsync(instance.GlobalId)).Value!;
-        Assert.AreEqual(0, defaultProjection.AssignedTypes.Count);
+        var invalid = await Service.AssignNodeTypeAsync(node.GlobalId, abstractBase.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.BadRequest, invalid.Status);
 
-        var selectedProjection = await Service.GetSemanticNodeAsync(instance.GlobalId, [externalType.GlobalId]);
-        Assert.AreEqual(ServiceResultStatus.Ok, selectedProjection.Status, selectedProjection.Error);
-        Assert.AreEqual(externalType.GlobalId, selectedProjection.Value!.AssignedTypes.Single().GlobalId);
-        Assert.IsTrue(selectedProjection.Value.TypeInstances.Single().IsMaterialized);
+        var valid = await Service.AssignNodeTypeAsync(node.GlobalId, concrete.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, valid.Status, valid.Error);
+        var semantic = (await Service.GetSemanticNodeAsync(node.GlobalId)).Value!;
+        CollectionAssert.AreEqual(new[] { concrete.GlobalId }, semantic.DeclaredTypes.Select(static type => type.GlobalId).ToArray());
+        CollectionAssert.AreEquivalent(
+            new[] { abstractBase.GlobalId, concrete.GlobalId },
+            semantic.AssignedTypes.Select(static type => type.GlobalId).ToArray());
     }
 
     [TestMethod]
-    public async Task SemanticProjection_DoesNotTreatBasisRootAsInstanceOfItsChildren()
+    public async Task AssignNodeType_EnforcesTypeElementKindAndTargetSemanticKind()
     {
-        var firstType = (await Service.CreateNodeType("BasisRootFirst")).Value!.Type;
-        var secondType = (await Service.CreateNodeType("BasisRootSecond")).Value!.Type;
+        var nodeType = (await Service.CreateNodeType("ClassifiableInstance")).Value!.Type;
+        var edgeType = (await Service.CreateEdgeType(
+            "ClassifiableRelation",
+            fields: [Endpoint("Source"), Endpoint("Target")])).Value!.Type;
+        var otherEdgeType = (await Service.CreateEdgeType(
+            "OtherClassifiableRelation",
+            fields: [Endpoint("Source"), Endpoint("Target")])).Value!.Type;
+        var instance = (await Service.CreateNode("kind-target-instance")).Value!;
+        var source = (await Service.CreateNode("kind-source")).Value!;
+        var target = (await Service.CreateNode("kind-target")).Value!;
+        var relation = (await Service.CreateRelationAsync(
+            "kind-relation",
+            edgeType.GlobalId,
+            new Dictionary<string, IReadOnlyCollection<NodeRef>> {
+                ["Source"] = [source.GlobalId],
+                ["Target"] = [target.GlobalId]
+            })).Value!.Relation;
 
-        var projection = await Service.GetSemanticNodeAsync(
-            Graph.NodeTypes.GlobalId,
-            [firstType.GlobalId, secondType.GlobalId]);
+        var nodeOnInstance = await Service.AssignNodeTypeAsync(instance.GlobalId, nodeType.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, nodeOnInstance.Status, nodeOnInstance.Error);
 
-        Assert.AreEqual(ServiceResultStatus.Ok, projection.Status, projection.Error);
-        Assert.AreEqual(0, projection.Value!.AssignedTypes.Count);
+        var edgeOnRelation = await Service.AssignNodeTypeAsync(relation.GlobalId, edgeType.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.Ok, edgeOnRelation.Status, edgeOnRelation.Error);
+
+        var secondClassifier = await Service.AssignNodeTypeAsync(relation.GlobalId, otherEdgeType.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.BadRequest, secondClassifier.Status);
+        StringAssert.Contains(secondClassifier.Error, "exactly one concrete Edge classifier");
+
+        var edgeOnInstance = await Service.AssignNodeTypeAsync(instance.GlobalId, edgeType.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.BadRequest, edgeOnInstance.Status);
+        StringAssert.Contains(edgeOnInstance.Error, "semantic Relation");
+
+        var nodeOnRelation = await Service.AssignNodeTypeAsync(relation.GlobalId, nodeType.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.BadRequest, nodeOnRelation.Status);
+        StringAssert.Contains(nodeOnRelation.Error, "semantic Instance");
+
+        var nodeOnType = await Service.AssignNodeTypeAsync(nodeType.GlobalId, nodeType.GlobalId);
+        Assert.AreEqual(ServiceResultStatus.BadRequest, nodeOnType.Status);
+        StringAssert.Contains(nodeOnType.Error, "semantic Instance");
+
+        CollectionAssert.AreEqual(
+            new[] { nodeType.GlobalId },
+            ((ISemanticNodeBacking)instance.Backing).DeclaredTypeIds.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { edgeType.GlobalId },
+            ((ISemanticNodeBacking)relation.Backing).DeclaredTypeIds.ToArray());
     }
 
     [TestMethod]
-    public async Task TypedEdgeReader_RejectsAmbiguousSingleEndpoint()
+    public async Task TypeCatalog_DoesNotConfuseReservedLocalIdsWithInfrastructure()
     {
-        var first = (await Service.CreateNode("reader-first")).Value!;
-        var second = (await Service.CreateNode("reader-second")).Value!;
-        var extra = (await Service.CreateNode("reader-extra")).Value!;
-        var create = await Service.ChangeEdgeTypeAsync<InstanceOfEdge>([first.GlobalId, second.GlobalId]);
-        Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
-        var relation = create.Value!.Nodes.Single(node =>
-            node.LocalId.ToString().StartsWith("instance-of-", StringComparison.Ordinal)
-            && node.GlobalId.ToString() == node.LocalId.ToString());
-        var definition = TypedEdgeDefinition.Create(
-            Graph.GetNodeTypeDefinition(Graph.GetRuntimeType<InstanceOfEdge>()!));
-        var instanceEndpoint = await FindEndpointAsync(
-            (await Storage.Get(relation.GlobalId))!,
-            definition,
-            nameof(InstanceOfEdge.Instance));
-        await Storage.Connect(instanceEndpoint.GlobalId, extra.GlobalId);
+        var reservedNames = new[] { "Definition", "Fields", "Slots" };
+        var created = new List<NodeTypeDefinition>();
+        foreach (var name in reservedNames) {
+            var result = await Service.CreateNodeType(name);
+            Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
+            created.Add(result.Value!);
+        }
 
-        var read = await Service.GetTypedEdgeInstanceAsync(relation.GlobalId);
-        Assert.AreEqual(ServiceResultStatus.BadRequest, read.Status);
-        StringAssert.Contains(read.Error, "expects 1..1 participants");
+        foreach (var definition in created)
+            Assert.AreEqual(
+                SemanticElementKind.Type,
+                ((ISemanticNodeBacking)definition.Type.Backing).SemanticKind);
+
+        var listed = await Service.GetTypeDefinitionsAsync();
+        Assert.AreEqual(ServiceResultStatus.Ok, listed.Status, listed.Error);
+        CollectionAssert.IsSubsetOf(
+            created.Select(static definition => definition.Type.GlobalId).ToArray(),
+            listed.Value!.Select(static definition => definition.Type.GlobalId).ToArray());
     }
 
     [TestMethod]
-    public async Task RawRead_RemainsAvailableWhenSemanticProjectionIsAmbiguous()
+    public async Task NeighborLocalIdMayBeAmbiguousWhileGlobalIdsRemainExact()
     {
-        var type = (await Service.CreateNodeType("AmbiguousSemanticType")).Value!.Type;
-        var node = (await Service.CreateNode("ambiguous-semantic-node")).Value!;
+        var anchor = (await Service.CreateNode("duplicate-local-anchor")).Value!;
+        var leftNamespace = (await Service.CreateNode("duplicate-local-left")).Value!;
+        var rightNamespace = (await Service.CreateNode("duplicate-local-right")).Value!;
+        var left = (await Service.CreateNode("shared", leftNamespace.GlobalId)).Value!;
+        var right = (await Service.CreateNode("shared", rightNamespace.GlobalId)).Value!;
+        Assert.AreEqual(
+            ServiceResultStatus.Ok,
+            (await Service.ConnectNodesAsync(anchor.GlobalId, left.GlobalId)).Status);
+        Assert.AreEqual(
+            ServiceResultStatus.Ok,
+            (await Service.ConnectNodesAsync(anchor.GlobalId, right.GlobalId)).Status);
+
+        var ambiguous = await Service.GetNode(anchor.GlobalId, "shared");
+        Assert.AreEqual(ServiceResultStatus.BadRequest, ambiguous.Status);
+        StringAssert.Contains(ambiguous.Error, "more than one graph neighbor");
+
+        var exactLeft = await Service.GetNode(left.GlobalId);
+        var exactRight = await Service.GetNode(right.GlobalId);
+        Assert.AreEqual(left.GlobalId, exactLeft.Value!.GlobalId);
+        Assert.AreEqual(right.GlobalId, exactRight.Value!.GlobalId);
+    }
+
+    [TestMethod]
+    public async Task CreateRelation_StoresNaryMembersAndAllowsParallelRelations()
+    {
+        var shipmentType = (await Service.CreateEdgeType(
+            "Shipment",
+            fields: [
+                Endpoint("Source"),
+                new NodeFieldDefinition(
+                    "Cargo",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Many(1),
+                    IsCollection: true)
+            ])).Value!.Type;
+        var source = (await Service.CreateNode("factory")).Value!;
+        var first = (await Service.CreateNode("rifle-1")).Value!;
+        var second = (await Service.CreateNode("rifle-2")).Value!;
+        var members = new Dictionary<string, IReadOnlyCollection<NodeRef>>(StringComparer.Ordinal) {
+            ["Source"] = [source.GlobalId],
+            ["Cargo"] = [first.GlobalId, second.GlobalId]
+        };
+
+        var firstRelation = await Service.CreateRelationAsync("shipment-1", shipmentType.GlobalId, members);
+        var secondRelation = await Service.CreateRelationAsync("shipment-2", shipmentType.GlobalId, members);
+
+        Assert.AreEqual(ServiceResultStatus.Ok, firstRelation.Status, firstRelation.Error);
+        Assert.AreEqual(ServiceResultStatus.Ok, secondRelation.Status, secondRelation.Error);
+        Assert.AreEqual(2, firstRelation.Value!.Endpoints.Count);
+        CollectionAssert.AreEquivalent(
+            new[] { first.GlobalId, second.GlobalId },
+            firstRelation.Value.Endpoint("Cargo").Participants.Select(static node => node.GlobalId).ToArray());
+        Assert.AreNotEqual(firstRelation.Value.Relation.GlobalId, secondRelation.Value!.Relation.GlobalId);
+
+        var canonical = await ((ISemanticGraphStorage)Storage)
+            .GetRelationAsync(firstRelation.Value.Relation.GlobalId);
+        Assert.IsNotNull(canonical);
+        Assert.AreEqual(2, canonical.Members.Count);
+        Assert.AreEqual(2, canonical.Members.Single(static member => member.Name == "Cargo").ParticipantIds.Count);
+    }
+
+    [TestMethod]
+    public async Task RelationMayBeParticipantAndDeletingParticipantRemovesIncidentRelations()
+    {
+        var edgeType = (await Service.CreateEdgeType(
+            "SemanticAnnotation",
+            fields: [Endpoint("Subject"), Endpoint("Context")])).Value!.Type;
+        var first = (await Service.CreateNode("first")).Value!;
+        var second = (await Service.CreateNode("second")).Value!;
+        var baseRelation = (await Service.CreateRelationAsync(
+            "base-relation",
+            edgeType.GlobalId,
+            new Dictionary<string, IReadOnlyCollection<NodeRef>> {
+                ["Subject"] = [first.GlobalId],
+                ["Context"] = [second.GlobalId]
+            })).Value!;
+        var annotation = (await Service.CreateRelationAsync(
+            "higher-order-relation",
+            edgeType.GlobalId,
+            new Dictionary<string, IReadOnlyCollection<NodeRef>> {
+                ["Subject"] = [baseRelation.Relation.GlobalId],
+                ["Context"] = [second.GlobalId]
+            })).Value!;
+
+        var incident = await ((ISemanticGraphStorage)Storage)
+            .FindIncidentRelationsAsync(baseRelation.Relation.GlobalId)
+            .ToArrayAsync();
+        Assert.AreEqual(annotation.Relation.GlobalId, incident.Single().Id);
+
+        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.DeleteNode(second.GlobalId)).Status);
+        Assert.IsNull(await Storage.Get(baseRelation.Relation.GlobalId));
+        Assert.IsNull(await Storage.Get(annotation.Relation.GlobalId));
+    }
+
+    [TestMethod]
+    public async Task InstanceRemainsReadableWhenTypeCatalogEntryIsUnavailable()
+    {
+        var type = (await Service.CreateNodeType("TemporarilyUnavailableType")).Value!.Type;
+        var node = (await Service.CreateNode("locally-readable-instance")).Value!;
         Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(node.GlobalId, type.GlobalId)).Status);
-        var instanceOfType = Graph.GetRuntimeType<InstanceOfEdge>()!;
-        var instanceOfDefinition = TypedEdgeDefinition.Create(Graph.GetNodeTypeDefinition(instanceOfType));
-        await TypedEdgeSubgraphCodec.CreateAsync(
-            Storage,
-            "duplicate-instance-of",
-            instanceOfDefinition,
-            new Dictionary<string, IReadOnlyCollection<NodeBacking>>(StringComparer.Ordinal) {
-                [nameof(InstanceOfEdge.Instance)] = [node.Backing],
-                [nameof(InstanceOfEdge.Type)] = [type.Backing]
-            });
+
+        await Storage.Delete(type.Backing);
 
         var raw = await Service.GetNode(node.GlobalId);
         Assert.AreEqual(ServiceResultStatus.Ok, raw.Status, raw.Error);
-        Assert.AreEqual(node.GlobalId, raw.Value!.GlobalId);
-
+        CollectionAssert.AreEqual(
+            new[] { type.GlobalId },
+            raw.Value!.DeclaredTypeIds.ToArray());
         var semantic = await Service.GetSemanticNodeAsync(node.GlobalId);
-        Assert.AreEqual(ServiceResultStatus.BadRequest, semantic.Status);
-        StringAssert.Contains(semantic.Error, "more than one materialized instance");
+        Assert.AreEqual(ServiceResultStatus.Ok, semantic.Status, semantic.Error);
+        Assert.AreEqual(0, semantic.Value!.AssignedTypes.Count);
     }
 
     [TestMethod]
-    public async Task AssignNodeType_RejectsSameRangeMembersUntilMemberInstancesExist()
+    public void SemanticRead_HasNoArbitraryBasisParameter()
     {
-        var person = (await Service.CreateNodeType("SemanticPerson")).Value!.Type;
-        var flight = (await Service.CreateNodeType(
-            "SemanticFlight",
-            fields: [
-                new NodeFieldDefinition("Origin", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false, person),
-                new NodeFieldDefinition("Destination", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false, person)
-            ])).Value!.Type;
-        var participant = (await Service.CreateNode("semantic-person")).Value!;
-        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(participant.GlobalId, person.GlobalId)).Status);
-        var candidate = (await Service.CreateNode("semantic-flight")).Value!;
-        Assert.AreEqual(ServiceResultStatus.Ok, (await Service.ConnectNodesAsync(candidate.GlobalId, participant.GlobalId)).Status);
+        var method = typeof(GraphService).GetMethod(
+            nameof(GraphService.GetSemanticNodeAsync),
+            BindingFlags.Public | BindingFlags.Instance,
+            binder: null,
+            types: [typeof(NodeRef)],
+            modifiers: null);
 
-        var assignment = await Service.AssignNodeTypeAsync(candidate.GlobalId, flight.GlobalId);
-
-        Assert.AreEqual(ServiceResultStatus.BadRequest, assignment.Status);
-        StringAssert.Contains(assignment.Error, "Materialized member instances are required");
+        Assert.IsNotNull(method);
+        Assert.AreEqual(1, method.GetParameters().Length);
     }
 
-    [TestMethod]
-    public async Task ChangeEdgeType_RejectsAmbiguousExistingCarriersWithoutMutation()
-    {
-        static NodeFieldDefinition Endpoint(string name) => new(
-            name,
-            NodeFieldValueKind.Node,
-            typeof(Node),
-            NodeSlotCardinality.Required(),
-            IsCollection: false);
-
-        var oldDefinition = (await Service.CreateEdgeType(
-            "AmbiguousOldEdge",
-            fields: [Endpoint("Source"), Endpoint("Target")])).Value!;
-        var replacement = (await Service.CreateEdgeType(
-            "AmbiguousReplacementEdge",
-            fields: [Endpoint("Left"), Endpoint("Right")])).Value!;
-        var source = (await Service.CreateNode("ambiguous-edge-source")).Value!;
-        var target = (await Service.CreateNode("ambiguous-edge-target")).Value!;
-        var typedDefinition = TypedEdgeDefinition.Create(oldDefinition);
-        var participants = new Dictionary<string, IReadOnlyCollection<NodeBacking>>(StringComparer.Ordinal) {
-            ["Source"] = [source.Backing],
-            ["Target"] = [target.Backing]
-        };
-        var first = await TypedEdgeSubgraphCodec.CreateAsync(
-            Storage,
-            "ambiguous-edge-first",
-            typedDefinition,
-            participants);
-        var second = await TypedEdgeSubgraphCodec.CreateAsync(
-            Storage,
-            "ambiguous-edge-second",
-            typedDefinition,
-            participants);
-
-        var result = await Service.ChangeEdgeTypeAsync(
-            source.GlobalId,
-            target.GlobalId,
-            replacement.Type.GlobalId);
-
-        Assert.AreEqual(ServiceResultStatus.BadRequest, result.Status);
-        StringAssert.Contains(result.Error, "ambiguous");
-        Assert.IsNotNull(await Storage.Get(first.GlobalId));
-        Assert.IsNotNull(await Storage.Get(second.GlobalId));
-        Assert.IsNull(await Storage.Get(new NodePath("ambiguous-replacement-edge-1")));
-    }
-
-    private static async Task<NodeBacking> FindEndpointAsync(
-        NodeBacking relation,
-        TypedEdgeDefinition definition,
-        string memberName) {
-        var memberTypeId = definition.Endpoints
-            .Single(endpoint => endpoint.Name == memberName)
-            .MemberTypeId;
-        var matches = new List<NodeBacking>();
-        await foreach (var child in relation.Nodes) {
-            if (!TypedEdgeSubgraphCodec.IsDirectChildOf(child.GlobalId, relation.GlobalId))
-                continue;
-            if (await TypedEdgeSubgraphCodec.HasMemberClassifierAsync(child, memberTypeId))
-                matches.Add(child);
-        }
-        return matches.Single();
-    }
-
+    private static NodeFieldDefinition Endpoint(string name) => new(
+        name,
+        NodeFieldValueKind.Node,
+        typeof(Node),
+        NodeSlotCardinality.Required(),
+        IsCollection: false);
 }

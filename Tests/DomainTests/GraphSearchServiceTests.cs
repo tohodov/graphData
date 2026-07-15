@@ -17,16 +17,17 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldFindVerticesWithoutEdges()
     {
-        var isolated = await Storage.Create(new("isolated"));
-        var connected = await Storage.Create(new("connected"));
-        var neighbor = await Storage.Create(new("neighbor"));
+        var scope = new Dictionary<string, string> { ["scope"] = "instance-test" };
+        var isolated = await Storage.Create(new("isolated"), attributes: scope);
+        var connected = await Storage.Create(new("connected"), attributes: scope);
+        var neighbor = await Storage.Create(new("neighbor"), attributes: scope);
         await Storage.Connect(connected.GlobalId, neighbor.GlobalId);
 
         var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
             Where = All(
-                Node("x"),
+                Attribute("x", "scope", "instance-test"),
                 Not(Exists("y", Connected("x", "y"))))
         });
 
@@ -53,20 +54,23 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldTreatZeroLengthPathAsSelfRelationWhenRequested()
     {
-        var first = await Storage.Create(new("first"));
-        var second = await Storage.Create(new("second"));
+        var scope = new Dictionary<string, string> { ["scope"] = "instance-test" };
+        var first = await Storage.Create(new("first"), attributes: scope);
+        var second = await Storage.Create(new("second"), attributes: scope);
 
         var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
-            Where = new NodePathSearchExpression
-            {
-                Left = Var("x"),
-                Right = Var("x"),
-                MinDepth = 0,
-                MaxDepth = 0,
-                IncludeSelf = true
-            }
+            Where = All(
+                Attribute("x", "scope", "instance-test"),
+                new NodePathSearchExpression
+                {
+                    Left = Var("x"),
+                    Right = Var("x"),
+                    MinDepth = 0,
+                    MaxDepth = 0,
+                    IncludeSelf = true
+                })
         });
 
         CollectionAssert.AreEquivalent(
@@ -77,14 +81,15 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task Search_ShouldReturnMatchingVerticesWithoutImplicitRanking()
     {
-        var hub = await Storage.Create(new("hub"));
-        var mid = await Storage.Create(new("mid"));
-        var h1 = await Storage.Create(new("h1"));
-        var h2 = await Storage.Create(new("h2"));
-        var h3 = await Storage.Create(new("h3"));
-        var h4 = await Storage.Create(new("h4"));
-        var m1 = await Storage.Create(new("m1"));
-        var m2 = await Storage.Create(new("m2"));
+        var scope = new Dictionary<string, string> { ["scope"] = "instance-test" };
+        var hub = await Storage.Create(new("hub"), attributes: scope);
+        var mid = await Storage.Create(new("mid"), attributes: scope);
+        var h1 = await Storage.Create(new("h1"), attributes: scope);
+        var h2 = await Storage.Create(new("h2"), attributes: scope);
+        var h3 = await Storage.Create(new("h3"), attributes: scope);
+        var h4 = await Storage.Create(new("h4"), attributes: scope);
+        var m1 = await Storage.Create(new("m1"), attributes: scope);
+        var m2 = await Storage.Create(new("m2"), attributes: scope);
 
         foreach (var node in new[] { h1, h2, h3, h4 })
         {
@@ -99,7 +104,7 @@ public sealed class GraphSearchServiceTests : StorageTests
         var matches = await Search(Storage, new NodeSearchQuery
         {
             Return = ["x"],
-            Where = Node("x"),
+            Where = Attribute("x", "scope", "instance-test"),
             Limit = 8
         });
 
@@ -263,15 +268,16 @@ public sealed class GraphSearchServiceTests : StorageTests
     [TestMethod]
     public async Task SearchStream_ShouldYieldMatchesAsAsyncEnumerable()
     {
-        var first = await Storage.Create("first");
-        var second = await Storage.Create("second");
+        var scope = new Dictionary<string, string> { ["scope"] = "instance-test" };
+        var first = await Storage.Create("first", attributes: scope);
+        var second = await Storage.Create("second", attributes: scope);
 
         var service = new GraphSearchService(Storage);
         var matches = new List<NodeSearchMatch>();
         await foreach (var match in service.SearchNodesStreamAsync(new NodeSearchQuery
         {
             Return = ["x"],
-            Where = Node("x"),
+            Where = Attribute("x", "scope", "instance-test"),
             Limit = 2
         }))
         {

@@ -13,7 +13,7 @@ namespace GraphData.Tests.Performance;
 public sealed class StoragePerformanceTests {
     //[PerformanceScenario(PerformanceStorageKind.PerNodeFile, 250, 2, 1729)]
     //[PerformanceScenario(PerformanceStorageKind.BucketedFile, 250, 2, 1729)]
-    [PerformanceScenario(PerformanceStorageKind.SymLink, 250, 2, 1729)]
+    [PerformanceScenario(PerformanceStorageKind.SemanticFile, 250, 2, 1729)]
     public async Task StorageOperations_ShouldRecordDetailedTimings(
         PerformanceStorageKind storageKind,
         int nodeCount,
@@ -64,11 +64,13 @@ public sealed class StoragePerformanceTests {
             await scope.Storage.Update(name, attributes).ConfigureAwait(false);
         }).ConfigureAwait(false);
 
-        await run.MeasureAsync("stream-nodes", graph.NodeCount, async () => {
+        var expectedSemanticElementCount = 1 + graph.NodeCount + graph.Edges.Count;
+        await run.MeasureAsync("stream-semantic-elements", expectedSemanticElementCount, async () => {
+            var semanticStorage = (ISemanticGraphStorage)scope.Storage;
             var count = 0;
-            await foreach (var _ in scope.Storage.EnumerateNodesAsync().ConfigureAwait(false))
+            await foreach (var _ in semanticStorage.EnumerateSemanticElementsAsync().ConfigureAwait(false))
                 count++;
-            PerformanceAssert.AreEqual(graph.NodeCount, count);
+            PerformanceAssert.AreEqual(expectedSemanticElementCount, count);
         }).ConfigureAwait(false);
 
         await run.MeasureAsync("subgraph-depth-2", 1, async () => {
@@ -108,7 +110,7 @@ public sealed class StoragePerformanceTests {
 
     //[PerformanceScenario(PerformanceStorageKind.PerNodeFile, 500, 3, 1729, 4, 1000)]
     //[PerformanceScenario(PerformanceStorageKind.BucketedFile, 500, 3, 1729, 4, 1000)]
-    [PerformanceScenario(PerformanceStorageKind.SymLink, 500, 3, 1729, 4, 1000)]
+    [PerformanceScenario(PerformanceStorageKind.SemanticFile, 500, 3, 1729, 4, 1000)]
     public async Task ConcurrentReadLoad_ShouldRecordResourceUsage(
         PerformanceStorageKind storageKind,
         int nodeCount,
@@ -165,7 +167,7 @@ public sealed class StoragePerformanceTests {
 
     //[PerformanceScenario(PerformanceStorageKind.PerNodeFile, 500, 3, 1729)]
     //[PerformanceScenario(PerformanceStorageKind.BucketedFile, 500, 3, 1729)]
-    [PerformanceScenario(PerformanceStorageKind.SymLink, 500, 3, 1729)]
+    [PerformanceScenario(PerformanceStorageKind.SemanticFile, 500, 3, 1729)]
     public async Task RandomSubgraphReads_ShouldRecordDetailedTimings(
         PerformanceStorageKind storageKind,
         int nodeCount,

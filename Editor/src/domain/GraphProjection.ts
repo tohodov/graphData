@@ -1,10 +1,9 @@
-import { graphRoleAttribute } from "./graphAttributes.js";
 import { GraphEdge } from "./GraphEdge.js";
 import { GraphId } from "./GraphId.js";
-import { GraphNode } from "./GraphNode.js";
 import { GraphType } from "./GraphType.js";
 
 import type { GraphModel, ProjectedGraph } from "./GraphModel.js";
+import type { GraphNode } from "./GraphNode.js";
 import type { ProjectedGraphNode, ProjectedGraphNodeField } from "./GraphModel.js";
 
 export type RelationInstance = {
@@ -14,13 +13,9 @@ export type RelationInstance = {
   node1InternalId: string | null;
   node2InternalId: string | null;
   type: GraphType | null | undefined;
+  participantIds: string[];
   portGlobalIds: string[];
   physicalEdgeKeys: Set<string>;
-};
-
-type FieldValueConsumption = {
-  nodeIds: Set<string>;
-  edgeKeys: Set<string>;
 };
 
 export class GraphProjection {
@@ -39,7 +34,7 @@ export class GraphProjection {
 
   projectFromIterables(nodes: Iterable<import("./GraphModel.js").ProjectedGraphNode | import("./GraphNode.js").GraphNode>, edges: Iterable<import("./GraphModel.js").ProjectedGraphEdge | import("./GraphEdge.js").GraphEdge>): ProjectedGraph {
     const source = this.visiblePrimitiveGraph(nodes, edges);
-    if (!this.hasBasisRules()) {
+    if (!this.hasDisplayRules()) {
       return this.rank(source);
     }
 
@@ -52,17 +47,6 @@ export class GraphProjection {
       hidden.add(relation.relationGlobalId);
       relation.portGlobalIds.forEach(name => hidden.add(name));
     }
-    for (const type of [...this.model.schema.nodeTypes.values(), ...this.model.schema.edgeTypes.values()]) {
-      if (type.collapsed === true || type.visible === false) {
-        hidden.add(type.path);
-        this.hiddenTypeDefinitionNodes(type.path, source.nodes).forEach(name => hidden.add(name));
-      }
-    }
-
-    const consumedFieldValues: FieldValueConsumption = {
-      nodeIds: new Set(),
-      edgeKeys: new Set()
-    };
     const recordFieldsByNode = new Map<string, ProjectedGraphNodeField[]>();
     for (const node of source.nodes) {
       const nodeName = node.name ?? "";
@@ -74,9 +58,8 @@ export class GraphProjection {
 
       recordFieldsByNode.set(
         nodeName,
-        this.projectedNodeTypeFields(node, collapsedFacets, source, nodeTypeAssignments, consumedFieldValues));
+        this.projectedNodeTypeFields(node, collapsedFacets));
     }
-    consumedFieldValues.nodeIds.forEach(name => hidden.add(name));
 
     const visibleNodes = source.nodes
       .filter(node => !hidden.has(node.name ?? ""))
@@ -110,15 +93,6 @@ export class GraphProjection {
     for (const relation of hiddenRelations) {
       relation.physicalEdgeKeys.forEach(key => hiddenPhysicalEdges.add(key));
     }
-    consumedFieldValues.edgeKeys.forEach(key => hiddenPhysicalEdges.add(key));
-    for (const [nodeId, nodeFacets] of nodeTypeAssignments) {
-      for (const nodeType of nodeFacets) {
-        if (nodeType.collapsed === true || nodeType.visible === false) {
-          hiddenPhysicalEdges.add(GraphEdge.keyFor(nodeId, nodeType.path));
-        }
-      }
-    }
-
     const physicalEdges = source.edges.filter(edge => {
       const sourceVisible = visibleNodeIds.has(edge.node1InternalId);
       const targetVisible = visibleNodeIds.has(edge.node2InternalId);
@@ -153,7 +127,7 @@ export class GraphProjection {
     return this.rank({ nodes: typedNodes, edges: [...physicalEdges, ...projectedEdges] });
   }
 
-  hasBasisRules(): boolean {
+  hasDisplayRules(): boolean {
     return (this.model.schema.nodeTypes?.size ?? 0) > 0
       || (this.model.schema.edgeTypes?.size ?? 0) > 0;
   }
@@ -181,7 +155,8 @@ export class GraphProjection {
   }
 
   shouldCollapseRelation(relation: RelationInstance): boolean {
-    return relation.collapsed === true || relation.type?.collapsed === true;
+    return relation.participantIds.length === 2
+      && (relation.collapsed === true || relation.type?.collapsed === true);
   }
 
   shouldHideRelation(relation: RelationInstance): boolean {
@@ -192,14 +167,14 @@ export class GraphProjection {
     const nodeStats = new Map<string, { weightedDegree: number, focusBoost: number, reasons: string[] }>(graph.nodes.map((node: Record<string, unknown>) => [node.name as string, { weightedDegree: 0, focusBoost: 0, reasons: [] }]));
     const rankedEdges = graph.edges.map(edge => {
       const edgeType = edge.typeGlobalId ? this.model.schema.edgeTypes.get(edge.typeGlobalId) : null;
-      const basisWeight = GraphType.readRank(edge.typeRank ?? edgeType?.rank, edge.projected ? 35 : 8);
-      const rank = GraphType.roundRank(basisWeight);
+      const displayWeight = GraphType.readRank(edge.typeRank ?? edgeType?.rank, edge.projected ? 35 : 8);
+      const rank = GraphType.roundRank(displayWeight);
       const sourceStats = nodeStats.get(edge.node1InternalId);
       const targetStats = nodeStats.get(edge.node2InternalId);
-      if (sourceStats) sourceStats.weightedDegree += basisWeight;
-      if (targetStats) targetStats.weightedDegree += basisWeight;
-      if (this.model.selectedName === edge.node1InternalId && targetStats) targetStats.focusBoost += Math.min(25, basisWeight * 0.35);
-      if (this.model.selectedName === edge.node2InternalId && sourceStats) sourceStats.focusBoost += Math.min(25, basisWeight * 0.35);
+      if (sourceStats) sourceStats.weightedDegree += displayWeight;
+      if (targetStats) targetStats.weightedDegree += displayWeight;
+      if (this.model.selectedName === edge.node1InternalId && targetStats) targetStats.focusBoost += Math.min(25, displayWeight * 0.35);
+      if (this.model.selectedName === edge.node2InternalId && sourceStats) sourceStats.focusBoost += Math.min(25, displayWeight * 0.35);
       return {
         ...edge,
         viewRank: rank,
@@ -259,7 +234,6 @@ export class GraphProjection {
   }
 
   relations(physical: ProjectedGraph): RelationInstance[] {
-    const nodesByName = new Map(physical.nodes.map(node => [node.name, node]));
     const edgesByNode = new Map<string, import("./GraphModel.js").ProjectedGraphEdge[]>();
     physical.edges.forEach(edge => {
       if (!edgesByNode.has(edge.node1InternalId)) edgesByNode.set(edge.node1InternalId, []);
@@ -269,59 +243,54 @@ export class GraphProjection {
     });
 
     return physical.nodes
-      .filter(node => {
-        if (GraphNode.from(node).isRelationInstance(this.model.basis)) {
-          return true;
-        }
-
-        const incident = edgesByNode.get(node.name ?? "") ?? [];
-        return incident.some(edge => {
-          const otherId = edge.node1InternalId === node.name ? edge.node2InternalId : edge.node1InternalId;
-          return this.model.schema.edgeTypes.has(otherId);
-        });
-      })
-      .map(relation => {
-        const incident = edgesByNode.get(relation.name ?? "") ?? [];
-        const ports = incident
-          .map(edge => nodesByName.get(edge.node1InternalId === relation.name ? edge.node2InternalId : edge.node1InternalId))
-          .filter(Boolean);
-        const typePort = ports.find(port => port?.attributes?.[graphRoleAttribute] === "type")
-          ?? ports.find(port => port && this.model.schema.edgeTypes.has(port.name ?? ""));
-        const endpointPorts = ports.filter(port => port !== typePort);
-        const sourcePort = endpointPorts.find(port => port?.attributes?.[graphRoleAttribute] === "source") ?? endpointPorts[0];
-        const targetPort = endpointPorts.find(port => port?.attributes?.[graphRoleAttribute] === "target") ?? endpointPorts.find(port => port !== sourcePort);
-        const node1InternalId = sourcePort ? this.portEndpoint(sourcePort.name ?? "", edgesByNode, relation.name ?? "") : null;
-        const node2InternalId = targetPort ? this.portEndpoint(targetPort.name ?? "", edgesByNode, relation.name ?? "") : null;
-        const typeGlobalId = typePort?.attributes?.[graphRoleAttribute] === "type"
-          ? this.portEndpoint(typePort.name ?? "", edgesByNode, relation.name ?? "")
-          : typePort?.name;
-        const type = typeGlobalId ? this.model.schema.edgeTypes.get(typeGlobalId) : null;
-        const physicalEdgeKeys = new Set(incident.map(edge => edge.key ?? GraphEdge.keyFor(edge.node1InternalId, edge.node2InternalId)));
-        for (const port of ports) {
-          for (const edge of edgesByNode.get(port?.name ?? "") ?? []) {
-            physicalEdgeKeys.add(edge.key ?? GraphEdge.keyFor(edge.node1InternalId, edge.node2InternalId));
-          }
-        }
-        return {
-          relationGlobalId: relation.name ?? "",
-          displayName: relation.displayName ?? "",
-          collapsed: Boolean(relation.collapsed),
-          node1InternalId,
-          node2InternalId,
-          type,
-          portGlobalIds: ports.map(port => port?.name ?? ""),
-          physicalEdgeKeys
-        };
-      })
-      .filter(relation => relation.node1InternalId && relation.node2InternalId);
+      .filter(node => this.isSemanticRelation(node))
+      .map(relation => this.semanticRelation(relation, edgesByNode))
+      .filter((relation): relation is RelationInstance => relation !== null);
   }
 
-  portEndpoint(portGlobalId: string, edgesByNode: Map<string, import("./GraphModel.js").ProjectedGraphEdge[]>, relationGlobalId: string): string | null {
-    const edges = edgesByNode.get(portGlobalId) ?? [];
-    const edge = edges.find(item => item.node1InternalId !== relationGlobalId && item.node2InternalId !== relationGlobalId)
-      ?? edges.find(item => item.node1InternalId !== portGlobalId || item.node2InternalId !== relationGlobalId);
-    if (!edge) return null;
-    return edge.node1InternalId === portGlobalId ? edge.node2InternalId : edge.node1InternalId;
+  isSemanticRelation(node: ProjectedGraphNode): boolean {
+    return String(node.semanticKind ?? "").toLocaleLowerCase("en") === "relation";
+  }
+
+  semanticRelation(
+    relation: ProjectedGraphNode,
+    edgesByNode: Map<string, import("./GraphModel.js").ProjectedGraphEdge[]>
+  ): RelationInstance | null {
+    const relationGlobalId = relation.name ?? relation.path ?? relation.internalId ?? "";
+    const participantIds = [...new Set((relation.relationMembers ?? [])
+      .flatMap(member => member.participantIds ?? [])
+      .filter(Boolean))];
+    if (!relationGlobalId || participantIds.length === 0) {
+      return null;
+    }
+
+    const typeGlobalId = (relation.typeIds ?? [])
+      .find(typeId => this.model.schema.edgeTypes.has(typeId))
+      ?? relation.typeIds?.[0];
+    const incident = edgesByNode.get(relationGlobalId) ?? [];
+    const typeIds = new Set(relation.typeIds ?? []);
+    const participantSet = new Set(participantIds);
+    const portGlobalIds = incident
+      .map(edge => edge.node1InternalId === relationGlobalId ? edge.node2InternalId : edge.node1InternalId)
+      .filter(id => id && !typeIds.has(id) && !participantSet.has(id));
+    const physicalEdgeKeys = new Set(
+      incident.map(edge => edge.key ?? GraphEdge.keyFor(edge.node1InternalId, edge.node2InternalId)));
+    for (const portId of portGlobalIds) {
+      for (const edge of edgesByNode.get(portId) ?? []) {
+        physicalEdgeKeys.add(edge.key ?? GraphEdge.keyFor(edge.node1InternalId, edge.node2InternalId));
+      }
+    }
+    return {
+      relationGlobalId,
+      displayName: relation.displayName ?? relation.localId ?? GraphId.localId(relationGlobalId),
+      collapsed: Boolean(relation.collapsed),
+      node1InternalId: participantIds.length === 2 ? participantIds[0] : null,
+      node2InternalId: participantIds.length === 2 ? participantIds[1] : null,
+      type: typeGlobalId ? this.model.schema.edgeTypes.get(typeGlobalId) : null,
+      participantIds,
+      portGlobalIds,
+      physicalEdgeKeys
+    };
   }
 
   nodeTypeAssignments(physical: ProjectedGraph): Map<string, GraphType[]> {
@@ -334,28 +303,27 @@ export class GraphProjection {
       }
       result.set(nodeId, facets);
     };
-    for (const edge of physical.edges) {
-      const sourceType = this.model.schema.nodeTypes.get(edge.node1InternalId);
-      const targetType = this.model.schema.nodeTypes.get(edge.node2InternalId);
-      if (sourceType && !targetType) addFacet(edge.node2InternalId, sourceType);
-      else if (targetType && !sourceType) addFacet(edge.node1InternalId, targetType);
-    }
-    return result;
-  }
 
-  hiddenTypeDefinitionNodes(typePath: string, nodes: ProjectedGraphNode[]): string[] {
-    const definitionPath = `${typePath}/Definition`;
-    return nodes
-      .map(node => node.name ?? node.path ?? "")
-      .filter(name => name === definitionPath || GraphId.isChildOf(name, definitionPath));
+    for (const node of physical.nodes) {
+      const nodeId = node.name ?? "";
+      if (!nodeId) {
+        continue;
+      }
+
+      for (const typeId of node.typeIds ?? []) {
+        const type = this.model.schema.nodeTypes.get(typeId);
+        if (type) {
+          addFacet(nodeId, type);
+        }
+      }
+    }
+
+    return result;
   }
 
   projectedNodeTypeFields(
     node: ProjectedGraphNode,
-    nodeFacets: GraphType[],
-    source: ProjectedGraph,
-    nodeTypeAssignments: Map<string, GraphType[]>,
-    consumed: FieldValueConsumption
+    nodeFacets: GraphType[]
   ): ProjectedGraphNodeField[] {
     const result: ProjectedGraphNodeField[] = [];
     for (const nodeType of nodeFacets) {
@@ -373,7 +341,7 @@ export class GraphProjection {
         ...field,
         facetPath: nodeType.path,
         facetLabel: nodeType.label,
-        value: this.projectedFieldValue(node, field, source, nodeTypeAssignments, consumed)
+        value: this.projectedFieldValue(node, field)
       })));
     }
     return result;
@@ -411,84 +379,40 @@ export class GraphProjection {
   }
 
   fieldAllowedTypes(fieldNode: GraphNode): GraphType[] {
-    return (fieldNode.edges ?? [])
-      .map(edge => edge.otherEndpoint(fieldNode.name))
+    const paths = new Set<string>();
+    const singlePath = fieldNode.attributes?.nodeTypePath;
+    if (singlePath) {
+      paths.add(singlePath);
+    }
+    const serializedPaths = fieldNode.attributes?.allowedTypePaths;
+    if (serializedPaths) {
+      try {
+        const parsed = JSON.parse(serializedPaths);
+        if (Array.isArray(parsed)) {
+          parsed.filter(path => typeof path === "string" && path).forEach(path => paths.add(path));
+        }
+      } catch {
+        // Invalid metadata is ignored by the viewer; the domain API remains the validation boundary.
+      }
+    }
+
+    return [...paths]
       .map(path => this.model.schema.nodeTypes.get(path))
       .filter((type): type is GraphType => Boolean(type));
   }
 
   projectedFieldValue(
     node: ProjectedGraphNode,
-    field: ProjectedGraphNodeField,
-    source: ProjectedGraph,
-    nodeTypeAssignments: Map<string, GraphType[]>,
-    consumed: FieldValueConsumption
+    field: ProjectedGraphNodeField
   ): string | undefined {
-    const value = this.attributeValue(node.attributes ?? {}, field.name);
-    if (value) {
-      return value;
-    }
-
-    if (field.valueKind === "Primitive") {
-      return "";
-    }
-
-    return this.linkedNodeFieldValue(node, field, source, nodeTypeAssignments, consumed);
-  }
-
-  linkedNodeFieldValue(
-    node: ProjectedGraphNode,
-    field: ProjectedGraphNodeField,
-    source: ProjectedGraph,
-    nodeTypeAssignments: Map<string, GraphType[]>,
-    consumed: FieldValueConsumption
-  ): string | undefined {
-    const nodeName = node.name ?? "";
-    const allowedTypeIds = new Set((field.typeGlobalId ?? "").split("|").filter(Boolean));
-    const nodeByName = new Map(source.nodes.map(item => [item.name ?? "", item]));
-    const values = source.edges
-      .filter(edge => edge.node1InternalId === nodeName || edge.node2InternalId === nodeName)
-      .map(edge => ({
-        edge,
-        neighborId: edge.node1InternalId === nodeName ? edge.node2InternalId : edge.node1InternalId
-      }))
-      .filter(match => match.neighborId && !this.model.schema.nodeTypes.has(match.neighborId) && !this.model.schema.edgeTypes.has(match.neighborId))
-      .filter(match => this.linkedNodeMatchesField(match.neighborId, allowedTypeIds, nodeTypeAssignments))
-      .map(match => {
-        consumed.nodeIds.add(match.neighborId);
-        consumed.edgeKeys.add(match.edge.key ?? GraphEdge.keyFor(match.edge.node1InternalId, match.edge.node2InternalId));
-        return nodeByName.get(match.neighborId)?.displayName ?? this.model.displayName(match.neighborId);
-      })
-      .filter(Boolean)
-      .sort((left, right) => left.localeCompare(right, "ru"));
-
-    if (values.length === 0) {
+    // Node-valued fields currently have no canonical assignment record. An
+    // arbitrary incident relation is not evidence that it fills this named
+    // field, so the projection deliberately leaves the value empty.
+    if (field.valueKind !== "Primitive") {
       return undefined;
     }
 
-    return field.isCollection
-      ? [...new Set(values)].join(", ")
-      : values[0];
-  }
-
-  linkedNodeMatchesField(neighborId: string, allowedTypeIds: Set<string>, nodeTypeAssignments: Map<string, GraphType[]>): boolean {
-    if (allowedTypeIds.size === 0) {
-      return true;
-    }
-
-    const assignedTypes = nodeTypeAssignments.get(neighborId) ?? this.assignedNodeTypesFromCache(neighborId);
-    return assignedTypes.some(type => allowedTypeIds.has(type.path));
-  }
-
-  assignedNodeTypesFromCache(nodeId: string): GraphType[] {
-    const node = this.model.loaded.get(nodeId);
-    if (!node) {
-      return [];
-    }
-
-    return (node.edges ?? [])
-      .map(edge => this.model.schema.nodeTypes.get(edge.otherEndpoint(node.name)))
-      .filter((type): type is GraphType => Boolean(type));
+    return this.attributeValue(node.attributes ?? {}, field.name) ?? "";
   }
 
   attributeValue(attributes: Record<string, string>, key: string): string | undefined {

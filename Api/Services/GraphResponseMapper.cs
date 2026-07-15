@@ -34,6 +34,13 @@ public static class GraphResponseMapper
             LocalId = node.LocalId.ToString(),
             InternalId = node.GlobalId.ToString(),
             Attributes = new Dictionary<string, string>(node.Attributes),
+            SemanticKind = node.SemanticKind.ToString(),
+            TypeIds = node.DeclaredTypeIds.Select(static id => id.ToString()).ToArray(),
+            RelationMembers = node.RelationMembers.Select(static member => new RelationMemberResponse {
+                Name = member.Name,
+                MemberTypeId = member.MemberTypeId.ToString(),
+                ParticipantIds = member.ParticipantIds.Select(static id => id.ToString()).ToArray()
+            }).ToArray(),
             Edges = edges?.ToArray() ?? node.Edges.Select(edge => ToNodeEdgeResponse(node, edge)).ToArray()
         };
     }

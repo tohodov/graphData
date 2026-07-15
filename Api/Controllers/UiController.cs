@@ -13,9 +13,6 @@ public sealed class UiController(Graph graph) : ControllerBase {
             SystemNodeIds = new UiSystemNodeIdsResponse {
                 NodeTypeRoot = graph.NodeTypes.GlobalId.ToString(),
                 StorageRoot = graph.Root.GlobalId.ToString(),
-            },
-            Basis = new UiBasisResponse {
-                NodeTypeRoot = graph.NodeTypes.GlobalId.ToString()
             }
         };
     }

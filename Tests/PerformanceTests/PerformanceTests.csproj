@@ -9,7 +9,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Abstractions\Abstractions.csproj" />
     <ProjectReference Include="..\..\Domain\1_ Domain.csproj" />
-    <ProjectReference Include="..\..\SymLinkStorage\1_SymLinkStorage.csproj" />
+    <ProjectReference Include="..\..\SemanticStorage\SemanticStorage.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="..\CancellationTokensAccessorMock.cs" Link="CancellationTokensAccessorMock.cs" />

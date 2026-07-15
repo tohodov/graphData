@@ -115,9 +115,34 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
+    [HttpPost("relations")]
+    public async Task<ActionResult<NodeResponse>> CreateRelationAsync([FromBody] CreateRelationRequest request) {
+        if (request.TypeGlobalId.Length == 0)
+            return BadRequest("Relation type id is required.");
+        var members = request.Members.ToDictionary(
+            static pair => pair.Key,
+            static pair => (IReadOnlyCollection<NodeRef>)pair.Value
+                .Select(static participant => (NodeRef)new NodePath(participant))
+                .ToArray(),
+            StringComparer.Ordinal);
+        var result = await graph.CreateRelationAsync(
+            new NodeLocalId(request.LocalId),
+            new NodePath(request.TypeGlobalId),
+            members).ConfigureAwait(false);
+        return ToActionResult<TypedEdgeInstance, NodeResponse>(
+            result,
+            static relation => GraphResponseMapper.ToNodeResponse(relation.Relation));
+    }
+
     [HttpPost("subgraph")]
     public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request) {
         var result = await graph.GetSubgraph(request.Paths.Select(x => new NodePath(x)), request.MaxDepth);
+        return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
+    }
+
+    [HttpGet("type-catalog")]
+    public async Task<ActionResult<SubgraphResponse>> GetTypeCatalogAsync(CancellationToken cancellationToken) {
+        var result = await graph.GetTypeCatalogSubgraphAsync(cancellationToken).ConfigureAwait(false);
         return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 

@@ -4,11 +4,11 @@ using GraphData.Core.Models;
 using GraphData.Core.Services;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Storage;
+using SemanticStorage;
 
 [RelevantTestClass]
 public abstract class StorageTests : IAsyncDisposable {
-    internal static NtfsGraphStorageOptions StorageOptions = new NtfsGraphStorageOptions {
+    internal static SemanticGraphStorageOptions StorageOptions = new SemanticGraphStorageOptions {
         RootPath = Path.Combine(Path.GetTempPath(), "GraphDataTests", Guid.NewGuid().ToString("N"))
     };
     internal IGraphStorage Storage { get; }
@@ -19,7 +19,7 @@ public abstract class StorageTests : IAsyncDisposable {
     }
 
     public StorageTests() {
-        Storage = new SymLinkGraphStorage(Options.Create(StorageOptions), new CancellationTokensAccessorMock());
+        Storage = new SemanticFileGraphStorage(Options.Create(StorageOptions), new CancellationTokensAccessorMock());
     }
 
     public virtual ValueTask DisposeAsync() {

@@ -3,16 +3,16 @@ using System.IO;
 using System.Threading.Tasks;
 using Abstractions;
 using Microsoft.Extensions.Options;
-using Storage;
+using SemanticStorage;
 
 namespace GraphData.Tests.Performance;
 
 public enum PerformanceStorageKind {
-    [Obsolete("SymLink", true)]
+    [Obsolete("SemanticFile", true)]
     PerNodeFile,
-    [Obsolete("SymLink", true)]
+    [Obsolete("SemanticFile", true)]
     BucketedFile,
-    SymLink
+    SemanticFile
 }
 
 internal sealed class PerformanceStorageScope : IAsyncDisposable {
@@ -47,8 +47,8 @@ internal sealed class PerformanceStorageScope : IAsyncDisposable {
             //    Options.Create(new BucketedFileGraphStorageOptions { RootPath = rootPath }),
             //    NullLogger<BucketedFileGraphStorage>.Instance),
 
-            PerformanceStorageKind.SymLink => new SymLinkGraphStorage(
-                Options.Create(new NtfsGraphStorageOptions { RootPath = rootPath }),
+            PerformanceStorageKind.SemanticFile => new SemanticFileGraphStorage(
+                Options.Create(new SemanticGraphStorageOptions { RootPath = rootPath }),
                 new CancellationTokensAccessorMock()),
 
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Unknown storage kind.")

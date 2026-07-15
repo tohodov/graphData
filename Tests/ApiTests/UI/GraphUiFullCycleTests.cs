@@ -100,6 +100,7 @@ public sealed class GraphUiFullCycleTests
         await CreateNode(client, "a");
         await CreateNode(client, "b");
         await CreateNode(client, "x", "a");
+        await Connect(client, "a", "a/x");
         await Connect(client, "a/x", "b");
     }
 
@@ -167,15 +168,27 @@ public sealed class GraphUiFullCycleTests
     static async Task ExpectVisibleNodes(IPage page, params string[] expected)
     {
         var ordered = expected.OrderBy(static name => name, StringComparer.Ordinal).ToArray();
-        await page.WaitForFunctionAsync(
-            """
-            expected => JSON.stringify([...document.querySelectorAll(".graph-node-label")]
-              .map(element => element.textContent.trim())
-              .filter(Boolean)
-              .sort()) === JSON.stringify(expected)
-            """,
-            ordered,
-            new PageWaitForFunctionOptions { Timeout = 5000 });
+        try
+        {
+            await page.WaitForFunctionAsync(
+                """
+                expected => JSON.stringify([...document.querySelectorAll(".graph-node-label")]
+                  .map(element => element.textContent.trim())
+                  .filter(Boolean)
+                  .sort()) === JSON.stringify(expected)
+                """,
+                ordered,
+                new PageWaitForFunctionOptions { Timeout = 5000 });
+        }
+        catch (TimeoutException)
+        {
+            var actual = await page.Locator(".graph-node-label").AllTextContentsAsync();
+            var status = await page.Locator("#status").TextContentAsync();
+            Assert.Fail(
+                $"Visible graph nodes differ. Expected: {string.Join(", ", ordered)}; " +
+                $"actual: {string.Join(", ", actual.Select(static value => value.Trim()).Where(static value => value.Length > 0).Order(StringComparer.Ordinal))}; " +
+                $"status: {status}.");
+        }
     }
 
     sealed class BrowserSession : IAsyncDisposable
@@ -266,7 +279,6 @@ public sealed class GraphUiFullCycleTests
             };
             startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Development";
             startInfo.Environment["GraphStorage__RootPath"] = storagePath;
-            startInfo.Environment["GraphStorage__MetadataFileName"] = "node.json";
             startInfo.Environment["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1";
 
             var process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };

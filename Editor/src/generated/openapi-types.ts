@@ -320,6 +320,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/graph/relations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["CreateRelationRequest"];
+                    "text/json": components["schemas"]["CreateRelationRequest"];
+                    "application/*+json": components["schemas"]["CreateRelationRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["NodeResponse"];
+                        "application/json": components["schemas"]["NodeResponse"];
+                        "text/json": components["schemas"]["NodeResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/graph/subgraph": {
         parameters: {
             query?: never;
@@ -357,6 +400,43 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/graph/type-catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["SubgraphResponse"];
+                        "application/json": components["schemas"]["SubgraphResponse"];
+                        "text/json": components["schemas"]["SubgraphResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -473,6 +553,13 @@ export interface components {
                 [key: string]: string;
             };
         };
+        CreateRelationRequest: {
+            localId: string;
+            typeGlobalId: string[];
+            members?: {
+                [key: string]: string[][];
+            };
+        };
         EdgeResponse: {
             neighborLocalId?: null | string;
             node1LocalId: string;
@@ -486,6 +573,9 @@ export interface components {
             attributes?: {
                 [key: string]: string;
             };
+            semanticKind: string;
+            typeIds?: string[];
+            relationMembers?: components["schemas"]["RelationMemberResponse"][];
             edges?: components["schemas"]["EdgeResponse"][];
         };
         NodeSearchExpressionRequest: components["schemas"]["NodeSearchExpressionRequestAllNodeSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestAnyNodeSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestNotNodeSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestExistsNodeSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestNodeExistsSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestNodeNameSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestNodeAttributeSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestNodeTextSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestNodeConnectedSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestNodePathSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestNodeDescendantSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestNodeDegreeSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestNodeSameSearchExpressionRequest"] | components["schemas"]["NodeSearchExpressionRequestNodeNotSameSearchExpressionRequest"];
@@ -610,6 +700,11 @@ export interface components {
             limit?: number | string;
         };
         OperationResponse: Record<string, never>;
+        RelationMemberResponse: {
+            name: string;
+            memberTypeId: string;
+            participantIds?: string[];
+        };
         SubgraphRequest: {
             paths: string[][];
             /** Format: int32 */
@@ -619,12 +714,8 @@ export interface components {
             nodes?: components["schemas"]["NodeResponse"][];
             edges?: components["schemas"]["EdgeResponse"][];
         };
-        UiBasisResponse: {
-            nodeTypeRoot: string;
-        };
         UiSettingsResponse: {
             systemNodeIds: components["schemas"]["UiSystemNodeIdsResponse"];
-            basis: components["schemas"]["UiBasisResponse"];
         };
         UiSystemNodeIdsResponse: {
             nodeTypeRoot: string;

@@ -48,7 +48,7 @@ $trackerTrayProjectPath = Join-Path $trackerRoot "Tray\Tray.csproj"
 $internalSyncPath = Join-Path (Split-Path -Parent $McpJsonPath) ".internal\last-synced-mcp-state.json"
 
 if ([string]::IsNullOrWhiteSpace($GraphStorageRoot)) {
-    $GraphStorageRoot = Join-Path $repoRoot "graph-data"
+    $GraphStorageRoot = Join-Path $repoRoot "semantic-graph-data"
 }
 
 function Stop-InstalledMcp {
@@ -140,7 +140,6 @@ if (-not $SkipPublish) {
 $appSettings = [PSCustomObject]@{
     GraphStorage = [PSCustomObject]@{
         RootPath = $GraphStorageRoot
-        MetadataFileName = "node.json"
     }
     McpTracker = [PSCustomObject]@{
         Enabled = $true

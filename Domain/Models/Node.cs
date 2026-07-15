@@ -1,4 +1,5 @@
 using Abstractions;
+using GraphData.Core.Models;
 
 public class Node {
     readonly NodeCollection nodes;
@@ -23,6 +24,28 @@ public class Node {
         Backing = state;
         nodes = new NodeCollection(this);
     }
+
+    public virtual GraphElementStorageKind SemanticKind => Backing is ISemanticNodeBacking semantic
+        ? semantic.SemanticKind switch {
+            SemanticElementKind.Type or SemanticElementKind.TypeCatalog or SemanticElementKind.TypeInfrastructure => GraphElementStorageKind.Type,
+            SemanticElementKind.Relation => GraphElementStorageKind.Relation,
+            SemanticElementKind.Instance => GraphElementStorageKind.Instance,
+            _ => GraphElementStorageKind.Unknown
+        }
+        : GraphElementStorageKind.Unknown;
+
+    public virtual IReadOnlyCollection<InternalId> DeclaredTypeIds => Backing is ISemanticNodeBacking semantic
+        ? semantic.DeclaredTypeIds
+        : Array.Empty<InternalId>();
+
+    public virtual IReadOnlyCollection<RelationMember> RelationMembers => Backing is ISemanticNodeBacking semantic
+        ? semantic.RelationMembers
+            .Select(static member => new RelationMember(
+                member.Name,
+                member.MemberTypeId,
+                member.ParticipantIds))
+            .ToArray()
+        : Array.Empty<RelationMember>();
 
     internal void Attach(Incidence incidence) {
         if (Incidences.Contains(incidence))

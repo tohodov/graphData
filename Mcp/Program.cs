@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Protocol;
-using Storage;
+using SemanticStorage;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -36,7 +36,7 @@ builder.AddTracker();
 
 builder.Services.AddSingleton<ICancellationTokenAccessor, McpCancellationTokenAccessor>();
 builder.Services.AddDomain();
-builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
+builder.Services.AddSemanticGraphStorage(builder.Configuration.GetSection("GraphStorage"));
 builder.Services.AddScoped<GraphDataTools>();
 
 var toolProfile = McpToolProfileSelector.Read(builder.Configuration);

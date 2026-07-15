@@ -17,12 +17,13 @@ incident edges. Each edge response carries enough endpoint metadata to draw the
 connection immediately, even when the node on the other end has not been loaded as
 a full node expansion yet.
 
-The initial no-query screen loads top-level roots as a frontier rather than a
-full graph snapshot. In that response, returned nodes must still include each
-root node's incident `edges`, including edges to children or neighbors that are
-not part of the returned node set. The top-level edge collection is only the
-de-duplicated set of edges whose two endpoints are both already loaded; it does
-not replace per-node `edges`.
+The initial no-query screen obtains the fixed type catalog plus direct records
+from the top-level instance namespace. Those records are independent frontier
+roots: sharing an address prefix never creates a graph edge. Each returned
+record still includes its actual incident relation edges, including endpoints
+that have not been expanded. The top-level edge collection is only the
+de-duplicated set of edges whose two endpoints are already loaded; it does not
+replace per-node `edges`.
 
 Every node-shaped API response used by the UI follows the same rule: single-node
 loads, neighbor loads, create-node responses, subgraph `nodes[]`, search
@@ -46,9 +47,16 @@ and the boundary where additional graph data may be requested.
 The graph canvas uses a shared renderer interface. WebGPU is the default renderer,
 SVG is available as both a fallback and an explicit mode via `/?renderer=svg`,
 and the experimental HTML-in-Canvas renderer can be selected with
-`/?renderer=html-canvas` or from the toolbar dropdown. The domain model,
-projection basis, rank logic, and API access stay in the TypeScript application
-code; render buffers are derived caches shared by all renderer implementations.
+`/?renderer=html-canvas` or from the toolbar dropdown. The domain model, type
+display rules, rank logic, and API access stay in the TypeScript application.
+The catalog root is supplied by the backend and is not an editable projection
+basis. Render buffers are derived caches shared by all renderer implementations.
+
+Node-valued fields are displayed only when the backend eventually exposes an
+explicit canonical assignment for that field. The viewer deliberately does not
+guess a field value from an arbitrary incident relation or another node with a
+compatible type; such relations remain visible as relations. Primitive fields
+continue to read their value from the instance attributes.
 
 Browsers expose WebGPU only in a secure context: `https://...`, `localhost`, or
 `127.0.0.1`. Opening the UI through an unsafe `http://<network-ip>` address will

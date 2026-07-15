@@ -3,11 +3,10 @@ using Abstractions;
 namespace GraphData.Core.Models;
 
 /// <summary>
-/// Describes the semantic connection between a carrier node and one materialized
-/// instance of a graph type. It is an ordinary graph type rather than a hidden
-/// storage primitive.
+/// Legacy CLR shape. Type assignment is now a weak TypeRef in instance metadata,
+/// so this class is excluded from runtime type discovery.
 /// </summary>
-public sealed class InstanceOfEdge : Edge {
+internal sealed class InstanceOfEdge : Edge {
     public Node Instance = null!;
     public Node Type = null!;
 
@@ -16,10 +15,10 @@ public sealed class InstanceOfEdge : Edge {
 }
 
 /// <summary>
-/// Describes graph-level multiple inheritance. A derived type requires every
-/// facet of the required type to be materialized on its instances.
+/// Legacy CLR shape. Multiple inheritance is persisted as requiredTypeIds on a
+/// type record and is not materialized as relations in the instance graph.
 /// </summary>
-public sealed class RequiresEdge : Edge {
+internal sealed class RequiresEdge : Edge {
     public Node Derived = null!;
     public Node Required = null!;
 

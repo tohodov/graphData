@@ -45,6 +45,9 @@ public sealed class GraphControllerTests : ControllerTests {
         Assert.AreEqual(first.LocalId.ToString(), response.LocalId);
         Assert.AreEqual(first.GlobalId.ToString(), response.InternalId);
         Assert.AreEqual("root", response.Attributes["kind"]);
+        Assert.AreEqual("Instance", response.SemanticKind);
+        Assert.AreEqual(0, response.TypeIds.Count);
+        Assert.AreEqual(0, response.RelationMembers.Count);
 
         var edge = response.Edges.Single();
         Assert.AreEqual(second.LocalId.ToString(), edge.NeighborLocalId);
@@ -53,27 +56,21 @@ public sealed class GraphControllerTests : ControllerTests {
     }
 
     [TestMethod]
-    public async Task GetNeighborNodeAsync_ReturnsNeighborByLocalId() {
+    public async Task GetNeighborNodeAsync_DoesNotTreatAddressChildAsGraphNeighbor() {
         var root = await Storage.Create(new("root"));
         var actions = await Storage.Create(new("actions"), root.GlobalId, new Dictionary<string, string> { ["kind"] = "child" });
 
         var result = await Controller.GetNeighborNodeAsync(root.GlobalId.ToString(), actions.LocalId.ToString());
 
-        var ok = result.Result as OkObjectResult;
-        Assert.IsNotNull(ok);
-
-        var response = ok.Value as NodeResponse;
-        Assert.IsNotNull(response);
-        Assert.AreEqual(actions.GlobalId.ToString(), response.InternalId);
-        Assert.AreEqual(actions.LocalId.ToString(), response.LocalId);
-        Assert.AreEqual("child", response.Attributes["kind"]);
+        Assert.IsInstanceOfType(result.Result, typeof(NotFoundResult));
     }
 
     [TestMethod]
     public async Task GetNeighborNodeAsync_DecodesNestedGlobalIdRouteSegment() {
         var root = await Storage.Create(new("Small_Arms_Web_KG"));
         var actions = await Storage.Create(new("Actions"), root.GlobalId);
-        var gasOperated = await Storage.Create(new("Gas_Operated"), actions.GlobalId);
+        var gasOperated = await Storage.Create(new("Gas_Operated"), root.GlobalId);
+        await Storage.Connect(actions.GlobalId, gasOperated.GlobalId);
 
         var result = await Controller.GetNeighborNodeAsync(
             Uri.EscapeDataString(actions.GlobalId.ToString()),
@@ -85,6 +82,24 @@ public sealed class GraphControllerTests : ControllerTests {
         var response = ok.Value as NodeResponse;
         Assert.IsNotNull(response);
         Assert.AreEqual(gasOperated.GlobalId.ToString(), response.InternalId);
+    }
+
+    [TestMethod]
+    public async Task GetNeighborNodeAsync_ResolvesSemanticRelationNeighborByLocalId() {
+        var first = await Storage.Create(new("first"));
+        var second = await Storage.Create(new("second"));
+        await Storage.Connect(first.GlobalId, second.GlobalId);
+
+        var result = await Controller.GetNeighborNodeAsync(
+            first.GlobalId.ToString(),
+            second.LocalId.ToString());
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+        var response = ok.Value as NodeResponse;
+        Assert.IsNotNull(response);
+        Assert.AreEqual(second.GlobalId.ToString(), response.InternalId);
+        Assert.AreEqual("Instance", response.SemanticKind);
     }
 
     [TestMethod]
@@ -140,6 +155,59 @@ public sealed class GraphControllerTests : ControllerTests {
 
         var stored = await Storage.Get(new NodePath("parent", "child"));
         Assert.IsNotNull(stored);
+    }
+
+    [TestMethod]
+    public async Task CreateRelationAsync_ReturnsCanonicalSemanticRelation() {
+        var relationType = (await Service.CreateEdgeType(
+            "ApiShipment",
+            fields: [
+                new NodeFieldDefinition(
+                    "Source",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Required(),
+                    IsCollection: false),
+                new NodeFieldDefinition(
+                    "Cargo",
+                    NodeFieldValueKind.Node,
+                    typeof(Node),
+                    NodeSlotCardinality.Many(1),
+                    IsCollection: true)
+            ])).Value!.Type;
+        var source = await Storage.Create(new("factory"));
+        var firstCargo = await Storage.Create(new("rifle-1"));
+        var secondCargo = await Storage.Create(new("rifle-2"));
+
+        var result = await Controller.CreateRelationAsync(new CreateRelationRequest {
+            LocalId = "shipment-1",
+            TypeGlobalId = relationType.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+            Members = new Dictionary<string, string[][]>(StringComparer.Ordinal) {
+                ["Source"] = [source.GlobalId.Select(static segment => segment.ToString()).ToArray()],
+                ["Cargo"] = [
+                    firstCargo.GlobalId.Select(static segment => segment.ToString()).ToArray(),
+                    secondCargo.GlobalId.Select(static segment => segment.ToString()).ToArray()
+                ]
+            }
+        });
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+        var response = ok.Value as NodeResponse;
+        Assert.IsNotNull(response);
+        Assert.AreEqual("shipment-1", response.InternalId);
+        Assert.AreEqual("Relation", response.SemanticKind);
+        CollectionAssert.AreEqual(
+            new[] { relationType.GlobalId.ToString() },
+            response.TypeIds.ToArray());
+        var members = response.RelationMembers.ToDictionary(static member => member.Name, StringComparer.Ordinal);
+        CollectionAssert.AreEqual(
+            new[] { source.GlobalId.ToString() },
+            members["Source"].ParticipantIds.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { firstCargo.GlobalId.ToString(), secondCargo.GlobalId.ToString() },
+            members["Cargo"].ParticipantIds.ToArray());
+        Assert.IsTrue(members.Values.All(static member => !string.IsNullOrWhiteSpace(member.MemberTypeId)));
     }
 
     [TestMethod]
@@ -210,7 +278,7 @@ public sealed class GraphControllerTests : ControllerTests {
         var message = badRequest.Value as string;
         Assert.IsNotNull(message);
         StringAssert.Contains(message, "invalid character ':'");
-        StringAssert.Contains(message, global::Storage.NodeNameValidator.AllowedSegmentCharactersDescription);
+        StringAssert.Contains(message, global::SemanticStorage.NodeNameValidator.AllowedSegmentCharactersDescription);
     }
 
     [TestMethod]
@@ -239,11 +307,11 @@ public sealed class GraphControllerTests : ControllerTests {
         Assert.IsNotNull(badRequest);
         var message = badRequest.Value as string;
         Assert.IsNotNull(message);
-        StringAssert.Contains(message, "Target node path segment contains invalid character ':'");
+        StringAssert.Contains(message, "Address segment contains invalid character ':'");
     }
 
     [TestMethod]
-    public async Task ConnectNodesAsync_ReturnsBadRequestForExistingHierarchyConnectionWithSymLinkStorage() {
+    public async Task ConnectNodesAsync_CanConnectInstancesWhoseIdsShareAddressPrefix() {
         var root = await Storage.Create(new("small_arms_test_graph"));
         await Storage.Create(new("weapons"), root.GlobalId);
 
@@ -252,20 +320,14 @@ public sealed class GraphControllerTests : ControllerTests {
             Node2InternalId = ["small_arms_test_graph", "weapons"]
         });
 
-        var badRequest = result.Result as BadRequestObjectResult;
-        Assert.IsNotNull(badRequest);
-        StringAssert.Contains((string)badRequest.Value!, "hierarchy connection");
+        Assert.IsInstanceOfType(result.Result, typeof(NoContentResult));
 
-        var rootPath = Path.Combine(StorageOptions.RootPath, "small_arms_test_graph");
-        var childPath = Path.Combine(rootPath, "weapons");
-        Assert.IsTrue(Directory.Exists(childPath));
-        Assert.IsFalse(File.GetAttributes(childPath).HasFlag(FileAttributes.ReparsePoint));
-        Assert.IsFalse(Directory.EnumerateFileSystemEntries(rootPath)
-            .Any(path => Path.GetFileName(path).StartsWith(".graphdata-node-", StringComparison.OrdinalIgnoreCase)));
+        Assert.IsNotNull(await Storage.Get(new NodePath("small_arms_test_graph", "weapons")));
+        Assert.AreEqual(1, ReadCanonicalRelationDocuments().Count);
     }
 
     [TestMethod]
-    public async Task ConnectNodesAsync_ConnectsNestedSiblingsWithSymLinkStorage() {
+    public async Task ConnectNodesAsync_ConnectsNestedSiblingsThroughCanonicalRelationDocument() {
         var root = await Storage.Create(new("small_arms_test_graph"));
         var weapons = await Storage.Create(new("weapons"), root.GlobalId);
         var categories = await Storage.Create(new("categories"), root.GlobalId);
@@ -282,14 +344,15 @@ public sealed class GraphControllerTests : ControllerTests {
         categories = await Storage.Get(new NodePath("small_arms_test_graph", "categories"));
         Assert.IsNotNull(categories);
 
-        var weaponLinkPath = Path.Combine(StorageOptions.RootPath, "small_arms_test_graph", "weapons", "categories");
-        var categoryLinkPath = Path.Combine(StorageOptions.RootPath, "small_arms_test_graph", "categories", "weapons");
-        Assert.IsTrue(File.GetAttributes(weaponLinkPath).HasFlag(FileAttributes.ReparsePoint));
-        Assert.IsTrue(File.GetAttributes(categoryLinkPath).HasFlag(FileAttributes.ReparsePoint));
-        Assert.IsFalse(Directory.EnumerateFileSystemEntries(Path.Combine(StorageOptions.RootPath, "small_arms_test_graph", "weapons"))
-            .Any(path => Path.GetFileName(path).StartsWith(".graphdata-node-", StringComparison.OrdinalIgnoreCase)));
-        Assert.IsFalse(Directory.EnumerateFileSystemEntries(Path.Combine(StorageOptions.RootPath, "small_arms_test_graph", "categories"))
-            .Any(path => Path.GetFileName(path).StartsWith(".graphdata-node-", StringComparison.OrdinalIgnoreCase)));
+        var relation = ReadCanonicalRelationDocuments().Single();
+        var participantIds = relation.GetProperty("members")
+            .EnumerateArray()
+            .SelectMany(static member => member.GetProperty("participantIds").EnumerateArray())
+            .Select(static participant => participant.GetString())
+            .ToArray();
+        CollectionAssert.AreEquivalent(
+            new[] { weapons.GlobalId.ToString(), categories.GlobalId.ToString() },
+            participantIds);
 
         Assert.IsTrue(await weapons.Nodes.AnyAsync(node => node.LocalId == categories.LocalId));
         Assert.IsTrue(await categories.Nodes.AnyAsync(node => node.LocalId == weapons.LocalId));
@@ -314,7 +377,7 @@ public sealed class GraphControllerTests : ControllerTests {
     }
 
     [TestMethod]
-    public async Task AssignNodeTypeAsync_ConnectsNodeToTypeThroughDslValidator() {
+    public async Task AssignNodeTypeAsync_AttachesTypeIdWithoutMaterializingCarrier() {
         var typeRoot = await GetTypesRoot();
         var weaponType = await Storage.Create(new("Weapon"), typeRoot.GlobalId);
         var ak47 = await Storage.Create(new("ak-47"));
@@ -328,17 +391,34 @@ public sealed class GraphControllerTests : ControllerTests {
         Assert.IsNotNull(ok);
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
-        Assert.IsTrue(response.Nodes.Any(node => node.InternalId == ak47.GlobalId.ToString()));
-        Assert.IsTrue(response.Nodes.Any(node => node.InternalId == weaponType.GlobalId.ToString()));
+        var returnedNode = response.Nodes.Single(node => node.InternalId == ak47.GlobalId.ToString());
+        CollectionAssert.AreEqual(
+            new[] { weaponType.GlobalId.ToString() },
+            returnedNode.TypeIds.ToArray());
 
         var storedNode = await Storage.Get(ak47.GlobalId);
         Assert.IsNotNull(storedNode);
         Assert.IsFalse(storedNode.Attributes.ContainsKey("graph.typeName"));
-        Assert.IsTrue(await storedNode.Nodes.AnyAsync(node => node.GlobalId == weaponType.GlobalId));
+        var instanceRecordPath = Path.Combine(
+            StorageOptions.RootPath,
+            StorageOptions.InstancesDirectoryName,
+            "ak-47",
+            "instance.json");
+        using var instanceRecord = JsonDocument.Parse(await File.ReadAllTextAsync(instanceRecordPath, Encoding.UTF8));
+        CollectionAssert.AreEqual(
+            new[] { weaponType.GlobalId.ToString() },
+            instanceRecord.RootElement.GetProperty("typeIds")
+                .EnumerateArray()
+                .Select(static typeId => typeId.GetString())
+                .ToArray());
+        Assert.AreEqual(1, Directory.GetFiles(
+            Path.Combine(StorageOptions.RootPath, StorageOptions.InstancesDirectoryName),
+            "instance.json",
+            SearchOption.AllDirectories).Length);
     }
 
     [TestMethod]
-    public async Task ChangeEdgeTypeAsync_CreatesTypedEdgeSubgraphForBasicEdgeAndReturnsIt() {
+    public async Task ChangeEdgeTypeAsync_PersistsSemanticRelationAndReturnsCompatibilityProjection() {
         var newType = (await Service.CreateEdgeType(
             new("new-type"),
             fields: [
@@ -370,9 +450,20 @@ public sealed class GraphControllerTests : ControllerTests {
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
 
-        var relation = response.Nodes.Single(node => node.InternalId == "new-type-1");
-        Assert.AreEqual("new-type-1", relation.InternalId);
+        var relation = response.Nodes.Single(node => node.SemanticKind == "Relation");
+        StringAssert.StartsWith(relation.InternalId, "new-type-");
         Assert.AreEqual(0, relation.Attributes.Count);
+        Assert.AreEqual("Relation", relation.SemanticKind);
+        CollectionAssert.AreEqual(
+            new[] { newType.GlobalId.ToString() },
+            relation.TypeIds.ToArray());
+        var semanticMembers = relation.RelationMembers.ToDictionary(static member => member.Name, StringComparer.Ordinal);
+        CollectionAssert.AreEqual(
+            new[] { source.GlobalId.ToString() },
+            semanticMembers["Source"].ParticipantIds.ToArray());
+        CollectionAssert.AreEqual(
+            new[] { target.GlobalId.ToString() },
+            semanticMembers["Target"].ParticipantIds.ToArray());
 
         var returnedIds = response.Nodes.Select(static node => node.InternalId).ToHashSet(StringComparer.Ordinal);
         Assert.IsTrue(returnedIds.Contains(source.GlobalId.ToString()));
@@ -384,13 +475,15 @@ public sealed class GraphControllerTests : ControllerTests {
             .ToArray();
         Assert.AreEqual(2, endpointPorts.Length);
         Assert.IsTrue(endpointPorts.All(endpoint =>
-            endpoint.InternalId.StartsWith("new-type-1/member-new-type-1-", StringComparison.Ordinal)));
+            endpoint.InternalId.StartsWith(
+                $"{relation.InternalId}/@member-{relation.LocalId}-",
+                StringComparison.Ordinal)));
         Assert.AreEqual(2, endpointPorts.Select(static endpoint => endpoint.LocalId).Distinct().Count());
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, relation.InternalId, newType.GlobalId.ToString())));
         Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, source.GlobalId.ToString()))));
         Assert.IsTrue(endpointPorts.Any(port => response.Edges.Any(edge => HasEndpoints(edge, port.InternalId, target.GlobalId.ToString()))));
 
-        var storedRelation = await Storage.Get(new NodePath("new-type-1"));
+        var storedRelation = await Storage.Get(new NodePath(relation.InternalId));
         Assert.IsNotNull(storedRelation);
         Assert.AreEqual(0, storedRelation.Attributes.Count);
 
@@ -421,9 +514,16 @@ public sealed class GraphControllerTests : ControllerTests {
             Node2InternalId = target.GlobalId.Select(static segment => segment.ToString()).ToArray(),
             TypeGlobalId = replacementType.GlobalId.Select(static segment => segment.ToString()).ToArray()
         });
-        Assert.IsInstanceOfType(retyped.Result, typeof(OkObjectResult));
+        var retypedOk = retyped.Result as OkObjectResult;
+        Assert.IsNotNull(retypedOk);
         Assert.IsNull(await Storage.Get(storedRelation.GlobalId));
-        var replacementRelation = await Storage.Get(new NodePath("replacement-type-1"));
+        var replacementResponse = retypedOk.Value as SubgraphResponse;
+        Assert.IsNotNull(replacementResponse);
+        var replacementId = replacementResponse.Nodes
+            .Single(node => node.SemanticKind == "Relation")
+            .InternalId;
+        StringAssert.StartsWith(replacementId, "replacement-type-");
+        var replacementRelation = await Storage.Get(new NodePath(replacementId));
         Assert.IsNotNull(replacementRelation);
         var replacementEdge = await Service.GetTypedEdgeInstanceAsync(replacementRelation.GlobalId);
         Assert.AreEqual(ServiceResultStatus.Ok, replacementEdge.Status, replacementEdge.Error);
@@ -465,7 +565,7 @@ public sealed class GraphControllerTests : ControllerTests {
     }
 
     [TestMethod]
-    public async Task GetSubgraphAsync_ReturnsNestedNeighborEdgesWithGlobalIds() {
+    public async Task GetSubgraphAsync_ReturnsOnlyRelationNeighborsForNestedInstanceIds() {
         var root = await Storage.Create(new("root"));
         var weapons = await Storage.Create(new("weapons"), root.GlobalId);
         var categories = await Storage.Create(new("categories"), root.GlobalId);
@@ -484,22 +584,20 @@ public sealed class GraphControllerTests : ControllerTests {
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
         CollectionAssert.AreEquivalent(
-            new[] { ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString(), weapons.GlobalId.ToString() },
+            new[] { ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString() },
             response.Nodes.Select(static node => node.InternalId).ToArray());
 
-        Assert.AreEqual(2, response.Edges.Count);
+        Assert.AreEqual(1, response.Edges.Count);
         Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString())));
-        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, weapons.GlobalId.ToString(), ak47.GlobalId.ToString())));
 
         var ak47Node = response.Nodes.Single(node => node.InternalId == ak47.GlobalId.ToString());
         var assaultRifleNode = response.Nodes.Single(node => node.InternalId == assaultRifle.GlobalId.ToString());
         Assert.IsTrue(ak47Node.Edges.Any(edge => HasEndpoints(edge, ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString())));
-        Assert.IsTrue(ak47Node.Edges.Any(edge => HasEndpoints(edge, weapons.GlobalId.ToString(), ak47.GlobalId.ToString())));
-        Assert.IsTrue(assaultRifleNode.Edges.Any(edge => HasEndpoints(edge, categories.GlobalId.ToString(), assaultRifle.GlobalId.ToString())));
+        Assert.IsTrue(assaultRifleNode.Edges.Any(edge => HasEndpoints(edge, ak47.GlobalId.ToString(), assaultRifle.GlobalId.ToString())));
     }
 
     [TestMethod]
-    public async Task GetSubgraphAsync_TraverseHierarchyEdges() {
+    public async Task GetSubgraphAsync_DoesNotTreatAddressPrefixesAsGraphEdges() {
         var root = await Storage.Create(new("root"));
         var weapons = await Storage.Create(new("weapons"), root.GlobalId);
         var ak47 = await Storage.Create(new("ak_47"), weapons.GlobalId);
@@ -514,12 +612,10 @@ public sealed class GraphControllerTests : ControllerTests {
 
         var response = ok.Value as SubgraphResponse;
         Assert.IsNotNull(response);
-        CollectionAssert.AreEquivalent(
-            new[] { root.GlobalId.ToString(), weapons.GlobalId.ToString(), ak47.GlobalId.ToString() },
+        CollectionAssert.AreEqual(
+            new[] { root.GlobalId.ToString() },
             response.Nodes.Select(static node => node.InternalId).ToArray());
-        Assert.AreEqual(2, response.Edges.Count);
-        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, root.GlobalId.ToString(), weapons.GlobalId.ToString())));
-        Assert.IsTrue(response.Edges.Any(edge => HasEndpoints(edge, weapons.GlobalId.ToString(), ak47.GlobalId.ToString())));
+        Assert.AreEqual(0, response.Edges.Count);
     }
 
     [TestMethod]
@@ -545,8 +641,35 @@ public sealed class GraphControllerTests : ControllerTests {
 
         var firstNode = response.Nodes.Single(node => node.InternalId == firstRoot.GlobalId.ToString());
         var secondNode = response.Nodes.Single(node => node.InternalId == secondRoot.GlobalId.ToString());
-        Assert.IsTrue(firstNode.Edges.Any(edge => HasEndpoints(edge, firstRoot.GlobalId.ToString(), child.GlobalId.ToString())));
+        Assert.IsFalse(response.Nodes.Any(node => node.InternalId == child.GlobalId.ToString()));
+        Assert.AreEqual(0, firstNode.Edges.Count);
         Assert.AreEqual(0, secondNode.Edges.Count);
+    }
+
+    [TestMethod]
+    public async Task GetTypeCatalogAsync_ReturnsDeepTypesWithoutScanningByGraphDepth() {
+        var semantic = (ISemanticGraphStorage)Storage;
+        NodeBacking parent = semantic.TypeRoot;
+        for (var depth = 1; depth <= 7; depth++)
+            parent = await semantic.CreateTypeElementAsync(
+                new NodeLocalId($"Level{depth}"),
+                parent.GlobalId,
+                SemanticElementKind.Type,
+                Array.Empty<NodeRef>());
+
+        var instance = await semantic.CreateInstanceAsync(
+            "unrelated-instance",
+            null,
+            Array.Empty<NodeRef>());
+
+        var result = await Controller.GetTypeCatalogAsync(CancellationToken.None);
+
+        var ok = result.Result as OkObjectResult;
+        Assert.IsNotNull(ok);
+        var response = ok.Value as SubgraphResponse;
+        Assert.IsNotNull(response);
+        Assert.IsTrue(response.Nodes.Any(node => node.InternalId == parent.GlobalId.ToString()));
+        Assert.IsFalse(response.Nodes.Any(node => node.InternalId == instance.GlobalId.ToString()));
     }
 
     [TestMethod]
@@ -656,8 +779,32 @@ public sealed class GraphControllerTests : ControllerTests {
     private static bool GraphIdIsChildOf(string globalId, string parentGlobalId) =>
         globalId.StartsWith(parentGlobalId + "/", StringComparison.Ordinal);
 
-    private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage {
+    private static IReadOnlyList<JsonElement> ReadCanonicalRelationDocuments() {
+        var instancesPath = Path.Combine(
+            StorageOptions.RootPath,
+            StorageOptions.InstancesDirectoryName);
+        if (!Directory.Exists(instancesPath))
+            return [];
+
+        var relations = new List<JsonElement>();
+        foreach (var path in Directory.GetFiles(
+            instancesPath,
+            "instance.json",
+            SearchOption.AllDirectories)) {
+            using var document = JsonDocument.Parse(File.ReadAllText(path, Encoding.UTF8));
+            var root = document.RootElement;
+            if (root.TryGetProperty("kind", out var kind)
+                && string.Equals(kind.GetString(), "relation", StringComparison.OrdinalIgnoreCase))
+                relations.Add(root.Clone());
+        }
+        return relations;
+    }
+
+    private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage, ISemanticGraphStorage {
+        private ISemanticGraphStorage Semantic => (ISemanticGraphStorage)inner;
+
         public NodeBacking Root => inner.Root;
+        public NodeBacking TypeRoot => Semantic.TypeRoot;
         public Task<NodeBacking> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null) => inner.Create(name, parent, attributes);
         public Task<NodeBacking?> Get(NodeRef query) => inner.Get(query);
         public Task Delete(NodeRef query) => inner.Delete(query);
@@ -666,5 +813,35 @@ public sealed class GraphControllerTests : ControllerTests {
         public IAsyncEnumerable<NodeBacking> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] others) => inner.GetCommonIntersection(first, second, others);
         public Task Delete(NodeBacking node) => inner.Delete(node);
         public IAsyncEnumerable<NodeBacking> EnumerateNodesAsync(CancellationToken cancellationToken = default) => inner.EnumerateNodesAsync(cancellationToken);
+        public bool IsType(NodeBacking node) => Semantic.IsType(node);
+        public IReadOnlyCollection<InternalId> GetDeclaredTypeIds(NodeBacking node) => Semantic.GetDeclaredTypeIds(node);
+        public IReadOnlyCollection<InternalId> GetRequiredTypeIds(NodeBacking type) => Semantic.GetRequiredTypeIds(type);
+        public Task SetDeclaredTypeIdsAsync(NodeRef node, IEnumerable<NodeRef> typeIds) => Semantic.SetDeclaredTypeIdsAsync(node, typeIds);
+        public Task SetRequiredTypeIdsAsync(NodeRef type, IEnumerable<NodeRef> requiredTypeIds) => Semantic.SetRequiredTypeIdsAsync(type, requiredTypeIds);
+        public Task<NodeBacking> CreateTypeElementAsync(NodeLocalId localId, NodeRef parentId, SemanticElementKind kind, IReadOnlyCollection<NodeRef> requiredTypeIds, IDictionary<string, string>? attributes = null) =>
+            Semantic.CreateTypeElementAsync(localId, parentId, kind, requiredTypeIds, attributes);
+        public Task<NodeBacking> ReplaceTypeElementAsync(NodeRef typeId, SemanticElementKind expectedKind, IReadOnlyCollection<NodeRef> requiredTypeIds, IDictionary<string, string>? attributes = null) =>
+            Semantic.ReplaceTypeElementAsync(typeId, expectedKind, requiredTypeIds, attributes);
+        public Task<NodeBacking> CreateInstanceAsync(NodeLocalId localId, NodeRef? namespacePrefix, IReadOnlyCollection<NodeRef> typeIds, IDictionary<string, string>? attributes = null) =>
+            Semantic.CreateInstanceAsync(localId, namespacePrefix, typeIds, attributes);
+        public Task<NodeBacking> ReplaceInstanceAsync(NodeRef instanceId, IReadOnlyCollection<NodeRef> typeIds, IDictionary<string, string>? attributes = null) =>
+            Semantic.ReplaceInstanceAsync(instanceId, typeIds, attributes);
+        public Task<NodeBacking> CreateRelationAsync(NodeLocalId localId, IReadOnlyCollection<NodeRef> typeIds, IReadOnlyCollection<SemanticRelationMember> members, IDictionary<string, string>? attributes = null) =>
+            Semantic.CreateRelationAsync(localId, typeIds, members, attributes);
+        public Task<NodeBacking> ReplaceRelationAsync(NodeRef relationId, IReadOnlyCollection<NodeRef> typeIds, IReadOnlyCollection<SemanticRelationMember> members, IDictionary<string, string>? attributes = null) =>
+            Semantic.ReplaceRelationAsync(relationId, typeIds, members, attributes);
+        public Task<SemanticRelation?> GetRelationAsync(NodeRef relationId) => Semantic.GetRelationAsync(relationId);
+        public Task<SemanticElementSnapshot?> ReadSemanticElementAsync(NodeRef elementId, CancellationToken cancellationToken = default) =>
+            Semantic.ReadSemanticElementAsync(elementId, cancellationToken);
+        public IAsyncEnumerable<SemanticRelation> FindIncidentRelationsAsync(NodeRef participantId, NodeRef? relationTypeId = null, string? memberName = null, CancellationToken cancellationToken = default) =>
+            Semantic.FindIncidentRelationsAsync(participantId, relationTypeId, memberName, cancellationToken);
+        public IAsyncEnumerable<NodeBacking> EnumerateSemanticElementsAsync(CancellationToken cancellationToken = default) =>
+            Semantic.EnumerateSemanticElementsAsync(cancellationToken);
+        public IAsyncEnumerable<NodeBacking> EnumerateTypeElementsAsync(CancellationToken cancellationToken = default) =>
+            Semantic.EnumerateTypeElementsAsync(cancellationToken);
+        public IAsyncEnumerable<NodeBacking> EnumerateInstanceNamespaceChildrenAsync(NodeRef? parent = null, CancellationToken cancellationToken = default) =>
+            Semantic.EnumerateInstanceNamespaceChildrenAsync(parent, cancellationToken);
+        public Task RepairDerivedIndexesAsync(CancellationToken cancellationToken = default) =>
+            Semantic.RepairDerivedIndexesAsync(cancellationToken);
     }
 }

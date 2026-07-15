@@ -1,8 +1,19 @@
-import { graphKindAttribute, graphTypeNameAttribute } from "./graphAttributes.js";
 import { GraphEdge, type GraphEdgeSnapshot } from "./GraphEdge.js";
 import { GraphId } from "./GraphId.js";
 
 export type GraphPoint = { x: number; y: number };
+
+export type GraphRelationMemberSnapshot = {
+  name?: string;
+  memberTypeId?: string;
+  participantIds?: string[];
+};
+
+export type GraphRelationMember = {
+  name: string;
+  memberTypeId: string;
+  participantIds: string[];
+};
 
 function normalizePoint(value: GraphPoint | null | undefined): GraphPoint | null {
   return value && Number.isFinite(value.x) && Number.isFinite(value.y)
@@ -17,6 +28,9 @@ export type GraphNodeSnapshot = {
   localId?: string;
   displayName?: string;
   attributes?: Record<string, string>;
+  semanticKind?: string;
+  typeIds?: string[];
+  relationMembers?: GraphRelationMemberSnapshot[];
   edges?: Array<GraphEdge | GraphEdgeSnapshot>;
   nodes?: Array<GraphNode | GraphNodeSnapshot>;
   collapsed?: boolean;
@@ -33,6 +47,9 @@ export class GraphNode {
   localId: string;
   displayName: string;
   attributes: Record<string, string>;
+  semanticKind: string;
+  typeIds: string[];
+  relationMembers: GraphRelationMember[];
   edges: GraphEdge[];
   nodes: GraphNode[];
   collapsed: boolean;
@@ -46,6 +63,9 @@ export class GraphNode {
     localId,
     displayName,
     attributes = {},
+    semanticKind = "",
+    typeIds = [],
+    relationMembers = [],
     edges = [],
     nodes = [],
     collapsed = false,
@@ -58,6 +78,13 @@ export class GraphNode {
     this.localId = localId ?? GraphId.localId(this.internalId);
     this.displayName = displayName ?? this.localId;
     this.attributes = { ...(attributes ?? {}) };
+    this.semanticKind = semanticKind;
+    this.typeIds = [...typeIds];
+    this.relationMembers = relationMembers.map(member => ({
+      name: member.name ?? "",
+      memberTypeId: member.memberTypeId ?? "",
+      participantIds: [...(member.participantIds ?? [])]
+    }));
     this.edges = edges.map(edge => GraphEdge.from(edge));
     this.nodes = nodes.map(node => GraphNode.from(node));
     this.collapsed = Boolean(collapsed);
@@ -81,6 +108,13 @@ export class GraphNode {
     this.localId = next.localId;
     this.displayName = next.displayName;
     this.attributes = { ...next.attributes };
+    this.semanticKind = next.semanticKind;
+    this.typeIds = [...next.typeIds];
+    this.relationMembers = next.relationMembers.map(member => ({
+      name: member.name,
+      memberTypeId: member.memberTypeId,
+      participantIds: [...member.participantIds]
+    }));
     this.edges = GraphEdge.mergeMany(this.edges, next.edges);
     // TODO: GraphNode.mergeMany(this.nodes, next.nodes)? For now just replace or concat?
     this.nodes = next.nodes.length > 0 ? next.nodes : this.nodes;
@@ -113,24 +147,6 @@ export class GraphNode {
     return this.attributes?.[key];
   }
 
-  hasKind(kind: string): boolean {
-    return this.attribute(graphKindAttribute) === kind;
-  }
-
-  assignedTypePath(): string {
-    return this.attribute(graphTypeNameAttribute) ?? "";
-  }
-
-  isSchemaRoot(basis: { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string }): boolean {
-    return this.path === basis.nodeTypeRoot
-      || this.path === basis.edgeTypeRoot
-      || this.path === basis.relationRoot;
-  }
-
-  isRelationInstance(basis: { relationRoot: string }): boolean {
-    return this.hasKind("edge-instance");
-  }
-
   isChildOf(parentPath: string): boolean {
     return GraphId.isChildOf(this.path, parentPath);
   }
@@ -151,6 +167,13 @@ export class GraphNode {
       localId: this.localId,
       displayName: this.displayName,
       attributes: { ...this.attributes },
+      semanticKind: this.semanticKind,
+      typeIds: [...this.typeIds],
+      relationMembers: this.relationMembers.map(member => ({
+        name: member.name,
+        memberTypeId: member.memberTypeId,
+        participantIds: [...member.participantIds]
+      })),
       collapsed: this.collapsed,
       showed: this.showed,
       position: this.position ? { ...this.position } : null,

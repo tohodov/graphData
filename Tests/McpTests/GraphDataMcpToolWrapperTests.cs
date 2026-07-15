@@ -42,16 +42,10 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
     }
 
     [TestMethod]
-    public async Task SemanticTools_CreateTypedNodeWithValidatedFields() {
+    public async Task SemanticTools_CreateTypedNodeWithValidatedPrimitiveFields() {
         var semanticTools = new GraphDataSemanticTools(await CreateTools());
 
-        AssertSuccess(await semanticTools.CreateType("SemanticCountry"));
         var manufacturerFields = JsonSerializer.SerializeToElement(new {
-            Country = new {
-                valueKind = "Node",
-                nodeType = "NodeTypes/SemanticCountry",
-                cardinality = "required"
-            },
             FoundedYear = new {
                 valueKind = "Primitive",
                 clrType = "int",
@@ -59,10 +53,8 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
             }
         });
         AssertSuccess(await semanticTools.CreateType("SemanticManufacturer", fields: manufacturerFields));
-        AssertSuccess(await semanticTools.CreateNode("SemanticUSSR", type: "NodeTypes/SemanticCountry"));
 
         var nodeFields = JsonSerializer.SerializeToElement(new {
-            Country = "SemanticUSSR",
             FoundedYear = 1807
         });
         var createJson = await semanticTools.CreateNode(
@@ -77,15 +69,23 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
         var node = root.GetProperty("node");
         Assert.AreEqual("SemanticKalashnikov", node.GetProperty("localId").GetString());
         Assert.AreEqual("SemanticKalashnikov", node.GetProperty("internalId").GetString());
-        var types = node.GetProperty("types").EnumerateArray().ToArray();
-        Assert.AreEqual(1, types.Length);
-        Assert.AreEqual("NodeTypes/SemanticManufacturer", types[0].GetProperty("typeInternalId").GetString());
-        Assert.IsTrue(types[0].GetProperty("isMaterialized").GetBoolean());
-        Assert.IsFalse(string.IsNullOrWhiteSpace(types[0].GetProperty("witnessInternalId").GetString()));
+        CollectionAssert.AreEqual(
+            new[] { "NodeTypes/SemanticManufacturer" },
+            node.GetProperty("declaredTypeIds")
+                .EnumerateArray()
+                .Select(static type => type.GetString())
+                .ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "NodeTypes/SemanticManufacturer" },
+            node.GetProperty("effectiveTypeIds")
+                .EnumerateArray()
+                .Select(static type => type.GetString())
+                .ToArray());
+        Assert.IsFalse(node.TryGetProperty("types", out _));
     }
 
     [TestMethod]
-    public async Task SemanticTools_CreateTypeWithRequires_ProjectsRequiredAndMaterializedTypes() {
+    public async Task SemanticTools_CreateTypeWithRequires_SeparatesDeclaredAndEffectiveTypes() {
         var semanticTools = new GraphDataSemanticTools(await CreateTools());
 
         AssertSuccess(await semanticTools.CreateType("RequiredBase"));
@@ -113,17 +113,93 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
             type: "NodeTypes/RequiredDerived"));
 
         using var nodeDocument = JsonDocument.Parse(await semanticTools.GetNode(["RequiredInstance"]));
-        var nodeTypes = nodeDocument.RootElement
-            .GetProperty("node")
-            .GetProperty("types")
-            .EnumerateArray()
-            .ToArray();
+        var node = nodeDocument.RootElement.GetProperty("node");
+        CollectionAssert.AreEqual(
+            new[] { "NodeTypes/RequiredDerived" },
+            node.GetProperty("declaredTypeIds")
+                .EnumerateArray()
+                .Select(static type => type.GetString())
+                .ToArray());
         CollectionAssert.AreEquivalent(
             new[] { "NodeTypes/RequiredBase", "NodeTypes/RequiredDerived" },
-            nodeTypes.Select(static type => type.GetProperty("typeInternalId").GetString()).ToArray());
-        Assert.IsTrue(nodeTypes.All(static type => type.GetProperty("isMaterialized").GetBoolean()));
-        Assert.IsTrue(nodeTypes.All(static type =>
-            !string.IsNullOrWhiteSpace(type.GetProperty("witnessInternalId").GetString())));
+            node.GetProperty("effectiveTypeIds")
+                .EnumerateArray()
+                .Select(static type => type.GetString())
+                .ToArray());
+    }
+
+    [TestMethod]
+    public async Task SemanticTools_CreateRelation_ReturnsCanonicalNaryMembers() {
+        var graph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
+        var service = new GraphService(graph, new GraphSearchService(Storage));
+        var semanticTools = new GraphDataSemanticTools(new GraphDataTools(service));
+        var relationTypeFields = JsonSerializer.SerializeToElement(new {
+            Source = new {
+                valueKind = "Node",
+                cardinality = "required"
+            },
+            Cargo = new {
+                valueKind = "Node",
+                cardinality = "oneOrMore"
+            }
+        });
+        var createTypeJson = await semanticTools.CreateType(
+            "McpShipment",
+            fields: relationTypeFields,
+            elementKind: "Edge");
+        AssertSuccess(createTypeJson);
+        using (var typeDocument = JsonDocument.Parse(createTypeJson)) {
+            var createdType = typeDocument.RootElement.GetProperty("type");
+            Assert.AreEqual(
+                "NodeTypes/McpShipment",
+                createdType.GetProperty("internalId").GetString());
+            Assert.AreEqual("Edge", createdType.GetProperty("elementKind").GetString());
+        }
+        await service.CreateNode("factory");
+        await service.CreateNode("rifle-1");
+        await service.CreateNode("rifle-2");
+        var members = JsonSerializer.SerializeToElement(new {
+            Source = "factory",
+            Cargo = new[] { "rifle-1", "rifle-2" }
+        });
+
+        var json = await semanticTools.CreateRelation(
+            "shipment-1",
+            "NodeTypes/McpShipment",
+            members);
+
+        AssertSuccess(json);
+        using var document = JsonDocument.Parse(json);
+        var relation = document.RootElement.GetProperty("relation");
+        Assert.AreEqual("shipment-1", relation.GetProperty("internalId").GetString());
+        Assert.AreEqual("Relation", relation.GetProperty("semanticKind").GetString());
+        CollectionAssert.AreEqual(
+            new[] { "NodeTypes/McpShipment" },
+            relation.GetProperty("typeIds")
+                .EnumerateArray()
+                .Select(static value => value.GetString())
+                .ToArray());
+
+        var relationMembers = relation.GetProperty("relationMembers")
+            .EnumerateArray()
+            .ToDictionary(
+                static member => member.GetProperty("name").GetString()!,
+                static member => member,
+                StringComparer.Ordinal);
+        CollectionAssert.AreEqual(
+            new[] { "factory" },
+            relationMembers["Source"].GetProperty("participantIds")
+                .EnumerateArray()
+                .Select(static value => value.GetString())
+                .ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "rifle-1", "rifle-2" },
+            relationMembers["Cargo"].GetProperty("participantIds")
+                .EnumerateArray()
+                .Select(static value => value.GetString())
+                .ToArray());
+        Assert.IsTrue(relationMembers.Values.All(static member =>
+            !string.IsNullOrWhiteSpace(member.GetProperty("memberTypeId").GetString())));
     }
 
     [TestMethod]
@@ -156,14 +232,14 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
         using var document = JsonDocument.Parse(await semanticTools.GetNode(["WithBaseField"]));
         CollectionAssert.AreEquivalent(
             new[] { "NodeTypes/FieldBase", "NodeTypes/FieldDerived" },
-            document.RootElement.GetProperty("node").GetProperty("types")
+            document.RootElement.GetProperty("node").GetProperty("effectiveTypeIds")
                 .EnumerateArray()
-                .Select(static type => type.GetProperty("typeInternalId").GetString())
+                .Select(static type => type.GetString())
                 .ToArray());
     }
 
     [TestMethod]
-    public async Task SemanticTools_RejectNodeFieldReferencesWithoutCreatingMissingNodes() {
+    public async Task SemanticTools_RejectNodeValuedFieldsBeforeCreatingTheInstance() {
         var semanticTools = new GraphDataSemanticTools(await CreateTools());
 
         AssertSuccess(await semanticTools.CreateType("NoChainCountry"));
@@ -175,18 +251,43 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
             }
         });
         AssertSuccess(await semanticTools.CreateType("NoChainManufacturer", fields: manufacturerFields));
+        AssertSuccess(await semanticTools.CreateNode("ExistingCountry", type: "NodeTypes/NoChainCountry"));
 
         var nodeFields = JsonSerializer.SerializeToElement(new {
-            Country = "MissingCountry"
+            Country = "ExistingCountry"
         });
         var createJson = await semanticTools.CreateNode(
             "ManufacturerWithMissingCountry",
             type: "NodeTypes/NoChainManufacturer",
             fields: nodeFields);
 
-        AssertFailure(createJson, "NotFound");
-        AssertNodeNotFound(await semanticTools.GetNode(["MissingCountry"]));
+        AssertFailure(createJson, "BadRequest");
+        using (var document = JsonDocument.Parse(createJson)) {
+            var error = document.RootElement.GetProperty("error").GetString();
+            StringAssert.Contains(error, "named node fields");
+            StringAssert.Contains(error, "CreateRelation");
+        }
         AssertNodeNotFound(await semanticTools.GetNode(["ManufacturerWithMissingCountry"]));
+    }
+
+    [TestMethod]
+    public async Task SemanticTools_AllowsOmittedOptionalNodeFieldAsEmpty() {
+        var semanticTools = new GraphDataSemanticTools(await CreateTools());
+        AssertSuccess(await semanticTools.CreateType("OptionalMcpTarget"));
+        var fields = JsonSerializer.SerializeToElement(new {
+            Target = new {
+                valueKind = "Node",
+                nodeType = "NodeTypes/OptionalMcpTarget",
+                cardinality = "optional"
+            }
+        });
+        AssertSuccess(await semanticTools.CreateType("OptionalMcpOwner", fields: fields));
+
+        var createJson = await semanticTools.CreateNode(
+            "OptionalMcpInstance",
+            type: "NodeTypes/OptionalMcpOwner");
+
+        AssertSuccess(createJson);
     }
 
     [TestMethod]
@@ -228,7 +329,7 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
     }
 
     [TestMethod]
-    public async Task SemanticTools_ReportAllMissingRequiredFieldsWithExpectedTypes() {
+    public async Task SemanticTools_ReportRequiredNodeFieldsAsUnsupportedBeforeMutation() {
         var semanticTools = new GraphDataSemanticTools(await CreateTools());
 
         AssertSuccess(await semanticTools.CreateType("ValidationCountry"));
@@ -253,16 +354,16 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
         AssertFailure(createJson, "BadRequest");
         using (var document = JsonDocument.Parse(createJson)) {
             var error = document.RootElement.GetProperty("error").GetString();
-            StringAssert.Contains(error, "Missing required fields for type 'NodeTypes/ValidationManufacturer'");
-            StringAssert.Contains(error, "Country (Node: NodeTypes/ValidationCountry)");
-            StringAssert.Contains(error, "FoundedYear (Primitive: Int32)");
+            StringAssert.Contains(error, "Type 'NodeTypes/ValidationManufacturer' requires named node fields");
+            StringAssert.Contains(error, "Country");
+            StringAssert.Contains(error, "CreateRelation");
         }
         AssertNodeNotFound(await semanticTools.GetNode(["MissingRequiredFields"]));
     }
 
     private async Task<GraphDataTools> CreateTools() {
         var graph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
-        return new GraphDataTools(new GraphService(graph, new GraphSearchService(Storage)), graph);
+        return new GraphDataTools(new GraphService(graph, new GraphSearchService(Storage)));
     }
 
     private static void AssertSuccess(string json) {

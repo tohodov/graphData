@@ -20,34 +20,51 @@ internal static class DynamicNodeTypeDefinitionStorage
     private const string IsCollectionAttribute = "isCollection";
     private const string NodeTypePathAttribute = "nodeTypePath";
     private const string AllowedTypePathsAttribute = "allowedTypePaths";
+    private const string MaterializationCompleteAttribute = "materializationComplete";
 
-    public static async Task WriteAsync(IGraphStorage storage, NodeTypeDefinition definition)
+    public static async Task WriteAsync(ISemanticGraphStorage storage, NodeTypeDefinition definition)
     {
-        var definitionNode = await storage.Create(
+        var definitionAttributes = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+            [IsAbstractAttribute] = definition.IsAbstract.ToString(CultureInfo.InvariantCulture),
+            [ElementKindAttribute] = definition.ElementKind.ToString(),
+            [MaterializationCompleteAttribute] = bool.FalseString
+        };
+        var definitionNode = await UpsertInfrastructureAsync(
+            storage,
             DefinitionNodeId,
             definition.Type.GlobalId,
-            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-                [IsAbstractAttribute] = definition.IsAbstract.ToString(CultureInfo.InvariantCulture)
-                , [ElementKindAttribute] = definition.ElementKind.ToString()
-            }).ConfigureAwait(false);
+            definitionAttributes).ConfigureAwait(false);
 
-        var fieldsNode = await storage.Create(FieldsNodeId, definitionNode.GlobalId).ConfigureAwait(false);
+        var fieldsNode = await UpsertInfrastructureAsync(
+            storage,
+            FieldsNodeId,
+            definitionNode.GlobalId).ConfigureAwait(false);
         foreach (var field in definition.Fields) {
-            var fieldNode = await storage.Create(
+            _ = await UpsertInfrastructureAsync(
+                storage,
                 new NodeLocalId(field.Name),
                 fieldsNode.GlobalId,
                 CreateFieldAttributes(field)).ConfigureAwait(false);
-
         }
 
-        var slotsNode = await storage.Create(SlotsNodeId, definitionNode.GlobalId).ConfigureAwait(false);
+        var slotsNode = await UpsertInfrastructureAsync(
+            storage,
+            SlotsNodeId,
+            definitionNode.GlobalId).ConfigureAwait(false);
         foreach (var slot in definition.Slots.Where(slot => !IsDerivedFromField(slot, definition.Fields))) {
-            var slotNode = await storage.Create(
+            _ = await UpsertInfrastructureAsync(
+                storage,
                 new NodeLocalId(slot.Name),
                 slotsNode.GlobalId,
                 CreateCardinalityAttributes(slot.Cardinality, slot.AllowedTypes)).ConfigureAwait(false);
-
         }
+
+        definitionAttributes[MaterializationCompleteAttribute] = bool.TrueString;
+        await storage.ReplaceTypeElementAsync(
+            definitionNode.GlobalId,
+            SemanticElementKind.TypeInfrastructure,
+            Array.Empty<NodeRef>(),
+            definitionAttributes).ConfigureAwait(false);
     }
 
     public static NodeTypeDefinition? TryRead(NodeType typeNode)
@@ -55,16 +72,18 @@ internal static class DynamicNodeTypeDefinitionStorage
         var definitionNode = FindNeighbor(typeNode, DefinitionNodeId);
         if (definitionNode is null)
             return null;
+        if (!definitionNode.Attributes.TryGetValue(MaterializationCompleteAttribute, out var complete)
+            || !bool.TryParse(complete, out var isComplete)
+            || !isComplete)
+            return null;
 
         var nodeTypesRoot = FindNodeTypesRoot(typeNode);
         var fieldsNode = FindNeighbor(definitionNode, FieldsNodeId);
         var slotsNode = FindNeighbor(definitionNode, SlotsNodeId);
-        var fields = fieldsNode is null
-            ? Array.Empty<NodeFieldDefinition>()
-            : ReadFields(fieldsNode, nodeTypesRoot).ToArray();
-        var explicitSlots = slotsNode is null
-            ? Array.Empty<NodeSlotDefinition>()
-            : ReadSlots(slotsNode, nodeTypesRoot).ToArray();
+        if (fieldsNode is null || slotsNode is null)
+            return null;
+        var fields = ReadFields(fieldsNode, nodeTypesRoot).ToArray();
+        var explicitSlots = ReadSlots(slotsNode, nodeTypesRoot).ToArray();
         var slots = explicitSlots
             .Concat(fields.Select(static field => field.ToSlotDefinition()).OfType<NodeSlotDefinition>())
             .DistinctBy(SlotIdentity)
@@ -141,20 +160,51 @@ internal static class DynamicNodeTypeDefinitionStorage
 
     private static Node? FindNodeTypesRoot(NodeType typeNode)
     {
-        return typeNode.Nodes.FirstOrDefault(static node =>
-            node.GlobalId.ToString() == "NodeTypes"
-            && node.LocalId.ToString() == "NodeTypes");
+        Node current = typeNode;
+        while (current.GlobalId.Count() > 1) {
+            var parentId = new InternalId(current.GlobalId.Take(current.GlobalId.Count() - 1));
+            current = current.Nodes.SingleOrDefault(node => node.GlobalId == parentId)
+                ?? throw new InvalidOperationException(
+                    $"Type catalog parent '{parentId}' of '{current.GlobalId}' is unavailable.");
+        }
+
+        return current.GlobalId.ToString() == "NodeTypes"
+            ? current
+            : null;
     }
 
     private static bool IsNodeType(Node node, Node nodeTypesRoot)
     {
         return node.GlobalId != nodeTypesRoot.GlobalId
-            && node.Nodes.Any(neighbor => neighbor.GlobalId == nodeTypesRoot.GlobalId);
+            && node.Backing is ISemanticNodeBacking { SemanticKind: SemanticElementKind.Type };
     }
 
     private static Node? FindNeighbor(Node owner, NodeLocalId localId)
     {
-        return owner.Nodes.FirstOrDefault(node => node.LocalId == localId);
+        var expectedId = new InternalId(owner.GlobalId.Append(localId));
+        return owner.Nodes.SingleOrDefault(node => node.GlobalId == expectedId);
+    }
+
+    private static async Task<NodeBacking> UpsertInfrastructureAsync(
+        ISemanticGraphStorage storage,
+        NodeLocalId localId,
+        InternalId parentId,
+        IDictionary<string, string>? attributes = null)
+    {
+        var id = new InternalId(parentId.Append(localId));
+        var existing = await storage.ReadSemanticElementAsync(id).ConfigureAwait(false);
+        return existing is null
+            ? await storage.CreateTypeElementAsync(
+                localId,
+                parentId,
+                SemanticElementKind.TypeInfrastructure,
+                Array.Empty<NodeRef>(),
+                attributes).ConfigureAwait(false)
+            : await storage.ReplaceTypeElementAsync(
+                id,
+                SemanticElementKind.TypeInfrastructure,
+                Array.Empty<NodeRef>(),
+                attributes).ConfigureAwait(false);
     }
 
     private static Dictionary<string, string> CreateFieldAttributes(NodeFieldDefinition field)
@@ -201,11 +251,32 @@ internal static class DynamicNodeTypeDefinitionStorage
             ? [serializedPaths]
             : JsonSerializer.Deserialize<string[]>(serializedPaths)
                 ?? throw new InvalidOperationException($"Dynamic node definition has invalid '{attributeName}'.");
-        return paths.Select(path => nodeTypesRoot.Nodes
-            .SingleOrDefault(node => node.GlobalId.ToString() == path)
+        return paths.Select(path => FindTypeByPath(nodeTypesRoot, path)
             ?? throw new InvalidOperationException(
                 $"Dynamic node definition references unknown node type '{path}'."))
             .Select(static node => new NodeType(node.Backing));
+    }
+
+    private static Node? FindTypeByPath(Node nodeTypesRoot, string path)
+    {
+        var segments = path
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(static segment => new NodeLocalId(segment))
+            .ToArray();
+        var rootSegments = nodeTypesRoot.GlobalId.ToArray();
+        if (segments.Length <= rootSegments.Length
+            || !rootSegments.SequenceEqual(segments.Take(rootSegments.Length)))
+            return null;
+
+        var current = nodeTypesRoot;
+        for (var index = rootSegments.Length; index < segments.Length; index++) {
+            var expectedId = new InternalId(segments.Take(index + 1));
+            current = current.Nodes.SingleOrDefault(node => node.GlobalId == expectedId);
+            if (current is null)
+                return null;
+        }
+
+        return IsNodeType(current, nodeTypesRoot) ? current : null;
     }
 
     private static NodeFieldValueKind ReadValueKind(IDictionary<string, string> attributes)

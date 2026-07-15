@@ -62,7 +62,7 @@
         </div>
         <nav class="tabs" aria-label="Разделы редактора">
           <button class="tab-button active" type="button" data-tab="operations">Операции</button>
-          <button class="tab-button" type="button" data-tab="types">Базис</button>
+          <button class="tab-button" type="button" data-tab="types">Типы</button>
           <button class="tab-button" type="button" data-tab="search">Поиск</button>
           <button class="tab-button" type="button" data-tab="subgraph">Подграф</button>
         </nav>
@@ -112,42 +112,25 @@
 
         <section id="tab-types" class="tab-panel">
           <div class="panel-block">
-            <span class="eyebrow">Проекция</span>
+            <span class="eyebrow">Каталог типов</span>
             <div class="stack-form">
-              <div class="result-summary">Проекция собирается из типов, загруженных из корня базиса.</div>
-              <label>
-                <span>Узел базиса GlobalId</span>
-                <input id="basis-node" type="text" autocomplete="off" spellcheck="false" placeholder="graphdata/bases/default">
-              </label>
-              <div class="button-row">
-                <button id="load-basis-button" type="button">Загрузить базис</button>
-                <button id="ensure-basis-button" type="button">Создать базовый</button>
+              <div class="result-summary">Типы загружаются из фиксированного сервером каталога. Правила отображения хранятся на самих типах.</div>
+              <div class="type-catalog-location">
+                <span>Корень</span>
+                <code id="type-catalog-root">NodeTypes</code>
               </div>
-              <label>
-                <span>Корень типов узлов</span>
-                <input id="node-type-root" type="text" autocomplete="off" spellcheck="false">
-              </label>
-              <label>
-                <span>Корень типов связей</span>
-                <input id="edge-type-root" type="text" autocomplete="off" spellcheck="false">
-              </label>
-              <label>
-                <span>Корень инстансов связей</span>
-                <input id="relation-root" type="text" autocomplete="off" spellcheck="false">
-              </label>
-              <button id="refresh-types-button" type="button">Загрузить подграф базиса</button>
-              <button id="load-relations-button" type="button">Загрузить инстансы связей</button>
+              <button id="refresh-types-button" type="button">Обновить каталог типов</button>
               <div id="projection-summary" class="result-summary"></div>
             </div>
           </div>
 
           <div class="panel-block">
-            <span class="eyebrow">Правила узлов</span>
+            <span class="eyebrow">Отображение узлов</span>
             <div id="node-type-list" class="result-list"></div>
           </div>
 
           <div class="panel-block">
-            <span class="eyebrow">Правила связей</span>
+            <span class="eyebrow">Отображение связей</span>
             <div id="edge-type-list" class="result-list"></div>
           </div>
 
@@ -196,6 +179,6 @@
     </section>
   </main>
 
-  <script type="module" src="./js/app.js?v=20260621-basis-projection"></script>
+  <script type="module" src="./js/app.js?v=20260715-semantic-type-rules"></script>
 </body>
 </html>

@@ -46,7 +46,7 @@ WARP можно включить явно через `AllowWarpFallback`; по �
 ## Границы первого runtime-среза
 
 - поддерживается один статический directed message-passing layer из `GraphCompiler`;
-- Domain frontend сейчас lower'ит raw carrier graph: каждое неориентированное ребро становится двумя relation instances;
-- semantic typed edges, гиперрёбра и basis-dependent projection требуют отдельного frontend;
+- Domain frontend сейчас lower'ит только простую compatibility-проекцию: каждое неориентированное ребро становится двумя relation instances;
+- canonical typed relations и гиперрёбра требуют отдельного semantic frontend на основе `TypeIds` и `RelationMembers`;
 - один target с halo больше ограничений dispatch нельзя автоматически разделить без partial reduction;
 - после постановки GPU dispatch отмена ожидает fence, чтобы не освобождать ресурсы пока GPU их читает.

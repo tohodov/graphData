@@ -61,33 +61,46 @@ public sealed class DslTests : GraphDslTests {
     }
 
     [TestMethod]
-    public async Task NodeNodes_ShouldReflectFolderChangesAfterFirstRead() {
+    public async Task NamespaceFrontier_ShouldReflectCanonicalRecordChangesAfterFirstRead() {
         var parent = Graph.Root.Nodes.Create("dsl-nodes-parent");
         var first = parent.Nodes.Create("first");
-        var secondPath = Path.Combine(StorageOptions.RootPath, parent.LocalId, "second");
+        var secondPath = Path.Combine(StorageOptions.RootPath, "instances", parent.LocalId, "second");
 
         CollectionAssert.AreEquivalent(
             new[] { first.LocalId },
-            parent.Nodes.Select(static child => child.LocalId).ToArray());
+            await ((ISemanticGraphStorage)Storage)
+                .EnumerateInstanceNamespaceChildrenAsync(parent.GlobalId)
+                .Select(static child => child.LocalId)
+                .ToArrayAsync());
 
         Directory.CreateDirectory(secondPath);
+        await File.WriteAllTextAsync(
+            Path.Combine(secondPath, "instance.json"),
+            """{"formatVersion":1,"id":"dsl-nodes-parent/second","kind":"instance","typeIds":[],"attributes":{},"members":[]}""");
 
         CollectionAssert.AreEquivalent(
             new[] { first.LocalId, new NodeLocalId("second") },
-            parent.Nodes.Select(static child => child.LocalId).ToArray());
+            await ((ISemanticGraphStorage)Storage)
+                .EnumerateInstanceNamespaceChildrenAsync(parent.GlobalId)
+                .Select(static child => child.LocalId)
+                .ToArrayAsync());
+        Assert.IsFalse(parent.Nodes.Any(static child => child.LocalId == "second"));
 
-        Directory.Delete(secondPath);
+        File.Delete(Path.Combine(secondPath, "instance.json"));
 
         CollectionAssert.AreEquivalent(
             new[] { first.LocalId },
-            parent.Nodes.Select(static child => child.LocalId).ToArray());
+            await ((ISemanticGraphStorage)Storage)
+                .EnumerateInstanceNamespaceChildrenAsync(parent.GlobalId)
+                .Select(static child => child.LocalId)
+                .ToArrayAsync());
     }
 
     [TestMethod]
-    public async Task NodeEdges_ShouldReflectFolderChangesAfterFirstRead() {
+    public async Task NodeEdges_ShouldIgnoreNamespaceRecordsWithoutExplicitRelation() {
         var parent = Graph.Root.Nodes.Create("dsl-edges-parent");
         var first = parent.Nodes.Create("first");
-        var secondPath = Path.Combine(StorageOptions.RootPath, parent.LocalId, "second");
+        var secondPath = Path.Combine(StorageOptions.RootPath, "instances", parent.LocalId, "second");
 
         CollectionAssert.AreEquivalent(
             new[] { first.LocalId },
@@ -98,16 +111,19 @@ public sealed class DslTests : GraphDslTests {
                 .ToArray());
 
         Directory.CreateDirectory(secondPath);
+        await File.WriteAllTextAsync(
+            Path.Combine(secondPath, "instance.json"),
+            """{"formatVersion":1,"id":"dsl-edges-parent/second","kind":"instance","typeIds":[],"attributes":{},"members":[]}""");
 
         CollectionAssert.AreEquivalent(
-            new[] { first.LocalId, new NodeLocalId("second") },
+            new[] { first.LocalId },
             parent.Edges
                 .Select(edge => edge.Node1.GlobalId == parent.GlobalId ? edge.Node2 : edge.Node1)
                 .Where(neighbor => neighbor.GlobalId != parent.GlobalId)
                 .Select(static neighbor => neighbor.LocalId)
                 .ToArray());
 
-        Directory.Delete(secondPath);
+        File.Delete(Path.Combine(secondPath, "instance.json"));
 
         CollectionAssert.AreEquivalent(
             new[] { first.LocalId },
@@ -178,12 +194,20 @@ public sealed class DslTests : GraphDslTests {
         Assert.IsNotNull(storedAk47);
         Assert.IsTrue(await storedAk47.Nodes.AnyAsync(node => node.GlobalId == weaponType.GlobalId));
         Assert.IsTrue(await storedAk47.Nodes.AnyAsync(node => node.GlobalId == manufacturer.GlobalId));
-        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "ak-47")));
-        Assert.IsTrue(File.GetAttributes(Path.Combine(StorageOptions.RootPath, "ak-47", "kalashnikov")).HasFlag(FileAttributes.ReparsePoint));
+        Assert.IsTrue(File.Exists(Path.Combine(
+            StorageOptions.RootPath,
+            "instances",
+            "ak-47",
+            "instance.json")));
+        Assert.AreEqual(
+            1,
+            await ((ISemanticGraphStorage)Storage)
+                .FindIncidentRelationsAsync(ak47.GlobalId)
+                .CountAsync());
     }
 
     [TestMethod]
-    public async Task EdgesRemove_ShouldKeepHierarchyChildByMovingItThroughRemainingEdge() {
+    public async Task NodesRemove_RemovesOnlySelectedRelationWithoutMovingAddress() {
         var oldParent = new Node("old-parent");
         var child = new Node("child");
         var newParent = new Node("new-parent");
@@ -192,7 +216,7 @@ public sealed class DslTests : GraphDslTests {
         Graph.Root.Nodes.Add(newParent);
 
         child.Edges.Add(new Edge(child, newParent));
-        oldParent.Nodes.Remove(child);
+        Assert.IsTrue(oldParent.Nodes.Remove(child));
 
         var storedOldParent = await Storage.Get(oldParent.GlobalId);
         var storedNewParent = await Storage.Get(newParent.GlobalId);
@@ -200,10 +224,9 @@ public sealed class DslTests : GraphDslTests {
         Assert.IsNotNull(storedNewParent);
         Assert.IsFalse(await storedOldParent.Nodes.AnyAsync(node => node.LocalId == "child"));
         Assert.IsTrue(await storedNewParent.Nodes.AnyAsync(node => node.LocalId == "child"));
-        Assert.IsNull(await Storage.Get(oldParent.GlobalId, child.LocalId));
-        Assert.IsNotNull(await Storage.Get(newParent.GlobalId, child.LocalId));
-        Assert.IsFalse(Directory.Exists(Path.Combine(StorageOptions.RootPath, "old-parent", "child")));
-        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "new-parent", "child")));
+        Assert.IsNotNull(await Storage.Get(oldParent.GlobalId, child.LocalId));
+        Assert.IsNull(await Storage.Get(newParent.GlobalId, child.LocalId));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "instances", "old-parent", "child")));
     }
 
     [TestMethod]
@@ -217,13 +240,11 @@ public sealed class DslTests : GraphDslTests {
 
         Assert.IsFalse(parent.Nodes.Any(node => node.LocalId == "child"));
         Assert.IsNull(await Storage.Get(parent.GlobalId, child.LocalId));
-        Assert.IsFalse(parent.GetBacking().Folder.EnumerateDirectories().Any());
-
-        Assert.IsFalse(Directory.Exists(Path.Combine(StorageOptions.RootPath, "parent", "child")));
+        Assert.IsFalse(Directory.Exists(Path.Combine(StorageOptions.RootPath, "instances", "parent", "child")));
     }
 
     [TestMethod]
-    public async Task NodesRemove_ShouldKeepHierarchyChildWhenItHasOtherEdges() {
+    public async Task NodesRemove_DoesNotMoveAddressWhenChildHasOtherGraphRelations() {
         var oldParent = new Node("old");
         var child = new Node("child");
         var newParent = new Node("new");
@@ -231,23 +252,22 @@ public sealed class DslTests : GraphDslTests {
         Graph.Root.Nodes.Add(oldParent);
         Graph.Root.Nodes.Add(newParent);
         child.Edges.Add(new Edge(child, newParent));
-        Assert.IsTrue(child.GetBacking().FolderPath.Contains(oldParent.LocalId));
+        Assert.IsTrue(oldParent.Nodes.Remove(child));
 
-        oldParent.Nodes.Remove(child);
-
-        Assert.IsFalse(oldParent.Nodes.Any(node => node.LocalId == "child"));
-        Assert.IsNull(await Storage.Get(oldParent.GlobalId, child.LocalId));
-        Assert.IsFalse(Directory.Exists(Path.Combine(StorageOptions.RootPath, "old", "child")));
+        var reloadedOldParent = await Storage.Get(oldParent.GlobalId);
+        Assert.IsNotNull(reloadedOldParent);
+        Assert.IsFalse(await reloadedOldParent.Nodes.AnyAsync(node => node.GlobalId == child.GlobalId));
+        Assert.IsNotNull(await Storage.Get(oldParent.GlobalId, child.LocalId));
+        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "instances", "old", "child")));
 
         var reloadedNewParent = await Storage.Get(newParent.GlobalId);
         Assert.IsNotNull(reloadedNewParent);
         Assert.IsTrue(await reloadedNewParent.Nodes.AnyAsync(node => node.LocalId == "child"));
-        Assert.IsNotNull(await Storage.Get(newParent.GlobalId, child.LocalId));
-        Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "new", "child")));
+        Assert.IsNull(await Storage.Get(newParent.GlobalId, child.LocalId));
     }
 
     [TestMethod]
-    public async Task EdgesRemove_ShouldThrowWhenHierarchyEdgeIsChildsOnlyEdge() {
+    public async Task EdgesRemove_RemovesExplicitAncestorRelationWithoutDeletingRecords() {
         var parent = new Node("parent");
         var child = new Node("child");
         parent.Nodes.Add(child);
@@ -255,9 +275,11 @@ public sealed class DslTests : GraphDslTests {
 
         var hierarchyEdge = parent.Edges.Single();
 
-        Assert.ThrowsException<InvalidOperationException>(() => parent.Edges.Remove(hierarchyEdge));
-        Assert.IsTrue(parent.Nodes.Any(node => node.LocalId == "child"));
+        Assert.IsTrue(parent.Edges.Remove(hierarchyEdge));
+        var reloadedParent = await Storage.Get(parent.GlobalId);
+        Assert.IsNotNull(reloadedParent);
+        Assert.IsFalse(await reloadedParent.Nodes.AnyAsync(node => node.GlobalId == child.GlobalId));
         Assert.IsNotNull(await Storage.Get(parent.GlobalId, child.LocalId));
-        Assert.IsTrue(child.GetBacking().Folder.Exists);
+        Assert.IsNotNull(await Storage.Get(child.GlobalId));
     }
 }

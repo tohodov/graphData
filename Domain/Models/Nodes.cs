@@ -26,6 +26,7 @@ public sealed record NodeTypeInstance(NodeType Type, Node? Witness = null) {
 
 public sealed class InstanceNode : Node {
     private readonly IReadOnlyCollection<NodeTypeInstance> typeInstances;
+    private readonly IReadOnlyCollection<NodeType> declaredTypes;
 
     public IReadOnlyCollection<NodeTypeInstance> TypeInstances => typeInstances;
 
@@ -33,6 +34,12 @@ public sealed class InstanceNode : Node {
         .Select(static instance => instance.Type)
         .DistinctBy(static type => type.GlobalId)
         .ToArray();
+
+    /// <summary>
+    /// Type ids written directly to the instance record. <see cref="AssignedTypes"/>
+    /// additionally contains the transitive required-type closure.
+    /// </summary>
+    public IReadOnlyCollection<NodeType> DeclaredTypes => declaredTypes;
 
     /// <summary>
     /// Compatibility view for callers that still expect exactly one type.
@@ -46,18 +53,28 @@ public sealed class InstanceNode : Node {
     };
 
     internal InstanceNode(NodeLocalId id, NodeType type)
-        : this(new VirtualNodeState(id), [new NodeTypeInstance(type)]) {
+        : this(new VirtualNodeState(id), [new NodeTypeInstance(type)], [type]) {
     }
 
     internal InstanceNode(NodeBacking state, NodeType type)
-        : this(state, [new NodeTypeInstance(type)]) {
+        : this(state, [new NodeTypeInstance(type)], [type]) {
     }
 
     internal InstanceNode(NodeBacking state, IEnumerable<NodeTypeInstance> typeInstances)
+        : this(state, typeInstances, typeInstances.Select(static instance => instance.Type)) {
+    }
+
+    internal InstanceNode(
+        NodeBacking state,
+        IEnumerable<NodeTypeInstance> typeInstances,
+        IEnumerable<NodeType> declaredTypes)
         : base(state) {
         this.typeInstances = typeInstances
             .GroupBy(static instance => instance.Type.GlobalId)
             .Select(static group => group.OrderByDescending(static instance => instance.IsMaterialized).First())
+            .ToArray();
+        this.declaredTypes = declaredTypes
+            .DistinctBy(static type => type.GlobalId)
             .ToArray();
 
         foreach (var typeInstance in this.typeInstances)

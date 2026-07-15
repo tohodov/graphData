@@ -3,7 +3,7 @@ using GraphData.Core.Models;
 using GraphData.Core.Services;
 using Microsoft.Extensions.Options;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using Storage;
+using SemanticStorage;
 
 [RelevantTestClass]
 public class GraphStorageContractTests : StorageTests {
@@ -128,23 +128,33 @@ public class GraphStorageContractTests : StorageTests {
 
     [TestMethod]
     public async Task Search_ShouldFindIsolatedNodesWithNegatedExistentialRelation() {
-        var isolated = await Storage.Create(new("isolated"));
-        var connected = await Storage.Create(new("connected"));
-        var neighbor = await Storage.Create(new("neighbor"));
+        var scope = new Dictionary<string, string> { ["scope"] = "instance-test" };
+        var isolated = await Storage.Create(new("isolated"), attributes: scope);
+        var connected = await Storage.Create(new("connected"), attributes: scope);
+        var neighbor = await Storage.Create(new("neighbor"), attributes: scope);
 
         await Storage.Connect(connected.GlobalId, neighbor.GlobalId);
 
         var service = new GraphSearchService(Storage);
         var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
             Return = ["x"],
-            Where = new NotNodeSearchExpression {
-                Expression = new ExistsNodeSearchExpression {
-                    Variables = ["y"],
-                    Expression = new NodeConnectedSearchExpression {
-                        Left = Var("x"),
-                        Right = Var("y")
+            Where = new AllNodeSearchExpression {
+                Expressions = [
+                    new NodeAttributeSearchExpression {
+                        Node = Var("x"),
+                        Key = "scope",
+                        Value = "instance-test"
+                    },
+                    new NotNodeSearchExpression {
+                        Expression = new ExistsNodeSearchExpression {
+                            Variables = ["y"],
+                            Expression = new NodeConnectedSearchExpression {
+                                Left = Var("x"),
+                                Right = Var("y")
+                            }
+                        }
                     }
-                }
+                ]
             }
         }).ToArrayAsync();
 
@@ -190,7 +200,7 @@ public class GraphStorageContractTests : StorageTests {
     }
 
     [TestMethod]
-    public async Task DeleteSubtree_RemovesExternalBacklinksAfterReopen() {
+    public async Task DeleteExactRecord_PreservesDescendantAndItsIncidentRelationsAfterReopen() {
         var owner = await Storage.Create("subtree-owner");
         var child = await Storage.Create("subtree-child", owner.GlobalId);
         var external = await Storage.Create("subtree-external");
@@ -200,32 +210,36 @@ public class GraphStorageContractTests : StorageTests {
 
         await Storage.Delete(owner.GlobalId);
 
-        IGraphStorage reopened = new SymLinkGraphStorage(
+        IGraphStorage reopened = new SemanticFileGraphStorage(
             Options.Create(StorageOptions),
             new CancellationTokensAccessorMock());
         var reopenedExternal = await reopened.Get(external.GlobalId);
         Assert.IsNotNull(reopenedExternal);
-        Assert.IsNull(await reopened.Get(child.GlobalId));
-        Assert.IsFalse(await reopenedExternal.Nodes.AnyAsync(node => node.GlobalId == child.GlobalId));
-        Assert.IsFalse(new DirectoryInfo(Path.Combine(StorageOptions.RootPath, external.LocalId))
-            .EnumerateFileSystemInfos()
-            .Any(entry => entry.Attributes.HasFlag(FileAttributes.ReparsePoint)));
+        Assert.IsNull(await reopened.Get(owner.GlobalId));
+        Assert.IsNotNull(await reopened.Get(child.GlobalId));
+        Assert.IsTrue(await reopenedExternal.Nodes.AnyAsync(node => node.GlobalId == child.GlobalId));
+        CollectionAssert.Contains(
+            await ((ISemanticGraphStorage)reopened)
+                .EnumerateInstanceNamespaceChildrenAsync()
+                .Select(static node => node.GlobalId)
+                .ToArrayAsync(),
+            child.GlobalId);
     }
 
     [TestMethod]
-    public async Task MoveSubtree_RejectsEdgeThatWouldBecomeHierarchicalWithoutMutation() {
+    public async Task NamespaceAddresses_DoNotCreateImplicitGraphRelations() {
         var oldParent = await Storage.Create("move-old-parent");
         var moving = await Storage.Create("move-root", oldParent.GlobalId);
         var descendant = await Storage.Create("move-descendant", moving.GlobalId);
         var newParent = await Storage.Create("move-new-parent");
+        Assert.IsFalse(await oldParent.Nodes.AnyAsync(node => node.GlobalId == moving.GlobalId));
+        Assert.IsFalse(await moving.Nodes.AnyAsync(node => node.GlobalId == oldParent.GlobalId));
+        Assert.IsFalse(await moving.Nodes.AnyAsync(node => node.GlobalId == descendant.GlobalId));
+
         await Storage.Connect(moving.GlobalId, newParent.GlobalId);
         await Storage.Connect(descendant.GlobalId, newParent.GlobalId);
 
-        var error = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
-            () => Storage.Disconnect(oldParent.GlobalId, moving.GlobalId));
-        StringAssert.Contains(error.Message, "ancestor-descendant connection");
-
-        IGraphStorage reopened = new SymLinkGraphStorage(
+        IGraphStorage reopened = new SemanticFileGraphStorage(
             Options.Create(StorageOptions),
             new CancellationTokensAccessorMock());
         var reopenedOldParent = await reopened.Get(oldParent.GlobalId);
@@ -236,16 +250,13 @@ public class GraphStorageContractTests : StorageTests {
         Assert.IsNotNull(reopenedMoving);
         Assert.IsNotNull(reopenedDescendant);
         Assert.IsNotNull(reopenedNewParent);
-        var selectedConnectionPath = Path.Combine(
-            StorageOptions.RootPath,
-            "move-new-parent",
-            "move-root");
-        Assert.IsTrue(File.GetAttributes(selectedConnectionPath).HasFlag(FileAttributes.ReparsePoint));
         Assert.IsTrue(Directory.Exists(Path.Combine(
             StorageOptions.RootPath,
+            "instances",
             "move-old-parent",
             "move-root")));
-        Assert.IsTrue(await reopenedOldParent.Nodes.AnyAsync(node => node.GlobalId == moving.GlobalId));
+        Assert.IsFalse(await reopenedOldParent.Nodes.AnyAsync(node => node.GlobalId == moving.GlobalId));
+        Assert.IsFalse(await reopenedMoving.Nodes.AnyAsync(node => node.GlobalId == descendant.GlobalId));
         Assert.IsTrue(await reopenedMoving.Nodes.AnyAsync(node => node.GlobalId == newParent.GlobalId));
         Assert.IsTrue(await reopenedDescendant.Nodes.AnyAsync(node => node.GlobalId == newParent.GlobalId));
         Assert.IsTrue(await reopenedNewParent.Nodes.AnyAsync(node => node.GlobalId == moving.GlobalId));
@@ -253,7 +264,7 @@ public class GraphStorageContractTests : StorageTests {
     }
 
     [TestMethod]
-    public async Task Connections_RejectDistinctNeighborsWithSameLocalId() {
+    public async Task Connections_DistinguishNeighborsByStableFullIdInsteadOfLocalName() {
         var firstOwner = await Storage.Create("first-owner");
         var secondOwner = await Storage.Create("second-owner");
         var firstEndpoint = await Storage.Create("endpoint", firstOwner.GlobalId);
@@ -261,29 +272,31 @@ public class GraphStorageContractTests : StorageTests {
         var participant = await Storage.Create("participant");
 
         await Storage.Connect(participant.GlobalId, firstEndpoint.GlobalId);
-        var error = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
-            () => Storage.Connect(participant.GlobalId, secondEndpoint.GlobalId));
-        StringAssert.Contains(error.Message, "namespace entry");
+        await Storage.Connect(participant.GlobalId, secondEndpoint.GlobalId);
 
         var neighbors = await participant.Nodes
             .Where(node => node.LocalId == "endpoint")
             .Select(static node => node.GlobalId)
             .ToArrayAsync();
-        CollectionAssert.AreEquivalent(new[] { firstEndpoint.GlobalId }, neighbors);
-        Assert.IsFalse(new DirectoryInfo(Path.Combine(StorageOptions.RootPath, participant.LocalId))
-            .EnumerateFileSystemInfos()
-            .Any(entry => entry.Name.Contains('~')));
+        CollectionAssert.AreEquivalent(
+            new[] { firstEndpoint.GlobalId, secondEndpoint.GlobalId },
+            neighbors);
     }
 
     [TestMethod]
-    public async Task Connections_RejectSecondHierarchyEdge() {
+    public async Task Connections_AllowExplicitAncestorDescendantRelationOnce() {
         var parent = await Storage.Create("duplicate-hierarchy-parent");
         var child = await Storage.Create("duplicate-hierarchy-child", parent.GlobalId);
+
+        Assert.IsFalse(await parent.Nodes.AnyAsync(node => node.GlobalId == child.GlobalId));
+        Assert.IsFalse(await child.Nodes.AnyAsync(node => node.GlobalId == parent.GlobalId));
+
+        await Storage.Connect(parent.GlobalId, child.GlobalId);
 
         var error = await Assert.ThrowsExceptionAsync<InvalidOperationException>(
             () => Storage.Connect(parent.GlobalId, child.GlobalId));
 
-        StringAssert.Contains(error.Message, "hierarchy connection");
+        StringAssert.Contains(error.Message, "already connected");
         Assert.AreEqual(1, await parent.Nodes.CountAsync(node => node.GlobalId == child.GlobalId));
         Assert.AreEqual(1, await child.Nodes.CountAsync(node => node.GlobalId == parent.GlobalId));
     }
@@ -336,12 +349,26 @@ public class GraphStorageContractTests : StorageTests {
     }
 
     [TestMethod]
-    public async Task ShouldReturnHierarchyConnections() {
+    public async Task NamespaceChildren_AreDiscoverableWithoutGraphConnections() {
         var parent = await Storage.Create(new("parent"));
         var child = await Storage.Create(new("child"), parent.GlobalId);
 
-        Assert.IsTrue(await parent.Nodes.AnyAsync(node => node.GlobalId == child.GlobalId));
-        Assert.IsTrue(await child.Nodes.AnyAsync(node => node.GlobalId == parent.GlobalId));
+        Assert.IsFalse(await parent.Nodes.AnyAsync(node => node.GlobalId == child.GlobalId));
+        Assert.IsFalse(await child.Nodes.AnyAsync(node => node.GlobalId == parent.GlobalId));
+
+        var semanticStorage = (ISemanticGraphStorage)Storage;
+        CollectionAssert.AreEquivalent(
+            new[] { child.GlobalId },
+            await semanticStorage
+                .EnumerateInstanceNamespaceChildrenAsync(parent.GlobalId)
+                .Select(static node => node.GlobalId)
+                .ToArrayAsync());
+        CollectionAssert.AreEquivalent(
+            new[] { parent.GlobalId },
+            await semanticStorage
+                .EnumerateInstanceNamespaceChildrenAsync()
+                .Select(static node => node.GlobalId)
+                .ToArrayAsync());
     }
 
     [TestMethod]

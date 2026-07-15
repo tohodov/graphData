@@ -19,7 +19,7 @@ public sealed class UiControllerTests : StorageTests {
         Assert.IsNotNull(settings);
         Assert.AreEqual("NodeTypes", settings.SystemNodeIds.NodeTypeRoot);
         Assert.AreEqual("", settings.SystemNodeIds.StorageRoot);
-        Assert.AreEqual("NodeTypes", settings.Basis.NodeTypeRoot);
+        Assert.IsNull(settings.GetType().GetProperty("Basis"));
         Assert.IsNotNull(await Storage.Get(new NodePath("NodeTypes")));
     }
 

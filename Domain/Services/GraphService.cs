@@ -22,6 +22,8 @@ public sealed class GraphService {
         this.searchService = searchService;
     }
 
+    internal Graph Model => graph;
+
     public async Task<ServiceResult<Node>> CreateNode(NodeLocalId localId, NodeRef? path = null, NodeType? type = null, IDictionary<string, string>? attributes = null) {
         return await CreateNodeCore(graph, localId, path, type, attributes).ConfigureAwait(false);
     }
@@ -73,20 +75,20 @@ public sealed class GraphService {
             return ServiceResult<NodeTypeDefinition>.Conflict($"Node type '{localId}' already exists.");
 
         NodeBacking? created = null;
-        var createdRelations = new List<NodeBacking>();
         try {
-            created = await storage.Create(localId, graph.NodeTypes.GlobalId).ConfigureAwait(false);
+            created = await graph.SemanticStorage.CreateTypeElementAsync(
+                localId,
+                graph.NodeTypes.GlobalId,
+                SemanticElementKind.Type,
+                requiredTypeArray.Select(static requiredType => (NodeRef)requiredType.GlobalId).ToArray())
+                .ConfigureAwait(false);
             var type = new NodeType(created);
             var definition = CreateNodeTypeDefinition(type, elementKind, isAbstract, fieldArray, slotArray, requiredTypeArray);
-            await DynamicNodeTypeDefinitionStorage.WriteAsync(storage, definition).ConfigureAwait(false);
+            await DynamicNodeTypeDefinitionStorage.WriteAsync(graph.SemanticStorage, definition).ConfigureAwait(false);
             graph.RegisterNodeTypeDefinition(definition);
-            foreach (var requiredType in requiredTypeArray)
-                createdRelations.Add(await CreateRequiresRelationAsync(type, requiredType).ConfigureAwait(false));
 
             return ServiceResult<NodeTypeDefinition>.Ok(graph.GetNodeTypeDefinition(type));
         } catch (Exception ex) {
-            foreach (var relation in createdRelations)
-                await storage.Delete(relation).ConfigureAwait(false);
             if (created is not null)
                 await storage.Delete(created).ConfigureAwait(false);
             return ServiceResult<NodeTypeDefinition>.BadRequest(ex.Message);
@@ -132,10 +134,21 @@ public sealed class GraphService {
 
     public async Task<ServiceResult<Node>> GetNode(NodeRef path, NodeLocalId localId) {
         var storage = graph.Storage;
-        var result = await storage.Get(path, localId);
-        if (result is null)
+        var source = await storage.Get(path).ConfigureAwait(false);
+        if (source is null)
             return ServiceResult<Node>.NotFound();
-        return new Node(result);
+
+        var matches = (await source.Nodes.ToArrayAsync().ConfigureAwait(false))
+            .Where(candidate => candidate.LocalId == localId)
+            .DistinctBy(static candidate => candidate.GlobalId)
+            .Take(2)
+            .ToArray();
+        return matches.Length switch {
+            0 => ServiceResult<Node>.NotFound(),
+            1 => ServiceResult<Node>.Ok(new Node(matches[0])),
+            _ => ServiceResult<Node>.BadRequest(
+                $"Node '{path}' has more than one graph neighbor with LocalId '{localId}'; use GlobalId to disambiguate.")
+        };
     }
 
     public async Task<ServiceResult> UpdateNode(NodeRef path, IDictionary<string, string> attributes) {
@@ -152,16 +165,9 @@ public sealed class GraphService {
         if (node.GlobalId == storage.Root.GlobalId)
             return ServiceResult.BadRequest("Storage root cannot be deleted.");
 
-        var semanticRelations = await FindIncidentTypedRelationsAsync(node).ConfigureAwait(false);
-        foreach (var relation in semanticRelations)
-            await storage.Delete(relation).ConfigureAwait(false);
-
-        // An endpoint instance is owned by its relation carrier. Deleting the
-        // carrier above also deletes the endpoint hierarchy child, so reload
-        // before attempting to delete the originally requested node.
-        var remainingNode = await storage.Get(node.GlobalId).ConfigureAwait(false);
-        if (remainingNode is not null)
-            await storage.Delete(remainingNode).ConfigureAwait(false);
+        // The semantic storage owns relation integrity and removes every
+        // incident relation through its rebuildable incidence index.
+        await storage.Delete(node).ConfigureAwait(false);
         return ServiceResult.Ok();
     }
 
@@ -191,12 +197,26 @@ public sealed class GraphService {
         var typeNode = await graph.AsNodeTypeAsync(type).ConfigureAwait(false);
         if (typeNode == null)
             return ServiceResult<Subgraph>.BadRequest($"Node '{typeId}' is not a node type.");
-        if (graph.GetNodeTypeDefinition(typeNode).IsAbstract)
+        var typeDefinition = graph.GetNodeTypeDefinition(typeNode);
+        if (typeDefinition.IsAbstract)
             return ServiceResult<Subgraph>.BadRequest($"Abstract graph type '{typeNode.GlobalId}' cannot be assigned directly.");
 
         var node = await storage.Get(nodeId).ConfigureAwait(false);
         if (node is null)
             return ServiceResult<Subgraph>.NotFound();
+        if (node is not ISemanticNodeBacking semanticNode)
+            return ServiceResult<Subgraph>.BadRequest(
+                $"Node '{node.GlobalId}' does not expose a semantic storage kind.");
+
+        var expectedKind = typeDefinition.ElementKind switch {
+            GraphElementKind.Node => SemanticElementKind.Instance,
+            GraphElementKind.Edge => SemanticElementKind.Relation,
+            _ => throw new ArgumentOutOfRangeException(nameof(typeDefinition.ElementKind))
+        };
+        if (semanticNode.SemanticKind != expectedKind)
+            return ServiceResult<Subgraph>.BadRequest(
+                $"Graph type '{typeNode.GlobalId}' has element kind '{typeDefinition.ElementKind}' "
+                + $"and can only classify a semantic {expectedKind}, not '{semanticNode.SemanticKind}'.");
 
         IReadOnlyCollection<NodeType> effectiveTypes;
         try {
@@ -204,46 +224,29 @@ public sealed class GraphService {
             var effectiveDefinitions = effectiveTypes
                 .Select(graph.GetNodeTypeDefinition)
                 .ToArray();
-            EnsureLegacyMembersAreUnambiguous(effectiveDefinitions);
-            foreach (var definition in effectiveDefinitions)
-                await EnsureNodeTypeSatisfiedByAsync(definition, node).ConfigureAwait(false);
+            var incompatibleRequirement = effectiveDefinitions.FirstOrDefault(
+                definition => definition.ElementKind != typeDefinition.ElementKind);
+            if (incompatibleRequirement is not null)
+                throw new InvalidOperationException(
+                    $"Graph type '{typeNode.GlobalId}' requires '{incompatibleRequirement.Type.GlobalId}' "
+                    + $"with incompatible element kind '{incompatibleRequirement.ElementKind}'.");
+            if (semanticNode.SemanticKind == SemanticElementKind.Instance)
+                EnsureInstanceTypeHasNoRequiredNamedNodeFields(typeNode, effectiveDefinitions);
+            else
+                await EnsureRelationTypeSatisfiedByAsync(node, typeNode, typeDefinition).ConfigureAwait(false);
         } catch (InvalidOperationException ex) {
             return ServiceResult<Subgraph>.BadRequest(ex.Message);
         }
 
-        var createdRelations = new List<NodeBacking>();
-        var createdCompatibilityLinks = new List<NodeType>();
-        var relationRoots = new Dictionary<InternalId, NodeBacking>();
         try {
-            foreach (var effectiveType in effectiveTypes) {
-                var existingRelations = await FindTypeInstanceRelationsAsync(node, effectiveType).ConfigureAwait(false);
-                if (existingRelations.Count > 1)
-                    throw new InvalidOperationException(
-                        $"Node '{node.GlobalId}' has more than one materialized instance of type '{effectiveType.GlobalId}'.");
-
-                var relation = existingRelations.SingleOrDefault();
-                if (relation is null) {
-                    relation = await CreateTypeInstanceRelationAsync(node, effectiveType).ConfigureAwait(false);
-                    createdRelations.Add(relation);
-                }
-                relationRoots[relation.GlobalId] = relation;
-
-                // Transitional compatibility index. Semantic reads prefer the
-                // materialized InstanceOf relation and only fall back to this edge.
-                if (!await node.Nodes.AnyAsync(neighbor => neighbor.GlobalId == effectiveType.GlobalId).ConfigureAwait(false)) {
-                    await storage.Connect(node.GlobalId, effectiveType.GlobalId).ConfigureAwait(false);
-                    createdCompatibilityLinks.Add(effectiveType);
-                }
-            }
-
-            return await GetSubgraph(
-                new NodeRef[] { node.GlobalId }.Concat(relationRoots.Keys),
-                2).ConfigureAwait(false);
+            var declaredTypeIds = graph.SemanticStorage.GetDeclaredTypeIds(node)
+                .Append(typeNode.GlobalId)
+                .Distinct()
+                .Select(static id => (NodeRef)id)
+                .ToArray();
+            await graph.SemanticStorage.SetDeclaredTypeIdsAsync(node.GlobalId, declaredTypeIds).ConfigureAwait(false);
+            return await GetSubgraph([node.GlobalId], 1).ConfigureAwait(false);
         } catch (Exception ex) {
-            foreach (var relation in createdRelations)
-                await storage.Delete(relation).ConfigureAwait(false);
-            foreach (var compatibilityType in createdCompatibilityLinks)
-                await storage.Disconnect(node.GlobalId, compatibilityType.GlobalId).ConfigureAwait(false);
             return ServiceResult<Subgraph>.BadRequest(ex.Message);
         }
     }
@@ -257,30 +260,36 @@ public sealed class GraphService {
             return ServiceResult<Subgraph>.NotFound("Both derived and required nodes must be graph types.");
 
         try {
-            var relations = await FindRequiresRelationsAsync(derivedType, requiredType).ConfigureAwait(false);
-            if (relations.Count > 1)
-                throw new InvalidOperationException(
-                    $"Type '{derivedType.GlobalId}' requires type '{requiredType.GlobalId}' more than once.");
+            var requiredTypeIds = graph.SemanticStorage.GetRequiredTypeIds(derivedType.Backing)
+                .Append(requiredType.GlobalId)
+                .Distinct()
+                .Select(static id => (NodeRef)id)
+                .ToArray();
+            await graph.SemanticStorage.SetRequiredTypeIdsAsync(
+                derivedType.GlobalId,
+                requiredTypeIds).ConfigureAwait(false);
 
-            var relation = relations.SingleOrDefault()
-                ?? await CreateRequiresRelationAsync(derivedType, requiredType).ConfigureAwait(false);
-            return await GetSubgraph([relation.GlobalId], 2).ConfigureAwait(false);
+            var refreshedDefinition = graph.GetNodeTypeDefinition(derivedType);
+            graph.RegisterNodeTypeDefinition(refreshedDefinition with {
+                RequiredTypes = refreshedDefinition.RequiredTypes
+                    .Append(requiredType)
+                    .DistinctBy(static type => type.GlobalId)
+                    .ToArray()
+            });
+            return await GetSubgraph([derivedType.GlobalId, requiredType.GlobalId], 1).ConfigureAwait(false);
         } catch (InvalidOperationException ex) {
             return ServiceResult<Subgraph>.BadRequest(ex.Message);
         }
     }
 
-    public async Task<ServiceResult<InstanceNode>> GetSemanticNodeAsync(
-        NodeRef nodeId,
-        IEnumerable<NodeRef>? basisTypeIds = null) {
+    public async Task<ServiceResult<InstanceNode>> GetSemanticNodeAsync(NodeRef nodeId) {
         var state = await graph.Storage.Get(nodeId).ConfigureAwait(false);
         if (state is null)
             return ServiceResult<InstanceNode>.NotFound();
 
         try {
-            var basis = await ResolveTypeBasisAsync(basisTypeIds).ConfigureAwait(false);
             return ServiceResult<InstanceNode>.Ok(
-                await ReadSemanticNodeAsync(state, basis).ConfigureAwait(false));
+                await ReadSemanticNodeAsync(state).ConfigureAwait(false));
         } catch (InvalidOperationException ex) {
             return ServiceResult<InstanceNode>.BadRequest(ex.Message);
         }
@@ -303,28 +312,82 @@ public sealed class GraphService {
         }
     }
 
-    public async Task<ServiceResult<TypedEdgeInstance>> GetTypedEdgeInstanceAsync(
-        NodeRef relationId,
-        IEnumerable<NodeRef>? basisTypeIds = null) {
+    public async Task<ServiceResult<TypedEdgeInstance>> GetTypedEdgeInstanceAsync(NodeRef relationId) {
         var relation = await graph.Storage.Get(relationId).ConfigureAwait(false);
         if (relation is null)
             return ServiceResult<TypedEdgeInstance>.NotFound();
 
         try {
-            var basis = await ResolveTypeBasisAsync(basisTypeIds).ConfigureAwait(false);
-            var classifiers = new List<NodeType>();
-            await foreach (var neighbor in relation.Nodes.ConfigureAwait(false)) {
-                var type = await AsBasisTypeAsync(neighbor, basis).ConfigureAwait(false);
-                if (type is null)
-                    continue;
-                if (TypedEdgeDefinition.TryCreate(graph.GetNodeTypeDefinition(type), out _))
-                    classifiers.Add(type);
+            var semanticRelation = await graph.SemanticStorage.GetRelationAsync(relationId).ConfigureAwait(false)
+                ?? throw new InvalidOperationException($"Node '{relationId}' is not a semantic relation.");
+            var definition = (await ResolveTypedEdgeClassifiersAsync(semanticRelation.TypeIds).ConfigureAwait(false))
+                .Single();
+            return ServiceResult<TypedEdgeInstance>.Ok(
+                await TypedEdgeSubgraphCodec.ReadAsync(graph, relation, definition).ConfigureAwait(false));
+        } catch (InvalidOperationException ex) {
+            return ServiceResult<TypedEdgeInstance>.BadRequest(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Creates a canonical n-ary semantic relation. The relation document owns
+    /// the complete named member list; no carrier or endpoint nodes are stored.
+    /// </summary>
+    public async Task<ServiceResult<TypedEdgeInstance>> CreateRelationAsync(
+        NodeLocalId relationLocalId,
+        NodeRef typeId,
+        IReadOnlyDictionary<string, IReadOnlyCollection<NodeRef>> members) {
+        var typeState = await graph.Storage.Get(typeId).ConfigureAwait(false);
+        if (typeState is null)
+            return ServiceResult<TypedEdgeInstance>.NotFound($"Relation type '{typeId}' was not found.");
+        if (!graph.SemanticStorage.IsType(typeState))
+            return ServiceResult<TypedEdgeInstance>.BadRequest($"Node '{typeId}' is not a graph type.");
+
+        var type = new NodeType(typeState);
+        if (!TypedEdgeDefinition.TryCreate(graph.GetNodeTypeDefinition(type), out var definition))
+            return ServiceResult<TypedEdgeInstance>.BadRequest(
+                $"Graph type '{type.GlobalId}' is not an edge type with at least two named members.");
+
+        var unknownMembers = members.Keys
+            .Except(definition.Endpoints.Select(static endpoint => endpoint.Name), StringComparer.Ordinal)
+            .ToArray();
+        if (unknownMembers.Length > 0)
+            return ServiceResult<TypedEdgeInstance>.BadRequest(
+                $"Relation contains members not declared by '{type.GlobalId}': {string.Join(", ", unknownMembers)}.");
+
+        var participantBackings = new Dictionary<string, IReadOnlyCollection<NodeBacking>>(StringComparer.Ordinal);
+        try {
+            foreach (var endpoint in definition.Endpoints) {
+                if (!members.TryGetValue(endpoint.Name, out var participantIds))
+                    return ServiceResult<TypedEdgeInstance>.BadRequest($"Relation member '{endpoint.Name}' is missing.");
+                var uniqueIds = participantIds
+                    .Select(static id => id)
+                    .DistinctBy(static id => id.ToString())
+                    .ToArray();
+                if (!endpoint.Cardinality.Contains(uniqueIds.Length))
+                    return ServiceResult<TypedEdgeInstance>.BadRequest(
+                        $"Relation member '{endpoint.Name}' expects {endpoint.Cardinality}, but got {uniqueIds.Length}.");
+
+                var participants = new List<NodeBacking>(uniqueIds.Length);
+                foreach (var participantId in uniqueIds) {
+                    var participant = await graph.Storage.Get(participantId).ConfigureAwait(false);
+                    if (participant is null)
+                        return ServiceResult<TypedEdgeInstance>.NotFound(
+                            $"Relation participant '{participantId}' was not found.");
+                    if (endpoint.NodeType is not null
+                        && !await HasTypeAsync(participant, endpoint.NodeType).ConfigureAwait(false))
+                        return ServiceResult<TypedEdgeInstance>.BadRequest(
+                            $"Relation member '{endpoint.Name}' expects '{endpoint.NodeType.GlobalId}', but participant '{participant.GlobalId}' has another type.");
+                    participants.Add(participant);
+                }
+                participantBackings[endpoint.Name] = participants;
             }
 
-            var classifier = classifiers
-                .DistinctBy(static type => type.GlobalId)
-                .Single();
-            var definition = TypedEdgeDefinition.Create(graph.GetNodeTypeDefinition(classifier));
+            var relation = await TypedEdgeSubgraphCodec.CreateAsync(
+                graph.Storage,
+                relationLocalId,
+                definition,
+                participantBackings).ConfigureAwait(false);
             return ServiceResult<TypedEdgeInstance>.Ok(
                 await TypedEdgeSubgraphCodec.ReadAsync(graph, relation, definition).ConfigureAwait(false));
         } catch (InvalidOperationException ex) {
@@ -405,8 +468,13 @@ public sealed class GraphService {
 
         var requestedIds = globalIds.ToArray();
         var roots = new List<NodeBacking>();
-        if (requestedIds.Length == 0)
-            roots.AddRange(await storage.Root.Nodes.ToArrayAsync());
+        if (requestedIds.Length == 0) {
+            roots.Add(graph.SemanticStorage.TypeRoot);
+            await foreach (var instanceRoot in graph.SemanticStorage
+                               .EnumerateInstanceNamespaceChildrenAsync()
+                               .ConfigureAwait(false))
+                roots.Add(instanceRoot);
+        }
         else
             foreach (var rootRef in requestedIds) {
                 var root = await storage.Get(rootRef);
@@ -414,8 +482,13 @@ public sealed class GraphService {
                     return ServiceResult<Subgraph>.NotFound();
                 if (root.GlobalId != storage.Root.GlobalId)
                     roots.Add(root);
-                else
-                    roots.AddRange(await storage.Root.Nodes.ToArrayAsync());
+                else {
+                    roots.Add(graph.SemanticStorage.TypeRoot);
+                    await foreach (var instanceRoot in graph.SemanticStorage
+                                       .EnumerateInstanceNamespaceChildrenAsync()
+                                       .ConfigureAwait(false))
+                        roots.Add(instanceRoot);
+                }
             }
 
         var visitedRequests = new HashSet<InternalId>();
@@ -450,6 +523,22 @@ public sealed class GraphService {
             : new Subgraph {
                 Nodes = nodes.Values
             });
+    }
+
+    /// <summary>
+    /// Reads the complete, separate type catalog without traversing the
+    /// instance graph. This is intentionally an explicit global operation over
+    /// types; ordinary instance reads remain local.
+    /// </summary>
+    public async Task<ServiceResult<Subgraph>> GetTypeCatalogSubgraphAsync(
+        CancellationToken cancellationToken = default) {
+        var nodes = new Dictionary<InternalId, Node>();
+        await foreach (var state in graph.SemanticStorage
+                           .EnumerateTypeElementsAsync(cancellationToken)
+                           .ConfigureAwait(false))
+            nodes[state.GlobalId] = new Node(state);
+
+        return ServiceResult<Subgraph>.Ok(new Subgraph { Nodes = nodes.Values });
     }
 
     public async Task<ServiceResult<IReadOnlyCollection<NodeTypeDefinition>>> GetTypeDefinitionsAsync(IEnumerable<NodeRef>? rootIds = null) {
@@ -533,80 +622,22 @@ public sealed class GraphService {
         };
     }
 
-    private async Task<InstanceNode> ReadSemanticNodeAsync(
-        NodeBacking state,
-        IReadOnlyDictionary<InternalId, NodeType>? basis = null) {
-        var typeInstances = new Dictionary<InternalId, NodeTypeInstance>();
-        var instanceOfType = graph.GetRequiredRuntimeType<InstanceOfEdge>();
-        var instanceOfDefinition = TypedEdgeDefinition.Create(graph.GetNodeTypeDefinition(instanceOfType));
-        var materializedRelations = await TypedEdgeSubgraphCodec.FindIncidentRelationsAsync(
-            state,
-            instanceOfDefinition,
-            instanceOfDefinition.Endpoints.Single(endpoint =>
-                endpoint.Name == nameof(InstanceOfEdge.Instance))).ConfigureAwait(false);
-
-        foreach (var relation in materializedRelations) {
-            var typedEdge = await TypedEdgeSubgraphCodec.ReadAsync(
-                graph,
-                relation,
-                instanceOfDefinition).ConfigureAwait(false);
-            var typeParticipant = typedEdge.Endpoint(nameof(InstanceOfEdge.Type)).Participant;
-            var type = await AsBasisTypeAsync(typeParticipant.Backing, basis).ConfigureAwait(false);
-            if (type is null)
-                continue;
-            if (typeInstances.ContainsKey(type.GlobalId))
-                throw new InvalidOperationException(
-                    $"Node '{state.GlobalId}' has more than one materialized instance of type '{type.GlobalId}'.");
-            typeInstances[type.GlobalId] = new NodeTypeInstance(type, typedEdge.Relation);
+    private async Task<InstanceNode> ReadSemanticNodeAsync(NodeBacking state) {
+        var declaredTypes = new List<NodeType>();
+        foreach (var typeId in graph.SemanticStorage.GetDeclaredTypeIds(state)) {
+            var typeState = await graph.Storage.Get(typeId).ConfigureAwait(false);
+            if (typeState is null || !graph.SemanticStorage.IsType(typeState))
+                continue; // TypeRef is intentionally weak and may be dangling.
+            declaredTypes.Add(new NodeType(typeState));
         }
 
-        // Read old data and the temporary UI compatibility index. A materialized
-        // witness always wins when both representations are present.
-        await foreach (var neighbor in state.Nodes.ConfigureAwait(false)) {
-            if (TypedEdgeSubgraphCodec.IsDirectChildOf(neighbor.GlobalId, state.GlobalId)
-                || TypedEdgeSubgraphCodec.IsDirectChildOf(state.GlobalId, neighbor.GlobalId))
-                continue;
-            var type = await AsBasisTypeAsync(neighbor, basis).ConfigureAwait(false);
-            if (type is not null && !typeInstances.ContainsKey(type.GlobalId))
-                typeInstances[type.GlobalId] = new NodeTypeInstance(type);
-        }
+        var effectiveTypes = declaredTypes
+            .SelectMany(GetRequiredTypeClosure)
+            .DistinctBy(static type => type.GlobalId)
+            .Select(static type => new NodeTypeInstance(type))
+            .ToArray();
 
-        var assignedTypeIds = typeInstances.Keys.ToHashSet();
-        foreach (var typeInstance in typeInstances.Values) {
-            var missingRequiredTypes = GetRequiredTypeClosure(typeInstance.Type)
-                .Skip(1)
-                .Where(requiredType => !assignedTypeIds.Contains(requiredType.GlobalId))
-                .Select(static requiredType => requiredType.GlobalId.ToString())
-                .ToArray();
-            if (missingRequiredTypes.Length > 0)
-                throw new InvalidOperationException(
-                    $"Node '{state.GlobalId}' implements '{typeInstance.Type.GlobalId}' but is missing materialized required types: {string.Join(", ", missingRequiredTypes)}.");
-        }
-
-        return new InstanceNode(state, typeInstances.Values);
-    }
-
-    private async Task<IReadOnlyDictionary<InternalId, NodeType>?> ResolveTypeBasisAsync(
-        IEnumerable<NodeRef>? basisTypeIds) {
-        if (basisTypeIds is null)
-            return null;
-
-        var result = new Dictionary<InternalId, NodeType>();
-        foreach (var typeId in basisTypeIds) {
-            var state = await graph.Storage.Get(typeId).ConfigureAwait(false);
-            if (state is null)
-                throw new InvalidOperationException($"Basis type node '{typeId}' was not found.");
-            result[state.GlobalId] = new NodeType(state);
-        }
-        return result;
-    }
-
-    private async Task<NodeType?> AsBasisTypeAsync(
-        NodeBacking state,
-        IReadOnlyDictionary<InternalId, NodeType>? basis) {
-        if (basis is not null)
-            return basis.TryGetValue(state.GlobalId, out var type) ? type : null;
-        return await graph.AsNodeTypeAsync(state).ConfigureAwait(false);
+        return new InstanceNode(state, effectiveTypes, declaredTypes);
     }
 
     private IReadOnlyCollection<NodeType> GetRequiredTypeClosure(NodeType assignedType) {
@@ -625,135 +656,20 @@ public sealed class GraphService {
         return result;
     }
 
-    private async Task<IReadOnlyCollection<NodeBacking>> FindTypeInstanceRelationsAsync(
-        NodeBacking instance,
-        NodeType type) {
-        var instanceOfType = graph.GetRequiredRuntimeType<InstanceOfEdge>();
-        var definition = TypedEdgeDefinition.Create(graph.GetNodeTypeDefinition(instanceOfType));
-        var relations = await TypedEdgeSubgraphCodec.FindIncidentRelationsAsync(
-            instance,
-            definition,
-            definition.Endpoints.Single(endpoint =>
-                endpoint.Name == nameof(InstanceOfEdge.Instance))).ConfigureAwait(false);
-        var matches = new List<NodeBacking>();
-        foreach (var relation in relations) {
-            var typedEdge = await TypedEdgeSubgraphCodec.ReadAsync(graph, relation, definition).ConfigureAwait(false);
-            if (typedEdge.Endpoint(nameof(InstanceOfEdge.Type)).Participant.GlobalId == type.GlobalId)
-                matches.Add(relation);
-        }
-        return matches;
-    }
-
-    private async Task<NodeBacking> CreateTypeInstanceRelationAsync(NodeBacking instance, NodeType type) {
-        var instanceOfType = graph.GetRequiredRuntimeType<InstanceOfEdge>();
-        var definition = TypedEdgeDefinition.Create(graph.GetNodeTypeDefinition(instanceOfType));
-        var relationLocalId = TypeInstanceRelationLocalId(instance.GlobalId, type.LocalId);
-        if (await graph.Storage.Get(new NodePath(relationLocalId)).ConfigureAwait(false) is not null)
-            throw new InvalidOperationException(
-                $"Materialized instance of type '{type.GlobalId}' for node '{instance.GlobalId}' already exists.");
-
-        return await TypedEdgeSubgraphCodec.CreateAsync(
-            graph.Storage,
-            relationLocalId,
-            definition,
-            new Dictionary<string, IReadOnlyCollection<NodeBacking>>(StringComparer.Ordinal) {
-                [nameof(InstanceOfEdge.Instance)] = [instance],
-                [nameof(InstanceOfEdge.Type)] = [type.Backing]
-            }).ConfigureAwait(false);
-    }
-
-    private async Task<IReadOnlyCollection<NodeBacking>> FindRequiresRelationsAsync(
-        NodeType derivedType,
-        NodeType requiredType) {
-        var requiresType = graph.GetRequiredRuntimeType<RequiresEdge>();
-        var definition = TypedEdgeDefinition.Create(graph.GetNodeTypeDefinition(requiresType));
-        var relations = await TypedEdgeSubgraphCodec.FindIncidentRelationsAsync(
-            derivedType.Backing,
-            definition,
-            definition.Endpoints.Single(endpoint =>
-                endpoint.Name == nameof(RequiresEdge.Derived))).ConfigureAwait(false);
-        var matches = new List<NodeBacking>();
-        foreach (var relation in relations) {
-            var typedEdge = await TypedEdgeSubgraphCodec.ReadAsync(graph, relation, definition).ConfigureAwait(false);
-            if (typedEdge.Endpoint(nameof(RequiresEdge.Required)).Participant.GlobalId == requiredType.GlobalId)
-                matches.Add(relation);
-        }
-        return matches;
-    }
-
-    private async Task<IReadOnlyCollection<NodeBacking>> FindIncidentTypedRelationsAsync(
+    private async Task<IReadOnlyCollection<TypedRelationCandidate>> FindIncidentTypedRelationsAsync(
         NodeBacking participant) {
-        var definitionsResult = await GetTypeDefinitionsAsync().ConfigureAwait(false);
-        if (definitionsResult.Status != ServiceResultStatus.Ok || definitionsResult.Value is null)
-            throw new InvalidOperationException(definitionsResult.Error ?? "Graph type catalog cannot be read.");
-
-        var typedDefinitions = definitionsResult.Value
-            .Select(definition => TypedEdgeDefinition.TryCreate(definition, out var typedEdge)
-                ? typedEdge
-                : null)
-            .OfType<TypedEdgeDefinition>()
-            .ToArray();
-        var relations = new Dictionary<InternalId, NodeBacking>();
-        var participantSegments = participant.GlobalId.ToArray();
-        if (participantSegments.Length > 1) {
-            var parent = await graph.Storage.Get(
-                new NodePath(participantSegments.Take(participantSegments.Length - 1))).ConfigureAwait(false);
-            if (parent is not null) {
-                foreach (var definition in typedDefinitions) {
-                    var isEndpointOccurrence = false;
-                    foreach (var endpoint in definition.Endpoints) {
-                        if (!await TypedEdgeSubgraphCodec.HasMemberClassifierAsync(
-                                participant,
-                                endpoint.MemberTypeId).ConfigureAwait(false))
-                            continue;
-                        isEndpointOccurrence = true;
-                        break;
-                    }
-                    if (!isEndpointOccurrence)
-                        continue;
-                    if (await TypedEdgeSubgraphCodec.HasClassifierAsync(
-                            parent,
-                            definition.Type.GlobalId).ConfigureAwait(false))
-                        relations[parent.GlobalId] = parent;
-                }
-            }
-        }
-
-        foreach (var definition in typedDefinitions) {
-            foreach (var endpoint in definition.Endpoints) {
-                var incident = await TypedEdgeSubgraphCodec.FindIncidentRelationsAsync(
-                    participant,
-                    definition,
-                    endpoint).ConfigureAwait(false);
-                foreach (var relation in incident)
-                    relations[relation.GlobalId] = relation;
-            }
-        }
-
-        var classifier = await graph.AsNodeTypeAsync(participant).ConfigureAwait(false);
-        if (classifier is not null
-            && TypedEdgeDefinition.TryCreate(graph.GetNodeTypeDefinition(classifier), out var classifierDefinition)) {
-            await foreach (var neighbor in participant.Nodes.ConfigureAwait(false)) {
-                if (!await TypedEdgeSubgraphCodec.HasClassifierAsync(neighbor, classifier.GlobalId).ConfigureAwait(false))
-                    continue;
-                var neighborNodes = await neighbor.Nodes.ToArrayAsync().ConfigureAwait(false);
-                var hasEndpointOccurrence = false;
-                foreach (var endpointNode in neighborNodes.Where(node =>
-                             TypedEdgeSubgraphCodec.IsDirectChildOf(node.GlobalId, neighbor.GlobalId))) {
-                    foreach (var endpoint in classifierDefinition.Endpoints) {
-                        if (!await TypedEdgeSubgraphCodec.HasMemberClassifierAsync(
-                                endpointNode,
-                                endpoint.MemberTypeId).ConfigureAwait(false))
-                            continue;
-                        hasEndpointOccurrence = true;
-                        break;
-                    }
-                    if (hasEndpointOccurrence)
-                        break;
-                }
-                if (hasEndpointOccurrence)
-                    relations[neighbor.GlobalId] = neighbor;
-            }
+        var relations = new Dictionary<InternalId, TypedRelationCandidate>();
+        await foreach (var relation in graph.SemanticStorage.FindIncidentRelationsAsync(
+                           participant.GlobalId).ConfigureAwait(false)) {
+            var classifiers = await ResolveTypedEdgeClassifiersAsync(relation.TypeIds).ConfigureAwait(false);
+            if (classifiers.Count == 0)
+                continue;
+            if (classifiers.Count != 1)
+                throw new InvalidOperationException(
+                    $"Typed edge '{relation.Id}' must have exactly one typed-edge classifier, but found {classifiers.Count}.");
+            var backing = await graph.Storage.Get(relation.Id).ConfigureAwait(false);
+            if (backing is not null)
+                relations[backing.GlobalId] = new TypedRelationCandidate(backing, classifiers.Single());
         }
 
         return relations.Values.ToArray();
@@ -764,15 +680,6 @@ public sealed class GraphService {
         if (participants.Count == 0)
             return Array.Empty<NodeBacking>();
 
-        var definitionsResult = await GetTypeDefinitionsAsync().ConfigureAwait(false);
-        if (definitionsResult.Status != ServiceResultStatus.Ok || definitionsResult.Value is null)
-            throw new InvalidOperationException(definitionsResult.Error ?? "Graph type catalog cannot be read.");
-        var definitions = definitionsResult.Value
-            .Select(definition => TypedEdgeDefinition.TryCreate(definition, out var typedEdge)
-                ? typedEdge
-                : null)
-            .OfType<TypedEdgeDefinition>()
-            .ToArray();
         var expectedParticipantIds = participants
             .Select(static participant => participant.GlobalId.ToString())
             .Order(StringComparer.Ordinal)
@@ -780,44 +687,20 @@ public sealed class GraphService {
         var matches = new Dictionary<InternalId, NodeBacking>();
         var incidentRelations = await FindIncidentTypedRelationsAsync(participants.First()).ConfigureAwait(false);
         foreach (var relation in incidentRelations) {
-            var classifiers = new List<TypedEdgeDefinition>();
-            foreach (var definition in definitions)
-                if (await TypedEdgeSubgraphCodec.HasClassifierAsync(
-                        relation,
-                        definition.Type.GlobalId).ConfigureAwait(false))
-                    classifiers.Add(definition);
-
-            if (classifiers.Count != 1)
-                throw new InvalidOperationException(
-                    $"Typed edge '{relation.GlobalId}' must have exactly one typed-edge classifier, but found {classifiers.Count}.");
-
             var typedEdge = await TypedEdgeSubgraphCodec.ReadAsync(
                 graph,
-                relation,
-                classifiers[0]).ConfigureAwait(false);
+                relation.Backing,
+                relation.Definition).ConfigureAwait(false);
             var actualParticipantIds = typedEdge.Endpoints
                 .SelectMany(static endpoint => endpoint.Participants)
                 .Select(static participant => participant.GlobalId.ToString())
                 .Order(StringComparer.Ordinal)
                 .ToArray();
             if (expectedParticipantIds.SequenceEqual(actualParticipantIds, StringComparer.Ordinal))
-                matches[relation.GlobalId] = relation;
+                matches[relation.Backing.GlobalId] = relation.Backing;
         }
 
         return matches.Values.ToArray();
-    }
-
-    private async Task<NodeBacking> CreateRequiresRelationAsync(NodeType derivedType, NodeType requiredType) {
-        var requiresType = graph.GetRequiredRuntimeType<RequiresEdge>();
-        var definition = TypedEdgeDefinition.Create(graph.GetNodeTypeDefinition(requiresType));
-        return await TypedEdgeSubgraphCodec.CreateAsync(
-            graph.Storage,
-            await NextAvailableRootLocalIdAsync(RelationPrefix(requiresType.LocalId)).ConfigureAwait(false),
-            definition,
-            new Dictionary<string, IReadOnlyCollection<NodeBacking>>(StringComparer.Ordinal) {
-                [nameof(RequiresEdge.Derived)] = [derivedType.Backing],
-                [nameof(RequiresEdge.Required)] = [requiredType.Backing]
-            }).ConfigureAwait(false);
     }
 
     private async Task<ServiceResult> DisconnectBasicEdgeIfPresentAsync(NodeRef sourceId, InternalId targetId) {
@@ -851,7 +734,7 @@ public sealed class GraphService {
 
         var relation = await TypedEdgeSubgraphCodec.CreateAsync(
             storage,
-            await NextAvailableRootLocalIdAsync(RelationPrefix(definition.Type.LocalId)).ConfigureAwait(false),
+            NewRootRelationLocalId(RelationPrefix(definition.Type.LocalId)),
             definition,
             participants).ConfigureAwait(false);
 
@@ -877,21 +760,15 @@ public sealed class GraphService {
             } catch (Exception ex) {
                 await storage.Delete(relation).ConfigureAwait(false);
                 return ServiceResult<Subgraph>.BadRequest(
-                    $"Typed edge was not replaced because the previous carrier could not be removed: {ex.Message}");
+                    $"Typed edge was not replaced because the previous compatibility relation could not be removed: {ex.Message}");
             }
         }
 
         return await GetSubgraph([relation.GlobalId], 2).ConfigureAwait(false);
     }
 
-    private async Task<NodeLocalId> NextAvailableRootLocalIdAsync(string prefix) {
-        var storage = graph.Storage;
-        for (var index = 1; ; index++) {
-            var candidate = new NodeLocalId($"{prefix}-{index}");
-            if (await storage.Get(new NodePath(candidate)).ConfigureAwait(false) is null)
-                return candidate;
-        }
-    }
+    private static NodeLocalId NewRootRelationLocalId(string prefix) =>
+        new($"{prefix}-{Guid.NewGuid():N}");
 
     private static string RelationPrefix(NodeLocalId typeId) {
         var value = typeId.ToString();
@@ -899,12 +776,6 @@ public sealed class GraphService {
             value = value[..^"Connection".Length];
 
         return ToKebabIdentifier(value);
-    }
-
-    private static NodeLocalId TypeInstanceRelationLocalId(InternalId instanceId, NodeLocalId typeId) {
-        var instanceName = string.Join("-", instanceId.Select(static segment => segment.ToString()));
-        return new NodeLocalId(
-            $"instance-of-{ToKebabIdentifier(typeId.ToString())}-for-{ToKebabIdentifier(instanceName)}");
     }
 
     private static string ToKebabIdentifier(string value) {
@@ -1069,8 +940,9 @@ public sealed class GraphService {
     }
 
     private static bool IsTypeDefinitionInfrastructureNode(NodeBacking node) {
-        var localId = node.LocalId.ToString();
-        return ReservedDynamicTypeChildNames.Contains(localId);
+        return node is ISemanticNodeBacking {
+            SemanticKind: SemanticElementKind.TypeInfrastructure
+        };
     }
 
     public async Task<NodeType?> GetTypeNode(NodeRef id) {
@@ -1084,54 +956,107 @@ public sealed class GraphService {
         return await graph.AsNodeTypeAsync(node.Backing).ConfigureAwait(false);
     }
 
-    private async Task EnsureNodeTypeSatisfiedByAsync(NodeTypeDefinition definition, NodeBacking instance) {
-        foreach (var slot in definition.Slots)
-            await EnsureSlotSatisfiedByAsync(slot, definition.Type, instance).ConfigureAwait(false);
-    }
+    private async Task<IReadOnlyCollection<TypedEdgeDefinition>> ResolveTypedEdgeClassifiersAsync(
+        IEnumerable<InternalId> typeIds) {
+        var classifiers = new Dictionary<InternalId, TypedEdgeDefinition>();
+        foreach (var typeId in typeIds.Distinct()) {
+            var typeState = await graph.Storage.Get(typeId).ConfigureAwait(false);
+            if (typeState is null || !graph.SemanticStorage.IsType(typeState))
+                continue; // TypeRef is deliberately weak.
 
-    private static void EnsureLegacyMembersAreUnambiguous(
-        IReadOnlyCollection<NodeTypeDefinition> definitions) {
-        var members = new List<LegacyNodeMember>();
-        foreach (var definition in definitions) {
-            foreach (var slotGroup in definition.Slots.GroupBy(static slot => slot.Name, StringComparer.OrdinalIgnoreCase)) {
-                members.Add(new LegacyNodeMember(
-                    $"{definition.Type.GlobalId}.{slotGroup.Key}",
-                    IsWildcard: false,
-                    slotGroup.SelectMany(static slot => slot.AllowedTypes)
-                        .Select(static type => type.GlobalId)
-                        .ToHashSet()));
-            }
+            var type = new NodeType(typeState);
+            if (TypedEdgeDefinition.TryCreate(graph.GetNodeTypeDefinition(type), out var definition))
+                classifiers[type.GlobalId] = definition;
         }
 
-        for (var leftIndex = 0; leftIndex < members.Count; leftIndex++) {
-            for (var rightIndex = leftIndex + 1; rightIndex < members.Count; rightIndex++) {
-                var left = members[leftIndex];
-                var right = members[rightIndex];
-                if (!left.IsWildcard
-                    && !right.IsWildcard
-                    && !left.AllowedTypeIds.Overlaps(right.AllowedTypeIds))
-                    continue;
+        return classifiers.Values.ToArray();
+    }
 
+    private async Task EnsureRelationTypeSatisfiedByAsync(
+        NodeBacking relationState,
+        NodeType selectedType,
+        NodeTypeDefinition selectedDefinition) {
+        if (!TypedEdgeDefinition.TryCreate(selectedDefinition, out var definition))
+            throw new InvalidOperationException(
+                $"Edge type '{selectedType.GlobalId}' must define at least two named members before it can classify a relation.");
+
+        var relation = await graph.SemanticStorage.GetRelationAsync(relationState.GlobalId).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Semantic relation '{relationState.GlobalId}' was not found.");
+        var otherClassifiers = (await ResolveTypedEdgeClassifiersAsync(relation.TypeIds).ConfigureAwait(false))
+            .Where(classifier => classifier.Type.GlobalId != selectedType.GlobalId)
+            .Select(classifier => classifier.Type.GlobalId.ToString())
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (otherClassifiers.Length > 0)
+            throw new InvalidOperationException(
+                $"Semantic relation '{relation.Id}' already has typed-edge classifier(s) {string.Join(", ", otherClassifiers)}. "
+                + "A relation has exactly one concrete Edge classifier; replace the relation explicitly to change its schema.");
+
+        if (relation.Members.Count != definition.Endpoints.Count)
+            throw new InvalidOperationException(
+                $"Semantic relation '{relation.Id}' has {relation.Members.Count} named members, "
+                + $"but Edge type '{selectedType.GlobalId}' defines {definition.Endpoints.Count}.");
+
+        foreach (var endpoint in definition.Endpoints) {
+            var matches = relation.Members
+                .Where(member => string.Equals(member.Name, endpoint.Name, StringComparison.Ordinal))
+                .ToArray();
+            if (matches.Length != 1)
                 throw new InvalidOperationException(
-                    $"Node members '{left.QualifiedName}' and '{right.QualifiedName}' cannot be resolved from unnamed raw neighbors. Materialized member instances are required.");
+                    $"Semantic relation '{relation.Id}' must contain exactly one member '{endpoint.Name}', but found {matches.Length}.");
+
+            var member = matches[0];
+            if (member.MemberTypeId != endpoint.MemberTypeId)
+                throw new InvalidOperationException(
+                    $"Member '{endpoint.Name}' of semantic relation '{relation.Id}' has type '{member.MemberTypeId}', "
+                    + $"but Edge type '{selectedType.GlobalId}' requires '{endpoint.MemberTypeId}'.");
+            var participantIds = member.ParticipantIds.Distinct().ToArray();
+            if (participantIds.Length != member.ParticipantIds.Count)
+                throw new InvalidOperationException(
+                    $"Member '{endpoint.Name}' of semantic relation '{relation.Id}' contains duplicate participants.");
+            if (!endpoint.Cardinality.Contains(participantIds.Length))
+                throw new InvalidOperationException(
+                    $"Member '{endpoint.Name}' of semantic relation '{relation.Id}' expects {endpoint.Cardinality}, "
+                    + $"but contains {participantIds.Length} participants.");
+
+            foreach (var participantId in participantIds) {
+                var participant = await graph.Storage.Get(participantId).ConfigureAwait(false)
+                    ?? throw new InvalidOperationException(
+                        $"Participant '{participantId}' of semantic relation '{relation.Id}' was not found.");
+                if (participant is not ISemanticNodeBacking {
+                        SemanticKind: SemanticElementKind.Instance or SemanticElementKind.Relation
+                    })
+                    throw new InvalidOperationException(
+                        $"Participant '{participantId}' of semantic relation '{relation.Id}' is outside the instance graph.");
+                if (endpoint.NodeType is not null
+                    && !await HasTypeAsync(participant, endpoint.NodeType).ConfigureAwait(false))
+                    throw new InvalidOperationException(
+                        $"Member '{endpoint.Name}' expects node type '{endpoint.NodeType.GlobalId}', "
+                        + $"but participant '{participant.GlobalId}' has another type.");
             }
         }
     }
 
-    private async Task EnsureSlotSatisfiedByAsync(NodeSlotDefinition slot, NodeType instanceType, NodeBacking instance) {
-        var allowedTypeIds = slot.AllowedTypes
-            .Select(static type => type.GlobalId)
-            .ToHashSet();
-        var count = 0;
-        await foreach (var neighbor in instance.Nodes.ConfigureAwait(false)) {
-            if (neighbor.GlobalId == instanceType.GlobalId)
-                continue;
-            if (await HasAnyTypeAsync(neighbor, allowedTypeIds).ConfigureAwait(false))
-                count++;
-        }
+    private static void EnsureInstanceTypeHasNoRequiredNamedNodeFields(
+        NodeType selectedType,
+        IReadOnlyCollection<NodeTypeDefinition> definitions) {
+        var requiredMembers = definitions
+            .SelectMany(static definition => definition.Fields
+                .Where(static field => field.ValueKind == NodeFieldValueKind.Node)
+                .Where(static field => !field.Cardinality.Contains(0))
+                .Select(field => $"{definition.Type.GlobalId}.{field.Name}")
+                .Concat(definition.Slots
+                    .Where(static slot => !slot.Cardinality.Contains(0))
+                    .Select(slot => $"{definition.Type.GlobalId}.{slot.Name}")))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        if (requiredMembers.Length == 0)
+            return;
 
-        if (!slot.Cardinality.Contains(count))
-            throw new InvalidOperationException($"Slot '{slot.Name}' expects {slot.Cardinality} linked nodes, but found {count}.");
+        throw new InvalidOperationException(
+            $"Node type '{selectedType.GlobalId}' requires named node fields that are not materialized by this semantic-storage experiment: "
+            + $"{string.Join(", ", requiredMembers)}. Model these links as an explicit Edge type and create them with CreateRelation.");
     }
 
     private async Task EnsureTypedEdgeSatisfiedByAsync(TypedEdgeDefinition definition, IReadOnlyCollection<NodeBacking> endpoints) {
@@ -1164,9 +1089,8 @@ public sealed class GraphService {
         return semanticNode.AssignedTypes.Any(type => typeIds.Contains(type.GlobalId));
     }
 
-    private sealed record LegacyNodeMember(
-        string QualifiedName,
-        bool IsWildcard,
-        HashSet<InternalId> AllowedTypeIds);
+    private sealed record TypedRelationCandidate(
+        NodeBacking Backing,
+        TypedEdgeDefinition Definition);
 
 }

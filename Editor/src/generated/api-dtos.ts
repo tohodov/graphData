@@ -9,7 +9,6 @@ export type CreateNodeRequest = Schemas["CreateNodeRequest"];
 export type EdgeResponse = Schemas["EdgeResponse"];
 export type NodeResponse = Schemas["NodeResponse"];
 export type OperationResponse = Schemas["OperationResponse"];
-export type UiBasisResponse = Schemas["UiBasisResponse"];
 export type UiSettingsResponse = Schemas["UiSettingsResponse"];
 export type UiSystemNodeIdsResponse = Schemas["UiSystemNodeIdsResponse"];
 export type UpdateNodeRequest = Schemas["UpdateNodeRequest"];

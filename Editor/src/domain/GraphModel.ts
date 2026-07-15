@@ -1,10 +1,10 @@
-import { defaultBasis } from "./graphAttributes.js";
 import { GraphEdge } from "./GraphEdge.js";
 import { GraphNode, type GraphPoint, type GraphNodeSnapshot } from "./GraphNode.js";
 import { GraphProjection } from "./GraphProjection.js";
 import type { GraphType } from "./GraphType.js";
 import type { GraphEdgeSnapshot, GraphEdgeControlSnapshot } from "./GraphEdge.js";
 
+const fallbackTypeCatalogRoot = "NodeTypes";
 
 class GraphNodePositionMap {
   private readonly nodes: Map<string, GraphNode>;
@@ -260,9 +260,7 @@ export type ProjectionRebuiltEvent = {
 };
 export type PointerState = { x: number; y: number; startX?: number; startY?: number; node?: GraphNode; element?: unknown; };
 export type GraphSchema = {
-  defaultBasis: { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string };
-  basis: { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string };
-  systemNodeIds: Record<string, string>;
+  typeCatalogRoot: string;
   nodeTypes: Map<string, GraphType>;
   edgeTypes: Map<string, GraphType>;
 };
@@ -321,35 +319,16 @@ export class GraphModel {
     this.queuedProjectionReason = "projection";
     this.queuedProjectionChanges = [];
     this.schema = {
-      defaultBasis: { ...defaultBasis },
-      basis: { ...defaultBasis },
-      systemNodeIds: {},
+      typeCatalogRoot: fallbackTypeCatalogRoot,
       nodeTypes: new Map(),
       edgeTypes: new Map()
     };
   }
 
   applyUiSettings(settings: Record<string, unknown> | null | undefined): void {
-    const basis = GraphModel.readBasis((settings?.basis ?? settings?.systemNodeIds) as Record<string, unknown>, this.schema.defaultBasis);
-    this.schema.defaultBasis = { ...basis };
-    this.schema.basis = { ...basis };
-    this.schema.systemNodeIds = { ...((settings?.systemNodeIds as Record<string, string>) ?? {}) };
-  }
-
-  defaultBasis(): { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string } {
-    return this.schema.defaultBasis;
-  }
-
-  static readBasis(value: Record<string, unknown> | null | undefined, fallback: Record<string, unknown> | null | undefined = defaultBasis as Record<string, unknown>): { nodeTypeRoot: string; edgeTypeRoot: string; relationRoot: string } {
-    return {
-      nodeTypeRoot: String(value?.nodeTypeRoot || fallback?.nodeTypeRoot || ""),
-      edgeTypeRoot: String(value?.edgeTypeRoot || fallback?.edgeTypeRoot || ""),
-      relationRoot: String(value?.relationRoot || fallback?.relationRoot || "")
-    };
-  }
-
-  get basis() {
-    return this.schema.basis;
+    const systemNodeIds = { ...((settings?.systemNodeIds as Record<string, string>) ?? {}) };
+    const typeCatalogRoot = String(systemNodeIds.nodeTypeRoot || fallbackTypeCatalogRoot).trim() || fallbackTypeCatalogRoot;
+    this.schema.typeCatalogRoot = typeCatalogRoot;
   }
 
   get selectedName(): string | null {
@@ -874,10 +853,6 @@ export class GraphModel {
       : new GraphProjection(this).relationsFromCache();
   }
 
-  getPortEndpoint(portGlobalId: string, edgesByNode: Map<string, ProjectedGraphEdge[]>, relationGlobalId: string): string | null {
-    return new GraphProjection(this).portEndpoint(portGlobalId, edgesByNode, relationGlobalId);
-  }
-
   nodeTypeAssignments(physical: ProjectedGraph | null = null): Map<string, GraphType[]> {
     return physical
       ? new GraphProjection(this).nodeTypeAssignments(physical)
@@ -992,10 +967,8 @@ export class GraphModel {
     }
   }
 
-  isSchemaRoot(path: string): boolean {
-    return path === this.basis.nodeTypeRoot
-      || path === this.basis.edgeTypeRoot
-      || path === this.basis.relationRoot;
+  isTypeCatalogRoot(path: string): boolean {
+    return path === this.schema.typeCatalogRoot;
   }
 
   treeChildNameForEdge(edge: GraphEdge | GraphEdgeSnapshot, anchorName: string): string | null {

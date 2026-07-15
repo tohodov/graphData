@@ -372,7 +372,7 @@ public sealed class GraphSearchService {
         [EnumeratorCancellation] CancellationToken cancellationToken) {
         await foreach (var solution in input.WithCancellation(cancellationToken).ConfigureAwait(false)) {
             await foreach (var (ancestor, descendant, depth) in CandidateDescendants(solution, expression, graph, cancellationToken).ConfigureAwait(false)) {
-                var ancestorName = NormalizeNodeName(ancestor.LocalId);
+                var ancestorName = NodeIdentity(ancestor);
                 var bound = TryBind(solution, expression.Ancestor, ancestor, 0.3, $"ancestor:{ancestorName}");
                 bound = bound is null ? null : TryBind(bound, expression.Descendant, descendant, 0.75 + 0.25 / depth, $"descendant-of:{ancestorName} depth={depth}");
                 if (bound is not null) {
@@ -480,7 +480,7 @@ public sealed class GraphSearchService {
         string? match = null) {
         switch (selector) {
             case NodeLiteralSearchSelector literal:
-                return string.Equals(NormalizeNodeName(literal.Name), NormalizeNodeName(candidate.LocalId), StringComparison.OrdinalIgnoreCase)
+                return string.Equals(NormalizeNodeName(literal.Name), NodeIdentity(candidate), StringComparison.OrdinalIgnoreCase)
                     ? solution.AddMatch(match, score)
                     : null;
 
@@ -527,7 +527,7 @@ public sealed class GraphSearchService {
 
         await foreach (var leftNode in CandidateNodes(solution, left, graph, cancellationToken).ConfigureAwait(false)) {
             foreach (var path in await graph.GetReachableAsync(leftNode, minDepth, maxDepth, includeSelf).ConfigureAwait(false)) {
-                if (rightNames is null || rightNames.Contains(NormalizeNodeName(path.Node.LocalId))) {
+                if (rightNames is null || rightNames.Contains(NodeIdentity(path.Node))) {
                     yield return (leftNode, path.Node, path.Distance);
                 }
             }
@@ -550,7 +550,7 @@ public sealed class GraphSearchService {
     }
 
     private static string GetReturnKey(SearchSolution solution, string[] returnVariables) {
-        return string.Join('\u001f', returnVariables.Select(variable => NormalizeNodeName(solution.Bindings[variable].LocalId)));
+        return string.Join('\u001f', returnVariables.Select(variable => NodeIdentity(solution.Bindings[variable])));
     }
 
     private static void Validate(NodeSearchQuery query) {
@@ -856,10 +856,10 @@ public sealed class GraphSearchService {
                 var literalNode = await graph.TryGetNodeAsync(literal.Name).ConfigureAwait(false);
                 return literalNode is null
                     ? []
-                    : new HashSet<string>([NormalizeNodeName(literalNode.LocalId)], StringComparer.OrdinalIgnoreCase);
+                    : new HashSet<string>([NodeIdentity(literalNode)], StringComparer.OrdinalIgnoreCase);
 
             case NodeVariableSearchSelector variable when solution.Bindings.TryGetValue(variable.Name, out var node):
-                return new HashSet<string>([NormalizeNodeName(node.LocalId)], StringComparer.OrdinalIgnoreCase);
+                return new HashSet<string>([NodeIdentity(node)], StringComparer.OrdinalIgnoreCase);
 
             case NodeVariableSearchSelector:
                 return null;
@@ -882,7 +882,7 @@ public sealed class GraphSearchService {
     }
 
     private static bool SameNode(Node left, Node right) {
-        return string.Equals(NormalizeNodeName(left.LocalId), NormalizeNodeName(right.LocalId), StringComparison.OrdinalIgnoreCase);
+        return string.Equals(NodeIdentity(left), NodeIdentity(right), StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeNodeName(string nodeName) {
@@ -891,6 +891,10 @@ public sealed class GraphSearchService {
 
     private static string NormalizeNodeName(NodeLocalId nodeName) {
         return NormalizeNodeName(nodeName.ToString());
+    }
+
+    private static string NodeIdentity(Node node) {
+        return NormalizeNodeName(node.GlobalId.ToString());
     }
 
     private static int NormalizeLimit(int limit) {
@@ -944,18 +948,18 @@ public sealed class GraphSearchService {
         }
 
         public async Task<IReadOnlyCollection<NodeDistance>> GetReachableAsync(Node start, int minDepth, int maxDepth, bool includeSelf) {
-            var cacheKey = $"{NormalizeNodeName(start.LocalId)}\u001f{minDepth}\u001f{maxDepth}\u001f{includeSelf}";
+            var cacheKey = $"{NodeIdentity(start)}\u001f{minDepth}\u001f{maxDepth}\u001f{includeSelf}";
             if (_reachableCache.TryGetValue(cacheKey, out var cached)) {
                 return cached;
             }
 
             var result = new Dictionary<string, NodeDistance>(StringComparer.OrdinalIgnoreCase);
-            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { NormalizeNodeName(start.LocalId) };
+            var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { NodeIdentity(start) };
             var queue = new Queue<(Node Node, int Depth)>();
             queue.Enqueue((start, 0));
 
             if (includeSelf && minDepth == 0) {
-                result[NormalizeNodeName(start.LocalId)] = new NodeDistance(start, 0);
+                result[NodeIdentity(start)] = new NodeDistance(start, 0);
             }
 
             while (queue.Count > 0) {
@@ -965,13 +969,13 @@ public sealed class GraphSearchService {
                 }
 
                 foreach (var connected in await GetConnectionsAsync(node).ConfigureAwait(false)) {
-                    if (!visited.Add(NormalizeNodeName(connected.LocalId))) {
+                    if (!visited.Add(NodeIdentity(connected))) {
                         continue;
                     }
 
                     var nextDepth = depth + 1;
                     if (nextDepth >= minDepth) {
-                        result[NormalizeNodeName(connected.LocalId)] = new NodeDistance(connected, nextDepth);
+                        result[NodeIdentity(connected)] = new NodeDistance(connected, nextDepth);
                     }
 
                     queue.Enqueue((connected, nextDepth));
@@ -993,7 +997,7 @@ public sealed class GraphSearchService {
         }
 
         private async Task<Node[]> GetConnectionsAsync(Node node) {
-            var key = NormalizeNodeName(node.LocalId);
+            var key = NodeIdentity(node);
             if (_connectionsByName.TryGetValue(key, out var cached))
                 return cached;
             var connections = node.Nodes
@@ -1005,13 +1009,13 @@ public sealed class GraphSearchService {
         }
 
         private Node Remember(Node node) {
-            _nodesByName[NormalizeNodeName(node.LocalId)] = node;
+            _nodesByName[NodeIdentity(node)] = node;
             return node;
         }
 
         public int GetDescendantDepth(Node ancestor, Node descendant) {
-            var ancestorName = NormalizeNodeName(ancestor.LocalId);
-            var descendantName = NormalizeNodeName(descendant.LocalId);
+            var ancestorName = NodeIdentity(ancestor);
+            var descendantName = NodeIdentity(descendant);
             if (!IsStrictPathDescendant(ancestorName, descendantName)) {
                 return -1;
             }

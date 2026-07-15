@@ -19,7 +19,7 @@ public sealed class GraphDataToolsTests : StorageTests
         await Storage.Connect(first.GlobalId, second.GlobalId);
 
         var graph = await Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
-        var tools = new GraphDataTools(new GraphService(graph, new GraphSearchService(Storage)), graph);
+        var tools = new GraphDataTools(new GraphService(graph, new GraphSearchService(Storage)));
         var json = await tools.GetNode(["1"]);
 
         using var document = JsonDocument.Parse(json);
@@ -44,7 +44,7 @@ public sealed class GraphDataToolsTests : StorageTests
     public async Task CreateType_CreatesDynamicDefinitionVisibleToGetTypeDefinitions()
     {
         var graph = await Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
-        var tools = new GraphDataTools(new GraphService(graph, new GraphSearchService(Storage)), graph);
+        var tools = new GraphDataTools(new GraphService(graph, new GraphSearchService(Storage)));
 
         var countryJson = await tools.CreateType("McpCountry");
         using var countryDocument = JsonDocument.Parse(countryJson);
@@ -95,6 +95,12 @@ public sealed class GraphDataToolsTests : StorageTests
             type: "NodeTypes/McpManufacturer",
             fields: manufacturerNodeFields);
         using var manufacturerNodeDocument = JsonDocument.Parse(manufacturerNodeJson);
-        Assert.IsTrue(manufacturerNodeDocument.RootElement.GetProperty("success").GetBoolean(), manufacturerNodeJson);
+        Assert.IsFalse(manufacturerNodeDocument.RootElement.GetProperty("success").GetBoolean(), manufacturerNodeJson);
+        Assert.AreEqual("BadRequest", manufacturerNodeDocument.RootElement.GetProperty("status").GetString());
+        StringAssert.Contains(
+            manufacturerNodeDocument.RootElement.GetProperty("error").GetString(),
+            "named node fields");
+        using var missingNodeDocument = JsonDocument.Parse(await tools.GetNode(["Kalashnikov"]));
+        Assert.IsFalse(missingNodeDocument.RootElement.GetProperty("found").GetBoolean());
     }
 }

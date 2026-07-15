@@ -70,7 +70,7 @@ var expected = new CpuMessagePassingExecutor().Execute(program);
 
 ## Адаптер raw graph
 
-`RawSubgraphSnapshotAdapter` — намеренно отдельный frontend для текущего carrier-графа `Domain`:
+`RawSubgraphSnapshotAdapter` — намеренно отдельный frontend для простой compatibility-проекции `Domain`, а не для канонических semantic records:
 
 - требует один node wrapper на каждый `GlobalId` и детерминированно отклоняет дубликаты;
 - дедуплицирует физические связи по паре endpoint `GlobalId`;
@@ -79,7 +79,7 @@ var expected = new CpuMessagePassingExecutor().Execute(program);
 - преобразует каждое неориентированное raw-ребро в две directed relations веса `1`;
 - получает features только через явный callback и не выводит направление, тип или вес из `Attributes`.
 
-Это raw lowering, а не semantic projection. Для типизированных semantic edges, гиперрёбер и выбранного basis нужен отдельный frontend, который сформирует явный `TypedGraphSnapshot`.
+Это lowering вычисленной raw-проекции. Для типизированных relations и гиперрёбер нужен отдельный frontend, который читает `SemanticKind`, `TypeIds` и `RelationMembers` и формирует явный `TypedGraphSnapshot`; изменяемого projection basis в storage больше нет.
 
 ## Ограничения первой версии
 

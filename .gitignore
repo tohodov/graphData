@@ -36,6 +36,7 @@ bld/
 node_modules/
 Api/wwwroot/js/app.js
 Api/wwwroot/js/app.js.map
+/semantic-graph-data/
 
 # .NET Core
 project.lock.json

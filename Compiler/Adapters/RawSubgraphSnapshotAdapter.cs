@@ -4,8 +4,10 @@ using GraphData.Core.Models;
 namespace GraphData.Compiler.Adapters;
 
 /// <summary>
-/// Explicit lowering for the raw carrier graph. Raw edges are undirected, so
-/// every unique edge is emitted as two directed relations with weight 1.
+/// Explicit lowering for the raw simple-graph compatibility projection. Raw
+/// edges are undirected, so every unique edge is emitted as two directed
+/// relations with weight 1. Canonical semantic relations require a separate
+/// frontend.
 /// </summary>
 public static class RawSubgraphSnapshotAdapter
 {

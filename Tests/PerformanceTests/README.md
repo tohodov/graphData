@@ -5,7 +5,7 @@
 Минимальный запуск:
 
 ```powershell
-dotnet run --project PerformanceTests\PerformanceTests.csproj
+dotnet run --project Tests\PerformanceTests\PerformanceTests.csproj
 ```
 
 Полезные параметры:
@@ -21,14 +21,14 @@ dotnet run --project PerformanceTests\PerformanceTests.csproj
 - `GRAPH_DATA_PERF_SUBGRAPH_DEPTHS` - глубины подграфа через запятую, например `1,2,3`.
 - `GRAPH_DATA_PERF_SUBGRAPH_ROOT_COUNT` - число roots в multi-root запросах подграфа.
 
-Пример сравнимого запуска двух хранилищ:
+Пример воспроизводимого запуска семантического файлового хранилища:
 
 ```powershell
 $env:GRAPH_DATA_PERF_STORAGE_ROOT = 'E:\TTT'
 $env:GRAPH_DATA_PERF_NODE_COUNT = '1000'
 $env:GRAPH_DATA_PERF_CONNECTIONS_PER_NODE = '10'
 $env:GRAPH_DATA_PERF_SEED = '1729'
-dotnet run --project PerformanceTests\PerformanceTests.csproj
+dotnet run --project Tests\PerformanceTests\PerformanceTests.csproj
 ```
 
 Рабочие данные каждого сценария размещаются в отдельном подкаталоге вида `<root>\GraphDataPerformanceTests\<run-id>\<scenario>\<storage>`, поэтому разные хранилища не пишут в одну папку, а следующие запуски с автоматически сгенерированным `run-id` не затирают предыдущие. Сценарии намеренно не удаляют эти данные после завершения, чтобы их можно было исследовать вручную. Генератор создает не дерево: при `nodeCount >= 3` и `connectionsPerNode > 0` базовый граф содержит цикл, а затем дополняется детерминированными ребрами по seed. Сценарий `subgraph-random-reads` измеряет серии `GetSubgraphAsync` для детерминированно выбранных single-root и multi-root запросов, включая время операции и размер возвращенного подграфа.

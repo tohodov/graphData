@@ -1,4 +1,4 @@
-namespace Storage;
+namespace SemanticStorage;
 
 public static class NodeNameValidator {
     public const string AllowedCharactersDescription =

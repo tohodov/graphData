@@ -2,7 +2,7 @@ using System.Reflection;
 using GraphData.Api.Runtime;
 using GraphData.Core.Extensions;
 using GraphData.Core.Services;
-using Storage;
+using SemanticStorage;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,7 +13,7 @@ builder.Services.AddOpenApi(options => options.AddDocumentTransformer<SearchSele
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ICancellationTokenAccessor, HttpContextCancellationTokenAccessor>();
 builder.Services.AddDomain();
-builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
+builder.Services.AddSemanticGraphStorage(builder.Configuration.GetSection("GraphStorage"));
 
 var app = builder.Build();
 var isOpenApiDocumentGeneration = Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider";

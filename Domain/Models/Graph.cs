@@ -3,9 +3,8 @@ using GraphData.Core.Models;
 using GraphData.Core.Services;
 
 public sealed class Graph {
-    static readonly NodeLocalId NodeTypeRootLocalId = new("NodeTypes");
-
     readonly IGraphStorage storage;
+    readonly ISemanticGraphStorage semanticStorage;
     readonly GraphSchemaRegistry schemaRegistry;
     readonly Dictionary<Type, NodeType> runtimeTypesByClrType = [];
     readonly SemaphoreSlim openGate = new(1, 1);
@@ -15,6 +14,9 @@ public sealed class Graph {
 
     internal Graph(IGraphStorage storage, GraphSchemaRegistry schemaRegistry) {
         this.storage = storage;
+        semanticStorage = storage as ISemanticGraphStorage
+            ?? throw new InvalidOperationException(
+                $"Storage '{storage.GetType().FullName}' does not implement the semantic graph contract.");
         this.schemaRegistry = schemaRegistry;
     }
 
@@ -28,6 +30,7 @@ public sealed class Graph {
     }
 
     internal IGraphStorage Storage => storage;
+    internal ISemanticGraphStorage SemanticStorage => semanticStorage;
     internal bool IsOpen => isOpen;
 
     internal static async Task<Graph> OpenAsync(IGraphStorage storage, GraphSchemaRegistry schemaRegistry) {
@@ -45,10 +48,14 @@ public sealed class Graph {
             if (isOpen)
                 return;
 
-            var nodeTypesRoot = await EnsureNodeTypesRootAsync(storage).ConfigureAwait(false);
+            var nodeTypesRoot = semanticStorage.TypeRoot;
             runtimeTypesByClrType.Clear();
             foreach (var type in schemaRegistry.Types) {
-                var nodeType = await EnsureNodeTypeAsync(storage, nodeTypesRoot, type.Id).ConfigureAwait(false);
+                var nodeType = await EnsureNodeTypeAsync(
+                    storage,
+                    semanticStorage,
+                    nodeTypesRoot,
+                    type.Id).ConfigureAwait(false);
                 runtimeTypesByClrType[type.ClrType] = new NodeType(nodeType);
             }
 
@@ -60,7 +67,10 @@ public sealed class Graph {
                 var definition = schemaRegistry.GetOrBuildDefinition(
                     nodeType,
                     GetMaterializedRuntimeType);
-                await DynamicNodeTypeDefinitionStorage.WriteAsync(storage, definition).ConfigureAwait(false);
+                await DynamicNodeTypeDefinitionStorage.WriteAsync(semanticStorage, definition).ConfigureAwait(false);
+                await semanticStorage.SetRequiredTypeIdsAsync(
+                    nodeType.GlobalId,
+                    definition.RequiredTypes.Select(static type => (NodeRef)type.GlobalId)).ConfigureAwait(false);
             }
 
             root = new Node(storage.Root);
@@ -92,7 +102,7 @@ public sealed class Graph {
         EnsureOpen();
         var definition = schemaRegistry.GetOrBuildDefinition(nodeType, GetRequiredRuntimeType);
         var requiredTypes = definition.RequiredTypes
-            .Concat(NodeTypeInheritanceReader.ReadRequiredTypes(nodeType))
+            .Concat(ReadRequiredTypes(nodeType))
             .DistinctBy(static type => type.GlobalId)
             .ToArray();
         return requiredTypes.Length == definition.RequiredTypes.Count
@@ -143,12 +153,8 @@ public sealed class Graph {
 
     internal async Task<bool> IsNodeTypeAsync(NodeBacking node) {
         EnsureOpen();
-        if (node.GlobalId == NodeTypes.GlobalId)
-            return false;
-
-        return await node.Nodes
-            .AnyAsync(neighbor => neighbor.GlobalId == NodeTypes.GlobalId)
-            .ConfigureAwait(false);
+        await Task.CompletedTask;
+        return semanticStorage.IsType(node);
     }
 
     internal void EnsureOpen() {
@@ -156,13 +162,31 @@ public sealed class Graph {
             throw new InvalidOperationException("Graph is not open.");
     }
 
-    static async Task<NodeBacking> EnsureNodeTypesRootAsync(IGraphStorage storage) {
-        return await storage.Get(new NodePath(NodeTypeRootLocalId)).ConfigureAwait(false)
-            ?? await storage.Create(NodeTypeRootLocalId).ConfigureAwait(false);
+    static async Task<NodeBacking> EnsureNodeTypeAsync(
+        IGraphStorage graphStorage,
+        ISemanticGraphStorage semanticStorage,
+        NodeBacking nodeTypes,
+        NodeLocalId localId) {
+        var existing = await graphStorage.Get(nodeTypes.GlobalId, localId).ConfigureAwait(false);
+        return existing
+            ?? await semanticStorage.CreateTypeElementAsync(
+                localId,
+                nodeTypes.GlobalId,
+                SemanticElementKind.Type,
+                Array.Empty<NodeRef>()).ConfigureAwait(false);
     }
 
-    static async Task<NodeBacking> EnsureNodeTypeAsync(IGraphStorage storage, NodeBacking nodeTypes, NodeLocalId localId) {
-        return await storage.Get(nodeTypes.GlobalId, localId).ConfigureAwait(false)
-            ?? await storage.Create(localId, nodeTypes.GlobalId).ConfigureAwait(false);
+    private IReadOnlyCollection<NodeType> ReadRequiredTypes(NodeType nodeType) {
+        var result = new List<NodeType>();
+        foreach (var requiredTypeId in semanticStorage.GetRequiredTypeIds(nodeType.Backing)) {
+            var backing = storage.Get(requiredTypeId).GetAwaiter().GetResult()
+                ?? throw new InvalidOperationException(
+                    $"Graph type '{nodeType.GlobalId}' references missing required type '{requiredTypeId}'.");
+            if (!semanticStorage.IsType(backing))
+                throw new InvalidOperationException(
+                    $"Graph type '{nodeType.GlobalId}' references '{requiredTypeId}', which is not a graph type.");
+            result.Add(new NodeType(backing));
+        }
+        return result;
     }
 }

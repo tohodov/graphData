@@ -10,6 +10,7 @@ public sealed class McpToolSurfaceTests {
         CollectionAssert.AreEqual(
             new[] {
                 "CreateNode",
+                "CreateRelation",
                 "CreateType",
                 "GetNode",
                 "GetTypeDefinitions"
@@ -38,10 +39,12 @@ public sealed class McpToolSurfaceTests {
             new[] {
                 "ConnectNodes",
                 "CreateNode",
+                "CreateRelation",
                 "CreateType",
                 "DeleteNode",
                 "DisconnectNodes",
                 "GetNode",
+                "GetSemanticNode",
                 "GetSubgraph",
                 "GetTypeDefinitions",
                 "SearchNodes"
@@ -73,15 +76,28 @@ public sealed class McpToolSurfaceTests {
     }
 
     [TestMethod]
-    public void SemanticGetNode_ExposesOptionalBasisPaths() {
+    public void SemanticGetNode_UsesOnlyTheNodePath() {
         var getNode = typeof(GraphDataSemanticTools).GetMethod(nameof(GraphDataSemanticTools.GetNode));
         Assert.IsNotNull(getNode);
 
-        var basisTypes = getNode.GetParameters().Single(static parameter => parameter.Name == "basisTypes");
+        var parameters = getNode.GetParameters();
+        Assert.AreEqual(1, parameters.Length);
+        Assert.AreEqual("path", parameters[0].Name);
+        Assert.AreEqual(typeof(string[]), parameters[0].ParameterType);
+    }
 
-        Assert.IsTrue(basisTypes.HasDefaultValue);
-        Assert.IsNull(basisTypes.DefaultValue);
-        Assert.AreEqual(typeof(string[]), basisTypes.ParameterType);
+    [TestMethod]
+    public void SemanticCreateRelation_ExposesCanonicalNamedMembers() {
+        var createRelation = typeof(GraphDataSemanticTools).GetMethod(nameof(GraphDataSemanticTools.CreateRelation));
+        Assert.IsNotNull(createRelation);
+
+        var parameters = createRelation.GetParameters();
+        CollectionAssert.AreEqual(
+            new[] { "localId", "type", "members" },
+            parameters.Select(static parameter => parameter.Name).ToArray());
+        Assert.AreEqual(typeof(string), parameters[0].ParameterType);
+        Assert.AreEqual(typeof(string), parameters[1].ParameterType);
+        Assert.AreEqual(typeof(System.Text.Json.JsonElement), parameters[2].ParameterType);
     }
 
     [TestMethod]
@@ -94,6 +110,11 @@ public sealed class McpToolSurfaceTests {
         Assert.IsTrue(requires.HasDefaultValue);
         Assert.IsNull(requires.DefaultValue);
         Assert.AreEqual(typeof(string[]), requires.ParameterType);
+
+        var elementKind = createType.GetParameters().Single(static parameter => parameter.Name == "elementKind");
+        Assert.IsTrue(elementKind.HasDefaultValue);
+        Assert.AreEqual("Node", elementKind.DefaultValue);
+        Assert.AreEqual(typeof(string), elementKind.ParameterType);
     }
 
     private static string[] GetToolMethodNames(Type toolType) {
