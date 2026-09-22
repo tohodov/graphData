@@ -4,16 +4,16 @@ using GraphData.Core.Models;
 
 namespace GraphData.Core.Services;
 
-internal sealed class GraphBackupService {
+internal sealed class CarrierGraphBackupService {
     const int CurrentVersion = 1;
 
     static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) {
         WriteIndented = true
     };
 
-    readonly GraphService graph;
+    readonly CarrierGraphService graph;
 
-    public GraphBackupService(GraphService graph) {
+    public CarrierGraphBackupService(CarrierGraphService graph) {
         this.graph = graph;
     }
 
@@ -77,7 +77,7 @@ internal sealed class GraphBackupService {
         }
     }
 
-    private static GraphBackupDocument CreateDocument(Subgraph subgraph, CancellationToken cancellationToken) {
+    private static GraphBackupDocument CreateDocument(CarrierSubgraph subgraph, CancellationToken cancellationToken) {
         var nodes = subgraph.Nodes
             .OrderBy(static node => ToPathString(ToSegments(node.GlobalId)), StringComparer.Ordinal)
             .Select(static node => new GraphBackupNode {

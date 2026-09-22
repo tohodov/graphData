@@ -40,4 +40,6 @@
   <Project Path="Mcp/0_Mcp.csproj" />
   <Project Path="Runtime/GraphCompiler.Runtime.csproj" />
   <Project Path="SymLinkStorage/1_SymLinkStorage.csproj" />
+  <Project Path="TypedGraph/TypedGraph.csproj" />
+  <Project Path="SemanticStorage/SemanticStorage.csproj" />
 </Solution>

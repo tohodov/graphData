@@ -9,7 +9,7 @@ namespace Storage;
 internal sealed class SymLinkGraphStorage : IGraphStorage {
     public static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    public NodeBacking Root { get; }
+    public CarrierNodeBacking Root { get; }
 
     internal readonly DirectoryInfo root;
     readonly NtfsGraphStorageOptions options;
@@ -24,7 +24,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         Root = new NodeFileSystem(new(), root, this);
     }
 
-    public Task<NodeBacking> Create(NodeLocalId name, NodeRef? path = null, IDictionary<string, string>? attributes = null) {
+    public Task<CarrierNodeBacking> Create(NodeLocalId name, NodeRef? path = null, IDictionary<string, string>? attributes = null) {
         if (!NodeNameValidator.TryValidateSegment(name, "Node name", out var validationError))
             throw new Exception(validationError);
 
@@ -43,14 +43,14 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         if (attributes != null)
             node.WriteMetadata(attributes);
 
-        return Task.FromResult<NodeBacking>(node);
+        return Task.FromResult<CarrierNodeBacking>(node);
     }
 
-    public Task<NodeBacking?> Get(NodeRef path) {
-        return Task.FromResult<NodeBacking?>(FindNode(path));
+    public Task<CarrierNodeBacking?> Get(NodeRef path) {
+        return Task.FromResult<CarrierNodeBacking?>(FindNode(path));
     }
 
-    public Task Delete(NodeBacking node) => Delete((NodeFileSystem)node);
+    public Task Delete(CarrierNodeBacking node) => Delete((NodeFileSystem)node);
     Task Delete(NodeFileSystem node) {
         if (IsStorageRoot(node.FolderPath))
             throw new InvalidOperationException("Storage root cannot be deleted.");
@@ -113,7 +113,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         DeleteLinksToTarget(GetNodePath(right), left.FolderPath);
     }
 
-    public async IAsyncEnumerable<NodeBacking> EnumerateNodesAsync(
+    public async IAsyncEnumerable<CarrierNodeBacking> EnumerateNodesAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default) {
         if (!root.Exists)
             yield break;
@@ -141,10 +141,10 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         }
     }
 
-    public async IAsyncEnumerable<NodeBacking> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) {
-        var roots = new List<NodeBacking>();
+    public async IAsyncEnumerable<CarrierNodeBacking> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) {
+        var roots = new List<CarrierNodeBacking>();
         foreach (var path in new[] { first, second }.Concat(other))
-            if (await Get(path) is NodeBacking node)
+            if (await Get(path) is CarrierNodeBacking node)
                 roots.Add(node);
             else
                 throw new Exception(path.ToString());
@@ -155,7 +155,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
                 yield return candidate;
     }
 
-    public async Task<NodeBacking> MoveNodeToConnectedNode(NodeRef nodeRef) {
+    public async Task<CarrierNodeBacking> MoveNodeToConnectedNode(NodeRef nodeRef) {
         var node = FindNode(nodeRef) ?? throw new InvalidOperationException($"Node '{nodeRef}' was not found.");
         if (IsStorageRoot(node.FolderPath))
             throw new InvalidOperationException("Storage root cannot be moved.");
@@ -285,7 +285,7 @@ internal sealed class SymLinkGraphStorage : IGraphStorage {
         return node.FolderPath;
     }
 
-    private string GetNodePath(NodeBacking node) {
+    private string GetNodePath(CarrierNodeBacking node) {
         return node is NodeFileSystem fileSystemState
             ? fileSystemState.FolderPath
             : GetNodePath(node.LocalId);

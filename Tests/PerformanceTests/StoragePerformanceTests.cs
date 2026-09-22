@@ -27,7 +27,7 @@ public sealed class StoragePerformanceTests {
         AssertStorageRoot(scope, scenario);
 
         var run = new PerformanceRun(storageKind.ToString(), graph, scenario, scope.RootPath);
-        var nodesByName = new Dictionary<NodeRef.InternalId, NodeBacking>();
+        var nodesByName = new Dictionary<NodeRef.InternalId, CarrierNodeBacking>();
 
         await run.MeasureEachAsync("create", graph.Nodes, async node => {
             nodesByName[node.Path] = await scope.Storage.Create(node.Path.Last(), attributes: node.Attributes).ConfigureAwait(false);
@@ -78,7 +78,7 @@ public sealed class StoragePerformanceTests {
         }).ConfigureAwait(false);
 
         await run.MeasureAsync("search-group-degree", 1, async () => {
-            var matches = await new GraphSearchService(scope.Storage).SearchNodesStreamAsync(new NodeSearchQuery {
+            var matches = await new CarrierGraphSearchService(scope.Storage).SearchNodesStreamAsync(new NodeSearchQuery {
                 Return = ["x"],
                 Where = new AllNodeSearchExpression {
                     Expressions =
@@ -207,8 +207,8 @@ public sealed class StoragePerformanceTests {
         run.WriteReport(scope, Console.Out);
     }
 
-    private static async Task<Dictionary<NodeRef.InternalId, NodeBacking>> PopulateGraphAsync(IGraphStorage storage, GeneratedGraph graph) {
-        var nodesByName = new Dictionary<NodeRef.InternalId, NodeBacking>();
+    private static async Task<Dictionary<NodeRef.InternalId, CarrierNodeBacking>> PopulateGraphAsync(IGraphStorage storage, GeneratedGraph graph) {
+        var nodesByName = new Dictionary<NodeRef.InternalId, CarrierNodeBacking>();
         foreach (var node in graph.Nodes) {
             nodesByName[node.Path] = await storage.Create(node.Path.Single(), attributes: node.Attributes).ConfigureAwait(false);
         }
@@ -222,13 +222,13 @@ public sealed class StoragePerformanceTests {
         return nodesByName;
     }
 
-    private static async Task<GraphService> CreateServiceAsync(IGraphStorage storage) {
-        var graph = await Graph.OpenAsync(storage, GraphSchemaRegistry.Create()).ConfigureAwait(false);
-        return new GraphService(graph, new GraphSearchService(storage));
+    private static async Task<CarrierGraphService> CreateServiceAsync(IGraphStorage storage) {
+        var graph = await CarrierGraph.OpenAsync(storage, GraphSchemaRegistry.Create()).ConfigureAwait(false);
+        return new CarrierGraphService(graph, new CarrierGraphSearchService(storage));
     }
 
     private static async Task<int> ReadSubgraphNodeCountAsync(
-        GraphService service,
+        CarrierGraphService service,
         SubgraphQueryInput input,
         int depth) {
         var subgraph = (await service.GetSubgraph(input.Roots, depth).ConfigureAwait(false)).Value!;

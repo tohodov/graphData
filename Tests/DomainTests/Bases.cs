@@ -28,7 +28,7 @@ public abstract class StorageTests : IAsyncDisposable {
         return ValueTask.CompletedTask;
     }
 
-    protected virtual async Task AssertNode(NodeLocalId id, Node node) {
+    protected virtual async Task AssertNode(NodeLocalId id, CarrierNode node) {
         Assert.AreEqual(id, node.LocalId);
         var storageNode = await Storage.Get(node.GlobalId);
         Assert.IsNotNull(storageNode);
@@ -36,30 +36,30 @@ public abstract class StorageTests : IAsyncDisposable {
     }
 }
 public abstract class GraphServiceTests : StorageTests {
-    public GraphService Service { get; private set; } = null!;
-    protected Graph Graph { get; private set; } = null!;
+    public CarrierGraphService Service { get; private set; } = null!;
+    protected CarrierGraph Graph { get; private set; } = null!;
     protected virtual Assembly[] Assemblies { get; } = [];
 
     [TestInitialize]
     public override async Task Init() {
-        Graph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create(Assemblies));
-        Service = new GraphService(Graph, new GraphSearchService(Storage));
+        Graph = await global::CarrierGraph.OpenAsync(Storage, GraphSchemaRegistry.Create(Assemblies));
+        Service = new CarrierGraphService(Graph, new CarrierGraphSearchService(Storage));
     }
 
-    protected async Task<Subgraph> GetRoots() {
+    protected async Task<CarrierSubgraph> GetRoots() {
         return (await Service.GetSubgraph([], 0)).Value!;
     }
-    protected async Task<Node> GetTypesRoot() {
+    protected async Task<CarrierNode> GetTypesRoot() {
         await Task.CompletedTask;
         return Graph.NodeTypes;
     }
-    protected async Task<Node> Create(string localId) {
+    protected async Task<CarrierNode> Create(string localId) {
         var result = await Service.CreateNode(localId);
         Assert.IsNotNull(result.Value);
         await AssertNode(localId, result.Value);
         return result.Value;
     }
-    protected async Task<Node> Create(string localId, NodeRef parent) {
+    protected async Task<CarrierNode> Create(string localId, NodeRef parent) {
         var result = await Service.CreateNode(localId, parent);
         Assert.IsNotNull(result.Value);
         await AssertNode(localId, result.Value);
@@ -67,22 +67,22 @@ public abstract class GraphServiceTests : StorageTests {
     }
 }
 public abstract class GraphDslTests : StorageTests {
-    public Graph Graph { get; private set; } = null!;
+    public CarrierGraph Graph { get; private set; } = null!;
     protected virtual Assembly[] Assemblies { get; } = [];
 
     [TestInitialize]
     public override async Task Init() {
         if (Graph != null)
             throw new Exception("неправильный жизненный цикл теста");
-        Graph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create(Assemblies));
+        Graph = await global::CarrierGraph.OpenAsync(Storage, GraphSchemaRegistry.Create(Assemblies));
     }
 }
 public abstract class GraphTests : GraphDslTests {
-    public GraphService Service { get; private set; } = null!;
+    public CarrierGraphService Service { get; private set; } = null!;
 
     [TestInitialize]
     public override async Task Init() {
         await base.Init();
-        Service = new GraphService(Graph, new GraphSearchService(Storage));
+        Service = new CarrierGraphService(Graph, new CarrierGraphSearchService(Storage));
     }
 }

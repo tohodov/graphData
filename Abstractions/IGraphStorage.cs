@@ -1,11 +1,11 @@
 namespace Abstractions;
 
 internal interface IGraphStorage {
-    NodeBacking Root { get; }
+    CarrierNodeBacking Root { get; }
 
-    Task<NodeBacking> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null);
-    Task<NodeBacking?> Get(NodeRef path);
-    async Task<NodeBacking?> Get(NodeRef parent, NodeLocalId nodeId) {
+    Task<CarrierNodeBacking> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null);
+    Task<CarrierNodeBacking?> Get(NodeRef path);
+    async Task<CarrierNodeBacking?> Get(NodeRef parent, NodeLocalId nodeId) {
         var node = await Get(parent);
         if (node is null)
             return null;
@@ -21,11 +21,11 @@ internal interface IGraphStorage {
             _ => throw new Exception("")
         };
     }
-    async IAsyncEnumerable<NodeBacking> GetNeighbors(NodeBacking node) {//TODO вывернуть наоборот чтобы этот метод юзался в node.Nodes
+    async IAsyncEnumerable<CarrierNodeBacking> GetNeighbors(CarrierNodeBacking node) {//TODO вывернуть наоборот чтобы этот метод юзался в node.Nodes
         await foreach (var neighbor in node.Nodes)
             yield return neighbor;
     }
-    async IAsyncEnumerable<NodeBacking> GetNeighbors(NodeRef path) {
+    async IAsyncEnumerable<CarrierNodeBacking> GetNeighbors(NodeRef path) {
         var node = await Get(path);
         if (node is null)
             yield break;
@@ -38,10 +38,10 @@ internal interface IGraphStorage {
             return;
         node.Attributes = attributes.ToDictionary();
     }
-    Task Delete(NodeBacking node);
+    Task Delete(CarrierNodeBacking node);
     Task Delete(NodeRef path);
     Task Connect(NodeRef sourcePath, NodeRef targetPath);
     Task Disconnect(NodeRef sourcePath, NodeRef targetPath);
-    IAsyncEnumerable<NodeBacking> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other);
-    IAsyncEnumerable<NodeBacking> EnumerateNodesAsync(CancellationToken cancellationToken = default);
+    IAsyncEnumerable<CarrierNodeBacking> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other);
+    IAsyncEnumerable<CarrierNodeBacking> EnumerateNodesAsync(CancellationToken cancellationToken = default);
 }

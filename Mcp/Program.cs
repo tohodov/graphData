@@ -29,6 +29,12 @@ if (!builder.Configuration.GetSection("GraphStorage").Exists())
         optional: true,
         reloadOnChange: false);
 
+var storageMode = builder.Configuration["GraphStorage:Mode"] ?? "legacy";
+if (!string.Equals(storageMode, "legacy", StringComparison.OrdinalIgnoreCase))
+    throw new InvalidOperationException(string.Equals(storageMode, "semantic", StringComparison.OrdinalIgnoreCase)
+        ? "The current MCP tools require GraphStorage:Mode=legacy. Use the typed HTTP API for semantic storage."
+        : $"Unknown GraphStorage:Mode '{storageMode}'. Expected 'legacy' or 'semantic'.");
+
 builder.Logging.AddConsole(options => {
     options.LogToStandardErrorThreshold = LogLevel.Trace;
 });
@@ -50,7 +56,7 @@ builder.Services
     .WithTools(toolTypes, CreateJsonOptions());
 
 var app = builder.Build();
-await app.Services.GetRequiredService<Graph>().OpenAsync().ConfigureAwait(false);
+await app.Services.GetRequiredService<CarrierGraph>().OpenAsync().ConfigureAwait(false);
 await app.RunAsync();
 
 static JsonSerializerOptions CreateJsonOptions() {

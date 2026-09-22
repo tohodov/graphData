@@ -1,9 +1,9 @@
 # GraphCompiler.Runtime
 
-`GraphCompiler.Runtime` исполняет скомпилированный graphData snapshot на Direct3D 12. Он зависит от `Domain`, но не от storage implementation: входом служит публичный `GraphService` или уже полученный `Subgraph`.
+`GraphCompiler.Runtime` исполняет скомпилированный graphData snapshot на Direct3D 12. Он зависит от `Domain`, но не от storage implementation: входом служит публичный `CarrierGraphService` или уже полученный `CarrierSubgraph`.
 
 ```text
-GraphService.GetSubgraph
+CarrierGraphService.GetSubgraph
     -> RawSubgraphSnapshotAdapter
     -> TypedGraphChunker
     -> GraphProgramCompiler + HLSL emitter

@@ -15,6 +15,8 @@ public static class GraphJsonSerializerOptions
     public static void Configure(JsonSerializerOptions options)
     {
         options.AllowOutOfOrderMetadataProperties = true;
+        options.AllowDuplicateProperties = false;
+        options.RespectNullableAnnotations = true;
         if (options.TypeInfoResolver is null)
             options.TypeInfoResolver = new DefaultJsonTypeInfoResolver();
     }

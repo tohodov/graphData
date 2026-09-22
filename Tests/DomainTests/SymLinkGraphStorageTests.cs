@@ -86,7 +86,7 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
             await ReadEdgeNeighborLocalIdsAsync(parent));
     }
 
-    private static async Task<NodeLocalId[]> ReadNeighborLocalIdsAsync(NodeBacking node)
+    private static async Task<NodeLocalId[]> ReadNeighborLocalIdsAsync(CarrierNodeBacking node)
     {
         var result = new List<NodeLocalId>();
         await foreach (var neighbor in node.Nodes)
@@ -94,7 +94,7 @@ public sealed class SymLinkGraphStorageTests : GraphStorageContractTests
         return result.ToArray();
     }
 
-    private static async Task<NodeLocalId[]> ReadEdgeNeighborLocalIdsAsync(NodeBacking node)
+    private static async Task<NodeLocalId[]> ReadEdgeNeighborLocalIdsAsync(CarrierNodeBacking node)
     {
         var result = new List<NodeLocalId>();
         await foreach (var edge in node.Edges) {

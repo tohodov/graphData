@@ -345,13 +345,13 @@ public sealed class GraphControllerTests : ControllerTests {
                 new NodeFieldDefinition(
                     "Source",
                     NodeFieldValueKind.Node,
-                    typeof(Node),
+                    typeof(CarrierNode),
                     NodeSlotCardinality.Required(),
                     IsCollection: false),
                 new NodeFieldDefinition(
                     "Target",
                     NodeFieldValueKind.Node,
-                    typeof(Node),
+                    typeof(CarrierNode),
                     NodeSlotCardinality.Required(),
                     IsCollection: false)
             ])).Value!.Type;
@@ -405,13 +405,13 @@ public sealed class GraphControllerTests : ControllerTests {
                 new NodeFieldDefinition(
                     "Left",
                     NodeFieldValueKind.Node,
-                    typeof(Node),
+                    typeof(CarrierNode),
                     NodeSlotCardinality.Required(),
                     IsCollection: false),
                 new NodeFieldDefinition(
                     "Right",
                     NodeFieldValueKind.Node,
-                    typeof(Node),
+                    typeof(CarrierNode),
                     NodeSlotCardinality.Required(),
                     IsCollection: false)
             ])).Value!.Type;
@@ -657,14 +657,14 @@ public sealed class GraphControllerTests : ControllerTests {
         globalId.StartsWith(parentGlobalId + "/", StringComparison.Ordinal);
 
     private sealed class ConnectThrowingGraphStorage(IGraphStorage inner) : IGraphStorage {
-        public NodeBacking Root => inner.Root;
-        public Task<NodeBacking> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null) => inner.Create(name, parent, attributes);
-        public Task<NodeBacking?> Get(NodeRef query) => inner.Get(query);
+        public CarrierNodeBacking Root => inner.Root;
+        public Task<CarrierNodeBacking> Create(NodeLocalId name, NodeRef? parent = null, IDictionary<string, string>? attributes = null) => inner.Create(name, parent, attributes);
+        public Task<CarrierNodeBacking?> Get(NodeRef query) => inner.Get(query);
         public Task Delete(NodeRef query) => inner.Delete(query);
         public Task Connect(NodeRef sourcePath, NodeRef targetPath) => throw new InvalidOperationException("diagnostic connect failure");
         public Task Disconnect(NodeRef sourcePath, NodeRef targetPath) => throw new InvalidOperationException("diagnostic connect failure");
-        public IAsyncEnumerable<NodeBacking> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] others) => inner.GetCommonIntersection(first, second, others);
-        public Task Delete(NodeBacking node) => inner.Delete(node);
-        public IAsyncEnumerable<NodeBacking> EnumerateNodesAsync(CancellationToken cancellationToken = default) => inner.EnumerateNodesAsync(cancellationToken);
+        public IAsyncEnumerable<CarrierNodeBacking> GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] others) => inner.GetCommonIntersection(first, second, others);
+        public Task Delete(CarrierNodeBacking node) => inner.Delete(node);
+        public IAsyncEnumerable<CarrierNodeBacking> EnumerateNodesAsync(CancellationToken cancellationToken = default) => inner.EnumerateNodesAsync(cancellationToken);
     }
 }

@@ -14,12 +14,12 @@ public sealed class RawSubgraphSnapshotAdapterTests
     [TestMethod]
     public void Create_ShouldLowerOneUndirectedEdgeToTwoDirectedRelations()
     {
-        var first = new global::Node("first");
-        var second = new global::Node("second");
-        first.Edges.Add(new global::Edge(first, second));
+        var first = new global::CarrierNode("first");
+        var second = new global::CarrierNode("second");
+        first.Edges.Add(new global::CarrierEdge(first, second));
 
         var snapshot = RawSubgraphSnapshotAdapter.Create(
-            new Subgraph { Nodes = [second, first] },
+            new CarrierSubgraph { Nodes = [second, first] },
             node => [node.LocalId == "first" ? 1f : 2f]);
 
         Assert.AreEqual(2, snapshot.Nodes.Count);
@@ -37,12 +37,12 @@ public sealed class RawSubgraphSnapshotAdapterTests
     [TestMethod]
     public void Create_ShouldIgnoreEdgesLeavingTheSnapshot()
     {
-        var included = new global::Node("included");
-        var external = new global::Node("external");
-        included.Edges.Add(new global::Edge(included, external));
+        var included = new global::CarrierNode("included");
+        var external = new global::CarrierNode("external");
+        included.Edges.Add(new global::CarrierEdge(included, external));
 
         var snapshot = RawSubgraphSnapshotAdapter.Create(
-            new Subgraph { Nodes = [included] },
+            new CarrierSubgraph { Nodes = [included] },
             static _ => [1f]);
 
         Assert.AreEqual(1, snapshot.Nodes.Count);
@@ -52,11 +52,11 @@ public sealed class RawSubgraphSnapshotAdapterTests
     [TestMethod]
     public void Create_ShouldRejectDuplicateNodeWrappers()
     {
-        var node = new global::Node("duplicate");
+        var node = new global::CarrierNode("duplicate");
 
         var exception = Assert.ThrowsException<InvalidOperationException>(() =>
             RawSubgraphSnapshotAdapter.Create(
-                new Subgraph { Nodes = [node, node] },
+                new CarrierSubgraph { Nodes = [node, node] },
                 static _ => [1f]));
 
         StringAssert.Contains(exception.Message, "more than one node wrapper");
@@ -65,16 +65,16 @@ public sealed class RawSubgraphSnapshotAdapterTests
     [TestMethod]
     public void Create_ShouldReportDuplicateNodeWrappersInCanonicalOrder()
     {
-        var first = new global::Node("first");
-        var second = new global::Node("second");
+        var first = new global::CarrierNode("first");
+        var second = new global::CarrierNode("second");
 
         var firstOrder = Assert.ThrowsException<InvalidOperationException>(() =>
             RawSubgraphSnapshotAdapter.Create(
-                new Subgraph { Nodes = [second, second, first, first] },
+                new CarrierSubgraph { Nodes = [second, second, first, first] },
                 static _ => [1f]));
         var secondOrder = Assert.ThrowsException<InvalidOperationException>(() =>
             RawSubgraphSnapshotAdapter.Create(
-                new Subgraph { Nodes = [first, first, second, second] },
+                new CarrierSubgraph { Nodes = [first, first, second, second] },
                 static _ => [1f]));
 
         Assert.AreEqual(firstOrder.Message, secondOrder.Message);
@@ -83,11 +83,11 @@ public sealed class RawSubgraphSnapshotAdapterTests
     [TestMethod]
     public void Create_ShouldCompileAndExecuteRawSubgraphEndToEnd()
     {
-        var source = new global::Node("source");
-        var target = new global::Node("target");
-        source.Edges.Add(new global::Edge(source, target));
+        var source = new global::CarrierNode("source");
+        var target = new global::CarrierNode("target");
+        source.Edges.Add(new global::CarrierEdge(source, target));
         var snapshot = RawSubgraphSnapshotAdapter.Create(
-            new Subgraph { Nodes = [target, source] },
+            new CarrierSubgraph { Nodes = [target, source] },
             node => [node.LocalId == "source" ? 2f : 0f]);
         var program = new GraphProgramCompiler().Compile(
             snapshot,

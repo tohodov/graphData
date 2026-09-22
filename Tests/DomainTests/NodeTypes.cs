@@ -9,26 +9,26 @@ public sealed class NodeTypes {
     public abstract class EquipmentNodeType : NodeType {
         public string SerialNumber = "";
 
-        internal EquipmentNodeType(NodeBacking state) : base(state) {
+        internal EquipmentNodeType(CarrierNodeBacking state) : base(state) {
         }
     }
 
     public sealed class RifleNodeType : EquipmentNodeType {
         public string Caliber = "";
 
-        internal RifleNodeType(NodeBacking state) : base(state) {
+        internal RifleNodeType(CarrierNodeBacking state) : base(state) {
         }
     }
 
     public sealed class WeaponNodeType : NodeType {
         public ManufacturerNodeType Manufacturer = null!;
 
-        internal WeaponNodeType(NodeBacking state) : base(state) {
+        internal WeaponNodeType(CarrierNodeBacking state) : base(state) {
         }
     }
 
     public sealed class CountryNodeType : NodeType {
-        internal CountryNodeType(NodeBacking state) : base(state) {
+        internal CountryNodeType(CarrierNodeBacking state) : base(state) {
         }
     }
 
@@ -36,8 +36,8 @@ public sealed class NodeTypes {
         public CountryNodeType Country = null!;
         public ManufacturerNodeType? ParentCompany = null;
         public IReadOnlyCollection<WeaponNodeType> ProducedWeapons = [];
-        public Node Headquarters = null!;
-        public Node? ArchiveNode = null;
+        public CarrierNode Headquarters = null!;
+        public CarrierNode? ArchiveNode = null;
         public string LegalName = "";
         public int FoundedYear = 0;
         public bool IsActive = false;
@@ -45,35 +45,35 @@ public sealed class NodeTypes {
         public string? Website = null;
         public IReadOnlyCollection<string> Aliases = [];
 
-        internal ManufacturerNodeType(NodeBacking state) : base(state) {
+        internal ManufacturerNodeType(CarrierNodeBacking state) : base(state) {
         }
     }
     public sealed class EdgeWeaponNodeType : NodeType {
-        internal EdgeWeaponNodeType(NodeBacking state) : base(state) {
+        internal EdgeWeaponNodeType(CarrierNodeBacking state) : base(state) {
         }
     }
 
     public sealed class EdgeManufacturerNodeType : NodeType {
-        internal EdgeManufacturerNodeType(NodeBacking state) : base(state) {
+        internal EdgeManufacturerNodeType(CarrierNodeBacking state) : base(state) {
         }
     }
 
-    public sealed class ManufacturedByEdge : Edge {
+    public sealed class ManufacturedByEdge : CarrierEdge {
         public EdgeWeaponNodeType Weapon = null!;
         public EdgeManufacturerNodeType Manufacturer = null!;
 
-        internal ManufacturedByEdge(EdgeBacking state) : base(state) {
+        internal ManufacturedByEdge(CarrierEdgeBacking state) : base(state) {
         }
     }
 
-    public sealed class ShipmentEdge : Edge {
+    public sealed class ShipmentEdge : CarrierEdge {
         public EdgeWeaponNodeType Weapon = null!;
-        public Node Counterparty = null!;
-        public Node? OptionalWaypoint = null;
+        public CarrierNode Counterparty = null!;
+        public CarrierNode? OptionalWaypoint = null;
         public IReadOnlyCollection<EdgeManufacturerNodeType> Manufacturers = [];
         public string Note = "";
 
-        internal ShipmentEdge(EdgeBacking state) : base(state) {
+        internal ShipmentEdge(CarrierEdgeBacking state) : base(state) {
         }
     }
 }

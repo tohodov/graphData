@@ -12,16 +12,16 @@ public sealed class SemanticLayerTests : GraphServiceTests
         var nodeType = (await Service.CreateNodeType(
             "TwoReferencesAreStillNodeType",
             fields: [
-                new NodeFieldDefinition("First", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false),
-                new NodeFieldDefinition("Second", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false)
+                new NodeFieldDefinition("First", NodeFieldValueKind.Node, typeof(CarrierNode), NodeSlotCardinality.Required(), false),
+                new NodeFieldDefinition("Second", NodeFieldValueKind.Node, typeof(CarrierNode), NodeSlotCardinality.Required(), false)
             ])).Value!;
 
         Assert.IsFalse(TypedEdgeDefinition.TryCreate(nodeType, out _));
         var create = await Service.CreateEdgeType(
             "TwoReferencesAreEdgeType",
             fields: [
-                new NodeFieldDefinition("First", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false),
-                new NodeFieldDefinition("Second", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false)
+                new NodeFieldDefinition("First", NodeFieldValueKind.Node, typeof(CarrierNode), NodeSlotCardinality.Required(), false),
+                new NodeFieldDefinition("Second", NodeFieldValueKind.Node, typeof(CarrierNode), NodeSlotCardinality.Required(), false)
             ]);
         Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
         Assert.IsTrue(TypedEdgeDefinition.TryCreate(create.Value!, out _));
@@ -160,8 +160,8 @@ public sealed class SemanticLayerTests : GraphServiceTests
         CollectionAssert.AreEquivalent(expected, projected.AssignedTypes.Select(static type => type.GlobalId).ToArray());
         Assert.AreEqual(4, projected.TypeInstances.Count);
 
-        var reopenedGraph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
-        var reopenedService = new GraphService(reopenedGraph, new GraphSearchService(Storage));
+        var reopenedGraph = await global::CarrierGraph.OpenAsync(Storage, GraphSchemaRegistry.Create());
+        var reopenedService = new CarrierGraphService(reopenedGraph, new CarrierGraphSearchService(Storage));
         var reopened = await reopenedService.GetSemanticNodeAsync(ak47.GlobalId);
         Assert.AreEqual(ServiceResultStatus.Ok, reopened.Status, reopened.Error);
         CollectionAssert.AreEquivalent(expected, reopened.Value!.AssignedTypes.Select(static type => type.GlobalId).ToArray());
@@ -281,7 +281,7 @@ public sealed class SemanticLayerTests : GraphServiceTests
             Storage,
             "duplicate-instance-of",
             instanceOfDefinition,
-            new Dictionary<string, IReadOnlyCollection<NodeBacking>>(StringComparer.Ordinal) {
+            new Dictionary<string, IReadOnlyCollection<CarrierNodeBacking>>(StringComparer.Ordinal) {
                 [nameof(InstanceOfEdge.Instance)] = [node.Backing],
                 [nameof(InstanceOfEdge.Type)] = [type.Backing]
             });
@@ -302,8 +302,8 @@ public sealed class SemanticLayerTests : GraphServiceTests
         var flight = (await Service.CreateNodeType(
             "SemanticFlight",
             fields: [
-                new NodeFieldDefinition("Origin", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false, person),
-                new NodeFieldDefinition("Destination", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required(), false, person)
+                new NodeFieldDefinition("Origin", NodeFieldValueKind.Node, typeof(CarrierNode), NodeSlotCardinality.Required(), false, person),
+                new NodeFieldDefinition("Destination", NodeFieldValueKind.Node, typeof(CarrierNode), NodeSlotCardinality.Required(), false, person)
             ])).Value!.Type;
         var participant = (await Service.CreateNode("semantic-person")).Value!;
         Assert.AreEqual(ServiceResultStatus.Ok, (await Service.AssignNodeTypeAsync(participant.GlobalId, person.GlobalId)).Status);
@@ -322,7 +322,7 @@ public sealed class SemanticLayerTests : GraphServiceTests
         static NodeFieldDefinition Endpoint(string name) => new(
             name,
             NodeFieldValueKind.Node,
-            typeof(Node),
+            typeof(CarrierNode),
             NodeSlotCardinality.Required(),
             IsCollection: false);
 
@@ -335,7 +335,7 @@ public sealed class SemanticLayerTests : GraphServiceTests
         var source = (await Service.CreateNode("ambiguous-edge-source")).Value!;
         var target = (await Service.CreateNode("ambiguous-edge-target")).Value!;
         var typedDefinition = TypedEdgeDefinition.Create(oldDefinition);
-        var participants = new Dictionary<string, IReadOnlyCollection<NodeBacking>>(StringComparer.Ordinal) {
+        var participants = new Dictionary<string, IReadOnlyCollection<CarrierNodeBacking>>(StringComparer.Ordinal) {
             ["Source"] = [source.Backing],
             ["Target"] = [target.Backing]
         };
@@ -362,14 +362,14 @@ public sealed class SemanticLayerTests : GraphServiceTests
         Assert.IsNull(await Storage.Get(new NodePath("ambiguous-replacement-edge-1")));
     }
 
-    private static async Task<NodeBacking> FindEndpointAsync(
-        NodeBacking relation,
+    private static async Task<CarrierNodeBacking> FindEndpointAsync(
+        CarrierNodeBacking relation,
         TypedEdgeDefinition definition,
         string memberName) {
         var memberTypeId = definition.Endpoints
             .Single(endpoint => endpoint.Name == memberName)
             .MemberTypeId;
-        var matches = new List<NodeBacking>();
+        var matches = new List<CarrierNodeBacking>();
         await foreach (var child in relation.Nodes) {
             if (!TypedEdgeSubgraphCodec.IsDirectChildOf(child.GlobalId, relation.GlobalId))
                 continue;

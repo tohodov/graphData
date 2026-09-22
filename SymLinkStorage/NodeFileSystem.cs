@@ -6,7 +6,7 @@ using static System.IO.Path;
 
 namespace Storage;
 
-internal sealed class NodeFileSystem : NodeBacking {
+internal sealed class NodeFileSystem : CarrierNodeBacking {
     const string MetadataFileName = "node.json";
 
     readonly string parentPath;
@@ -26,8 +26,8 @@ internal sealed class NodeFileSystem : NodeBacking {
             .Where(static part => part is not "." and not "")
             .Select(SymLinkGraphStorage.NormalizeNodeName)
             .Select(x => new NodeLocalId(x)));
-    public override IAsyncCollection<EdgeBacking> Edges { get; }
-    public override IAsyncCollection<NodeBacking> Nodes { get; }
+    public override IAsyncCollection<CarrierEdgeBacking> Edges { get; }
+    public override IAsyncCollection<CarrierNodeBacking> Nodes { get; }
     public override IDictionary<string, string> Attributes {
         get => attributes ??= new LiveAttributeDictionary(this);
         set {
@@ -100,16 +100,16 @@ internal sealed class NodeFileSystem : NodeBacking {
         attributesSnapshot = copy;
     }
 
-    internal Task ConnectTo(NodeBacking target) => storage.Connect(GlobalId, target.GlobalId);
+    internal Task ConnectTo(CarrierNodeBacking target) => storage.Connect(GlobalId, target.GlobalId);
 
-    internal async Task DisconnectFrom(NodeBacking target) {
+    internal async Task DisconnectFrom(CarrierNodeBacking target) {
         if (!await GetNeighborNodes().AnyAsync(node => node.GlobalId == target.GlobalId))
             return;
         await storage.Disconnect(GlobalId, target.GlobalId);
         return;
     }
 
-    IEnumerable<EdgeBacking> GetEdges() {
+    IEnumerable<CarrierEdgeBacking> GetEdges() {
         if (!IsExists())
             yield break;
 
@@ -123,8 +123,8 @@ internal sealed class NodeFileSystem : NodeBacking {
             yield return new LinkEdgeFileSystemState(this, link);
     }
 
-    async IAsyncEnumerable<NodeBacking> GetNeighborNodes([EnumeratorCancellation] CancellationToken cancellationToken = default) {
-        var seen = new HashSet<NodeBacking>();
+    async IAsyncEnumerable<CarrierNodeBacking> GetNeighborNodes([EnumeratorCancellation] CancellationToken cancellationToken = default) {
+        var seen = new HashSet<CarrierNodeBacking>();
         await foreach (var edge in GetEdgesAsync(cancellationToken)) {
             var first = edge.Node1;
             if (!first.Equals(this) && seen.Add(first))
@@ -136,7 +136,7 @@ internal sealed class NodeFileSystem : NodeBacking {
         }
     }
 
-    async IAsyncEnumerable<EdgeBacking> GetEdgesAsync([EnumeratorCancellation] CancellationToken cancellationToken = default) {
+    async IAsyncEnumerable<CarrierEdgeBacking> GetEdgesAsync([EnumeratorCancellation] CancellationToken cancellationToken = default) {
         foreach (var edge in GetEdges()) {
             cancellationToken.ThrowIfCancellationRequested();
             yield return edge;
@@ -272,8 +272,8 @@ internal sealed class NodeFileSystem : NodeBacking {
             File.Delete(MetadataPath);
     }
 
-    sealed class LiveNodeCollection(NodeFileSystem owner) : IAsyncCollection<NodeBacking> {
-        public async Task<NodeBacking> Add(NodeBacking item) {
+    sealed class LiveNodeCollection(NodeFileSystem owner) : IAsyncCollection<CarrierNodeBacking> {
+        public async Task<CarrierNodeBacking> Add(CarrierNodeBacking item) {
             if (item is VirtualNodeState) {
                 var existing = owner.storage.GetInternal(owner, item.LocalId);
                 var node = existing ?? new NodeFileSystem(item.LocalId, owner);
@@ -286,32 +286,32 @@ internal sealed class NodeFileSystem : NodeBacking {
             await owner.ConnectTo(item);
             return item;
         }
-        public Task Remove(NodeBacking item) => owner.DisconnectFrom(item);
+        public Task Remove(CarrierNodeBacking item) => owner.DisconnectFrom(item);
         public async Task Clear() {
             foreach (var node in await owner.GetNeighborNodes().ToArrayAsync())
                 await owner.DisconnectFrom(node);
         }
-        public async Task<bool> Contains(NodeBacking item) => await owner.GetNeighborNodes().AnyAsync(node => node.GlobalId == item.GlobalId);
+        public async Task<bool> Contains(CarrierNodeBacking item) => await owner.GetNeighborNodes().AnyAsync(node => node.GlobalId == item.GlobalId);
 
-        IAsyncEnumerator<NodeBacking> IAsyncEnumerable<NodeBacking>.GetAsyncEnumerator(CancellationToken t) => owner.GetNeighborNodes(t).GetAsyncEnumerator(t);
+        IAsyncEnumerator<CarrierNodeBacking> IAsyncEnumerable<CarrierNodeBacking>.GetAsyncEnumerator(CancellationToken t) => owner.GetNeighborNodes(t).GetAsyncEnumerator(t);
     }
 
-    sealed class LiveEdgeCollection(NodeFileSystem owner) : IAsyncCollection<EdgeBacking> {
-        public async Task<EdgeBacking> Add(EdgeBacking item) {
+    sealed class LiveEdgeCollection(NodeFileSystem owner) : IAsyncCollection<CarrierEdgeBacking> {
+        public async Task<CarrierEdgeBacking> Add(CarrierEdgeBacking item) {
             await owner.ConnectTo(GetOtherEndpoint(item));
             return item;
         }
-        public Task Remove(EdgeBacking item) => owner.DisconnectFrom(GetOtherEndpoint(item));
+        public Task Remove(CarrierEdgeBacking item) => owner.DisconnectFrom(GetOtherEndpoint(item));
         public async Task Clear() {
             await foreach (var node in owner.Nodes)
                 await owner.DisconnectFrom(node);
         }
-        public async Task<bool> Contains(EdgeBacking item) {
+        public async Task<bool> Contains(CarrierEdgeBacking item) {
             var other = GetOtherEndpoint(item);
             return await owner.Nodes.AnyAsync(node => node.GlobalId == other.GlobalId);
         }
 
-        NodeBacking GetOtherEndpoint(EdgeBacking edge) {
+        CarrierNodeBacking GetOtherEndpoint(CarrierEdgeBacking edge) {
             if (edge.Node1.GlobalId == owner.GlobalId)
                 return edge.Node2;
             if (edge.Node2.GlobalId == owner.GlobalId)
@@ -320,7 +320,7 @@ internal sealed class NodeFileSystem : NodeBacking {
             throw new InvalidOperationException($"Edge does not belong to node '{owner.GlobalId}'.");
         }
 
-        IAsyncEnumerator<EdgeBacking> IAsyncEnumerable<EdgeBacking>.GetAsyncEnumerator(CancellationToken t) =>
+        IAsyncEnumerator<CarrierEdgeBacking> IAsyncEnumerable<CarrierEdgeBacking>.GetAsyncEnumerator(CancellationToken t) =>
             owner.GetEdgesAsync(t).GetAsyncEnumerator(t);
     }
 
@@ -366,21 +366,21 @@ internal sealed class NodeFileSystem : NodeBacking {
     }
 }
 
-internal sealed class DirectoryEdgeFileSystemState(NodeFileSystem node1, NodeFileSystem node2) : EdgeBacking {
+internal sealed class DirectoryEdgeFileSystemState(NodeFileSystem node1, NodeFileSystem node2) : CarrierEdgeBacking {
     public NodeFileSystem Node1FileSystem { get; } = node1;
     public NodeFileSystem Node2FileSystem { get; } = node2;
 
-    public override NodeBacking Node1 => Node1FileSystem;
-    public override NodeBacking Node2 => Node2FileSystem;
+    public override CarrierNodeBacking Node1 => Node1FileSystem;
+    public override CarrierNodeBacking Node2 => Node2FileSystem;
 }
 
-internal sealed class LinkEdgeFileSystemState(NodeFileSystem node1, SymLink link) : EdgeBacking {
+internal sealed class LinkEdgeFileSystemState(NodeFileSystem node1, SymLink link) : CarrierEdgeBacking {
     NodeFileSystem? child;
 
     public SymLink Link { get; } = link;
     public NodeFileSystem Parent { get; } = node1;
     public NodeFileSystem Child => child ??= new NodeFileSystem(new DirectoryInfo(Link.TargetPath), Parent.storage);
 
-    public override NodeBacking Node1 => Parent;
-    public override NodeBacking Node2 => Child;
+    public override CarrierNodeBacking Node1 => Parent;
+    public override CarrierNodeBacking Node2 => Child;
 }

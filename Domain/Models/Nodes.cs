@@ -1,8 +1,8 @@
 ﻿using Abstractions;
 using GraphData.Core.Models;
 
-public class NodeType : Node {
-    internal NodeType(NodeBacking state)
+public class NodeType : CarrierNode {
+    internal NodeType(CarrierNodeBacking state)
         : base(state) {
     }
     public NodeType(NodeLocalId id) : this(new VirtualNodeState(id)) { }
@@ -11,20 +11,21 @@ public class NodeType : Node {
         var name = type.Name;
         if (name.EndsWith(nameof(NodeType), StringComparison.Ordinal))
             name = name[..^nameof(NodeType).Length];
-        else if (name.EndsWith(nameof(Edge), StringComparison.Ordinal))
-            name = name[..^nameof(Edge).Length];
-        else if (name.EndsWith(nameof(Node), StringComparison.Ordinal))
-            name = name[..^nameof(Node).Length];
+        // These suffixes define persisted type IDs; renaming the carrier classes must not change them.
+        else if (name.EndsWith("Edge", StringComparison.Ordinal))
+            name = name[..^"Edge".Length];
+        else if (name.EndsWith("Node", StringComparison.Ordinal))
+            name = name[..^"Node".Length];
 
         return string.IsNullOrWhiteSpace(name) ? type.Name : name;
     }
 }
 
-public sealed record NodeTypeInstance(NodeType Type, Node? Witness = null) {
+public sealed record NodeTypeInstance(NodeType Type, CarrierNode? Witness = null) {
     public bool IsMaterialized => Witness is not null;
 }
 
-public sealed class InstanceNode : Node {
+public sealed class InstanceNode : CarrierNode {
     private readonly IReadOnlyCollection<NodeTypeInstance> typeInstances;
 
     public IReadOnlyCollection<NodeTypeInstance> TypeInstances => typeInstances;
@@ -49,11 +50,11 @@ public sealed class InstanceNode : Node {
         : this(new VirtualNodeState(id), [new NodeTypeInstance(type)]) {
     }
 
-    internal InstanceNode(NodeBacking state, NodeType type)
+    internal InstanceNode(CarrierNodeBacking state, NodeType type)
         : this(state, [new NodeTypeInstance(type)]) {
     }
 
-    internal InstanceNode(NodeBacking state, IEnumerable<NodeTypeInstance> typeInstances)
+    internal InstanceNode(CarrierNodeBacking state, IEnumerable<NodeTypeInstance> typeInstances)
         : base(state) {
         this.typeInstances = typeInstances
             .GroupBy(static instance => instance.Type.GlobalId)

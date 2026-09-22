@@ -1,6 +1,6 @@
 namespace Abstractions;
 
-internal sealed class VirtualNodeState : NodeBacking {
+internal sealed class VirtualNodeState : CarrierNodeBacking {
     internal VirtualNodeState(NodeLocalId id) : this() => LocalId = id;
     VirtualNodeState() {
         Edges = new VirtualEdgeCollection(this);
@@ -10,11 +10,11 @@ internal sealed class VirtualNodeState : NodeBacking {
 
     public override NodeLocalId LocalId { get; }
     public override InternalId GlobalId => field ??= new(LocalId, NodeLocalId.Random());
-    public override IAsyncCollection<EdgeBacking> Edges { get; }
-    public override IAsyncCollection<NodeBacking> Nodes { get; }
+    public override IAsyncCollection<CarrierEdgeBacking> Edges { get; }
+    public override IAsyncCollection<CarrierNodeBacking> Nodes { get; }
     public override IDictionary<string, string> Attributes { get; set; }
 
-    private async Task ConnectTo(NodeBacking target) {
+    private async Task ConnectTo(CarrierNodeBacking target) {
         if (target.GlobalId == GlobalId)
             return;
         if (await Edges.AnyAsync(edge => Connects(edge, GlobalId, target.GlobalId)))
@@ -25,34 +25,34 @@ internal sealed class VirtualNodeState : NodeBacking {
             await virtualTarget.AddEdgeDirect(edge);
     }
 
-    private async Task DisconnectFrom(NodeBacking target) {
+    private async Task DisconnectFrom(CarrierNodeBacking target) {
         if (target is VirtualNodeState virtualTarget)
             await Edges.Remove(await Edges.SingleAsync(x => x.Node1.GlobalId == target.GlobalId || x.Node2.GlobalId == target.GlobalId));
         else
             throw new NotImplementedException();
     }
 
-    private async Task AddEdge(EdgeBacking edge) {
+    private async Task AddEdge(CarrierEdgeBacking edge) {
         var other = GetOtherEndpoint(edge, this);
         await ConnectTo(other);
     }
 
-    private async Task AddEdgeDirect(EdgeBacking edge) {
+    private async Task AddEdgeDirect(CarrierEdgeBacking edge) {
         if (await Edges.AnyAsync(existing => Connects(existing, edge.Node1.GlobalId, edge.Node2.GlobalId)))
             return;
         await Edges.Add(edge);
     }
 
-    private async Task RemoveEdge(EdgeBacking edge) {
+    private async Task RemoveEdge(CarrierEdgeBacking edge) {
         var other = GetOtherEndpoint(edge, this);
         await DisconnectFrom(other);
     }
 
-    private static bool Connects(EdgeBacking edge, InternalId first, InternalId second) =>
+    private static bool Connects(CarrierEdgeBacking edge, InternalId first, InternalId second) =>
         edge.Node1.GlobalId == first && edge.Node2.GlobalId == second
         || edge.Node1.GlobalId == second && edge.Node2.GlobalId == first;
 
-    private static NodeBacking GetOtherEndpoint(EdgeBacking edge, NodeBacking owner) {
+    private static CarrierNodeBacking GetOtherEndpoint(CarrierEdgeBacking edge, CarrierNodeBacking owner) {
         if (edge.Node1.GlobalId == owner.GlobalId)
             return edge.Node2;
         if (edge.Node2.GlobalId == owner.GlobalId)
@@ -61,15 +61,15 @@ internal sealed class VirtualNodeState : NodeBacking {
         throw new InvalidOperationException($"Edge does not belong to node '{owner.GlobalId}'.");
     }
 
-    private sealed class VirtualNodeCollection(VirtualNodeState owner) : IAsyncCollection<NodeBacking> {
-        ICollection<NodeBacking> innerCollection = new List<NodeBacking>();
+    private sealed class VirtualNodeCollection(VirtualNodeState owner) : IAsyncCollection<CarrierNodeBacking> {
+        ICollection<CarrierNodeBacking> innerCollection = new List<CarrierNodeBacking>();
 
-        public async Task<NodeBacking> Add(NodeBacking item) {
+        public async Task<CarrierNodeBacking> Add(CarrierNodeBacking item) {
             innerCollection.Add(item);
             await owner.ConnectTo(item);
             return item;
         }
-        public Task Remove(NodeBacking item) {
+        public Task Remove(CarrierNodeBacking item) {
             innerCollection.Remove(item);
             return owner.DisconnectFrom(item);
         }
@@ -78,19 +78,19 @@ internal sealed class VirtualNodeState : NodeBacking {
             await foreach (var node in owner.Nodes)
                 await owner.DisconnectFrom(node);
         }
-        public async Task<bool> Contains(NodeBacking item) => innerCollection.Any(node => node.GlobalId == item.GlobalId);
-        IAsyncEnumerator<NodeBacking> IAsyncEnumerable<NodeBacking>.GetAsyncEnumerator(CancellationToken t) => innerCollection.ToAsyncEnumerable().GetAsyncEnumerator(t);
+        public async Task<bool> Contains(CarrierNodeBacking item) => innerCollection.Any(node => node.GlobalId == item.GlobalId);
+        IAsyncEnumerator<CarrierNodeBacking> IAsyncEnumerable<CarrierNodeBacking>.GetAsyncEnumerator(CancellationToken t) => innerCollection.ToAsyncEnumerable().GetAsyncEnumerator(t);
     }
 
-    private sealed class VirtualEdgeCollection(VirtualNodeState owner) : IAsyncCollection<EdgeBacking> {
-        ICollection<EdgeBacking> innerCollection = new List<EdgeBacking>();
+    private sealed class VirtualEdgeCollection(VirtualNodeState owner) : IAsyncCollection<CarrierEdgeBacking> {
+        ICollection<CarrierEdgeBacking> innerCollection = new List<CarrierEdgeBacking>();
 
-        public async Task<EdgeBacking> Add(EdgeBacking item) {
+        public async Task<CarrierEdgeBacking> Add(CarrierEdgeBacking item) {
             innerCollection.Add(item);
             await owner.AddEdge(item);
             return item;
         }
-        public Task Remove(EdgeBacking item) {
+        public Task Remove(CarrierEdgeBacking item) {
             innerCollection.Remove(item);
             return owner.RemoveEdge(item);
         }
@@ -99,8 +99,8 @@ internal sealed class VirtualNodeState : NodeBacking {
             await foreach (var node in owner.Nodes)
                 await owner.DisconnectFrom(node);
         }
-        public async Task<bool> Contains(EdgeBacking item) => innerCollection.Any(edge => Connects(edge, item.Node1.GlobalId, item.Node2.GlobalId));
+        public async Task<bool> Contains(CarrierEdgeBacking item) => innerCollection.Any(edge => Connects(edge, item.Node1.GlobalId, item.Node2.GlobalId));
 
-        IAsyncEnumerator<EdgeBacking> IAsyncEnumerable<EdgeBacking>.GetAsyncEnumerator(CancellationToken t) => innerCollection.ToAsyncEnumerable().GetAsyncEnumerator(t);
+        IAsyncEnumerator<CarrierEdgeBacking> IAsyncEnumerable<CarrierEdgeBacking>.GetAsyncEnumerator(CancellationToken t) => innerCollection.ToAsyncEnumerable().GetAsyncEnumerator(t);
     }
 }

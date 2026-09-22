@@ -10,8 +10,8 @@ namespace GraphData.Compiler.Adapters;
 public static class RawSubgraphSnapshotAdapter
 {
     public static TypedGraphSnapshot Create(
-        Subgraph subgraph,
-        Func<global::Node, IReadOnlyList<float>> featureSelector,
+        CarrierSubgraph subgraph,
+        Func<global::CarrierNode, IReadOnlyList<float>> featureSelector,
         string nodeTypeKey = "raw-node",
         string relationTypeKey = "raw-edge")
     {

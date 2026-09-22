@@ -33,7 +33,7 @@ internal static class NodeTypeFieldDiscovery
                 continue;
             }
 
-            if (typeof(Node).IsAssignableFrom(valueType)) {
+            if (typeof(CarrierNode).IsAssignableFrom(valueType)) {
                 builder.Field(new NodeFieldDefinition(
                     member.Name,
                     NodeFieldValueKind.Node,

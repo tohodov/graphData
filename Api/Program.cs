@@ -1,8 +1,7 @@
 using System.Reflection;
 using GraphData.Api.Runtime;
-using GraphData.Core.Extensions;
 using GraphData.Core.Services;
-using Storage;
+using GraphData.Typed;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,15 +11,17 @@ builder.Services
 builder.Services.AddOpenApi(options => options.AddDocumentTransformer<SearchSelectorOpenApiDocumentTransformer>());
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<ICancellationTokenAccessor, HttpContextCancellationTokenAccessor>();
-builder.Services.AddDomain();
-builder.Services.AddSymLinkStorage(builder.Configuration.GetSection("GraphStorage"));
+builder.Services.AddConfiguredGraphStorage(builder.Configuration);
 
 var app = builder.Build();
 var isOpenApiDocumentGeneration = Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider";
 
 if (!isOpenApiDocumentGeneration)
 {
-    await app.Services.GetRequiredService<Graph>().OpenAsync().ConfigureAwait(false);
+    if (app.Services.GetRequiredService<GraphStorageSelection>().Mode == GraphStorageMode.Legacy)
+        await app.Services.GetRequiredService<CarrierGraph>().OpenAsync().ConfigureAwait(false);
+    else
+        _ = app.Services.GetRequiredService<ITypedGraph>();
 }
 
 if (app.Environment.IsDevelopment())
@@ -29,6 +30,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseRouting();
+app.UseMiddleware<TypedGraphCompatibilityMiddleware>();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 

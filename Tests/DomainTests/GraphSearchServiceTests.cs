@@ -266,7 +266,7 @@ public sealed class GraphSearchServiceTests : StorageTests
         var first = await Storage.Create("first");
         var second = await Storage.Create("second");
 
-        var service = new GraphSearchService(Storage);
+        var service = new CarrierGraphSearchService(Storage);
         var matches = new List<NodeSearchMatch>();
         await foreach (var match in service.SearchNodesStreamAsync(new NodeSearchQuery
         {
@@ -297,7 +297,7 @@ public sealed class GraphSearchServiceTests : StorageTests
                 laterCandidateWasRead = true;
                 throw new AssertFailedException("Search inspected a later candidate before yielding the first match.");
             });
-        var service = new GraphSearchService(new StreamingProbeStorage(first, laterCandidate));
+        var service = new CarrierGraphSearchService(new StreamingProbeStorage(first, laterCandidate));
 
         await using var matches = service.SearchNodesStreamAsync(new NodeSearchQuery
         {
@@ -315,7 +315,7 @@ public sealed class GraphSearchServiceTests : StorageTests
         IGraphStorage storage,
         NodeSearchQuery query)
     {
-        return await new GraphSearchService(storage).SearchNodesStreamAsync(query).ToArrayAsync();
+        return await new CarrierGraphSearchService(storage).SearchNodesStreamAsync(query).ToArrayAsync();
     }
 
     private static AllNodeSearchExpression All(params NodeSearchExpression[] expressions)
@@ -391,14 +391,14 @@ public sealed class GraphSearchServiceTests : StorageTests
         return new NodeLiteralSearchSelector { Name = name };
     }
 
-    private static async Task ConnectPath(IGraphStorage storage, NodeBacking first, params object[] path)
+    private static async Task ConnectPath(IGraphStorage storage, CarrierNodeBacking first, params object[] path)
     {
         var current = first;
         foreach (var segment in path)
         {
             var next = segment switch
             {
-                NodeBacking node => node,
+                CarrierNodeBacking node => node,
                 string name => await storage.Create(new(name)),
                 _ => throw new ArgumentException("Path segment must be a node or a node name.", nameof(path))
             };
@@ -408,20 +408,20 @@ public sealed class GraphSearchServiceTests : StorageTests
         }
     }
 
-    private sealed class StreamingProbeStorage(params NodeBacking[] nodes) : IGraphStorage
+    private sealed class StreamingProbeStorage(params CarrierNodeBacking[] nodes) : IGraphStorage
     {
         public Task Disconnect(NodeRef sourcePath, NodeRef targetPath) => throw new NotSupportedException();
-        Task<NodeBacking> IGraphStorage.Create(NodeLocalId name, NodeRef? parent, IDictionary<string, string>? attributes) => throw new NotImplementedException();
-        Task<NodeBacking?> IGraphStorage.Get(NodeRef path) => throw new NotImplementedException();
+        Task<CarrierNodeBacking> IGraphStorage.Create(NodeLocalId name, NodeRef? parent, IDictionary<string, string>? attributes) => throw new NotImplementedException();
+        Task<CarrierNodeBacking?> IGraphStorage.Get(NodeRef path) => throw new NotImplementedException();
         Task IGraphStorage.Delete(NodeRef path) => throw new NotImplementedException();
         Task IGraphStorage.Connect(NodeRef sourcePath, NodeRef targetPath) => throw new NotImplementedException();
         Task IGraphStorage.Disconnect(NodeRef sourcePath, NodeRef targetPath) => throw new NotImplementedException();
-        IAsyncEnumerable<NodeBacking> IGraphStorage.GetNeighbors(NodeRef path) => throw new NotImplementedException();
-        IAsyncEnumerable<NodeBacking> IGraphStorage.GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) => throw new NotImplementedException();
-        NodeBacking IGraphStorage.Root => throw new NotImplementedException();
-        Task IGraphStorage.Delete(NodeBacking node) => throw new NotImplementedException();
+        IAsyncEnumerable<CarrierNodeBacking> IGraphStorage.GetNeighbors(NodeRef path) => throw new NotImplementedException();
+        IAsyncEnumerable<CarrierNodeBacking> IGraphStorage.GetCommonIntersection(NodeRef first, NodeRef second, params NodeRef[] other) => throw new NotImplementedException();
+        CarrierNodeBacking IGraphStorage.Root => throw new NotImplementedException();
+        Task IGraphStorage.Delete(CarrierNodeBacking node) => throw new NotImplementedException();
 
-        async IAsyncEnumerable<NodeBacking> IGraphStorage.EnumerateNodesAsync([EnumeratorCancellation] CancellationToken cancellationToken) {
+        async IAsyncEnumerable<CarrierNodeBacking> IGraphStorage.EnumerateNodesAsync([EnumeratorCancellation] CancellationToken cancellationToken) {
             foreach (var node in nodes) {
                 yield return node;
                 await Task.Yield();
@@ -429,7 +429,7 @@ public sealed class GraphSearchServiceTests : StorageTests
         }
     }
 
-    private sealed class StreamingProbeNode : NodeBacking
+    private sealed class StreamingProbeNode : CarrierNodeBacking
     {
         private readonly Func<IReadOnlyDictionary<string, string>> _readAttributes;
 
@@ -444,9 +444,9 @@ public sealed class GraphSearchServiceTests : StorageTests
 
         public override InternalId GlobalId { get; }
 
-        public override IAsyncCollection<EdgeBacking> Edges => throw new NotSupportedException();
+        public override IAsyncCollection<CarrierEdgeBacking> Edges => throw new NotSupportedException();
 
-        public override IAsyncCollection<NodeBacking> Nodes => throw new NotSupportedException();
+        public override IAsyncCollection<CarrierNodeBacking> Nodes => throw new NotSupportedException();
 
         public override IDictionary<string, string> Attributes
         {

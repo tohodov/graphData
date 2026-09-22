@@ -75,7 +75,7 @@ var expected = new CpuMessagePassingExecutor().Execute(program);
 - требует один node wrapper на каждый `GlobalId` и детерминированно отклоняет дубликаты;
 - дедуплицирует физические связи по паре endpoint `GlobalId`;
 - сортирует узлы детерминированно;
-- отбрасывает frontier-рёбра, второй endpoint которых не входит в `Subgraph`;
+- отбрасывает frontier-рёбра, второй endpoint которых не входит в `CarrierSubgraph`;
 - преобразует каждое неориентированное raw-ребро в две directed relations веса `1`;
 - получает features только через явный callback и не выводит направление, тип или вес из `Attributes`.
 

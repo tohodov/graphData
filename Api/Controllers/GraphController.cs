@@ -13,15 +13,15 @@ namespace GraphData.Api.Controllers;
 
 [ApiController]
 [Route("api/graph")]
-public sealed class GraphController(GraphService graph) : ControllerBase {
+public sealed class GraphController(CarrierGraphService graph) : ControllerBase {
     static readonly JsonSerializerOptions StreamJsonOptions = GraphJsonSerializerOptions.Create();
 
-    readonly GraphService graph = graph;
+    readonly CarrierGraphService graph = graph;
 
     [HttpGet("nodes")]
     public async Task<ActionResult<NodeResponse>> GetNodeAsync([FromQuery] string[] globalId) {
         var result = await graph.GetNode(new NodePath(globalId));
-        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
+        return ToActionResult<CarrierNode, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
     [HttpGet("nodes/{globalId}/neighbor/{localId}")]
@@ -33,12 +33,12 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
             .Select(x => new NodeLocalId(x));
         var path = new NodePath(segments);
         var result = await graph.GetNode(path, localId);
-        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
+        return ToActionResult<CarrierNode, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
     [HttpPost("nodes")]
     public async Task<ActionResult<NodeResponse>> CreateNodeAsync([FromBody] CreateNodeRequest request) {
-        ServiceResult<Node> result;
+        ServiceResult<CarrierNode> result;
         try {
             result = await graph.CreateNode((NodeLocalId)request.LocalId, (NodePath?)request.ParentPath, attributes: request.Attributes);
         } catch (Exception ex) {
@@ -50,7 +50,7 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
             var location = Url?.ActionLink(nameof(GetNodeAsync), values: new { globalId }) ?? $"/api/graph/nodes?{string.Join('&', globalId.Select(static segment => $"globalId={Uri.EscapeDataString(segment)}"))}";
             return Created(location, GraphResponseMapper.ToNodeResponse(result.Value));
         }
-        return ToActionResult<Node, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
+        return ToActionResult<CarrierNode, NodeResponse>(result, static node => GraphResponseMapper.ToNodeResponse(node));
     }
 
     [HttpPut("nodes")]
@@ -103,7 +103,7 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
     [HttpPut("nodes/type")]
     public async Task<ActionResult<SubgraphResponse>> AssignNodeTypeAsync([FromBody] AssignNodeTypeRequest request) {
         var result = await graph.AssignNodeTypeAsync(new NodePath(request.InternalId.Select(x => new NodeLocalId(x))), new NodePath(request.TypeGlobalId.Select(x => new NodeLocalId(x))));
-        return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
+        return ToActionResult<CarrierSubgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
     [HttpPut("edges/type")]
@@ -112,13 +112,13 @@ public sealed class GraphController(GraphService graph) : ControllerBase {
             new NodePath(request.Node1InternalId.Select(x => new NodeLocalId(x))),
             new NodePath(request.Node2InternalId.Select(x => new NodeLocalId(x))),
             new NodePath(request.TypeGlobalId.Select(x => new NodeLocalId(x))));
-        return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
+        return ToActionResult<CarrierSubgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
     [HttpPost("subgraph")]
     public async Task<ActionResult<SubgraphResponse>> GetSubgraphAsync([FromBody] SubgraphRequest request) {
         var result = await graph.GetSubgraph(request.Paths.Select(x => new NodePath(x)), request.MaxDepth);
-        return ToActionResult<Subgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
+        return ToActionResult<CarrierSubgraph, SubgraphResponse>(result, GraphResponseMapper.ToSubgraphResponse);
     }
 
     [HttpPost("search/nodes")]

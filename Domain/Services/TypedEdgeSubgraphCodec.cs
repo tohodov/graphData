@@ -13,11 +13,11 @@ internal static class TypedEdgeSubgraphCodec
     private static readonly NodeLocalId DefinitionLocalId = new("Definition");
     private static readonly NodeLocalId FieldsLocalId = new("Fields");
 
-    public static async Task<NodeBacking> CreateAsync(
+    public static async Task<CarrierNodeBacking> CreateAsync(
         IGraphStorage storage,
         NodeLocalId relationLocalId,
         TypedEdgeDefinition definition,
-        IReadOnlyDictionary<string, IReadOnlyCollection<NodeBacking>> participants)
+        IReadOnlyDictionary<string, IReadOnlyCollection<CarrierNodeBacking>> participants)
     {
         foreach (var endpoint in definition.Endpoints) {
             if (!participants.TryGetValue(endpoint.Name, out var endpointParticipants))
@@ -27,7 +27,7 @@ internal static class TypedEdgeSubgraphCodec
                     $"Endpoint '{endpoint.Name}' expects {endpoint.Cardinality} participants, but got {endpointParticipants.Count}.");
         }
 
-        NodeBacking? relation = null;
+        CarrierNodeBacking? relation = null;
         try {
             relation = await storage.Create(relationLocalId).ConfigureAwait(false);
             await storage.Connect(relation.GlobalId, definition.Type.GlobalId).ConfigureAwait(false);
@@ -52,8 +52,8 @@ internal static class TypedEdgeSubgraphCodec
     }
 
     public static async Task<TypedEdgeInstance> ReadAsync(
-        Graph graph,
-        NodeBacking relation,
+        CarrierGraph graph,
+        CarrierNodeBacking relation,
         TypedEdgeDefinition definition)
     {
         if (!await HasClassifierAsync(relation, definition.Type.GlobalId).ConfigureAwait(false))
@@ -63,7 +63,7 @@ internal static class TypedEdgeSubgraphCodec
         var relationNeighbors = await relation.Nodes.ToArrayAsync().ConfigureAwait(false);
         var endpoints = new List<TypedEdgeEndpointInstance>(definition.Endpoints.Count);
         foreach (var endpoint in definition.Endpoints) {
-            var endpointNodes = new List<NodeBacking>();
+            var endpointNodes = new List<CarrierNodeBacking>();
             foreach (var candidate in relationNeighbors) {
                 if (!IsDirectChildOf(candidate.GlobalId, relation.GlobalId))
                     continue;
@@ -87,19 +87,19 @@ internal static class TypedEdgeSubgraphCodec
 
             endpoints.Add(new TypedEdgeEndpointInstance(
                 endpoint,
-                new Node(endpointNode),
-                participantStates.Select(static node => new Node(node)).ToArray()));
+                new CarrierNode(endpointNode),
+                participantStates.Select(static node => new CarrierNode(node)).ToArray()));
         }
 
-        return new TypedEdgeInstance(new Node(relation), definition, endpoints);
+        return new TypedEdgeInstance(new CarrierNode(relation), definition, endpoints);
     }
 
-    public static async Task<IReadOnlyCollection<NodeBacking>> FindIncidentRelationsAsync(
-        NodeBacking participant,
+    public static async Task<IReadOnlyCollection<CarrierNodeBacking>> FindIncidentRelationsAsync(
+        CarrierNodeBacking participant,
         TypedEdgeDefinition definition,
         TypedEdgeEndpointDefinition endpoint)
     {
-        var relations = new Dictionary<InternalId, NodeBacking>();
+        var relations = new Dictionary<InternalId, CarrierNodeBacking>();
         await foreach (var endpointNode in participant.Nodes.ConfigureAwait(false)) {
             if (!await HasMemberClassifierAsync(endpointNode, endpoint.MemberTypeId).ConfigureAwait(false))
                 continue;
@@ -115,21 +115,21 @@ internal static class TypedEdgeSubgraphCodec
         return relations.Values.ToArray();
     }
 
-    public static async Task<bool> HasClassifierAsync(NodeBacking relation, InternalId typeId)
+    public static async Task<bool> HasClassifierAsync(CarrierNodeBacking relation, InternalId typeId)
     {
         return await relation.Nodes
             .AnyAsync(node => node.GlobalId == typeId)
             .ConfigureAwait(false);
     }
 
-    public static async Task<bool> HasMemberClassifierAsync(NodeBacking endpoint, InternalId memberTypeId)
+    public static async Task<bool> HasMemberClassifierAsync(CarrierNodeBacking endpoint, InternalId memberTypeId)
     {
         return await endpoint.Nodes
             .AnyAsync(node => node.GlobalId == memberTypeId)
             .ConfigureAwait(false);
     }
 
-    public static bool HasMemberClassifier(Node endpoint, InternalId memberTypeId) =>
+    public static bool HasMemberClassifier(CarrierNode endpoint, InternalId memberTypeId) =>
         endpoint.Nodes.Any(node => node.GlobalId == memberTypeId);
 
     public static InternalId MemberTypeId(NodeType relationType, string memberName) {
@@ -144,7 +144,7 @@ internal static class TypedEdgeSubgraphCodec
             && parentSegments.SequenceEqual(nodeSegments.Take(parentSegments.Length));
     }
 
-    private static async Task<NodeBacking> EnsureMemberTypeAsync(
+    private static async Task<CarrierNodeBacking> EnsureMemberTypeAsync(
         IGraphStorage storage,
         NodeType relationType,
         TypedEdgeEndpointDefinition endpoint)

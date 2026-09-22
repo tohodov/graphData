@@ -261,8 +261,8 @@ public sealed class GraphDataMcpToolWrapperTests : StorageTests {
     }
 
     private async Task<GraphDataTools> CreateTools() {
-        var graph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
-        return new GraphDataTools(new GraphService(graph, new GraphSearchService(Storage)), graph);
+        var graph = await global::CarrierGraph.OpenAsync(Storage, GraphSchemaRegistry.Create());
+        return new GraphDataTools(new CarrierGraphService(graph, new CarrierGraphSearchService(Storage)), graph);
     }
 
     private static void AssertSuccess(string json) {

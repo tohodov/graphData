@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Abstractions\Abstractions.csproj" />
+    <ProjectReference Include="..\TypedGraph\TypedGraph.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -20,6 +20,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Domain\1_ Domain.csproj" />
     <ProjectReference Include="..\SymLinkStorage\1_SymLinkStorage.csproj" />
+    <ProjectReference Include="..\TypedGraph\TypedGraph.csproj" />
+    <ProjectReference Include="..\SemanticStorage\SemanticStorage.csproj" />
   </ItemGroup>
 
 </Project>

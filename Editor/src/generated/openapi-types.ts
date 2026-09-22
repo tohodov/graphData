@@ -406,6 +406,341 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/typed-graph/types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TypedTypeResponse"][];
+                        "application/json": components["schemas"]["TypedTypeResponse"][];
+                        "text/json": components["schemas"]["TypedTypeResponse"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TypedTypeRequest"];
+                    "text/json": components["schemas"]["TypedTypeRequest"];
+                    "application/*+json": components["schemas"]["TypedTypeRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TypedTypeResponse"];
+                        "application/json": components["schemas"]["TypedTypeResponse"];
+                        "text/json": components["schemas"]["TypedTypeResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/typed-graph/types/item": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TypedTypeResponse"];
+                        "application/json": components["schemas"]["TypedTypeResponse"];
+                        "text/json": components["schemas"]["TypedTypeResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/typed-graph/elements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TypedElementResponse"];
+                        "application/json": components["schemas"]["TypedElementResponse"];
+                        "text/json": components["schemas"]["TypedElementResponse"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: {
+                    id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TypedOperationResponse"];
+                        "application/json": components["schemas"]["TypedOperationResponse"];
+                        "text/json": components["schemas"]["TypedOperationResponse"];
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/typed-graph/relations/incident": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    participantId?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TypedElementResponse"][];
+                        "application/json": components["schemas"]["TypedElementResponse"][];
+                        "text/json": components["schemas"]["TypedElementResponse"][];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/typed-graph/instances": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TypedInstanceRequest"];
+                    "text/json": components["schemas"]["TypedInstanceRequest"];
+                    "application/*+json": components["schemas"]["TypedInstanceRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TypedElementResponse"];
+                        "application/json": components["schemas"]["TypedElementResponse"];
+                        "text/json": components["schemas"]["TypedElementResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/typed-graph/relations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TypedRelationRequest"];
+                    "text/json": components["schemas"]["TypedRelationRequest"];
+                    "application/*+json": components["schemas"]["TypedRelationRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TypedElementResponse"];
+                        "application/json": components["schemas"]["TypedElementResponse"];
+                        "text/json": components["schemas"]["TypedElementResponse"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/typed-graph/elements/attributes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: {
+            parameters: {
+                query?: {
+                    id?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["TypedAttributesRequest"];
+                    "text/json": components["schemas"]["TypedAttributesRequest"];
+                    "application/*+json": components["schemas"]["TypedAttributesRequest"];
+                };
+            };
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": components["schemas"]["TypedElementResponse"];
+                        "application/json": components["schemas"]["TypedElementResponse"];
+                        "text/json": components["schemas"]["TypedElementResponse"];
+                    };
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/ui/settings": {
         parameters: {
             query?: never;
@@ -618,6 +953,73 @@ export interface components {
         SubgraphResponse: {
             nodes?: components["schemas"]["NodeResponse"][];
             edges?: components["schemas"]["EdgeResponse"][];
+        };
+        TypedAttributeDefinitionDto: {
+            name: string;
+            kind: components["schemas"]["TypedScalarKindDto"];
+            required?: boolean;
+        };
+        TypedAttributesRequest: {
+            attributes: {
+                [key: string]: string;
+            };
+        };
+        /** @enum {unknown} */
+        TypedElementKindDto: "Instance" | "Relation";
+        TypedElementResponse: {
+            id: string;
+            kind: components["schemas"]["TypedElementKindDto"];
+            typeIds: string[];
+            attributes: {
+                [key: string]: string;
+            };
+            members: {
+                [key: string]: string[];
+            };
+        };
+        TypedInstanceRequest: {
+            id: string;
+            typeIds?: string[];
+            attributes?: {
+                [key: string]: string;
+            };
+        };
+        TypedMemberDefinitionDto: {
+            name: string;
+            typeId?: null | string;
+            /** Format: int32 */
+            min?: number | string;
+            /** Format: int32 */
+            max?: null | number | string;
+        };
+        TypedOperationResponse: Record<string, never>;
+        TypedRelationRequest: {
+            id: string;
+            typeId: string;
+            members: {
+                [key: string]: string[];
+            };
+            attributes?: {
+                [key: string]: string;
+            };
+        };
+        /** @enum {unknown} */
+        TypedScalarKindDto: "String" | "Boolean" | "Int32" | "Int64" | "Double" | "Decimal" | "Guid" | "DateTime";
+        TypedTypeRequest: {
+            id: string;
+            kind: components["schemas"]["TypedElementKindDto"];
+            isAbstract?: boolean;
+            requiredTypeIds?: string[];
+            members?: components["schemas"]["TypedMemberDefinitionDto"][];
+            attributes?: components["schemas"]["TypedAttributeDefinitionDto"][];
+        };
+        TypedTypeResponse: {
+            id: string;
+            kind: components["schemas"]["TypedElementKindDto"];
+            isAbstract: boolean;
+            requiredTypeIds: string[];
+            members: components["schemas"]["TypedMemberDefinitionDto"][];
+            attributes: components["schemas"]["TypedAttributeDefinitionDto"][];
         };
         UiBasisResponse: {
             nodeTypeRoot: string;

@@ -5,7 +5,7 @@ namespace GraphData.Api.Services;
 
 public static class GraphResponseMapper
 {
-    public static SubgraphResponse ToSubgraphResponse(Subgraph subgraph)
+    public static SubgraphResponse ToSubgraphResponse(CarrierSubgraph subgraph)
     {
         var nodes = subgraph.Nodes.ToArray();
         var nodeIds = nodes
@@ -26,7 +26,7 @@ public static class GraphResponseMapper
     }
 
     public static NodeResponse ToNodeResponse(
-        Node node,
+        CarrierNode node,
         IEnumerable<EdgeResponse>? edges = null)
     {
         return new NodeResponse
@@ -52,19 +52,19 @@ public static class GraphResponseMapper
         };
     }
 
-    public static EdgeResponse ToEdgeResponse(Node source, Node target)
+    public static EdgeResponse ToEdgeResponse(CarrierNode source, CarrierNode target)
     {
         return string.Compare(source.GlobalId.ToString(), target.GlobalId.ToString(), StringComparison.OrdinalIgnoreCase) <= 0
             ? ToOrderedEdgeResponse(source, target)
             : ToOrderedEdgeResponse(target, source);
     }
 
-    private static EdgeResponse ToEdgeResponse(Edge edge)
+    private static EdgeResponse ToEdgeResponse(CarrierEdge edge)
     {
         return ToEdgeResponse(edge.Node1, edge.Node2);
     }
 
-    private static EdgeResponse ToNodeEdgeResponse(Node node, Edge edge)
+    private static EdgeResponse ToNodeEdgeResponse(CarrierNode node, CarrierEdge edge)
     {
         var neighbor = edge.Node1.GlobalId == node.GlobalId
             ? edge.Node2
@@ -76,7 +76,7 @@ public static class GraphResponseMapper
         };
     }
 
-    private static EdgeResponse ToOrderedEdgeResponse(Node source, Node target)
+    private static EdgeResponse ToOrderedEdgeResponse(CarrierNode source, CarrierNode target)
     {
         return new EdgeResponse
         {

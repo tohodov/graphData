@@ -1,5 +1,7 @@
 # Domain
 
+Текущая граница двух представлений описана в [типизированном контракте хранения](../docs/typed-storage.md). `CarrierGraph`, `CarrierNode`, `CarrierEdge` и `CarrierGraphService` обозначают прежний граф-носитель; его формат сохранён. Новый код потребителей должен использовать `ITypedGraph`. Ниже сохранено подробное описание старой грамматики и её специального API совместимости.
+
 ## Назначение
 
 `Domain` отвечает за типизированный смысл графа. `IGraphStorage` остается низкоуровневым контрактом carrier-графа: он хранит узлы, одинаковые неориентированные raw-связи, пути и атрибуты, но не знает, что такое тип, type-instance, member или semantic edge. Для одной пары различных узлов carrier допускает только одно неориентированное ребро: существующая hierarchy-связь и junction не образуют параллельных ребер, а повторное соединение — ошибка. Целевое видение не требует расширять storage-контракт.
@@ -10,17 +12,17 @@
 
 Этот раздел описывает текущий сквозной срез, а не финальную метамодель.
 
-- `Graph` открывает storage и материализует зарегистрированные C#-типы в дефолтном каталоге `NodeTypes`.
+- `CarrierGraph` открывает storage и материализует зарегистрированные C#-типы в дефолтном каталоге `NodeTypes`.
 - `GraphSchemaRegistry` и `NodeTypeFieldDiscovery` читают public C# fields/properties классов `NodeType`. `NodeTypeDefinition`, `NodeFieldDefinition`, `NodeTypeBuilder`, `NodeSlotDefinition` и `NodeSlotCardinality` описывают локальный DSL одного типа.
 - Dynamic type definitions пока хранятся в подграфе `Definition/Fields/Slots`; это переходное кодирование локальной дефиниции, а не полный schema snapshot.
-- `GraphService.AssignNodeTypeAsync` строит для каждого effective type отдельный typed `InstanceOf` subgraph. Прямая raw-связь `node — type` пока дублируется как legacy/UI compatibility index; semantic read предпочитает materialized witness.
-- `RequiresEdge` описывает `requires` обычным typed edge. `GraphService` материализует closure с `visited`, не дублирует общий base в diamond и завершает обход на циклах.
-- Slot validation пока считает любых соседей допустимого типа. Два именованных typed-member с пересекающимся target type заранее отклоняются как неоднозначные до появления member instances; plain `Node`-поля и primitive values всё ещё остаются переходным нестрогим срезом.
+- `CarrierGraphService.AssignNodeTypeAsync` строит для каждого effective type отдельный typed `InstanceOf` subgraph. Прямая raw-связь `node — type` пока дублируется как legacy/UI compatibility index; semantic read предпочитает materialized witness.
+- `RequiresEdge` описывает `requires` обычным typed edge. `CarrierGraphService` материализует closure с `visited`, не дублирует общий base в diamond и завершает обход на циклах.
+- Slot validation пока считает любых соседей допустимого типа. Два именованных typed-member с пересекающимся target type заранее отклоняются как неоднозначные до появления member instances; plain `CarrierNode`-поля и primitive values всё ещё остаются переходным нестрогим срезом.
 - `TypedEdgeSubgraphCodec` создаёт и читает переходную raw-грамматику relation node. Каждый endpoint occurrence связан с отдельным member classifier; имя occurrence технически уникально в relation node и не кодирует доменный смысл endpoint. `GetTypedEdgeInstanceAsync` восстанавливает `TypedEdgeInstance` и проверяет endpoint cardinality.
 - Обе формы `ChangeEdgeTypeAsync` используют этот codec. При повторной типизации один найденный carrier заменяется, а несколько carrier с теми же участниками считаются неоднозначностью и не изменяются.
-- `GetSemanticNodeAsync` строит runtime `InstanceNode` с коллекцией `NodeTypeInstance`, восстанавливает materialized witnesses после повторного открытия `Graph` и принимает явный basis вне `NodeTypes`.
-- `Node` и `Edge` остаются важными активными сущностями над backing-состоянием. Raw `GetNode` всегда возвращает обычный `Node`, чтобы carrier API оставался доступен даже при повреждённой семантике. Явный `GetSemanticNodeAsync` возвращает `InstanceNode`; его `InstanceOf` incidences восстанавливаются из прочитанных type-instances.
-- Raw `GetSubgraph(maxDepth)` и `GraphSearchService` остаются корректными инструментами исследования carrier-графа. Их depth не должен определять type closure.
+- `GetSemanticNodeAsync` строит runtime `InstanceNode` с коллекцией `NodeTypeInstance`, восстанавливает materialized witnesses после повторного открытия `CarrierGraph` и принимает явный basis вне `NodeTypes`.
+- `CarrierNode` и `CarrierEdge` остаются важными активными сущностями над backing-состоянием. Raw `GetNode` всегда возвращает обычный `CarrierNode`, чтобы carrier API оставался доступен даже при повреждённой семантике. Явный `GetSemanticNodeAsync` возвращает `InstanceNode`; его `InstanceOf` incidences восстанавливаются из прочитанных type-instances.
+- Raw `GetSubgraph(maxDepth)` и `CarrierGraphSearchService` остаются корректными инструментами исследования carrier-графа. Их depth не должен определять type closure.
 
 ## Согласованная runtime-проекция
 
@@ -79,10 +81,10 @@ Type graph хранится в том же carrier-графе: types, edge types
 ## Границы публичных контрактов
 
 - Storage API и raw-поведение `Create/Get/Connect/Disconnect/GetSubgraph/Search` не меняются ради semantic projection.
-- `GraphService` остаётся async-границей доменных операций для API и MCP.
-- Активные сущности `Node` и `Edge` остаются важным публичным способом работы с `Domain`; они и `GraphService` должны давать одну и ту же semantic interpretation.
+- `CarrierGraphService` остаётся async-границей доменных операций для API и MCP.
+- Активные сущности `CarrierNode` и `CarrierEdge` остаются важным публичным способом работы с `Domain`; они и `CarrierGraphService` должны давать одну и ту же semantic interpretation.
 - Выбор basis является входом runtime-проекции, а не глобальной мутацией storage.
-- `NodeBacking.Attributes` остаются raw user data/escape hatch и не являются источником типовой логики.
+- `CarrierNodeBacking.Attributes` остаются raw user data/escape hatch и не являются источником типовой логики.
 
 ## Чего не добавлять
 

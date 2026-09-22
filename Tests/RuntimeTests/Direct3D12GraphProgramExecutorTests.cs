@@ -54,11 +54,11 @@ public sealed class Direct3D12GraphProgramExecutorTests
     [TestCategory("GPU")]
     public void DomainRuntime_ShouldCompileAndExecuteRawChunksOnHardware()
     {
-        var a = new global::Node("a");
-        var b = new global::Node("b");
-        var c = new global::Node("c");
-        a.Edges.Add(new global::Edge(a, b));
-        b.Edges.Add(new global::Edge(b, c));
+        var a = new global::CarrierNode("a");
+        var b = new global::CarrierNode("b");
+        var c = new global::CarrierNode("c");
+        a.Edges.Add(new global::CarrierEdge(a, b));
+        b.Edges.Add(new global::CarrierEdge(b, c));
 
         Direct3D12GraphProgramExecutor executor;
         try
@@ -73,7 +73,7 @@ public sealed class Direct3D12GraphProgramExecutorTests
 
         using var runtime = new DomainGraphGpuRuntime(executor, ownsExecutor: true);
         var result = runtime.Execute(
-            new Subgraph { Nodes = [c, b, a] },
+            new CarrierSubgraph { Nodes = [c, b, a] },
             node => [node.LocalId.ToString() switch { "a" => 1f, "b" => 2f, _ => 3f }],
             new MessagePassingSpecification(
                 1,

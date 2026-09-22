@@ -10,11 +10,11 @@ using ModelContextProtocol.Server;
 namespace GraphData.Mcp.Tools;
 
 [McpServerToolType]
-public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph) {
+public sealed class GraphDataTools(CarrierGraphService graph, global::CarrierGraph schemaGraph) {
     private static readonly JsonSerializerOptions JsonOptions = CreateJsonOptions();
 
-    private readonly GraphService graph = graph;
-    private readonly global::Graph schemaGraph = schemaGraph;
+    private readonly CarrierGraphService graph = graph;
+    private readonly global::CarrierGraph schemaGraph = schemaGraph;
 
     [McpServerTool]
     [Description("Gets a graph node by GlobalId and returns its LocalId, GlobalId, and edges.")]
@@ -467,10 +467,10 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
             if (nodeType.Status != ServiceResultStatus.Ok)
                 return ServiceResult<NodeFieldDefinition>.From(nodeType);
 
-            var clrType = ReadOptionalClrType(value, defaultType: typeof(Node));
+            var clrType = ReadOptionalClrType(value, defaultType: typeof(CarrierNode));
             if (clrType.Status != ServiceResultStatus.Ok || clrType.Value is null)
                 return ServiceResult<NodeFieldDefinition>.From(clrType);
-            if (!typeof(Node).IsAssignableFrom(clrType.Value))
+            if (!typeof(CarrierNode).IsAssignableFrom(clrType.Value))
                 return ServiceResult<NodeFieldDefinition>.BadRequest($"Node field '{name}' clrType must be Node or NodeType.");
 
             return ServiceResult<NodeFieldDefinition>.Ok(new NodeFieldDefinition(
@@ -485,7 +485,7 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         var primitiveType = ReadOptionalClrType(value, defaultType: null);
         if (primitiveType.Status != ServiceResultStatus.Ok || primitiveType.Value is null)
             return ServiceResult<NodeFieldDefinition>.BadRequest($"Primitive field '{name}' must specify clrType.");
-        if (typeof(Node).IsAssignableFrom(primitiveType.Value))
+        if (typeof(CarrierNode).IsAssignableFrom(primitiveType.Value))
             return ServiceResult<NodeFieldDefinition>.BadRequest($"Primitive field '{name}' cannot use node clrType.");
 
         return ServiceResult<NodeFieldDefinition>.Ok(new NodeFieldDefinition(
@@ -762,7 +762,7 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
             "datetime" or "system.datetime" => typeof(DateTime),
             "datetimeoffset" or "system.datetimeoffset" => typeof(DateTimeOffset),
             "guid" or "system.guid" => typeof(Guid),
-            "node" => typeof(Node),
+            "node" => typeof(CarrierNode),
             "nodetype" => typeof(NodeType),
             _ => Type.GetType(normalized, throwOnError: false, ignoreCase: true)
         };
@@ -940,7 +940,7 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
             contracts[slot.Name] = new McpFieldContract(
                 slot.Name,
                 NodeFieldValueKind.Node,
-                typeof(Node),
+                typeof(CarrierNode),
                 slot.Cardinality,
                 slot.Cardinality.Max != 1,
                 slot.AllowedTypes);
@@ -1027,7 +1027,7 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         };
     }
 
-    private static McpSubgraphResponse ToSubgraphResponse(Subgraph subgraph) {
+    private static McpSubgraphResponse ToSubgraphResponse(CarrierSubgraph subgraph) {
         var nodes = subgraph.Nodes.ToArray();
         var nodeIds = nodes
             .Select(static node => node.GlobalId.ToString())
@@ -1045,7 +1045,7 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         };
     }
 
-    private static McpNodeResponse ToNodeResponse(Node node) {
+    private static McpNodeResponse ToNodeResponse(CarrierNode node) {
         return new McpNodeResponse {
             LocalId = node.LocalId.ToString(),
             InternalId = node.GlobalId.ToString(),
@@ -1080,17 +1080,17 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         };
     }
 
-    private static McpEdgeResponse ToEdgeResponse(Node source, Node target) {
+    private static McpEdgeResponse ToEdgeResponse(CarrierNode source, CarrierNode target) {
         return string.Compare(source.GlobalId.ToString(), target.GlobalId.ToString(), StringComparison.OrdinalIgnoreCase) <= 0
             ? ToOrderedEdgeResponse(source, target)
             : ToOrderedEdgeResponse(target, source);
     }
 
-    private static McpEdgeResponse ToEdgeResponse(Edge edge) {
+    private static McpEdgeResponse ToEdgeResponse(CarrierEdge edge) {
         return ToEdgeResponse(edge.Node1, edge.Node2);
     }
 
-    private static McpEdgeResponse ToNodeEdgeResponse(Node node, Edge edge) {
+    private static McpEdgeResponse ToNodeEdgeResponse(CarrierNode node, CarrierEdge edge) {
         var neighbor = edge.Node1.GlobalId == node.GlobalId
             ? edge.Node2
             : edge.Node1;
@@ -1098,7 +1098,7 @@ public sealed class GraphDataTools(GraphService graph, global::Graph schemaGraph
         return ToOrderedEdgeResponse(edge.Node1, edge.Node2, neighbor.LocalId.ToString());
     }
 
-    private static McpEdgeResponse ToOrderedEdgeResponse(Node source, Node target, string? neighborLocalId = null) {
+    private static McpEdgeResponse ToOrderedEdgeResponse(CarrierNode source, CarrierNode target, string? neighborLocalId = null) {
         if (string.Compare(source.GlobalId.ToString(), target.GlobalId.ToString(), StringComparison.OrdinalIgnoreCase) > 0)
             (source, target) = (target, source);
 

@@ -14,15 +14,15 @@ public sealed class DomainGraphGpuRuntimeTests
     [TestMethod]
     public void Execute_ShouldMergeCoreOutputsAcrossRawGraphChunks()
     {
-        var a = new global::Node("a");
-        var b = new global::Node("b");
-        var c = new global::Node("c");
-        a.Edges.Add(new global::Edge(a, b));
-        b.Edges.Add(new global::Edge(b, c));
+        var a = new global::CarrierNode("a");
+        var b = new global::CarrierNode("b");
+        var c = new global::CarrierNode("c");
+        a.Edges.Add(new global::CarrierEdge(a, b));
+        b.Edges.Add(new global::CarrierEdge(b, c));
         using var runtime = new DomainGraphGpuRuntime(new CpuGraphProgramExecutor(), ownsExecutor: true);
 
         var result = runtime.Execute(
-            new Subgraph { Nodes = [c, a, b] },
+            new CarrierSubgraph { Nodes = [c, a, b] },
             node => [node.LocalId.ToString() switch { "a" => 1f, "b" => 2f, _ => 3f }],
             new MessagePassingSpecification(
                 1,

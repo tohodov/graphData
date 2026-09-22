@@ -36,6 +36,7 @@
     <ProjectReference Include="..\..\Abstractions\Abstractions.csproj" />
     <ProjectReference Include="..\..\Domain\1_ Domain.csproj" />
     <ProjectReference Include="..\..\SymLinkStorage\1_SymLinkStorage.csproj" />
+    <ProjectReference Include="..\..\SemanticStorage\SemanticStorage.csproj" />
     <ProjectReference Include="..\RelevantTests\src\RelevantTests.MSTest\RelevantTests.MSTest.csproj" />
   </ItemGroup>
 
