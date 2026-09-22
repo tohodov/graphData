@@ -266,7 +266,7 @@ public sealed class GraphSearchServiceTests : StorageTests
         var first = await Storage.Create("first");
         var second = await Storage.Create("second");
 
-        var service = new CarrierGraphSearchService(Storage);
+        var service = new GraphSearchService(Storage);
         var matches = new List<NodeSearchMatch>();
         await foreach (var match in service.SearchNodesStreamAsync(new NodeSearchQuery
         {
@@ -297,7 +297,7 @@ public sealed class GraphSearchServiceTests : StorageTests
                 laterCandidateWasRead = true;
                 throw new AssertFailedException("Search inspected a later candidate before yielding the first match.");
             });
-        var service = new CarrierGraphSearchService(new StreamingProbeStorage(first, laterCandidate));
+        var service = new GraphSearchService(new StreamingProbeStorage(first, laterCandidate));
 
         await using var matches = service.SearchNodesStreamAsync(new NodeSearchQuery
         {
@@ -315,7 +315,7 @@ public sealed class GraphSearchServiceTests : StorageTests
         IGraphStorage storage,
         NodeSearchQuery query)
     {
-        return await new CarrierGraphSearchService(storage).SearchNodesStreamAsync(query).ToArrayAsync();
+        return await new GraphSearchService(storage).SearchNodesStreamAsync(query).ToArrayAsync();
     }
 
     private static AllNodeSearchExpression All(params NodeSearchExpression[] expressions)

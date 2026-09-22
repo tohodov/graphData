@@ -56,7 +56,7 @@ builder.Services
     .WithTools(toolTypes, CreateJsonOptions());
 
 var app = builder.Build();
-await app.Services.GetRequiredService<CarrierGraph>().OpenAsync().ConfigureAwait(false);
+await app.Services.GetRequiredService<Graph>().OpenAsync().ConfigureAwait(false);
 await app.RunAsync();
 
 static JsonSerializerOptions CreateJsonOptions() {

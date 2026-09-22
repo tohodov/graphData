@@ -60,7 +60,7 @@ public sealed class GraphSchemaRegistry
 
     public static GraphSchemaRegistry Create(GraphRuntimeTypeOptions options)
     {
-        var assemblies = new[] { typeof(CarrierNode).Assembly }
+        var assemblies = new[] { typeof(Node).Assembly }
             .Concat(options.Assemblies)
             .Distinct()
             .ToArray();
@@ -69,14 +69,14 @@ public sealed class GraphSchemaRegistry
             .Concat(options.Types)
             .Distinct()
             .Where(static type =>
-                (typeof(NodeType).IsAssignableFrom(type) || typeof(CarrierEdge).IsAssignableFrom(type))
+                (typeof(NodeType).IsAssignableFrom(type) || typeof(Edge).IsAssignableFrom(type))
                 && type is { ContainsGenericParameters: false }
                 && (type.IsPublic || type.IsNestedPublic))
-            .Except([typeof(NodeType), typeof(CarrierEdge)])
+            .Except([typeof(NodeType), typeof(Edge)])
             .Select(static x => new RuntimeGraphTypeDefinition(
                 x,
                 NodeType.CreateDefaultLocalId(x),
-                typeof(CarrierEdge).IsAssignableFrom(x) ? GraphElementKind.Edge : GraphElementKind.Node))
+                typeof(Edge).IsAssignableFrom(x) ? GraphElementKind.Edge : GraphElementKind.Node))
             .ToArray();
         var duplicate = candidateTypes
             .GroupBy(static type => type.Id.ToString(), StringComparer.OrdinalIgnoreCase)
@@ -108,7 +108,7 @@ public sealed class GraphSchemaRegistry
                 var builder = new NodeTypeBuilder(typeNode, resolveType);
                 builder.Abstract(clrType.IsAbstract);
                 var hierarchyRoot = descriptor.ElementKind == GraphElementKind.Edge
-                    ? typeof(CarrierEdge)
+                    ? typeof(Edge)
                     : typeof(NodeType);
                 if (clrType.BaseType is { } baseType
                     && baseType != hierarchyRoot

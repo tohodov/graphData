@@ -6,7 +6,7 @@ namespace GraphData.Api.Controllers;
 
 [ApiController]
 [Route("api/ui")]
-public sealed class UiController(CarrierGraph graph) : ControllerBase {
+public sealed class UiController(Graph graph) : ControllerBase {
     [HttpGet("settings")]
     public ActionResult<UiSettingsResponse> GetSettings() {
         return new UiSettingsResponse {

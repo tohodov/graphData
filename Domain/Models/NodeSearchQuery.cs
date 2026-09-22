@@ -198,9 +198,9 @@ public static class SearchOrderDirections
 
 public sealed record NodeSearchMatch
 {
-    public required CarrierNode Node { get; init; }
+    public required Node Node { get; init; }
 
-    public required IReadOnlyDictionary<string, CarrierNode> Bindings { get; init; }
+    public required IReadOnlyDictionary<string, Node> Bindings { get; init; }
 
     public double Score { get; init; }
 

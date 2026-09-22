@@ -36,8 +36,8 @@ public sealed class NodeTypes {
         public CountryNodeType Country = null!;
         public ManufacturerNodeType? ParentCompany = null;
         public IReadOnlyCollection<WeaponNodeType> ProducedWeapons = [];
-        public CarrierNode Headquarters = null!;
-        public CarrierNode? ArchiveNode = null;
+        public Node Headquarters = null!;
+        public Node? ArchiveNode = null;
         public string LegalName = "";
         public int FoundedYear = 0;
         public bool IsActive = false;
@@ -58,7 +58,7 @@ public sealed class NodeTypes {
         }
     }
 
-    public sealed class ManufacturedByEdge : CarrierEdge {
+    public sealed class ManufacturedByEdge : Edge {
         public EdgeWeaponNodeType Weapon = null!;
         public EdgeManufacturerNodeType Manufacturer = null!;
 
@@ -66,10 +66,10 @@ public sealed class NodeTypes {
         }
     }
 
-    public sealed class ShipmentEdge : CarrierEdge {
+    public sealed class ShipmentEdge : Edge {
         public EdgeWeaponNodeType Weapon = null!;
-        public CarrierNode Counterparty = null!;
-        public CarrierNode? OptionalWaypoint = null;
+        public Node Counterparty = null!;
+        public Node? OptionalWaypoint = null;
         public IReadOnlyCollection<EdgeManufacturerNodeType> Manufacturers = [];
         public string Note = "";
 

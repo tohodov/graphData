@@ -23,6 +23,6 @@ public sealed class UiControllerTests : StorageTests {
         Assert.IsNotNull(await Storage.Get(new NodePath("NodeTypes")));
     }
 
-    private Task<CarrierGraph> CreateGraph(GraphSchemaRegistry schemaRegistry) =>
-        CarrierGraph.OpenAsync(Storage, schemaRegistry);
+    private Task<Graph> CreateGraph(GraphSchemaRegistry schemaRegistry) =>
+        Graph.OpenAsync(Storage, schemaRegistry);
 }

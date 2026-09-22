@@ -345,13 +345,13 @@ public sealed class GraphControllerTests : ControllerTests {
                 new NodeFieldDefinition(
                     "Source",
                     NodeFieldValueKind.Node,
-                    typeof(CarrierNode),
+                    typeof(Node),
                     NodeSlotCardinality.Required(),
                     IsCollection: false),
                 new NodeFieldDefinition(
                     "Target",
                     NodeFieldValueKind.Node,
-                    typeof(CarrierNode),
+                    typeof(Node),
                     NodeSlotCardinality.Required(),
                     IsCollection: false)
             ])).Value!.Type;
@@ -405,13 +405,13 @@ public sealed class GraphControllerTests : ControllerTests {
                 new NodeFieldDefinition(
                     "Left",
                     NodeFieldValueKind.Node,
-                    typeof(CarrierNode),
+                    typeof(Node),
                     NodeSlotCardinality.Required(),
                     IsCollection: false),
                 new NodeFieldDefinition(
                     "Right",
                     NodeFieldValueKind.Node,
-                    typeof(CarrierNode),
+                    typeof(Node),
                     NodeSlotCardinality.Required(),
                     IsCollection: false)
             ])).Value!.Type;

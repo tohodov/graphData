@@ -63,7 +63,7 @@ internal static class NodeTypeInheritanceReader
         return result.Values.ToArray();
     }
 
-    private static bool IsNodeType(CarrierNode node, CarrierNode nodeTypesRoot)
+    private static bool IsNodeType(Node node, Node nodeTypesRoot)
     {
         return node.GlobalId != nodeTypesRoot.GlobalId
             && node.Nodes.Any(neighbor => neighbor.GlobalId == nodeTypesRoot.GlobalId);

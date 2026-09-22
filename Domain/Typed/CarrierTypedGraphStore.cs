@@ -8,13 +8,13 @@ namespace GraphData.Core.Services;
 /// <summary>Projects the existing carrier grammar without exposing its active nodes.</summary>
 public sealed class CarrierTypedGraphStore : ITypedGraphStore
 {
-    readonly CarrierGraph graph;
-    readonly CarrierGraphService service;
+    readonly Graph graph;
+    readonly GraphService service;
 
-    public CarrierTypedGraphStore(CarrierGraph graph)
+    public CarrierTypedGraphStore(Graph graph)
     {
         this.graph = graph;
-        service = new CarrierGraphService(graph, new CarrierGraphSearchService(graph.Storage));
+        service = new GraphService(graph, new GraphSearchService(graph.Storage));
     }
 
     public async Task<TypedType?> ReadTypeAsync(string id)
@@ -118,7 +118,7 @@ public sealed class CarrierTypedGraphStore : ITypedGraphStore
                 ToClrType(attribute.Kind), attribute.Required ? NodeSlotCardinality.Required() : NodeSlotCardinality.Optional(), false));
         foreach (var member in definition.Members) {
             var type = member.TypeId is null ? null : await RequireTypeAsync(member.TypeId).ConfigureAwait(false);
-            fields.Add(new NodeFieldDefinition(member.Name, NodeFieldValueKind.Node, typeof(CarrierNode),
+            fields.Add(new NodeFieldDefinition(member.Name, NodeFieldValueKind.Node, typeof(Node),
                 new NodeSlotCardinality(member.Min, member.Max), member.Max is null or > 1, type));
         }
         var required = new List<NodeType>();
@@ -267,7 +267,7 @@ public sealed class CarrierTypedGraphStore : ITypedGraphStore
                 throw Error(TypedGraphError.Corrupt,
                     $"Type '{type.GlobalId}' has conflicting cached or CLR and persisted schemas; resolve the schema conflict explicitly.");
             // TryRead covers the Definition subtree only. Requires are separate carrier
-            // relations merged by CarrierGraph, not a second list in that subtree.
+            // relations merged by Graph, not a second list in that subtree.
             return effective;
         } catch (InvalidOperationException error) when (error is not TypedGraphException) {
             throw Error(TypedGraphError.Corrupt, $"Cannot read type '{type.GlobalId}': {error.Message}");

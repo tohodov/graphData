@@ -7,7 +7,7 @@
 
 ## Граница контракта
 
-[`ITypedGraph`](../TypedGraph/Contracts.cs) — публичная предметная модель:
+[`ITypedGraph`](../TypedGraph/Contracts.cs) — общий строгий публичный контракт двух backend:
 определения типов, экземпляры, отношения, атрибуты и именованные участники.
 [`TypedGraphService`](../TypedGraph/TypedGraphService.cs) проверяет общие правила,
 замыкание требований типов, кардинальности и значения скалярных атрибутов.
@@ -26,12 +26,19 @@ HTTP /api/typed-graph → ITypedGraph / TypedGraphService
        IGraphStorage / symlinks        отдельный native-каталог
 ```
 
-Рекурсивный слой обозначается именами `CarrierGraph`, `CarrierNode`,
-`CarrierEdge`, `CarrierGraphService`, `CarrierSubgraph`, `CarrierNodeBacking`
-и `CarrierEdgeBacking`. Это представление хранения и совместимость,
-не типы публичного `ITypedGraph`. Native backend использует отдельные классы
-и не реализует `IGraphStorage`; `NodeBacking`-фасада и вычисляемого raw-графа
-у него нет.
+`Graph`, `Node`, `Edge`, `Subgraph` и `GraphService` — существующая публичная
+Domain-модель. Она содержит семантические сущности и операции вместе с raw
+traversal; `GraphSearchService` предоставляет raw-поиск, внутренний
+`GraphBackupService` обслуживает прежний формат backup. Эти классы работают
+через `IGraphStorage` в legacy-режиме.
+
+`CarrierNodeBacking` и `CarrierEdgeBacking` — внутренние состояния
+представления хранения, `CarrierTypedGraphStore` — адаптер Domain-модели
+к общему контракту. Его снимки не возвращают активные `Node`/`Edge`.
+Native backend использует отдельные классы и не реализует `IGraphStorage`;
+backing-фасада и вычисляемого raw-графа у него нет. Сохранение публичных имён
+`Graph`, `Node` и `Edge` не означает, что существующий `Graph` работает
+с native backend: общей точкой входа для двух backend служит `ITypedGraph`.
 
 У `TypedElement` есть `Id`, `Kind`, `TypeIds`, `Attributes` и `Members`.
 `TypeIds` содержит материализованные эффективные типы, включая необходимые

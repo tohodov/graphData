@@ -35,8 +35,8 @@ public sealed class DslTests : GraphDslTests {
 
     [TestMethod]
     public async Task NodesAdd_ShouldMaterializePreparedVirtualSubgraphUnderStorageParent() {
-        var parent = new CarrierNode("parent");
-        var child = new CarrierNode("child");
+        var parent = new Node("parent");
+        var child = new Node("child");
         parent.Nodes.Add(child);
 
         Graph.Root.Nodes.Add(parent);
@@ -184,14 +184,14 @@ public sealed class DslTests : GraphDslTests {
 
     [TestMethod]
     public async Task EdgesRemove_ShouldKeepHierarchyChildByMovingItThroughRemainingEdge() {
-        var oldParent = new CarrierNode("old-parent");
-        var child = new CarrierNode("child");
-        var newParent = new CarrierNode("new-parent");
+        var oldParent = new Node("old-parent");
+        var child = new Node("child");
+        var newParent = new Node("new-parent");
         oldParent.Nodes.Add(child);
         Graph.Root.Nodes.Add(oldParent);
         Graph.Root.Nodes.Add(newParent);
 
-        child.Edges.Add(new CarrierEdge(child, newParent));
+        child.Edges.Add(new Edge(child, newParent));
         oldParent.Nodes.Remove(child);
 
         var storedOldParent = await Storage.Get(oldParent.GlobalId);
@@ -208,8 +208,8 @@ public sealed class DslTests : GraphDslTests {
 
     [TestMethod]
     public async Task NodesRemove_ShouldDeleteHierarchyChild() {
-        var parent = new CarrierNode("parent");
-        var child = new CarrierNode("child");
+        var parent = new Node("parent");
+        var child = new Node("child");
         parent.Nodes.Add(child);
         Graph.Root.Nodes.Add(parent);
 
@@ -224,13 +224,13 @@ public sealed class DslTests : GraphDslTests {
 
     [TestMethod]
     public async Task NodesRemove_ShouldKeepHierarchyChildWhenItHasOtherEdges() {
-        var oldParent = new CarrierNode("old");
-        var child = new CarrierNode("child");
-        var newParent = new CarrierNode("new");
+        var oldParent = new Node("old");
+        var child = new Node("child");
+        var newParent = new Node("new");
         oldParent.Nodes.Add(child);
         Graph.Root.Nodes.Add(oldParent);
         Graph.Root.Nodes.Add(newParent);
-        child.Edges.Add(new CarrierEdge(child, newParent));
+        child.Edges.Add(new Edge(child, newParent));
         Assert.IsTrue(child.GetBacking().FolderPath.Contains(oldParent.LocalId));
 
         oldParent.Nodes.Remove(child);
@@ -248,8 +248,8 @@ public sealed class DslTests : GraphDslTests {
 
     [TestMethod]
     public async Task EdgesRemove_ShouldThrowWhenHierarchyEdgeIsChildsOnlyEdge() {
-        var parent = new CarrierNode("parent");
-        var child = new CarrierNode("child");
+        var parent = new Node("parent");
+        var child = new Node("child");
         parent.Nodes.Add(child);
         Graph.Root.Nodes.Add(parent);
 

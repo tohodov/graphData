@@ -111,7 +111,7 @@ public sealed class TypedGraphContractTests
                 store = new SemanticRecordStore(root);
             } else {
                 var storage = new SymLinkGraphStorage(Options.Create(new NtfsGraphStorageOptions { RootPath = root }), new CancellationTokensAccessorMock());
-                var graph = await CarrierGraph.OpenAsync(storage, GraphSchemaRegistry.Create(Array.Empty<System.Reflection.Assembly>()));
+                var graph = await Graph.OpenAsync(storage, GraphSchemaRegistry.Create(Array.Empty<System.Reflection.Assembly>()));
                 store = new CarrierTypedGraphStore(graph);
             }
             service = new TypedGraphService(store);

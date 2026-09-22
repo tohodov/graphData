@@ -52,7 +52,7 @@ internal static class TypedEdgeSubgraphCodec
     }
 
     public static async Task<TypedEdgeInstance> ReadAsync(
-        CarrierGraph graph,
+        Graph graph,
         CarrierNodeBacking relation,
         TypedEdgeDefinition definition)
     {
@@ -87,11 +87,11 @@ internal static class TypedEdgeSubgraphCodec
 
             endpoints.Add(new TypedEdgeEndpointInstance(
                 endpoint,
-                new CarrierNode(endpointNode),
-                participantStates.Select(static node => new CarrierNode(node)).ToArray()));
+                new Node(endpointNode),
+                participantStates.Select(static node => new Node(node)).ToArray()));
         }
 
-        return new TypedEdgeInstance(new CarrierNode(relation), definition, endpoints);
+        return new TypedEdgeInstance(new Node(relation), definition, endpoints);
     }
 
     public static async Task<IReadOnlyCollection<CarrierNodeBacking>> FindIncidentRelationsAsync(
@@ -129,7 +129,7 @@ internal static class TypedEdgeSubgraphCodec
             .ConfigureAwait(false);
     }
 
-    public static bool HasMemberClassifier(CarrierNode endpoint, InternalId memberTypeId) =>
+    public static bool HasMemberClassifier(Node endpoint, InternalId memberTypeId) =>
         endpoint.Nodes.Any(node => node.GlobalId == memberTypeId);
 
     public static InternalId MemberTypeId(NodeType relationType, string memberName) {

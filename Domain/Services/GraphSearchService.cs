@@ -6,13 +6,13 @@ using GraphData.Core.Models;
 
 namespace GraphData.Core.Services;
 
-public sealed class CarrierGraphSearchService {
+public sealed class GraphSearchService {
     private const int DefaultLimit = 50;
     private const int MaxLimit = 500;
 
     private readonly IGraphStorage _storage;
 
-    internal CarrierGraphSearchService(IGraphStorage storage) {
+    internal GraphSearchService(IGraphStorage storage) {
         _storage = storage;
     }
 
@@ -53,7 +53,7 @@ public sealed class CarrierGraphSearchService {
         string[] returnVariables,
         CancellationToken cancellationToken) {
         var effectiveWhere = BuildEffectiveWhere(query.Where, returnVariables);
-        var initial = new SearchSolution(new Dictionary<string, CarrierNode>(StringComparer.OrdinalIgnoreCase), 0, []);
+        var initial = new SearchSolution(new Dictionary<string, Node>(StringComparer.OrdinalIgnoreCase), 0, []);
         return Evaluate(effectiveWhere, ToAsyncEnumerable([initial]), graph, cancellationToken);
     }
 
@@ -442,7 +442,7 @@ public sealed class CarrierGraphSearchService {
         }
     }
 
-    private static async IAsyncEnumerable<CarrierNode> CandidateNodes(
+    private static async IAsyncEnumerable<Node> CandidateNodes(
         SearchSolution solution,
         NodeSearchNodeSelector selector,
         SearchGraph graph,
@@ -475,7 +475,7 @@ public sealed class CarrierGraphSearchService {
     private static SearchSolution? TryBind(
         SearchSolution solution,
         NodeSearchNodeSelector selector,
-        CarrierNode candidate,
+        Node candidate,
         double score = 0,
         string? match = null) {
         switch (selector) {
@@ -491,7 +491,7 @@ public sealed class CarrierGraphSearchService {
                         : null;
                 }
 
-                var bindings = new Dictionary<string, CarrierNode>(solution.Bindings, StringComparer.OrdinalIgnoreCase) {
+                var bindings = new Dictionary<string, Node>(solution.Bindings, StringComparer.OrdinalIgnoreCase) {
                     [variable.Name] = candidate
                 };
                 return new SearchSolution(bindings, solution.Score + score, AddMatch(solution.MatchedBy, match));
@@ -501,7 +501,7 @@ public sealed class CarrierGraphSearchService {
         }
     }
 
-    private static async IAsyncEnumerable<(CarrierNode Left, CarrierNode Right)> CandidateNodePairs(
+    private static async IAsyncEnumerable<(Node Left, Node Right)> CandidateNodePairs(
         SearchSolution solution,
         NodeSearchNodeSelector left,
         NodeSearchNodeSelector right,
@@ -514,7 +514,7 @@ public sealed class CarrierGraphSearchService {
         }
     }
 
-    private static async IAsyncEnumerable<(CarrierNode Left, CarrierNode Right, int Distance)> CandidatePaths(
+    private static async IAsyncEnumerable<(Node Left, Node Right, int Distance)> CandidatePaths(
         SearchSolution solution,
         NodeSearchNodeSelector left,
         NodeSearchNodeSelector right,
@@ -534,7 +534,7 @@ public sealed class CarrierGraphSearchService {
         }
     }
 
-    private static async IAsyncEnumerable<(CarrierNode Ancestor, CarrierNode Descendant, int Depth)> CandidateDescendants(
+    private static async IAsyncEnumerable<(Node Ancestor, Node Descendant, int Depth)> CandidateDescendants(
         SearchSolution solution,
         NodeDescendantSearchExpression expression,
         SearchGraph graph,
@@ -708,7 +708,7 @@ public sealed class CarrierGraphSearchService {
             .ToArray();
     }
 
-    private static bool MatchesAttribute(CarrierNode node, string key, string op, string? value) {
+    private static bool MatchesAttribute(Node node, string key, string op, string? value) {
         if (!node.Attributes.TryGetValue(key, out var attributeValue)) {
             return false;
         }
@@ -784,7 +784,7 @@ public sealed class CarrierGraphSearchService {
 
     private static double GetTextComparisonScore(NodeLocalId source, string op, string value) => GetTextComparisonScore(source.ToString(), op, value);
 
-    private static double GetTextScore(CarrierNode node, string text) {
+    private static double GetTextScore(Node node, string text) {
         var normalizedText = text.Trim();
         if (normalizedText.Length == 0) {
             return 0;
@@ -881,7 +881,7 @@ public sealed class CarrierGraphSearchService {
         return distance <= 0 ? 1 : 0.7 / distance;
     }
 
-    private static bool SameNode(CarrierNode left, CarrierNode right) {
+    private static bool SameNode(Node left, Node right) {
         return string.Equals(NormalizeNodeName(left.LocalId), NormalizeNodeName(right.LocalId), StringComparison.OrdinalIgnoreCase);
     }
 
@@ -904,21 +904,21 @@ public sealed class CarrierGraphSearchService {
     }
 
     private sealed record SearchSolution(
-        IReadOnlyDictionary<string, CarrierNode> Bindings,
+        IReadOnlyDictionary<string, Node> Bindings,
         double Score,
         IReadOnlyCollection<string> MatchedBy) {
         public SearchSolution AddMatch(string? match, double score = 0) {
             return string.IsNullOrWhiteSpace(match)
                 ? this with { Score = Score + score }
-                : this with { Score = Score + score, MatchedBy = CarrierGraphSearchService.AddMatch(MatchedBy, match) };
+                : this with { Score = Score + score, MatchedBy = GraphSearchService.AddMatch(MatchedBy, match) };
         }
     }
 
     private sealed class SearchGraph {
         private readonly IGraphStorage _storage;
         private readonly CancellationToken _cancellationToken;
-        private readonly Dictionary<string, CarrierNode> _nodesByName = new(StringComparer.OrdinalIgnoreCase);
-        private readonly Dictionary<string, CarrierNode[]> _connectionsByName = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Node> _nodesByName = new(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, Node[]> _connectionsByName = new(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, NodeDistance[]> _reachableCache = new(StringComparer.OrdinalIgnoreCase);
 
         public SearchGraph(IGraphStorage storage, CancellationToken cancellationToken) {
@@ -926,9 +926,9 @@ public sealed class CarrierGraphSearchService {
             _cancellationToken = cancellationToken;
         }
 
-        public IAsyncEnumerable<CarrierNode> Nodes => EnumerateNodesAsync();
+        public IAsyncEnumerable<Node> Nodes => EnumerateNodesAsync();
 
-        public async Task<CarrierNode?> TryGetNodeAsync(string name) {
+        public async Task<Node?> TryGetNodeAsync(string name) {
             var normalizedName = NormalizeNodeName(name);
             if (_nodesByName.TryGetValue(normalizedName, out var node))
                 return node;
@@ -936,14 +936,14 @@ public sealed class CarrierGraphSearchService {
             if (result is null)
                 return null;
 
-            return Remember(new CarrierNode(result));
+            return Remember(new Node(result));
         }
 
-        public async Task<int> GetDegreeAsync(CarrierNode node) {
+        public async Task<int> GetDegreeAsync(Node node) {
             return (await GetConnectionsAsync(node).ConfigureAwait(false)).Length;
         }
 
-        public async Task<IReadOnlyCollection<NodeDistance>> GetReachableAsync(CarrierNode start, int minDepth, int maxDepth, bool includeSelf) {
+        public async Task<IReadOnlyCollection<NodeDistance>> GetReachableAsync(Node start, int minDepth, int maxDepth, bool includeSelf) {
             var cacheKey = $"{NormalizeNodeName(start.LocalId)}\u001f{minDepth}\u001f{maxDepth}\u001f{includeSelf}";
             if (_reachableCache.TryGetValue(cacheKey, out var cached)) {
                 return cached;
@@ -951,7 +951,7 @@ public sealed class CarrierGraphSearchService {
 
             var result = new Dictionary<string, NodeDistance>(StringComparer.OrdinalIgnoreCase);
             var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { NormalizeNodeName(start.LocalId) };
-            var queue = new Queue<(CarrierNode Node, int Depth)>();
+            var queue = new Queue<(Node Node, int Depth)>();
             queue.Enqueue((start, 0));
 
             if (includeSelf && minDepth == 0) {
@@ -986,13 +986,13 @@ public sealed class CarrierGraphSearchService {
             return reachable;
         }
 
-        private async IAsyncEnumerable<CarrierNode> EnumerateNodesAsync() {
+        private async IAsyncEnumerable<Node> EnumerateNodesAsync() {
             await foreach (var node in _storage.EnumerateNodesAsync(_cancellationToken).WithCancellation(_cancellationToken).ConfigureAwait(false)) {
-                yield return Remember(new CarrierNode(node));
+                yield return Remember(new Node(node));
             }
         }
 
-        private async Task<CarrierNode[]> GetConnectionsAsync(CarrierNode node) {
+        private async Task<Node[]> GetConnectionsAsync(Node node) {
             var key = NormalizeNodeName(node.LocalId);
             if (_connectionsByName.TryGetValue(key, out var cached))
                 return cached;
@@ -1004,12 +1004,12 @@ public sealed class CarrierGraphSearchService {
             return connections;
         }
 
-        private CarrierNode Remember(CarrierNode node) {
+        private Node Remember(Node node) {
             _nodesByName[NormalizeNodeName(node.LocalId)] = node;
             return node;
         }
 
-        public int GetDescendantDepth(CarrierNode ancestor, CarrierNode descendant) {
+        public int GetDescendantDepth(Node ancestor, Node descendant) {
             var ancestorName = NormalizeNodeName(ancestor.LocalId);
             var descendantName = NormalizeNodeName(descendant.LocalId);
             if (!IsStrictPathDescendant(ancestorName, descendantName)) {
@@ -1029,5 +1029,5 @@ public sealed class CarrierGraphSearchService {
         }
     }
 
-    private sealed record NodeDistance(CarrierNode Node, int Distance);
+    private sealed record NodeDistance(Node Node, int Distance);
 }

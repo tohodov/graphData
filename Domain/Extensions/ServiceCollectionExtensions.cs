@@ -7,7 +7,7 @@ namespace GraphData.Core.Extensions;
 
 public static class ServiceCollectionExtensions
 {
-    /// <summary>Adds the typed contract over the existing carrier grammar. Open CarrierGraph before resolving it.</summary>
+    /// <summary>Adds the typed contract over the existing carrier grammar. Open <see cref="Graph"/> before resolving it.</summary>
     public static IServiceCollection AddCarrierTypedGraph(this IServiceCollection services) {
         services.AddSingleton<ITypedGraphStore, CarrierTypedGraphStore>();
         services.AddSingleton<ITypedGraph, TypedGraphService>();
@@ -21,17 +21,17 @@ public static class ServiceCollectionExtensions
         configureRuntimeTypes?.Invoke(runtimeTypeOptions);
         services.AddSingleton(GraphSchemaRegistry.Create(runtimeTypeOptions));
         services.AddSingleton(static provider =>
-            new CarrierGraph(
+            new Graph(
                 provider.GetRequiredService<IGraphStorage>(),
                 provider.GetRequiredService<GraphSchemaRegistry>()));
-        services.AddScoped<CarrierGraphSearchService>(static provider =>
-            new CarrierGraphSearchService(provider.GetRequiredService<IGraphStorage>()));
-        services.AddScoped<CarrierGraphService>(static provider =>
-            new CarrierGraphService(
-                provider.GetRequiredService<CarrierGraph>(),
-                provider.GetRequiredService<CarrierGraphSearchService>()
+        services.AddScoped<GraphSearchService>(static provider =>
+            new GraphSearchService(provider.GetRequiredService<IGraphStorage>()));
+        services.AddScoped<GraphService>(static provider =>
+            new GraphService(
+                provider.GetRequiredService<Graph>(),
+                provider.GetRequiredService<GraphSearchService>()
             ));
-        services.AddScoped<CarrierGraphBackupService>();
+        services.AddScoped<GraphBackupService>();
         return services;
     }
 }

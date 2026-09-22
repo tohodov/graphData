@@ -22,12 +22,13 @@ graphData - исследовательский прототип графовой
 
 - `TypedGraph` — публичный `ITypedGraph`, снимки типов/экземпляров/отношений, общие правила и точка подключения представления `ITypedGraphStore`. Здесь нет служебных узлов, путей файловой системы и CLR-типов полей.
 - `Abstractions` — прежний минимальный контракт `IGraphStorage` и состояния графа-носителя `CarrierNodeBacking`/`CarrierEdgeBacking`. Семантические методы в него не добавляются.
-- `Domain` — прежняя модель `CarrierGraph`, `CarrierNode`, `CarrierEdge`, фасад `CarrierGraphService` и `CarrierTypedGraphStore`, который кодирует общий контракт через старую топологию.
+- `Domain` — публичная модель `Graph`, `Node`, `Edge`, `Subgraph` и фасад `GraphService`. Она содержит семантические сущности и операции вместе с raw traversal. `CarrierTypedGraphStore` связывает её с общим типизированным контрактом через прежнее представление хранения.
 - `SymLinkStorage` — прежнее хранение графа-носителя. `SemanticStorage` — независимые семантические записи; зависит только от `TypedGraph`, не реализует `IGraphStorage` и не синтезирует служебные рёбра.
 - `GraphCompiler` - downstream-компилятор конечного типизированного snapshot в канонические dense/CSR tensors, message-passing execution plan и HLSL-артефакт. CPU reference executor служит oracle для GPU backend'ов; подробности находятся в `Compiler/README.md`.
-- `GraphCompiler.Runtime` - Windows Direct3D 12 runtime над `Domain`: обходит выбранный `CarrierSubgraph`, разбивает его на core/halo чанки, компилирует их в DXIL и собирает результаты по raw `GlobalId`.
+- `GraphCompiler.Runtime` - Windows Direct3D 12 runtime над `Domain`: обходит выбранный `Subgraph`, разбивает его на core/halo чанки, компилирует их в DXIL и собирает результаты по raw `GlobalId`.
 
-Новый HTTP-контракт `/api/typed-graph` работает через `ITypedGraph` в обоих режимах. Прежние HTTP/MCP/editor-интерфейсы используют `CarrierGraphService` и доступны только в режиме `legacy`. В режиме `semantic` неподдерживаемый старый интерфейс явно отклоняется.
+Новый HTTP-контракт `/api/typed-graph` работает через `ITypedGraph` в обоих режимах. Прежние HTTP/MCP/editor-интерфейсы используют `GraphService` и доступны только в режиме `legacy`. В режиме `semantic` неподдерживаемый старый интерфейс явно отклоняется.
+`Carrier` обозначает внутреннее представление и адаптер, а публичные имена `Graph`, `Node` и `Edge` сохраняют смысл доменной модели. Общий строгий контракт двух backend — `ITypedGraph`; существующий `Graph` работает через `IGraphStorage` и не подключён к native backend.
 Storage-state типы и storage-контракты закрыты как `internal`; доступ к ним выдается только `Domain`, storage-проектам и тестовым сборкам через `InternalsVisibleTo`.
 
 ### Attributes policy
@@ -39,11 +40,11 @@ Storage-state типы и storage-контракты закрыты как `inte
 Новые фичи не должны принимать решения по строковым атрибутам вроде `graph.kind`, `graph.role`, `graph.typeName`
 или аналогичным convention-ключам. Если поведение требует знать, что узел является типом, инстансом, портом,
 слотом, endpoint'ом или частью typed edge subgraph, это должно быть выражено связями графа, типизированной
-доменной моделью, DSL-описанием типа и проверкой инвариантов в `Domain`/`CarrierGraphService`.
+доменной моделью, DSL-описанием типа и проверкой инвариантов в `Domain`/`GraphService`.
 
 Техническая граница закреплена тестом `AttributePolicyTests`: код в `Domain` не должен читать или ветвиться по
-`CarrierNodeBacking.Attributes` вне явно разрешенных зон. Разрешения сейчас только такие: `CarrierNode` пробрасывает атрибуты как
-пользовательские данные, а `CarrierGraphSearchService` ищет по ним по прямому запросу пользователя. В `Domain` не должно
+`CarrierNodeBacking.Attributes` вне явно разрешенных зон. Разрешения сейчас только такие: `Node` пробрасывает атрибуты как
+пользовательские данные, а `GraphSearchService` ищет по ним по прямому запросу пользователя. В `Domain` не должно
 быть внутренних `*AttributeNames*`-констант: внутренние состояния, включая marker'ы и display-настройки, должны
 выражаться узлами, связями или внешним UI-слоем, а не ключами в attributes.
 
@@ -51,17 +52,19 @@ Storage-state типы и storage-контракты закрыты как `inte
 
 Текущий код подробнее описан в `Domain/README.md`. Сейчас реализован первый сквозной, но еще переходный срез:
 
-- `CarrierGraph` открывает storage и материализует зарегистрированные C# `NodeType` в дефолтном каталоге `NodeTypes`.
+- `Graph` открывает storage и материализует зарегистрированные C# `NodeType` в дефолтном каталоге `NodeTypes`.
 - `NodeTypeDefinition`, `NodeFieldDefinition`, `NodeTypeBuilder`, `NodeSlotDefinition` и `NodeSlotCardinality` описывают локальный C# DSL одного типа.
-- `CarrierGraphService.AssignNodeTypeAsync` материализует отдельный typed `InstanceOf` subgraph для каждого effective type. Прямая raw-связь `node — type` пока сохраняется лишь как legacy/UI compatibility index.
+- `GraphService.AssignNodeTypeAsync` материализует отдельный typed `InstanceOf` subgraph для каждого effective type. Прямая raw-связь `node — type` пока сохраняется лишь как legacy/UI compatibility index.
 - `requires` хранится обычным typed-edge subgraph. Замыкание материализуется с `visited`, схлопывает diamond и завершается на циклах.
 - `GetSemanticNodeAsync` строит runtime `InstanceNode` с несколькими materialized `NodeTypeInstance` и принимает явный basis вне дефолтного каталога.
 - `TypedEdgeSubgraphCodec` централизует переходную raw-грамматику typed edges: смысл endpoint задаёт отдельный member classifier, а raw-узел его конкретного occurrence имеет техническое уникальное имя. `GetTypedEdgeInstanceAsync` восстанавливает typed edge без fixed-depth parsing.
 - HTTP API сохраняет прежний raw-контракт. `GetSemanticNodeAsync` используют Domain и semantic-профиль MCP; он принимает явный basis, а при его отсутствии использует дефолтный каталог. Semantic MCP намеренно не публикует raw depth/search как будто это семантические операции. Web UI остаётся raw-клиентом и строит свою существующую локальную проекцию по выбранному basis; `NodeTypes` остаётся обычным top-level raw-узлом и подчиняется общим правилам basis.
 
-Этот срез сохраняется ради совместимости API, MCP и активных сущностей `CarrierNode`/`CarrierEdge`; он не фиксирует финальную метамодель.
+Этот срез образует существующую публичную Domain-модель для API, MCP и активных сущностей `Node`/`Edge`; он не фиксирует финальную метамодель.
 
 ### Согласованное видение семантического уровня
+
+Этот раздел описывает runtime-проекцию существующей Domain-модели. Реализованный общий контракт `ITypedGraph` и его native-представление имеют отдельные границы, описанные в [docs/typed-storage.md](docs/typed-storage.md).
 
 Сырой граф — carrier-уровень из storage nodes и одинаковых неориентированных raw-ребер. Для двух различных raw-узлов допустимо ровно одно ребро: parent/child и junction — две физические формы одного и того же отношения, а не два независимых ребра. Повторный `Connect` и коллизия имени raw junction должны быть ошибкой хранилища, а не создавать алиас. Семантический граф не хранится как еще один слой persisted-сущностей. Он возникает в runtime как ленивая проекция:
 
@@ -148,8 +151,8 @@ typed edge node остаются read-only по атрибутам, но мог�
 неприменимы к текущему выбору, должны оставаться видимыми, но disabled.
 
 Смена типа связи выполняется не как локальное изменение UI и не как простая подмена атрибута. Это должна быть
-доменная операция `CarrierGraphService`, которая принимает endpoints базовой связи или id существующего typed edge node,
-строит typed edge subgraph по DSL выбранного типа и возвращает `CarrierSubgraph` созданного подграфа. Для базовой
+доменная операция `GraphService`, которая принимает endpoints базовой связи или id существующего typed edge node,
+строит typed edge subgraph по DSL выбранного типа и возвращает `Subgraph` созданного подграфа. Для базовой
 физической связи операция заменяет прямую связь на typed edge subgraph. Для уже типизированной связи старый
 промежуточный узел разбирается и создается новый, потому что разные типы связей могут требовать разный набор
 связанных узлов и разные внутренние инварианты.
@@ -158,7 +161,7 @@ typed edge node остаются read-only по атрибутам, но мог�
 
 В репозитории есть пять основных тестовых сборок и отдельное консольное приложение для замеров:
 
-- `DomainTests` - проверка доменных сервисов и активных DDD-сущностей `CarrierNode`/`CarrierEdge`.
+- `DomainTests` - проверка доменных сервисов и активных DDD-сущностей `Node`/`Edge`.
 - `ApiTests` - проверка HTTP API и UI, который живет внутри проекта `Api`.
 - `McpTests` - проверка раздельных raw/semantic MCP-поверхностей и типизированных mutation-сценариев.
 - `GraphCompilerTests` - проверка канонического CSR IR, CPU reference execution, raw lowering и GPU source artifacts.
@@ -172,7 +175,7 @@ Unit-тестовой сборки в проекте намеренно нет: 
 - `GraphStorageContractTests`, `SymLinkGraphStorageTests`, backup/search и raw `GetSubgraph` — carrier/storage regressions. Они не определяют semantic typing.
 - `SemanticLayerTests` — исполняемая спецификация текущего semantic-среза: несколько типов, materialized witnesses, diamond, циклический `requires`, reopen, явный basis и ошибки неоднозначности.
 - typed-edge round-trip тест в `ServiceTests` проверяет доменное чтение endpoint'ов; проверки конкретных папок рядом с ним являются временной regression-защитой carrier codec, а не финальной метамоделью.
-- старые sync-тесты `DslTests` проверяют активные `CarrierNode`/`CarrierEdge` и legacy slot API. Slot-сценарий «любой сосед подходящего типа» явно переходный и не должен использоваться как аргумент против member instances.
+- старые sync-тесты `DslTests` проверяют активные `Node`/`Edge` и legacy slot API. Slot-сценарий «любой сосед подходящего типа» явно переходный и не должен использоваться как аргумент против member instances.
 - API frontier/UI lazy tests и raw MCP tests сохраняют контракты фронтендов; `SemanticLayerTests` и semantic MCP tests отдельно проверяют проекцию, не меняя raw DTO.
 
 ```powershell

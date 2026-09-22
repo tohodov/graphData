@@ -7,9 +7,9 @@ namespace GraphData.Core.Models;
 /// instance of a graph type. It is an ordinary graph type rather than a hidden
 /// storage primitive.
 /// </summary>
-public sealed class InstanceOfEdge : CarrierEdge {
-    public CarrierNode Instance = null!;
-    public CarrierNode Type = null!;
+public sealed class InstanceOfEdge : Edge {
+    public Node Instance = null!;
+    public Node Type = null!;
 
     internal InstanceOfEdge(CarrierEdgeBacking state) : base(state) {
     }
@@ -19,9 +19,9 @@ public sealed class InstanceOfEdge : CarrierEdge {
 /// Describes graph-level multiple inheritance. A derived type requires every
 /// facet of the required type to be materialized on its instances.
 /// </summary>
-public sealed class RequiresEdge : CarrierEdge {
-    public CarrierNode Derived = null!;
-    public CarrierNode Required = null!;
+public sealed class RequiresEdge : Edge {
+    public Node Derived = null!;
+    public Node Required = null!;
 
     internal RequiresEdge(CarrierEdgeBacking state) : base(state) {
     }

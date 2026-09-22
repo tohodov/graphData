@@ -79,7 +79,7 @@ internal static class DynamicNodeTypeDefinitionStorage
         };
     }
 
-    private static IEnumerable<NodeFieldDefinition> ReadFields(CarrierNode fieldsNode, CarrierNode? nodeTypesRoot)
+    private static IEnumerable<NodeFieldDefinition> ReadFields(Node fieldsNode, Node? nodeTypesRoot)
     {
         foreach (var fieldNode in fieldsNode.Nodes.Where(node => node.LocalId != DefinitionNodeId)) {
             var attributes = fieldNode.Attributes;
@@ -109,7 +109,7 @@ internal static class DynamicNodeTypeDefinitionStorage
         }
     }
 
-    private static IEnumerable<NodeSlotDefinition> ReadSlots(CarrierNode slotsNode, CarrierNode? nodeTypesRoot)
+    private static IEnumerable<NodeSlotDefinition> ReadSlots(Node slotsNode, Node? nodeTypesRoot)
     {
         foreach (var slotNode in slotsNode.Nodes.Where(node => node.LocalId != DefinitionNodeId)) {
             var allowedTypes = ReadStoredNodeTypes(
@@ -124,7 +124,7 @@ internal static class DynamicNodeTypeDefinitionStorage
         }
     }
 
-    private static IEnumerable<NodeType> ReadLinkedNodeTypes(CarrierNode owner, CarrierNode? nodeTypesRoot, InternalId containerId)
+    private static IEnumerable<NodeType> ReadLinkedNodeTypes(Node owner, Node? nodeTypesRoot, InternalId containerId)
     {
         if (nodeTypesRoot is null)
             yield break;
@@ -139,20 +139,20 @@ internal static class DynamicNodeTypeDefinitionStorage
         }
     }
 
-    private static CarrierNode? FindNodeTypesRoot(NodeType typeNode)
+    private static Node? FindNodeTypesRoot(NodeType typeNode)
     {
         return typeNode.Nodes.FirstOrDefault(static node =>
             node.GlobalId.ToString() == "NodeTypes"
             && node.LocalId.ToString() == "NodeTypes");
     }
 
-    private static bool IsNodeType(CarrierNode node, CarrierNode nodeTypesRoot)
+    private static bool IsNodeType(Node node, Node nodeTypesRoot)
     {
         return node.GlobalId != nodeTypesRoot.GlobalId
             && node.Nodes.Any(neighbor => neighbor.GlobalId == nodeTypesRoot.GlobalId);
     }
 
-    private static CarrierNode? FindNeighbor(CarrierNode owner, NodeLocalId localId)
+    private static Node? FindNeighbor(Node owner, NodeLocalId localId)
     {
         return owner.Nodes.FirstOrDefault(node => node.LocalId == localId);
     }
@@ -189,7 +189,7 @@ internal static class DynamicNodeTypeDefinitionStorage
     private static IEnumerable<NodeType> ReadStoredNodeTypes(
         IDictionary<string, string> attributes,
         string attributeName,
-        CarrierNode? nodeTypesRoot,
+        Node? nodeTypesRoot,
         Func<IEnumerable<NodeType>> fallback)
     {
         if (!attributes.TryGetValue(attributeName, out var serializedPaths))
@@ -223,7 +223,7 @@ internal static class DynamicNodeTypeDefinitionStorage
             || string.IsNullOrWhiteSpace(value))
             throw new InvalidOperationException($"Dynamic node field is missing '{ClrTypeAttribute}'.");
 
-        var type = CarrierClrTypeNames.Resolve(value);
+        var type = Type.GetType(value, throwOnError: false, ignoreCase: true);
         if (type is null)
             throw new InvalidOperationException($"Dynamic node field CLR type '{value}' cannot be resolved.");
 
@@ -264,7 +264,9 @@ internal static class DynamicNodeTypeDefinitionStorage
 
     private static string SerializeClrType(Type type)
     {
-        return CarrierClrTypeNames.Serialize(type);
+        return type.AssemblyQualifiedName
+            ?? type.FullName
+            ?? type.Name;
     }
 
     private static bool IsDerivedFromField(

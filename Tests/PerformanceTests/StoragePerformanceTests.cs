@@ -78,7 +78,7 @@ public sealed class StoragePerformanceTests {
         }).ConfigureAwait(false);
 
         await run.MeasureAsync("search-group-degree", 1, async () => {
-            var matches = await new CarrierGraphSearchService(scope.Storage).SearchNodesStreamAsync(new NodeSearchQuery {
+            var matches = await new GraphSearchService(scope.Storage).SearchNodesStreamAsync(new NodeSearchQuery {
                 Return = ["x"],
                 Where = new AllNodeSearchExpression {
                     Expressions =
@@ -222,13 +222,13 @@ public sealed class StoragePerformanceTests {
         return nodesByName;
     }
 
-    private static async Task<CarrierGraphService> CreateServiceAsync(IGraphStorage storage) {
-        var graph = await CarrierGraph.OpenAsync(storage, GraphSchemaRegistry.Create()).ConfigureAwait(false);
-        return new CarrierGraphService(graph, new CarrierGraphSearchService(storage));
+    private static async Task<GraphService> CreateServiceAsync(IGraphStorage storage) {
+        var graph = await Graph.OpenAsync(storage, GraphSchemaRegistry.Create()).ConfigureAwait(false);
+        return new GraphService(graph, new GraphSearchService(storage));
     }
 
     private static async Task<int> ReadSubgraphNodeCountAsync(
-        CarrierGraphService service,
+        GraphService service,
         SubgraphQueryInput input,
         int depth) {
         var subgraph = (await service.GetSubgraph(input.Roots, depth).ConfigureAwait(false)).Value!;

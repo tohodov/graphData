@@ -30,7 +30,7 @@ public class GraphStorageContractTests : StorageTests {
         await Storage.Create(new("double-action revolvers"), pistols.GlobalId);
         await Storage.Create(new("rifles"));
 
-        var service = new CarrierGraphSearchService(Storage);
+        var service = new GraphSearchService(Storage);
         var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
             Return = ["n"],
             Where = new AllNodeSearchExpression {
@@ -66,7 +66,7 @@ public class GraphStorageContractTests : StorageTests {
         await Storage.Connect(assaultRifles.GlobalId, m16.GlobalId);
         await Storage.Connect(america.GlobalId, unrelated.GlobalId);
 
-        var service = new CarrierGraphSearchService(Storage);
+        var service = new GraphSearchService(Storage);
         var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
             Return = ["n"],
             Where = new AllNodeSearchExpression {
@@ -101,7 +101,7 @@ public class GraphStorageContractTests : StorageTests {
 
         await Storage.Connect(source.GlobalId, marker.GlobalId);
 
-        var service = new CarrierGraphSearchService(Storage);
+        var service = new GraphSearchService(Storage);
         var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
             Return = ["n", "x"],
             Where = new AllNodeSearchExpression {
@@ -134,7 +134,7 @@ public class GraphStorageContractTests : StorageTests {
 
         await Storage.Connect(connected.GlobalId, neighbor.GlobalId);
 
-        var service = new CarrierGraphSearchService(Storage);
+        var service = new GraphSearchService(Storage);
         var matches = await service.SearchNodesStreamAsync(new NodeSearchQuery {
             Return = ["x"],
             Where = new NotNodeSearchExpression {
@@ -353,7 +353,7 @@ public class GraphStorageContractTests : StorageTests {
         CollectionAssert.DoesNotContain(await node.Nodes.ToArrayAsync(), node);
     }
     [TestMethod]
-    [TestCategory(nameof(CarrierNode))]
+    [TestCategory(nameof(Node))]
     [TestCategory(nameof(IGraphStorage.Update))]
     public async Task NodeAttributes_ShouldPersistDictionaryMutations() {
         var node = await CreateNode("node");
@@ -370,7 +370,7 @@ public class GraphStorageContractTests : StorageTests {
     }
 
     [TestMethod]
-    [TestCategory(nameof(CarrierNode))]
+    [TestCategory(nameof(Node))]
     [TestCategory(nameof(IGraphStorage.Connect))]
     public async Task NodeCollection_ShouldConnectAndDisconnectNodes() {
         var first = await CreateNode("first");
@@ -389,7 +389,7 @@ public class GraphStorageContractTests : StorageTests {
     }
 
     [TestMethod]
-    [TestCategory(nameof(CarrierNode))]
+    [TestCategory(nameof(Node))]
     [TestCategory(nameof(IGraphStorage.Connect))]
     public async Task NodeTraverse_ShouldIterateGraphRecursivelyWithoutDuplicates() {
         var first = await CreateNode("first");

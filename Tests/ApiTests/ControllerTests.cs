@@ -9,7 +9,7 @@ public class ControllerTests : GraphServiceTests {
 
     protected GraphController Controller => controller ??= CreateController(Service);
 
-    internal static GraphController CreateController(CarrierGraphService service) {
+    internal static GraphController CreateController(GraphService service) {
         var controller = new GraphController(service);
         controller.ControllerContext = new ControllerContext {
             HttpContext = new DefaultHttpContext()
@@ -19,8 +19,8 @@ public class ControllerTests : GraphServiceTests {
     }
 
     internal static async Task<GraphController> CreateController(IGraphStorage storage) { //TODO сделать virtual
-        var graph = await CarrierGraph.OpenAsync(storage, GraphSchemaRegistry.Create());
-        var controller = new GraphController(new CarrierGraphService(graph, new CarrierGraphSearchService(storage)));
+        var graph = await Graph.OpenAsync(storage, GraphSchemaRegistry.Create());
+        var controller = new GraphController(new GraphService(graph, new GraphSearchService(storage)));
         controller.ControllerContext = new ControllerContext {
             HttpContext = new DefaultHttpContext()
         };

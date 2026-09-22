@@ -49,7 +49,7 @@ public sealed record TypedEdgeDefinition(
 
         var endpoints = nodeType.Fields
             .Where(static field => field.ValueKind == NodeFieldValueKind.Node)
-            .Where(static field => typeof(CarrierNode).IsAssignableFrom(field.ClrType))
+            .Where(static field => typeof(Node).IsAssignableFrom(field.ClrType))
             .Select(field => new TypedEdgeEndpointDefinition(
                 field.Name,
                 field.ClrType,
@@ -96,10 +96,10 @@ public sealed record TypedEdgeDefinition(
 
 public sealed record TypedEdgeEndpointInstance(
     TypedEdgeEndpointDefinition Definition,
-    CarrierNode EndpointNode,
-    IReadOnlyCollection<CarrierNode> Participants)
+    Node EndpointNode,
+    IReadOnlyCollection<Node> Participants)
 {
-    public CarrierNode Participant => Participants.Count switch {
+    public Node Participant => Participants.Count switch {
         1 => Participants.Single(),
         0 => throw new InvalidOperationException($"Endpoint '{Definition.Name}' has no participant."),
         _ => throw new InvalidOperationException(
@@ -108,7 +108,7 @@ public sealed record TypedEdgeEndpointInstance(
 }
 
 public sealed record TypedEdgeInstance(
-    CarrierNode Relation,
+    Node Relation,
     TypedEdgeDefinition Definition,
     IReadOnlyCollection<TypedEdgeEndpointInstance> Endpoints)
 {

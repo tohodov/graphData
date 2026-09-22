@@ -57,7 +57,7 @@ public sealed class ServiceTests : GraphServiceTests {
         Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "ak47")));
         Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, typesRoot.LocalId.ToString(), weaponType.LocalId.ToString())));
 
-        async Task<CarrierNode> CreateWeapon(NodeLocalId localId) {
+        async Task<Node> CreateWeapon(NodeLocalId localId) {
             var create = await Service.CreateNode(localId);
             Assert.AreEqual(ServiceResultStatus.Ok, create.Status, create.Error);
             var weapon = create.Value!;
@@ -267,8 +267,8 @@ public sealed class ServiceTests : GraphServiceTests {
 
         Assert.AreEqual(4, definition.Endpoints.Count);
         AssertEndpoint(definition, nameof(ShipmentEdge.Weapon), typeof(EdgeWeaponNodeType), NodeSlotCardinality.Required(), weaponNodeTypeId);
-        AssertEndpoint(definition, nameof(ShipmentEdge.Counterparty), typeof(CarrierNode), NodeSlotCardinality.Required());
-        AssertEndpoint(definition, nameof(ShipmentEdge.OptionalWaypoint), typeof(CarrierNode), NodeSlotCardinality.Optional());
+        AssertEndpoint(definition, nameof(ShipmentEdge.Counterparty), typeof(Node), NodeSlotCardinality.Required());
+        AssertEndpoint(definition, nameof(ShipmentEdge.OptionalWaypoint), typeof(Node), NodeSlotCardinality.Optional());
         AssertEndpoint(definition, nameof(ShipmentEdge.Manufacturers), typeof(EdgeManufacturerNodeType), NodeSlotCardinality.Many(), manufacturerNodeTypeId, isCollection: true);
         Assert.IsFalse(definition.Endpoints.Any(endpoint => endpoint.Name == nameof(ShipmentEdge.Note)));
     }
@@ -325,7 +325,7 @@ public sealed class ServiceTests : GraphServiceTests {
                 new NodeFieldDefinition(
                     "Country",
                     NodeFieldValueKind.Node,
-                    typeof(CarrierNode),
+                    typeof(Node),
                     NodeSlotCardinality.Required(),
                     IsCollection: false,
                     countryType),
@@ -350,8 +350,8 @@ public sealed class ServiceTests : GraphServiceTests {
         var valid = await Service.AssignNodeTypeAsync(manufacturer.GlobalId, manufacturerType.GlobalId);
         Assert.AreEqual(ServiceResultStatus.Ok, valid.Status, valid.Error);
 
-        var reopenedGraph = await global::CarrierGraph.OpenAsync(Storage, GraphSchemaRegistry.Create());
-        var reopenedService = new GraphData.Core.Services.CarrierGraphService(reopenedGraph, new CarrierGraphSearchService(Storage));
+        var reopenedGraph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
+        var reopenedService = new GraphData.Core.Services.GraphService(reopenedGraph, new GraphSearchService(Storage));
         var reopenedType = await reopenedService.GetTypeNode(new NodePath("NodeTypes", "DynManufacturer"));
         Assert.IsNotNull(reopenedType);
 
@@ -378,14 +378,14 @@ public sealed class ServiceTests : GraphServiceTests {
                 new NodeFieldDefinition(
                     "From",
                     NodeFieldValueKind.Node,
-                    typeof(CarrierNode),
+                    typeof(Node),
                     NodeSlotCardinality.Required(),
                     IsCollection: false,
                     loopStepType),
                 new NodeFieldDefinition(
                     "To",
                     NodeFieldValueKind.Node,
-                    typeof(CarrierNode),
+                    typeof(Node),
                     NodeSlotCardinality.Required(),
                     IsCollection: false,
                     loopStepType)
@@ -409,10 +409,10 @@ public sealed class ServiceTests : GraphServiceTests {
         var runtimeDefinition = (await Service.GetNodeTypeDefinitionAsync<ManufacturerNodeType>()).Value!;
         Assert.AreEqual(11, runtimeDefinition.Fields.Count);
 
-        var independentGraph = await global::CarrierGraph.OpenAsync(Storage, GraphSchemaRegistry.Create());
-        var independentService = new GraphData.Core.Services.CarrierGraphService(
+        var independentGraph = await global::Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
+        var independentService = new GraphData.Core.Services.GraphService(
             independentGraph,
-            new CarrierGraphSearchService(Storage));
+            new GraphSearchService(Storage));
         var persistedType = await independentService.GetTypeNode(
             new NodePath("NodeTypes", "Manufacturer"));
 
@@ -443,8 +443,8 @@ public sealed class ServiceTests : GraphServiceTests {
         AssertField(definition, nameof(ManufacturerNodeType.Country), NodeFieldValueKind.Node, typeof(CountryNodeType), NodeSlotCardinality.Required(), countryTypeId);
         AssertField(definition, nameof(ManufacturerNodeType.ParentCompany), NodeFieldValueKind.Node, typeof(ManufacturerNodeType), NodeSlotCardinality.Optional(), manufacturerTypeId);
         AssertField(definition, nameof(ManufacturerNodeType.ProducedWeapons), NodeFieldValueKind.Node, typeof(WeaponNodeType), NodeSlotCardinality.Many(), weaponTypeId, isCollection: true);
-        AssertField(definition, nameof(ManufacturerNodeType.Headquarters), NodeFieldValueKind.Node, typeof(CarrierNode), NodeSlotCardinality.Required());
-        AssertField(definition, nameof(ManufacturerNodeType.ArchiveNode), NodeFieldValueKind.Node, typeof(CarrierNode), NodeSlotCardinality.Optional());
+        AssertField(definition, nameof(ManufacturerNodeType.Headquarters), NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Required());
+        AssertField(definition, nameof(ManufacturerNodeType.ArchiveNode), NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Optional());
         AssertField(definition, nameof(ManufacturerNodeType.LegalName), NodeFieldValueKind.Primitive, typeof(string), NodeSlotCardinality.Required());
         AssertField(definition, nameof(ManufacturerNodeType.FoundedYear), NodeFieldValueKind.Primitive, typeof(int), NodeSlotCardinality.Required());
         AssertField(definition, nameof(ManufacturerNodeType.IsActive), NodeFieldValueKind.Primitive, typeof(bool), NodeSlotCardinality.Required());
@@ -660,14 +660,14 @@ public sealed class ServiceTests : GraphServiceTests {
         Assert.IsTrue(Directory.Exists(Path.Combine(StorageOptions.RootPath, "parent", "child")));
     }
 
-    private static async Task<InternalId> GetTypedEdgeTypeIdAsync<TEdgeType>(GraphData.Core.Services.CarrierGraphService Service)
-        where TEdgeType : CarrierEdge {
+    private static async Task<InternalId> GetTypedEdgeTypeIdAsync<TEdgeType>(GraphData.Core.Services.GraphService Service)
+        where TEdgeType : Edge {
         var result = await Service.GetTypedEdgeDefinitionAsync<TEdgeType>();
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);
         return result.Value!.Type.GlobalId;
     }
 
-    private static async Task<InternalId> GetNodeTypeIdAsync<TNodeType>(GraphData.Core.Services.CarrierGraphService Service)
+    private static async Task<InternalId> GetNodeTypeIdAsync<TNodeType>(GraphData.Core.Services.GraphService Service)
         where TNodeType : NodeType {
         var result = await Service.GetNodeTypeDefinitionAsync<TNodeType>();
         Assert.AreEqual(ServiceResultStatus.Ok, result.Status, result.Error);

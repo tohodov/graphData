@@ -2,23 +2,23 @@ using Abstractions;
 using GraphData.Core.Models;
 using GraphData.Core.Services;
 
-public sealed class CarrierGraph {
+public sealed class Graph {
     static readonly NodeLocalId NodeTypeRootLocalId = new("NodeTypes");
 
     readonly IGraphStorage storage;
     readonly GraphSchemaRegistry schemaRegistry;
     readonly Dictionary<Type, NodeType> runtimeTypesByClrType = [];
     readonly SemaphoreSlim openGate = new(1, 1);
-    CarrierNode? root;
+    Node? root;
     NodeType? nodeTypes;
     bool isOpen;
 
-    internal CarrierGraph(IGraphStorage storage, GraphSchemaRegistry schemaRegistry) {
+    internal Graph(IGraphStorage storage, GraphSchemaRegistry schemaRegistry) {
         this.storage = storage;
         this.schemaRegistry = schemaRegistry;
     }
 
-    public CarrierNode Root => root ?? throw new InvalidOperationException("Graph is not open.");
+    public Node Root => root ?? throw new InvalidOperationException("Graph is not open.");
     public NodeType NodeTypes => nodeTypes ?? throw new InvalidOperationException("Graph is not open.");
     public IReadOnlyCollection<NodeType> RuntimeTypes {
         get {
@@ -30,8 +30,8 @@ public sealed class CarrierGraph {
     internal IGraphStorage Storage => storage;
     internal bool IsOpen => isOpen;
 
-    internal static async Task<CarrierGraph> OpenAsync(IGraphStorage storage, GraphSchemaRegistry schemaRegistry) {
-        var graph = new CarrierGraph(storage, schemaRegistry);
+    internal static async Task<Graph> OpenAsync(IGraphStorage storage, GraphSchemaRegistry schemaRegistry) {
+        var graph = new Graph(storage, schemaRegistry);
         await graph.OpenAsync().ConfigureAwait(false);
         return graph;
     }
@@ -63,7 +63,7 @@ public sealed class CarrierGraph {
                 await DynamicNodeTypeDefinitionStorage.WriteAsync(storage, definition).ConfigureAwait(false);
             }
 
-            root = new CarrierNode(storage.Root);
+            root = new Node(storage.Root);
             nodeTypes = new NodeType(nodeTypesRoot);
             isOpen = true;
         } finally {
@@ -108,7 +108,7 @@ public sealed class CarrierGraph {
     }
 
     public TypedEdgeDefinition? GetTypedEdgeDefinition<TEdgeType>()
-        where TEdgeType : CarrierEdge {
+        where TEdgeType : Edge {
         var nodeType = GetNodeTypeDefinition<TEdgeType>();
         if (nodeType is null)
             return null;

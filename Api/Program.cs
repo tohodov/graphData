@@ -19,7 +19,7 @@ var isOpenApiDocumentGeneration = Assembly.GetEntryAssembly()?.GetName().Name ==
 if (!isOpenApiDocumentGeneration)
 {
     if (app.Services.GetRequiredService<GraphStorageSelection>().Mode == GraphStorageMode.Legacy)
-        await app.Services.GetRequiredService<CarrierGraph>().OpenAsync().ConfigureAwait(false);
+        await app.Services.GetRequiredService<Graph>().OpenAsync().ConfigureAwait(false);
     else
         _ = app.Services.GetRequiredService<ITypedGraph>();
 }

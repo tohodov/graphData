@@ -1,7 +1,7 @@
 ﻿using Abstractions;
 using GraphData.Core.Models;
 
-public class NodeType : CarrierNode {
+public class NodeType : Node {
     internal NodeType(CarrierNodeBacking state)
         : base(state) {
     }
@@ -11,21 +11,20 @@ public class NodeType : CarrierNode {
         var name = type.Name;
         if (name.EndsWith(nameof(NodeType), StringComparison.Ordinal))
             name = name[..^nameof(NodeType).Length];
-        // These suffixes define persisted type IDs; renaming the carrier classes must not change them.
-        else if (name.EndsWith("Edge", StringComparison.Ordinal))
-            name = name[..^"Edge".Length];
-        else if (name.EndsWith("Node", StringComparison.Ordinal))
-            name = name[..^"Node".Length];
+        else if (name.EndsWith(nameof(Edge), StringComparison.Ordinal))
+            name = name[..^nameof(Edge).Length];
+        else if (name.EndsWith(nameof(Node), StringComparison.Ordinal))
+            name = name[..^nameof(Node).Length];
 
         return string.IsNullOrWhiteSpace(name) ? type.Name : name;
     }
 }
 
-public sealed record NodeTypeInstance(NodeType Type, CarrierNode? Witness = null) {
+public sealed record NodeTypeInstance(NodeType Type, Node? Witness = null) {
     public bool IsMaterialized => Witness is not null;
 }
 
-public sealed class InstanceNode : CarrierNode {
+public sealed class InstanceNode : Node {
     private readonly IReadOnlyCollection<NodeTypeInstance> typeInstances;
 
     public IReadOnlyCollection<NodeTypeInstance> TypeInstances => typeInstances;

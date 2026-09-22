@@ -116,7 +116,7 @@ public sealed class CarrierTypedGraphStoreTests : GraphServiceTests
     {
         var person = (await Service.CreateNodeType("NamedPerson")).Value!.Type;
         var unsupported = (await Service.CreateNodeType("NamedFieldOwner", fields: [
-            new NodeFieldDefinition("Owner", NodeFieldValueKind.Node, typeof(CarrierNode), NodeSlotCardinality.Optional(), false, person)
+            new NodeFieldDefinition("Owner", NodeFieldValueKind.Node, typeof(Node), NodeSlotCardinality.Optional(), false, person)
         ])).Value!.Type;
         using var typed = CreateTypedGraph();
 

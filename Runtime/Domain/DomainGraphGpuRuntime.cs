@@ -33,10 +33,10 @@ public sealed class DomainGraphGpuRuntime : IDisposable
     }
 
     public async Task<DomainGraphGpuExecutionResult> ExecuteAsync(
-        CarrierGraphService graphService,
+        GraphService graphService,
         IEnumerable<NodeRef> roots,
         int maxDepth,
-        Func<global::CarrierNode, IReadOnlyList<float>> featureSelector,
+        Func<global::Node, IReadOnlyList<float>> featureSelector,
         MessagePassingSpecification specification,
         GraphChunkingOptions? chunkingOptions = null,
         CancellationToken cancellationToken = default)
@@ -61,8 +61,8 @@ public sealed class DomainGraphGpuRuntime : IDisposable
     }
 
     public DomainGraphGpuExecutionResult Execute(
-        CarrierSubgraph subgraph,
-        Func<global::CarrierNode, IReadOnlyList<float>> featureSelector,
+        Subgraph subgraph,
+        Func<global::Node, IReadOnlyList<float>> featureSelector,
         MessagePassingSpecification specification,
         GraphChunkingOptions? chunkingOptions = null,
         CancellationToken cancellationToken = default)

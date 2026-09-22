@@ -31,7 +31,7 @@ public sealed class TypedGraphStorageTests
 
         Assert.AreEqual(GraphStorageMode.Legacy, provider.GetRequiredService<GraphStorageSelection>().Mode);
         Assert.IsInstanceOfType<SymLinkGraphStorage>(provider.GetRequiredService<IGraphStorage>());
-        await provider.GetRequiredService<CarrierGraph>().OpenAsync();
+        await provider.GetRequiredService<Graph>().OpenAsync();
         Assert.IsNotNull(provider.GetRequiredService<ITypedGraph>());
     }
 
@@ -52,8 +52,8 @@ public sealed class TypedGraphStorageTests
         {
             Assert.AreEqual(GraphStorageMode.Semantic, provider.GetRequiredService<GraphStorageSelection>().Mode);
             Assert.IsNull(provider.GetService<IGraphStorage>());
-            Assert.IsNull(provider.GetService<CarrierGraph>());
-            Assert.IsNull(provider.GetService<CarrierGraphService>());
+            Assert.IsNull(provider.GetService<Graph>());
+            Assert.IsNull(provider.GetService<Core.Services.GraphService>());
             var graph = provider.GetRequiredService<ITypedGraph>();
             await graph.CreateTypeAsync(new TypedType("NodeTypes/Person", TypedElementKind.Instance, false, [], [], []));
             await graph.CreateInstanceAsync("person", ["NodeTypes/Person"], new Dictionary<string, string>());

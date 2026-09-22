@@ -18,8 +18,8 @@ public sealed class GraphDataToolsTests : StorageTests
         var second = await Storage.Create(new NodeLocalId("2"));
         await Storage.Connect(first.GlobalId, second.GlobalId);
 
-        var graph = await CarrierGraph.OpenAsync(Storage, GraphSchemaRegistry.Create());
-        var tools = new GraphDataTools(new CarrierGraphService(graph, new CarrierGraphSearchService(Storage)), graph);
+        var graph = await Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
+        var tools = new GraphDataTools(new GraphService(graph, new GraphSearchService(Storage)), graph);
         var json = await tools.GetNode(["1"]);
 
         using var document = JsonDocument.Parse(json);
@@ -43,8 +43,8 @@ public sealed class GraphDataToolsTests : StorageTests
     [TestMethod]
     public async Task CreateType_CreatesDynamicDefinitionVisibleToGetTypeDefinitions()
     {
-        var graph = await CarrierGraph.OpenAsync(Storage, GraphSchemaRegistry.Create());
-        var tools = new GraphDataTools(new CarrierGraphService(graph, new CarrierGraphSearchService(Storage)), graph);
+        var graph = await Graph.OpenAsync(Storage, GraphSchemaRegistry.Create());
+        var tools = new GraphDataTools(new GraphService(graph, new GraphSearchService(Storage)), graph);
 
         var countryJson = await tools.CreateType("McpCountry");
         using var countryDocument = JsonDocument.Parse(countryJson);

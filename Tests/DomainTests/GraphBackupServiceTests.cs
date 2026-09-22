@@ -19,7 +19,7 @@ public sealed class GraphBackupServiceTests : GraphServiceTests {
             var connect = await Service.ConnectNodesAsync(source.GlobalId, target.GlobalId);
             Assert.AreEqual(ServiceResultStatus.Ok, connect.Status, connect.Error);
 
-            var backup = new CarrierGraphBackupService(Service);
+            var backup = new GraphBackupService(Service);
             await backup.SaveAsync(backupPath);
             Assert.IsTrue(File.Exists(backupPath));
 

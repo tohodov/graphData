@@ -1,6 +1,6 @@
 using Abstractions;
 
-public class CarrierNode {
+public class Node {
     readonly NodeCollection nodes;
 
     internal CarrierNodeBacking Backing { get; private set; }
@@ -8,7 +8,7 @@ public class CarrierNode {
     public virtual NodeLocalId LocalId => Backing.LocalId;
     public virtual InternalId GlobalId => Backing.GlobalId;
 
-    public virtual ICollection<CarrierEdge> Edges => new EdgeCollection(Backing.Edges);
+    public virtual ICollection<Edge> Edges => new EdgeCollection(Backing.Edges);
     public virtual ICollection<Incidence> Incidences { get; } = new List<Incidence>();
     public virtual NodeCollection Nodes => nodes;
 
@@ -17,9 +17,9 @@ public class CarrierNode {
         set => Backing.Attributes = value;
     }
 
-    public CarrierNode(NodeLocalId localId) : this(new VirtualNodeState(localId)) { }
+    public Node(NodeLocalId localId) : this(new VirtualNodeState(localId)) { }
 
-    internal CarrierNode(CarrierNodeBacking state) {
+    internal Node(CarrierNodeBacking state) {
         Backing = state;
         nodes = new NodeCollection(this);
     }
@@ -30,20 +30,20 @@ public class CarrierNode {
         Incidences.Add(incidence);
     }
 
-    public sealed class NodeCollection : ICollection<CarrierNode> {
-        readonly CarrierNode owner;
+    public sealed class NodeCollection : ICollection<Node> {
+        readonly Node owner;
 
         // Keeps object identity and runtime type for nodes created from virtual input.
         // Existing links remain owned by backing and are merged in Snapshot().
-        readonly List<CarrierNode> createdLinkedNodes = [];
+        readonly List<Node> createdLinkedNodes = [];
         bool materializingPreparedLinks;
 
-        internal NodeCollection(CarrierNode owner) => this.owner = owner;
+        internal NodeCollection(Node owner) => this.owner = owner;
 
         public int Count => Snapshot().Count;
         public bool IsReadOnly => true;
 
-        public void Add(CarrierNode item) {
+        public void Add(Node item) {
             if (Contains(item) || WouldCreateDuplicateVirtualNode(item))
                 throw new InvalidOperationException($"Node '{item.GlobalId}' is already linked to '{owner.GlobalId}'.");
 
@@ -53,12 +53,12 @@ public class CarrierNode {
             var backing = owner.Backing.Nodes.Add(item.Backing).GetAwaiter().GetResult();
             item.ReplaceBacking(backing);
         }
-        public CarrierNode Create(NodeLocalId id) {
+        public Node Create(NodeLocalId id) {
             if (Snapshot().Any(node => node.LocalId == id))
                 throw new InvalidOperationException($"Node '{id}' is already exists.");
             var item = new VirtualNodeState(id);
             var backing = owner.Backing.Nodes.Add(item).GetAwaiter().GetResult();
-            var node = new CarrierNode(backing);
+            var node = new Node(backing);
             TrackCreatedNode(node);
             return node;
         }
@@ -69,13 +69,13 @@ public class CarrierNode {
             createdLinkedNodes.Clear();
         }
 
-        public bool Contains(CarrierNode item) => Snapshot().Any(node => SameNode(node, item));
+        public bool Contains(Node item) => Snapshot().Any(node => SameNode(node, item));
 
-        public void CopyTo(CarrierNode[] array, int arrayIndex) => Snapshot().CopyTo(array, arrayIndex);
+        public void CopyTo(Node[] array, int arrayIndex) => Snapshot().CopyTo(array, arrayIndex);
 
-        public IEnumerator<CarrierNode> GetEnumerator() => Snapshot().GetEnumerator();
+        public IEnumerator<Node> GetEnumerator() => Snapshot().GetEnumerator();
 
-        public bool Remove(CarrierNode item) {
+        public bool Remove(Node item) {
             if (!Contains(item))
                 return false;
 
@@ -88,7 +88,7 @@ public class CarrierNode {
             return true;
         }
 
-        internal void StageVirtualNode(CarrierNode item) {
+        internal void StageVirtualNode(Node item) {
             if (item.Backing is not VirtualNodeState)
                 throw new ArgumentException("Only virtual nodes can be staged for creation.", nameof(item));
             if (WouldCreateDuplicateVirtualNode(item))
@@ -97,8 +97,8 @@ public class CarrierNode {
             TrackCreatedNode(item);
         }
 
-        internal IReadOnlyCollection<CarrierNode> GetPreparedNodes() {
-            var nodes = new List<CarrierNode>();
+        internal IReadOnlyCollection<Node> GetPreparedNodes() {
+            var nodes = new List<Node>();
             if (owner.Backing is VirtualNodeState)
                 foreach (var state in owner.Backing.Nodes.ToArrayAsync().GetAwaiter().GetResult())
                     AddPreparedNode(nodes, ResolveNode(state));
@@ -124,17 +124,17 @@ public class CarrierNode {
 
         System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
 
-        private List<CarrierNode> Snapshot() {
-            var nodes = new List<CarrierNode>(createdLinkedNodes);
+        private List<Node> Snapshot() {
+            var nodes = new List<Node>(createdLinkedNodes);
             foreach (var state in owner.Backing.Nodes.ToArrayAsync().GetAwaiter().GetResult()) {
                 if (!nodes.Any(node => ReferenceEquals(node.Backing, state) || node.GlobalId == state.GlobalId))
-                    nodes.Add(new CarrierNode(state));
+                    nodes.Add(new Node(state));
             }
             return nodes;
         }
 
-        private IReadOnlyCollection<CarrierNode> GetPreparedNodes(CarrierNodeBacking previousBacking) {
-            var nodes = new List<CarrierNode>();
+        private IReadOnlyCollection<Node> GetPreparedNodes(CarrierNodeBacking previousBacking) {
+            var nodes = new List<Node>();
             if (previousBacking is VirtualNodeState)
                 foreach (var state in previousBacking.Nodes.ToArrayAsync().GetAwaiter().GetResult())
                     AddPreparedNode(nodes, ResolveNode(state));
@@ -145,20 +145,20 @@ public class CarrierNode {
             return nodes;
         }
 
-        private void TrackCreatedNode(CarrierNode item) {
+        private void TrackCreatedNode(Node item) {
             if (!createdLinkedNodes.Any(node => SameNode(node, item)))
                 createdLinkedNodes.Add(item);
         }
 
-        private CarrierNode ResolveNode(CarrierNodeBacking state) {
+        private Node ResolveNode(CarrierNodeBacking state) {
             return createdLinkedNodes.FirstOrDefault(node => ReferenceEquals(node.Backing, state) || node.GlobalId == state.GlobalId)
-                ?? new CarrierNode(state);
+                ?? new Node(state);
         }
 
-        private bool WouldCreateDuplicateVirtualNode(CarrierNode item) =>
+        private bool WouldCreateDuplicateVirtualNode(Node item) =>
             item.Backing is VirtualNodeState && Snapshot().Any(node => node.LocalId == item.LocalId);
 
-        private static void AddPreparedNode(List<CarrierNode> nodes, CarrierNode node) {
+        private static void AddPreparedNode(List<Node> nodes, Node node) {
             if (!nodes.Any(existing => SameNode(existing, node)))
                 nodes.Add(node);
         }
@@ -172,20 +172,20 @@ public class CarrierNode {
         nodes.MaterializePreparedLinks(previousBacking);
     }
 
-    private static bool SameNode(CarrierNode left, CarrierNode right) =>
+    private static bool SameNode(Node left, Node right) =>
         ReferenceEquals(left, right)
         || ReferenceEquals(left.Backing, right.Backing)
         || left.GlobalId == right.GlobalId;
 
-    private sealed class EdgeCollection(IAsyncCollection<CarrierEdgeBacking> states) : ICollection<CarrierEdge> {
+    private sealed class EdgeCollection(IAsyncCollection<CarrierEdgeBacking> states) : ICollection<Edge> {
         public int Count => states.CountAsync().Result;
         public bool IsReadOnly => false;
 
-        public void Add(CarrierEdge item) => item.Backing = states.Add(item.Backing).GetAwaiter().GetResult();
+        public void Add(Edge item) => item.Backing = states.Add(item.Backing).GetAwaiter().GetResult();
 
         public void Clear() => states.Clear().GetAwaiter().GetResult();
 
-        public bool Contains(CarrierEdge item) {
+        public bool Contains(Edge item) {
             var state = item.Backing;
             return states.AnyAsync(candidate =>
                 candidate.Node1.GlobalId == state.Node1.GlobalId
@@ -193,11 +193,11 @@ public class CarrierNode {
                 .Result;
         }
 
-        public void CopyTo(CarrierEdge[] array, int arrayIndex) => states.Select(static state => new CarrierEdge(state)).ToArrayAsync().Result.CopyTo(array, arrayIndex);
+        public void CopyTo(Edge[] array, int arrayIndex) => states.Select(static state => new Edge(state)).ToArrayAsync().Result.CopyTo(array, arrayIndex);
 
-        public IEnumerator<CarrierEdge> GetEnumerator() => states.ToArrayAsync().Result.Select(static state => new CarrierEdge(state)).GetEnumerator();
+        public IEnumerator<Edge> GetEnumerator() => states.ToArrayAsync().Result.Select(static state => new Edge(state)).GetEnumerator();
 
-        public bool Remove(CarrierEdge item) {
+        public bool Remove(Edge item) {
             states.Remove(item.Backing).GetAwaiter().GetResult();
             return true;
         }
