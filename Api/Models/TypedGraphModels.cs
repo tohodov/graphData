@@ -53,14 +53,31 @@ public sealed record TypedInstanceRequest
 public sealed record TypedRelationRequest
 {
     public required string Id { get; init; }
-    public required string TypeId { get; init; }
+    public string? TypeId { get; init; }
     public required Dictionary<string, string[]> Members { get; init; }
     public Dictionary<string, string> Attributes { get; init; } = new(StringComparer.Ordinal);
+}
+
+public sealed record TypedRelationUpdateRequest
+{
+    public string? TypeId { get; init; }
+    public required Dictionary<string, string[]> Members { get; init; }
+    public required Dictionary<string, string> Attributes { get; init; }
 }
 
 public sealed record TypedAttributesRequest
 {
     public required Dictionary<string, string> Attributes { get; init; }
+}
+
+public sealed record TypedTypesRequest
+{
+    public required string[] TypeIds { get; init; }
+}
+
+public sealed record TypedMembersRequest
+{
+    public required Dictionary<string, string[]> Members { get; init; }
 }
 
 public sealed record TypedElementResponse

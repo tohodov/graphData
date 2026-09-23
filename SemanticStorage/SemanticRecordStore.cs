@@ -70,6 +70,8 @@ public sealed class SemanticRecordStore : ITypedGraphStore, IDisposable
     public Task<TypedElement?> ReadElementAsync(string id) => Locked(async () =>
         await ReadElementCoreAsync(id).ConfigureAwait(false));
 
+    public Task<IReadOnlyList<TypedElement>> ReadElementsAsync() => Locked(ReadElementsCoreAsync);
+
     public Task<IReadOnlyList<TypedElement>> ReadIncidentRelationsAsync(string participantId) => Locked(async () =>
     {
         ValidateId(participantId);
@@ -117,6 +119,46 @@ public sealed class SemanticRecordStore : ITypedGraphStore, IDisposable
         if (records.Any(record => record.Members.Values.Any(ids => ids.Contains(id, StringComparer.Ordinal))))
             throw Error(TypedGraphError.Conflict, $"Element '{id}' is referenced by an existing element.");
         File.Delete(RecordPath(instancesPath, id));
+    });
+
+    public Task ReplaceTypesAsync(string id, IReadOnlyList<string> typeIds) => Locked(async () =>
+    {
+        var current = await ReadElementCoreAsync(id).ConfigureAwait(false)
+            ?? throw Error(TypedGraphError.NotFound, $"Element '{id}' does not exist.");
+        var replacement = current with { TypeIds = typeIds.ToArray() };
+        ValidateElement(replacement);
+        await WriteAtomicAsync(RecordPath(instancesPath, id),
+            new RecordEnvelope<TypedElement>(FormatVersion, "element", replacement), replace: true).ConfigureAwait(false);
+    });
+
+    public Task ReplaceMembersAsync(string id, IReadOnlyDictionary<string, IReadOnlyList<string>> members) => Locked(async () =>
+    {
+        var current = await ReadElementCoreAsync(id).ConfigureAwait(false)
+            ?? throw Error(TypedGraphError.NotFound, $"Element '{id}' does not exist.");
+        if (current.Kind != TypedElementKind.Relation)
+            throw Error(TypedGraphError.Invalid, "Member replacement applies to relations only.");
+        var replacement = current with { Members = members.ToDictionary(pair => pair.Key,
+            pair => (IReadOnlyList<string>)pair.Value.ToArray(), StringComparer.Ordinal) };
+        ValidateElement(replacement);
+        foreach (var participant in replacement.Members.Values.SelectMany(ids => ids).Distinct(StringComparer.Ordinal))
+            if (await ReadElementCoreAsync(participant).ConfigureAwait(false) is null)
+                throw Error(TypedGraphError.Invalid, $"Participant '{participant}' does not exist.");
+        await WriteAtomicAsync(RecordPath(instancesPath, id),
+            new RecordEnvelope<TypedElement>(FormatVersion, "element", replacement), replace: true).ConfigureAwait(false);
+    });
+
+    public Task ReplaceElementAsync(TypedElement element) => Locked(async () =>
+    {
+        var current = await ReadElementCoreAsync(element.Id).ConfigureAwait(false)
+            ?? throw Error(TypedGraphError.NotFound, $"Element '{element.Id}' does not exist.");
+        if (current.Kind != element.Kind)
+            throw Error(TypedGraphError.Invalid, "An existing element cannot change its kind.");
+        ValidateElement(element);
+        foreach (var participant in element.Members.Values.SelectMany(ids => ids).Distinct(StringComparer.Ordinal))
+            if (await ReadElementCoreAsync(participant).ConfigureAwait(false) is null)
+                throw Error(TypedGraphError.Invalid, $"Participant '{participant}' does not exist.");
+        await WriteAtomicAsync(RecordPath(instancesPath, element.Id),
+            new RecordEnvelope<TypedElement>(FormatVersion, "element", element), replace: true).ConfigureAwait(false);
     });
 
     async Task<TypedType?> ReadTypeCoreAsync(string id)

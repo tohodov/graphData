@@ -25,6 +25,10 @@ public sealed class TypedGraphController(ITypedGraph graph) : ControllerBase
     public Task<ActionResult<TypedElementResponse>> GetElementAsync([FromQuery] string id) =>
         ExecuteAsync(async () => ToResponse(await graph.GetAsync(id)));
 
+    [HttpGet("elements/all")]
+    public Task<ActionResult<TypedElementResponse[]>> GetElementsAsync() =>
+        ExecuteAsync(async () => (await graph.GetElementsAsync()).Select(ToResponse).ToArray());
+
     [HttpGet("relations/incident")]
     public Task<ActionResult<TypedElementResponse[]>> GetIncidentRelationsAsync([FromQuery] string participantId) =>
         ExecuteAsync(async () => (await graph.FindIncidentRelationsAsync(participantId)).Select(ToResponse).ToArray());
@@ -59,6 +63,40 @@ public sealed class TypedGraphController(ITypedGraph graph) : ControllerBase
             RequireValue(request, "request");
             ValidateAttributes(request.Attributes);
             return ToResponse(await graph.ReplaceAttributesAsync(id, request.Attributes));
+        });
+
+    [HttpPut("relations")]
+    public Task<ActionResult<TypedElementResponse>> ReplaceRelationAsync([FromQuery] string id, [FromBody] TypedRelationUpdateRequest request) =>
+        ExecuteAsync(async () =>
+        {
+            RequireValue(id, "id");
+            RequireValue(request, "request");
+            ValidateMembers(request.Members);
+            ValidateAttributes(request.Attributes);
+            return ToResponse(await graph.ReplaceRelationAsync(id, request.TypeId,
+                request.Members.ToDictionary(static member => member.Key, static member => (IReadOnlyList<string>)member.Value, StringComparer.Ordinal),
+                request.Attributes));
+        });
+
+    [HttpPut("elements/types")]
+    public Task<ActionResult<TypedElementResponse>> ReplaceTypesAsync([FromQuery] string id, [FromBody] TypedTypesRequest request) =>
+        ExecuteAsync(async () =>
+        {
+            RequireValue(id, "id");
+            RequireValue(request, "request");
+            ValidateIds(request.TypeIds, "typeIds");
+            return ToResponse(await graph.ReplaceTypesAsync(id, request.TypeIds));
+        });
+
+    [HttpPut("relations/members")]
+    public Task<ActionResult<TypedElementResponse>> ReplaceMembersAsync([FromQuery] string id, [FromBody] TypedMembersRequest request) =>
+        ExecuteAsync(async () =>
+        {
+            RequireValue(id, "id");
+            RequireValue(request, "request");
+            ValidateMembers(request.Members);
+            return ToResponse(await graph.ReplaceMembersAsync(id,
+                request.Members.ToDictionary(static member => member.Key, static member => (IReadOnlyList<string>)member.Value, StringComparer.Ordinal)));
         });
 
     [HttpDelete("elements")]
@@ -145,10 +183,14 @@ public sealed class TypedGraphController(ITypedGraph graph) : ControllerBase
     {
         RequireValue(request, "request");
         RequireValue(request.Id, "id");
-        RequireValue(request.TypeId, "typeId");
-        foreach (var member in RequireValue(request.Members, "members"))
-            ValidateIds(member.Value, $"members.{member.Key}");
+        ValidateMembers(request.Members);
         ValidateAttributes(request.Attributes);
+    }
+
+    static void ValidateMembers(IReadOnlyDictionary<string, string[]> members)
+    {
+        foreach (var member in RequireValue(members, "members"))
+            ValidateIds(member.Value, $"members.{member.Key}");
     }
 
     static void ValidateAttributes(IReadOnlyDictionary<string, string> attributes)

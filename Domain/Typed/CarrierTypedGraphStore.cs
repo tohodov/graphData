@@ -99,6 +99,18 @@ public sealed class CarrierTypedGraphStore : ITypedGraphStore
         return result.AsReadOnly();
     }
 
+    public Task<IReadOnlyList<TypedElement>> ReadElementsAsync() => throw Error(TypedGraphError.Unsupported,
+        "Complete typed enumeration is unavailable for carrier graphs; use the existing graph search.");
+
+    public Task ReplaceTypesAsync(string id, IReadOnlyList<string> typeIds) => throw Error(TypedGraphError.Unsupported,
+        "Typed replacement of carrier facets is unavailable; use the existing graph editor.");
+
+    public Task ReplaceMembersAsync(string id, IReadOnlyDictionary<string, IReadOnlyList<string>> members) => throw Error(TypedGraphError.Unsupported,
+        "Typed replacement of carrier relation participants is unavailable; use the existing graph editor.");
+
+    public Task ReplaceElementAsync(TypedElement element) => throw Error(TypedGraphError.Unsupported,
+        "Atomic typed replacement of carrier relations is unavailable; use the existing graph editor.");
+
     public async Task InsertTypeAsync(TypedType definition)
     {
         await graph.OpenAsync().ConfigureAwait(false);

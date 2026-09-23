@@ -6,16 +6,17 @@ namespace GraphData.Api.Controllers;
 
 [ApiController]
 [Route("api/ui")]
-public sealed class UiController(Graph graph) : ControllerBase {
+public sealed class UiController(Graph? graph = null) : ControllerBase {
     [HttpGet("settings")]
     public ActionResult<UiSettingsResponse> GetSettings() {
         return new UiSettingsResponse {
+            GraphApi = graph is null ? "typed" : "raw",
             SystemNodeIds = new UiSystemNodeIdsResponse {
-                NodeTypeRoot = graph.NodeTypes.GlobalId.ToString(),
-                StorageRoot = graph.Root.GlobalId.ToString(),
+                NodeTypeRoot = graph?.NodeTypes.GlobalId.ToString() ?? "",
+                StorageRoot = graph?.Root.GlobalId.ToString() ?? "",
             },
             Basis = new UiBasisResponse {
-                NodeTypeRoot = graph.NodeTypes.GlobalId.ToString()
+                NodeTypeRoot = graph?.NodeTypes.GlobalId.ToString() ?? ""
             }
         };
     }

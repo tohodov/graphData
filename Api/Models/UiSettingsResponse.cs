@@ -2,6 +2,8 @@ namespace GraphData.Api.Models;
 
 public sealed record UiSettingsResponse
 {
+    public required string GraphApi { get; init; }
+
     public required UiSystemNodeIdsResponse SystemNodeIds { get; init; }
 
     public required UiBasisResponse Basis { get; init; }

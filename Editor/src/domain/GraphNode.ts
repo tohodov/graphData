@@ -22,6 +22,9 @@ export type GraphNodeSnapshot = {
   collapsed?: boolean;
   showed?: boolean | undefined;
   position?: GraphPoint | null;
+  semanticKind?: "instance" | "relation" | null;
+  typeIds?: string[];
+  members?: Record<string, string[]>;
   // Backward compatibility
   globalId?: string;
 };
@@ -38,6 +41,9 @@ export class GraphNode {
   collapsed: boolean;
   showed: boolean | undefined;
   position: GraphPoint | null;
+  semanticKind: "instance" | "relation" | null;
+  typeIds: string[];
+  members: Record<string, string[]>;
   constructor({
     internalId,
     path,
@@ -50,7 +56,10 @@ export class GraphNode {
     nodes = [],
     collapsed = false,
     showed,
-    position = null
+    position = null,
+    semanticKind = null,
+    typeIds = [],
+    members = {}
   }: GraphNodeSnapshot) {
     this.internalId = internalId ?? globalId ?? name ?? "";
     this.path = path ?? internalId ?? globalId ?? name ?? "";
@@ -63,6 +72,9 @@ export class GraphNode {
     this.collapsed = Boolean(collapsed);
     this.showed = showed;
     this.position = normalizePoint(position);
+    this.semanticKind = semanticKind;
+    this.typeIds = [...typeIds];
+    this.members = Object.fromEntries(Object.entries(members).map(([name, ids]) => [name, [...ids]]));
   }
 
   static fromApi(node: GraphNodeSnapshot | null | undefined): GraphNode {
@@ -81,7 +93,10 @@ export class GraphNode {
     this.localId = next.localId;
     this.displayName = next.displayName;
     this.attributes = { ...next.attributes };
-    this.edges = GraphEdge.mergeMany(this.edges, next.edges);
+    this.edges = next.semanticKind ? next.edges : GraphEdge.mergeMany(this.edges, next.edges);
+    this.semanticKind = next.semanticKind;
+    this.typeIds = [...next.typeIds];
+    this.members = Object.fromEntries(Object.entries(next.members).map(([name, ids]) => [name, [...ids]]));
     // TODO: GraphNode.mergeMany(this.nodes, next.nodes)? For now just replace or concat?
     this.nodes = next.nodes.length > 0 ? next.nodes : this.nodes;
     this.collapsed = this.collapsed || next.collapsed;
@@ -154,6 +169,9 @@ export class GraphNode {
       collapsed: this.collapsed,
       showed: this.showed,
       position: this.position ? { ...this.position } : null,
+      semanticKind: this.semanticKind,
+      typeIds: [...this.typeIds],
+      members: Object.fromEntries(Object.entries(this.members).map(([name, ids]) => [name, [...ids]])),
       ...extra
     };
   }

@@ -39,6 +39,9 @@ export class GraphProjection {
 
   projectFromIterables(nodes: Iterable<import("./GraphModel.js").ProjectedGraphNode | import("./GraphNode.js").GraphNode>, edges: Iterable<import("./GraphModel.js").ProjectedGraphEdge | import("./GraphEdge.js").GraphEdge>): ProjectedGraph {
     const source = this.visiblePrimitiveGraph(nodes, edges);
+    if (this.model.semanticMode) {
+      return this.projectSemantic(source);
+    }
     if (!this.hasBasisRules()) {
       return this.rank(source);
     }
@@ -153,6 +156,60 @@ export class GraphProjection {
     return this.rank({ nodes: typedNodes, edges: [...physicalEdges, ...projectedEdges] });
   }
 
+  projectSemantic(source: ProjectedGraph): ProjectedGraph {
+    const hidden = new Set<string>();
+    const nodes: ProjectedGraphNode[] = [];
+    for (const node of source.nodes) {
+      const catalog = node.semanticKind === "relation" ? this.model.schema.edgeTypes : this.model.schema.nodeTypes;
+      const types = (node.typeIds ?? []).map(id => catalog.get(id)).filter((type): type is GraphType => Boolean(type));
+      const visibleTypes = types.filter(type => type.visible !== false);
+      if (types.length > 0 && visibleTypes.length === 0) {
+        hidden.add(node.name ?? "");
+        continue;
+      }
+
+      const primaryType = visibleTypes[0];
+      const attributeFields: ProjectedGraphNodeField[] = Object.entries(node.attributes ?? {}).map(([name, value]) => ({
+        facetPath: "attributes",
+        facetLabel: "Атрибуты",
+        name,
+        label: name,
+        value,
+        valueKind: "scalar"
+      }));
+      const memberFields: ProjectedGraphNodeField[] = Object.entries(node.members ?? {}).map(([name, ids]) => ({
+        facetPath: "members",
+        facetLabel: "Участники",
+        name,
+        label: name,
+        value: ids.map(id => this.model.displayName(id)).join(", "),
+        valueKind: "reference",
+        isCollection: ids.length !== 1
+      }));
+      const fields = [...attributeFields, ...memberFields];
+      nodes.push({
+        ...node,
+        typeGlobalId: primaryType?.path,
+        typeLabel: visibleTypes.map(type => type.label).join(" · ") || (node.semanticKind === "relation" ? "Отношение" : undefined),
+        typeRank: primaryType?.rank,
+        color: primaryType?.color,
+        viewShape: primaryType?.collapsed === false ? "circle" : node.semanticKind === "relation" || fields.length > 0 ? "record" : "circle",
+        typeFields: fields,
+        displayName: this.model.formatProjectedNodeName(node, primaryType ?? {})
+      });
+    }
+
+    const edges = source.edges
+      .filter(edge => !hidden.has(edge.node1InternalId) && !hidden.has(edge.node2InternalId))
+      .map(edge => {
+        const type = edge.typeGlobalId ? this.model.schema.edgeTypes.get(edge.typeGlobalId) : undefined;
+        return { ...edge, color: type?.color || edge.color, typeRank: type?.rank,
+          directed: type?.directed ?? edge.directed,
+          label: type?.labelVisible === false ? "" : edge.memberName ?? edge.label };
+      });
+    return this.rank({ nodes, edges });
+  }
+
   hasBasisRules(): boolean {
     return (this.model.schema.nodeTypes?.size ?? 0) > 0
       || (this.model.schema.edgeTypes?.size ?? 0) > 0;
@@ -259,6 +316,18 @@ export class GraphProjection {
   }
 
   relations(physical: ProjectedGraph): RelationInstance[] {
+    if (this.model.semanticMode) {
+      return physical.nodes.filter(node => node.semanticKind === "relation").map(node => ({
+        relationGlobalId: node.name ?? "",
+        displayName: node.displayName ?? node.name ?? "",
+        collapsed: false,
+        node1InternalId: node.members?.source?.[0] ?? null,
+        node2InternalId: node.members?.target?.[0] ?? null,
+        type: node.typeIds?.[0] ? this.model.schema.edgeTypes.get(node.typeIds[0]) : null,
+        portGlobalIds: [],
+        physicalEdgeKeys: new Set(physical.edges.filter(edge => edge.relationGlobalId === node.name).map(edge => edge.key ?? ""))
+      }));
+    }
     const nodesByName = new Map(physical.nodes.map(node => [node.name, node]));
     const edgesByNode = new Map<string, import("./GraphModel.js").ProjectedGraphEdge[]>();
     physical.edges.forEach(edge => {
@@ -326,6 +395,13 @@ export class GraphProjection {
 
   nodeTypeAssignments(physical: ProjectedGraph): Map<string, GraphType[]> {
     const result = new Map<string, GraphType[]>();
+    if (this.model.semanticMode) {
+      for (const node of physical.nodes) {
+        const catalog = node.semanticKind === "relation" ? this.model.schema.edgeTypes : this.model.schema.nodeTypes;
+        result.set(node.name ?? "", (node.typeIds ?? []).map(id => catalog.get(id)).filter((type): type is GraphType => Boolean(type)));
+      }
+      return result;
+    }
     const addFacet = (nodeId: string, type: GraphType) => {
       const facets = result.get(nodeId) ?? [];
       if (!facets.some(existing => existing.path === type.path)) {

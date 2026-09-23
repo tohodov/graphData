@@ -27,7 +27,7 @@ graphData - исследовательский прототип графовой
 - `GraphCompiler` - downstream-компилятор конечного типизированного snapshot в канонические dense/CSR tensors, message-passing execution plan и HLSL-артефакт. CPU reference executor служит oracle для GPU backend'ов; подробности находятся в `Compiler/README.md`.
 - `GraphCompiler.Runtime` - Windows Direct3D 12 runtime над `Domain`: обходит выбранный `Subgraph`, разбивает его на core/halo чанки, компилирует их в DXIL и собирает результаты по raw `GlobalId`.
 
-Новый HTTP-контракт `/api/typed-graph` работает через `ITypedGraph` в обоих режимах. Прежние HTTP/MCP/editor-интерфейсы используют `GraphService` и доступны только в режиме `legacy`. В режиме `semantic` неподдерживаемый старый интерфейс явно отклоняется.
+WEB UI работает в обоих режимах хранения: сохраняет общее полотно, выбор, инспектор и формы операций. В `legacy` редактор использует прежний `GraphService`, в `semantic` — `/api/typed-graph` и явную проекцию отношений с именованными участниками. Настройки `/api/ui/settings` выбирают клиентский адаптер; выбор хранения не отключает редактор. Старые raw HTTP и MCP интерфейсы по-прежнему доступны только в `legacy`.
 `Carrier` обозначает внутреннее представление и адаптер, а публичные имена `Graph`, `Node` и `Edge` сохраняют смысл доменной модели. Общий строгий контракт двух backend — `ITypedGraph`; существующий `Graph` работает через `IGraphStorage` и не подключён к native backend.
 Storage-state типы и storage-контракты закрыты как `internal`; доступ к ним выдается только `Domain`, storage-проектам и тестовым сборкам через `InternalsVisibleTo`.
 

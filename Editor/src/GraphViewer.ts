@@ -10,6 +10,7 @@ import {
   nodeRadius
 } from "./domain/graphAttributes.js";
 import { GraphApi, type GraphApiError } from "./infrastructure/GraphApi.js";
+import { TypedGraphEditor } from "./ui/TypedGraphEditor.js";
 import { WebGpuGraphCanvas } from "./ui/WebGpuGraphCanvas.js";
 import { GraphEdge } from "./domain/GraphEdge.js";
 import { GraphId } from "./domain/GraphId.js";
@@ -60,6 +61,7 @@ export type GraphViewerOptions = {
 };
 
 export class GraphViewer {
+  typedEditor: TypedGraphEditor | null = null;
   document: Document;
   window: Window;
   api: GraphApi;
@@ -270,6 +272,10 @@ export class GraphViewer {
     try {
       const settings = await this.apiJson<UiSettingsResponse>("/api/ui/settings");
       this.graph.applyUiSettings(settings as unknown as Record<string, unknown>);
+      if ((settings as unknown as { graphApi?: string })?.graphApi === "typed") {
+        this.typedEditor = new TypedGraphEditor(this);
+        await this.typedEditor.initialize();
+      }
     } catch (error) {
       this.setStatus(`Не удалось загрузить настройки UI: ${(error as Error).message}`);
     }
@@ -511,6 +517,7 @@ export class GraphViewer {
   }
 
   async loadGraphRoots() {
+  if (this.typedEditor) return this.typedEditor.loadGraph();
   this.setBusy(true);
   this.setEmptyState("Загрузка корней...");
   try {
@@ -533,6 +540,7 @@ export class GraphViewer {
   }
 
   async loadNode(name: string, fromName: string | null = null, options: GraphViewerOptions = {}) {
+  if (this.typedEditor) return this.typedEditor.loadNode(name, fromName, options.select ?? true);
   const select = options.select ?? true;
   this.setBusy(true);
   try {
@@ -551,6 +559,7 @@ export class GraphViewer {
   }
 
   async loadNeighbor(anchorName: string, neighborLocalId: string) {
+  if (this.typedEditor) return this.typedEditor.loadNode(neighborLocalId, anchorName);
   if (!anchorName || !neighborLocalId) {
     this.setStatus("Не удалось определить соседа для раскрытия");
     return;
@@ -630,6 +639,7 @@ export class GraphViewer {
   }
 
   async createNode(name: string, options: GraphViewerOptions = {}) {
+  if (this.typedEditor) return this.typedEditor.createNode(name, options);
   const typeGlobalId = options.typeGlobalId || "";
   const linkedNodeNames = [...new Set(options.linkedNodeNames ?? [])].filter(Boolean);
   this.setBusy(true);
@@ -681,6 +691,7 @@ export class GraphViewer {
   }
 
   async assignGraphNodeAttributes(nodeName: string, attributes: Record<string, string>) {
+  if (this.typedEditor) return this.typedEditor.saveAttributes(nodeName, attributes);
   if (!nodeName || !this.graph.loaded.has(nodeName)) {
     this.setStatus("Узел не загружен");
     return;
@@ -702,6 +713,7 @@ export class GraphViewer {
   }
 
   async deleteNodes(nodeNames: string[]) {
+  if (this.typedEditor) return this.typedEditor.deleteSelection(nodeNames, []);
   if (nodeNames.length === 0) {
     this.setStatus("Нет выбранных узлов для удаления");
     return;
@@ -729,6 +741,7 @@ export class GraphViewer {
   }
 
   async deleteSelection(nodeNames: string[], edges: any[]) {
+  if (this.typedEditor) return this.typedEditor.deleteSelection(nodeNames, edges);
   if (nodeNames.length === 0 && edges.length === 0) {
     this.setStatus("Нет выбранных элементов для удаления");
     return;
@@ -780,6 +793,7 @@ export class GraphViewer {
   }
 
   async connectNodes(node1InternalId: string, node2InternalId: string, options: GraphViewerOptions = {}) {
+  if (this.typedEditor) return this.typedEditor.connect(node1InternalId, node2InternalId, options);
   const typeGlobalId = options.typeGlobalId || "";
   this.setBusy(true);
   try {
@@ -894,6 +908,7 @@ export class GraphViewer {
   }
 
   async refreshTypes(options: GraphViewerOptions = {}) {
+  if (this.typedEditor) return this.typedEditor.refreshTypes();
   if (!options.preserveBusy) {
     this.setBusy(true);
   }
@@ -1071,6 +1086,7 @@ export class GraphViewer {
   }
 
   async loadRelationInstances() {
+  if (this.typedEditor) return this.typedEditor.loadRelations();
   this.setBusy(true);
   try {
     this.readBasisInputs();
@@ -1105,6 +1121,7 @@ export class GraphViewer {
   }
 
   async assignNodeTypeToNodes(nodeNames: string[], typeGlobalId: string) {
+  if (this.typedEditor) return this.typedEditor.assignType(nodeNames, typeGlobalId);
   if (!nodeNames?.length || !typeGlobalId) {
     this.setStatus("Выберите узлы и тип узла");
     return;
@@ -1140,6 +1157,7 @@ export class GraphViewer {
   }
 
   async changeEdgeTypeForEdges(edges: any[], typeGlobalId: string) {
+  if (this.typedEditor) return this.typedEditor.assignType([...new Set<string>(edges.map(edge => edge.relationGlobalId).filter(Boolean))], typeGlobalId);
   if (!edges?.length || !typeGlobalId) {
     this.setStatus("Выберите связи и тип связи");
     return;
@@ -1331,6 +1349,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   async searchNodes() {
+  if (this.typedEditor) return this.typedEditor.search();
   let query;
   try {
     query = JSON.parse(this.searchQueryJson.value.trim());
@@ -1425,6 +1444,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   async loadSubgraph() {
+  if (this.typedEditor) return this.typedEditor.loadSubgraph();
   const roots = this.parseCsv((this.document.querySelector("#subgraph-roots") as HTMLInputElement).value);
   this.setBusy(true);
   try {
@@ -2063,6 +2083,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   createNodeSelectionDetails(node: any) {
+  if (this.typedEditor) return this.typedEditor.createDetails(node.name);
   const details = this.document.createElement("div");
   details.className = "selection-details";
   details.append(this.createDetailsList([
@@ -2088,6 +2109,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   createEdgeSelectionDetails(edge: any) {
+  if (this.typedEditor && edge.relationGlobalId) return this.typedEditor.createDetails(edge.relationGlobalId);
   const details = this.document.createElement("div");
   details.className = "selection-details";
   const relationId = this.edgeEditableNodeId(edge);
@@ -2361,6 +2383,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   async refreshLoadedNodeForEditing(path: string) {
+  if (this.typedEditor) return this.typedEditor.loadNode(path, null, false);
   const expansion = this.normalizeNodeResponse(await this.apiJson(`/api/graph/nodes?${this.toGlobalIdQuery(path)}`));
   const incoming = GraphNode.from(expansion);
   const existing = this.graph.loaded.get(incoming.name);
@@ -2488,11 +2511,12 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   this.renderTypeSelect(this.createNodeType, this.graph.schema.nodeTypes, "Без типа");
   this.renderTypeSelect(this.assignNodeType, this.graph.schema.nodeTypes, "Не менять тип");
   this.renderTypeSelect(this.assignEdgeType, this.graph.schema.edgeTypes, "Не менять тип");
-  this.renderTypeSelect(this.connectEdgeType, this.graph.schema.edgeTypes, "Физическая связь");
+  this.renderTypeSelect(this.connectEdgeType, this.graph.schema.edgeTypes, this.typedEditor ? "Без типа" : "Физическая связь");
   this.renderTypeList(this.nodeTypeList, "Типы узлов", this.graph.schema.nodeTypes, "node");
   this.renderTypeList(this.edgeTypeList, "Типы связей", this.graph.schema.edgeTypes, "edge");
   this.renderRelationList();
   this.renderProjectionSummary();
+  this.typedEditor?.renderConnectMembers();
 
   }
 
@@ -2501,7 +2525,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   select.replaceChildren();
   const empty = this.document.createElement("option");
   empty.value = "";
-  empty.textContent = types.size === 0 ? "Типы не загружены" : emptyLabel;
+  empty.textContent = types.size === 0 && !this.typedEditor ? "Типы не загружены" : emptyLabel;
   select.append(empty);
   [...types.values()]
     .sort((a, b) => a.label.localeCompare(b.label, "ru"))
@@ -2509,6 +2533,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       const option = this.document.createElement("option");
       option.value = type.path;
       option.textContent = type.label;
+      option.disabled = this.typedEditor?.types.get(type.path)?.isAbstract === true;
       select.append(option);
     });
   if (types.has(current)) {
@@ -2564,6 +2589,10 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       open.addEventListener("click", async event => {
         event.preventDefault();
         event.stopPropagation();
+        if (this.typedEditor) {
+          this.typedEditor.showType(type.path);
+          return;
+        }
         await this.ensureNodeLoaded(type.path);
         this.revealLoadedNode(type.path, this.graph.rootName, { select: false });
         this.graph.selectedName = type.path;
@@ -2576,7 +2605,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
       rules.className = "basis-rule-grid";
       rules.hidden = !expanded;
       const visible = this.createCheckboxRule("Показывать", type.visible);
-      const collapsed = this.createCheckboxRule("Сворачивать", type.collapsed === true);
+      const collapsed = this.createCheckboxRule(this.typedEditor ? "Карточка" : "Сворачивать", type.collapsed === true);
       const color = this.createTextRule("Цвет", type.color || "", "#0f766e");
       const rank = this.createTextRule("Ранг", GraphType.formatRankInput(type.rank), element === "node" ? "50" : "30");
       rules.append(visible.label, collapsed.label, color.label, rank.label);
@@ -2688,6 +2717,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   async saveTypeProjectionRules(path: string, element: string, rules: any) {
+  if (this.typedEditor) return this.typedEditor.saveViewRules(path, element, rules);
   this.setBusy(true);
   try {
     const loaded = await this.getLoadedNode(path);
@@ -2742,6 +2772,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   renderRelationList() {
+  if (this.typedEditor) return this.typedEditor.renderRelationList();
   this.typedEdgeList.replaceChildren();
   const relations = this.graph.discoverRelationInstances();
   const summary = this.document.createElement("div");
@@ -2931,6 +2962,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   updateEditorState() {
+  this.typedEditor?.renderConnectMembers();
     const selection = this.currentSelection();
   this.operationPanels.forEach(panel => {
     panel.element.hidden = !selection.allows(panel.operation);
@@ -2941,9 +2973,9 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
     || !selection.allows(this.operations.createNode);
   this.assignNodeTypeButton.disabled = this.graph.busy || !selection.allows(this.operations.assignNodeType) || !this.assignNodeType.value;
   this.assignEdgeTypeButton.disabled = this.graph.busy || !selection.allows(this.operations.assignEdgeType) || !this.assignEdgeType.value;
-  this.connectForm.querySelector<HTMLButtonElement>("button")!.disabled = this.graph.busy
+  this.connectForm.querySelector<HTMLButtonElement>("button[type='submit']")!.disabled = this.graph.busy
     || !selection.allows(this.operations.connectNodes)
-    || !this.connectTargetName.value.trim();
+    || (!this.typedEditor && !this.connectTargetName.value.trim());
   if (!this.graph.searchAbort) {
     this.setSearchStreaming(false);
   }
@@ -3058,6 +3090,7 @@ async changeGraphEdgeType(edge: import("./domain/GraphEdge.js").GraphEdge | { no
   }
 
   ensureNodeLoaded(path: string) {
+    if (this.typedEditor) return this.typedEditor.ensureLoaded(path);
     if (this.graph.hasNode(path)) {
       return Promise.resolve();
     }

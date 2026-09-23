@@ -12,6 +12,7 @@ export type GraphEdgeSnapshot = {
   neighborLocalId?: string | null;
   neighborLocalIdsByAnchor?: Record<string, string>;
   relationGlobalId?: string | null;
+  memberName?: string | null;
   typeGlobalId?: string | null;
   label?: string;
   color?: string;
@@ -136,6 +137,7 @@ export class GraphEdge {
   neighborLocalId: string | null;
   neighborLocalIdsByAnchor: Record<string, string>;
   relationGlobalId: string | null;
+  memberName: string | null;
   typeGlobalId: string | null;
   label: string;
   color: string;
@@ -165,6 +167,7 @@ export class GraphEdge {
     neighborLocalId = null,
     neighborLocalIdsByAnchor = {},
     relationGlobalId = null,
+    memberName = null,
     typeGlobalId = null,
     label = "",
     color = "",
@@ -191,6 +194,7 @@ export class GraphEdge {
     this.neighborLocalId = neighborLocalId;
     this.neighborLocalIdsByAnchor = { ...(neighborLocalIdsByAnchor ?? {}) };
     this.relationGlobalId = relationGlobalId;
+    this.memberName = memberName;
     this.typeGlobalId = typeGlobalId;
     this.label = label;
     this.color = color;
@@ -210,7 +214,8 @@ export class GraphEdge {
     this.node2 = node2 ?? targetNode ?? null;
     this.node1Positioned = Boolean(node1Positioned);
     this.node2Positioned = Boolean(node2Positioned);
-    this.key = GraphEdge.keyFor(this.node1InternalId, this.node2InternalId, relationGlobalId ?? typeGlobalId ?? "");
+    this.key = GraphEdge.keyFor(this.node1InternalId, this.node2InternalId,
+      memberName === null ? relationGlobalId ?? typeGlobalId ?? "" : "member:" + JSON.stringify([relationGlobalId, memberName]));
   }
 
   static fromApi(edge: GraphEdgeSnapshot | null | undefined): GraphEdge {
@@ -394,6 +399,7 @@ endpointPositioned(path: string): boolean {
       neighborLocalId: this.neighborLocalId,
       neighborLocalIdsByAnchor: { ...this.neighborLocalIdsByAnchor },
       relationGlobalId: this.relationGlobalId,
+      memberName: this.memberName,
       typeGlobalId: this.typeGlobalId,
       label: this.label,
       color: this.color,

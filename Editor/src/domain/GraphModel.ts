@@ -233,6 +233,7 @@ export type ProjectedGraphEdge = {
   node1LocalId?: string;
   node2LocalId?: string;
   relationGlobalId?: string;
+  memberName?: string | null;
   typeGlobalId?: string | null;
   label?: string;
   color?: string;
@@ -268,6 +269,7 @@ export type GraphSchema = {
 };
 
 export class GraphModel {
+  semanticMode = false;
   rootName: string | null;
   _selectedName: string | null;
   selectedNames: Set<string>;
@@ -640,6 +642,14 @@ export class GraphModel {
   }
 
   private mergePrimitiveEdge(target: GraphEdge, source: GraphEdge): void {
+    if (source.memberName !== null) {
+      target.relationGlobalId = source.relationGlobalId;
+      target.memberName = source.memberName;
+      target.typeGlobalId = source.typeGlobalId;
+      target.label = source.label;
+      target.directed = source.directed;
+      target.color = source.color;
+    }
     target.collapsed = target.collapsed || source.collapsed;
     if (target.controlAngle === null && source.controlAngle !== null) {
       target.controlAnchorGlobalId = source.controlAnchorGlobalId;

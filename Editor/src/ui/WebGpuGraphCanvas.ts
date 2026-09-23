@@ -877,6 +877,28 @@ export class WebGpuGraphCanvas {
     const rect = this.canvas.getBoundingClientRect();
     const fragment = this.document.createDocumentFragment();
     this.renderEdgeEndpointControls(fragment, rect);
+    const roleOffsets = new Map<string, number>();
+    for (const edge of this.memory.edges) {
+      if (!edge.memberName || (!edge.label && !edge.directed)) continue;
+      const source = this.positions.get(edge.node1InternalId);
+      const target = this.positions.get(edge.node2InternalId);
+      if (!source || !target) continue;
+      const pair = JSON.stringify([edge.node1InternalId, edge.node2InternalId]);
+      const offset = roleOffsets.get(pair) ?? 0;
+      roleOffsets.set(pair, offset + 1);
+      const x = (source.x + target.x) / 2 * this.view.scale + this.view.x;
+      const y = (source.y + target.y) / 2 * this.view.scale + this.view.y;
+      if (x < 0 || y < 0 || x > rect.width || y > rect.height) continue;
+      let angle = Math.atan2(target.y - source.y, target.x - source.x) * 180 / Math.PI;
+      const reverse = angle > 90 || angle < -90;
+      if (reverse) angle += angle > 90 ? -180 : 180;
+      const label = this.document.createElement("div");
+      label.className = "graph-edge-label";
+      label.textContent = [edge.label, edge.directed ? (reverse ? "←" : "→") : ""].filter(Boolean).join(" ");
+      label.title = `${edge.memberName}: ${edge.node1InternalId} → ${edge.node2InternalId}`;
+      label.style.transform = `translate(${x}px, ${y}px) rotate(${angle}deg) translate(-50%, ${-100 - offset * 100}%)`;
+      fragment.append(label);
+    }
     const labelledNodes = this.memory.nodes
       .filter(node => {
         const position = this.positions.get(node.name ?? "");

@@ -112,7 +112,6 @@ public sealed class TypedGraphStorageTests
 
     [DataTestMethod]
     [DataRow(typeof(GraphController))]
-    [DataRow(typeof(UiController))]
     public async Task SemanticGuard_RejectsLegacyControllerBeforeActivation(Type controllerType)
     {
         var reachedNext = false;
@@ -135,7 +134,9 @@ public sealed class TypedGraphStorageTests
 
     [DataTestMethod]
     [DataRow(GraphStorageMode.Legacy, typeof(GraphController))]
+    [DataRow(GraphStorageMode.Legacy, typeof(UiController))]
     [DataRow(GraphStorageMode.Semantic, typeof(TypedGraphController))]
+    [DataRow(GraphStorageMode.Semantic, typeof(UiController))]
     public async Task CompatibilityGuard_AllowsSupportedControllers(GraphStorageMode mode, Type controllerType)
     {
         var reachedNext = false;
@@ -150,23 +151,25 @@ public sealed class TypedGraphStorageTests
         Assert.IsTrue(reachedNext);
     }
 
-    [TestMethod]
-    public async Task SemanticMode_HomeExplainsUnavailableEditorInsteadOfLoadingCanvas()
+    [DataTestMethod]
+    [DataRow("/")]
+    [DataRow("/index.html")]
+    public async Task SemanticMode_AllowsExistingEditor(string path)
     {
+        var reachedNext = false;
         var context = new DefaultHttpContext();
-        context.Request.Path = "/";
+        context.Request.Path = path;
         context.Response.Body = new MemoryStream();
-        var middleware = new TypedGraphCompatibilityMiddleware(_ => throw new AssertFailedException("Static editor must not load."),
-            new GraphStorageSelection(GraphStorageMode.Semantic));
+        var middleware = new TypedGraphCompatibilityMiddleware(_ =>
+        {
+            reachedNext = true;
+            return Task.CompletedTask;
+        }, new GraphStorageSelection(GraphStorageMode.Semantic));
 
         await middleware.InvokeAsync(context);
 
-        Assert.AreEqual(StatusCodes.Status501NotImplemented, context.Response.StatusCode);
-        context.Response.Body.Position = 0;
-        using var reader = new StreamReader(context.Response.Body);
-        var body = await reader.ReadToEndAsync();
-        StringAssert.Contains(body, "Текущий редактор");
-        StringAssert.Contains(body, "/api/typed-graph/types");
+        Assert.IsTrue(reachedNext);
+        Assert.AreEqual(StatusCodes.Status200OK, context.Response.StatusCode);
     }
 
     static IConfiguration Configuration(Dictionary<string, string?> values) =>

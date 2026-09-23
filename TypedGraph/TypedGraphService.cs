@@ -26,6 +26,14 @@ public sealed class TypedGraphService(ITypedGraphStore store) : ITypedGraph, IDi
         return Copy(await RequireValidElement(id));
     });
 
+    public Task<IReadOnlyList<TypedElement>> GetElementsAsync() => Locked<IReadOnlyList<TypedElement>>(async () => {
+        var elements = await store.ReadElementsAsync();
+        RequireUnique(elements.Select(element => element.Id), "element IDs");
+        foreach (var element in elements)
+            await ValidateElement(element, persisted: true);
+        return elements.OrderBy(element => element.Id, StringComparer.Ordinal).Select(Copy).ToArray();
+    });
+
     public Task<IReadOnlyList<TypedElement>> FindIncidentRelationsAsync(string participantId) => Locked<IReadOnlyList<TypedElement>>(async () => {
         TypedGraphRules.ValidateId(participantId);
         await RequireValidElement(participantId);
@@ -64,8 +72,6 @@ public sealed class TypedGraphService(ITypedGraphStore store) : ITypedGraph, IDi
     public Task<TypedElement> CreateInstanceAsync(string id, IReadOnlyList<string> typeIds, IReadOnlyDictionary<string, string> attributes) => Locked(async () => {
         ValidateNewElementId(id);
         RequireUnique(typeIds, "assigned type IDs");
-        if (typeIds.Count == 0)
-            throw Error(TypedGraphError.Invalid, "An instance must have at least one type.");
         foreach (var typeId in typeIds) {
             var type = await RequireType(typeId);
             if (type.IsAbstract)
@@ -79,12 +85,11 @@ public sealed class TypedGraphService(ITypedGraphStore store) : ITypedGraph, IDi
         return Copy(await RequireValidElement(id));
     });
 
-    public Task<TypedElement> CreateRelationAsync(string id, string typeId, IReadOnlyDictionary<string, IReadOnlyList<string>> members, IReadOnlyDictionary<string, string> attributes) => Locked(async () => {
+    public Task<TypedElement> CreateRelationAsync(string id, string? typeId, IReadOnlyDictionary<string, IReadOnlyList<string>> members, IReadOnlyDictionary<string, string> attributes) => Locked(async () => {
         ValidateNewElementId(id);
-        var type = await RequireType(typeId);
-        if (type.IsAbstract)
+        if (typeId is not null && (await RequireType(typeId)).IsAbstract)
             throw Error(TypedGraphError.Invalid, $"Abstract relation type '{typeId}' cannot be instantiated.");
-        var element = new TypedElement(id, TypedElementKind.Relation, [typeId], CopyAttributes(attributes), CopyMembers(members));
+        var element = new TypedElement(id, TypedElementKind.Relation, typeId is null ? [] : [typeId], CopyAttributes(attributes), CopyMembers(members));
         await ValidateElement(element, persisted: false);
         await store.InsertElementAsync(element);
         return Copy(await RequireValidElement(id));
@@ -96,6 +101,54 @@ public sealed class TypedGraphService(ITypedGraphStore store) : ITypedGraph, IDi
         var replacement = existing with { Attributes = CopyAttributes(attributes) };
         await ValidateElement(replacement, persisted: false);
         await store.ReplaceAttributesAsync(id, replacement.Attributes);
+        return Copy(await RequireValidElement(id));
+    });
+
+    public Task<TypedElement> ReplaceTypesAsync(string id, IReadOnlyList<string> typeIds) => Locked(async () => {
+        TypedGraphRules.ValidateId(id);
+        var existing = await RequireValidElement(id);
+        RequireUnique(typeIds, "assigned type IDs");
+        foreach (var typeId in typeIds) {
+            var type = await RequireType(typeId);
+            if (type.IsAbstract)
+                throw Error(TypedGraphError.Invalid, $"Abstract type '{typeId}' cannot be assigned directly.");
+        }
+        var effective = await Closure(typeIds);
+        var replacement = existing with { TypeIds = effective.Select(type => type.Id).ToArray() };
+        await ValidateElement(replacement, persisted: false);
+        await ValidateIncomingRequirements(replacement);
+        await store.ReplaceTypesAsync(id, replacement.TypeIds);
+        return Copy(await RequireValidElement(id));
+    });
+
+    public Task<TypedElement> ReplaceMembersAsync(string id, IReadOnlyDictionary<string, IReadOnlyList<string>> members) => Locked(async () => {
+        TypedGraphRules.ValidateId(id);
+        var existing = await RequireValidElement(id);
+        if (existing.Kind != TypedElementKind.Relation)
+            throw Error(TypedGraphError.Invalid, "Member replacement applies to relations only.");
+        var replacement = existing with { Members = CopyMembers(members) };
+        await ValidateElement(replacement, persisted: false);
+        await ValidateAcyclicMembers(replacement);
+        await store.ReplaceMembersAsync(id, replacement.Members);
+        return Copy(await RequireValidElement(id));
+    });
+
+    public Task<TypedElement> ReplaceRelationAsync(string id, string? typeId, IReadOnlyDictionary<string, IReadOnlyList<string>> members, IReadOnlyDictionary<string, string> attributes) => Locked(async () => {
+        TypedGraphRules.ValidateId(id);
+        var existing = await RequireValidElement(id);
+        if (existing.Kind != TypedElementKind.Relation)
+            throw Error(TypedGraphError.Invalid, "Relation replacement applies to relations only.");
+        if (typeId is not null && (await RequireType(typeId)).IsAbstract)
+            throw Error(TypedGraphError.Invalid, $"Abstract relation type '{typeId}' cannot be instantiated.");
+        var replacement = existing with {
+            TypeIds = typeId is null ? [] : [typeId],
+            Members = CopyMembers(members),
+            Attributes = CopyAttributes(attributes)
+        };
+        await ValidateElement(replacement, persisted: false);
+        await ValidateAcyclicMembers(replacement);
+        await ValidateIncomingRequirements(replacement);
+        await store.ReplaceElementAsync(replacement);
         return Copy(await RequireValidElement(id));
     });
 
@@ -142,6 +195,35 @@ public sealed class TypedGraphService(ITypedGraphStore store) : ITypedGraph, IDi
         return result.Values.OrderBy(type => type.Id, StringComparer.Ordinal).ToArray();
     }
 
+    async Task ValidateIncomingRequirements(TypedElement replacement) {
+        foreach (var relation in await store.ReadIncidentRelationsAsync(replacement.Id)) {
+            await ValidateElement(relation, persisted: true);
+            if (relation.TypeIds.Count == 0)
+                continue;
+            var schema = await RequireType(relation.TypeIds.Single());
+            foreach (var member in schema.Members)
+                if (member.TypeId is { } required && relation.Members[member.Name].Contains(replacement.Id, StringComparer.Ordinal)
+                    && !replacement.TypeIds.Contains(required, StringComparer.Ordinal))
+                    throw Error(TypedGraphError.Conflict, $"Relation '{relation.Id}' member '{member.Name}' requires participant '{replacement.Id}' to retain type '{required}'.");
+        }
+    }
+
+    async Task ValidateAcyclicMembers(TypedElement relation) {
+        var pending = new Queue<string>(relation.Members.Values.SelectMany(ids => ids));
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (pending.TryDequeue(out var participantId)) {
+            if (participantId == relation.Id)
+                throw Error(TypedGraphError.Invalid, $"Relation '{relation.Id}' cannot participate in itself, directly or through another relation.");
+            if (!visited.Add(participantId))
+                continue;
+            var participant = await store.ReadElementAsync(participantId)
+                ?? throw Error(TypedGraphError.Invalid, $"Participant '{participantId}' does not exist.");
+            if (participant.Kind == TypedElementKind.Relation)
+                foreach (var memberId in participant.Members.Values.SelectMany(ids => ids))
+                    pending.Enqueue(memberId);
+        }
+    }
+
     async Task ValidateElement(TypedElement element, bool persisted) {
         try {
             await ValidateElementCore(element, persisted);
@@ -155,8 +237,6 @@ public sealed class TypedGraphService(ITypedGraphStore store) : ITypedGraph, IDi
         if (!Enum.IsDefined(element.Kind))
             throw Error(TypedGraphError.Corrupt, $"Unknown kind for '{element.Id}'.");
         RequireUnique(element.TypeIds, "element type IDs");
-        if (element.TypeIds.Count == 0)
-            throw Error(persisted ? TypedGraphError.Corrupt : TypedGraphError.Invalid, $"Element '{element.Id}' has no types.");
         var types = await Closure(element.TypeIds);
         if (types.Any(type => type.Kind != element.Kind))
             throw Error(TypedGraphError.Invalid, $"Element '{element.Id}' mixes instance and relation types.");
@@ -168,12 +248,12 @@ public sealed class TypedGraphService(ITypedGraphStore store) : ITypedGraph, IDi
                 throw Error(TypedGraphError.Invalid, "Instance members are not supported; model named links as relations.");
             return;
         }
-        if (types.Count != 1)
+        if (types.Count > 1)
             throw Error(TypedGraphError.Unsupported, "Combining multiple relation schemas is not defined in the shared contract.");
-        var relationType = types[0];
-        if (!relationType.Members.Select(member => member.Name).ToHashSet(StringComparer.Ordinal).SetEquals(element.Members.Keys))
+        var memberDefinitions = types.Count == 0 ? UntypedMembers(element) : types[0].Members;
+        if (!memberDefinitions.Select(member => member.Name).ToHashSet(StringComparer.Ordinal).SetEquals(element.Members.Keys))
             throw Error(TypedGraphError.Invalid, $"Relation '{element.Id}' must supply exactly the declared member names.");
-        foreach (var member in relationType.Members) {
+        foreach (var member in memberDefinitions) {
             var participants = element.Members[member.Name];
             RequireUnique(participants, $"participants of '{member.Name}'");
             if (participants.Count < member.Min || member.Max is { } max && participants.Count > max)
@@ -182,7 +262,7 @@ public sealed class TypedGraphService(ITypedGraphStore store) : ITypedGraph, IDi
                 TypedGraphRules.ValidateId(participantId);
                 var participant = await store.ReadElementAsync(participantId)
                     ?? throw Error(TypedGraphError.Invalid, $"Member '{member.Name}' references missing participant '{participantId}'.");
-                if (participant.Id != participantId || participant.TypeIds.Count == 0 || !Enum.IsDefined(participant.Kind))
+                if (participant.Id != participantId || !Enum.IsDefined(participant.Kind))
                     throw Error(TypedGraphError.Corrupt, $"Invalid participant '{participantId}'.");
                 var participantTypes = await Closure(participant.TypeIds);
                 if (!participantTypes.Select(type => type.Id).ToHashSet(StringComparer.Ordinal).SetEquals(participant.TypeIds)
@@ -193,12 +273,12 @@ public sealed class TypedGraphService(ITypedGraphStore store) : ITypedGraph, IDi
                     if (participant.Kind == TypedElementKind.Instance && participant.Members.Count != 0)
                         throw Error(TypedGraphError.Invalid, "Instance has unexpected relation members.");
                     if (participant.Kind == TypedElementKind.Relation) {
-                        if (participantTypes.Count != 1)
+                        if (participantTypes.Count > 1)
                             throw Error(TypedGraphError.Unsupported, "Multiple relation schemas are not defined.");
-                        var participantSchema = participantTypes[0];
-                        if (!participantSchema.Members.Select(item => item.Name).ToHashSet(StringComparer.Ordinal).SetEquals(participant.Members.Keys))
+                        var participantMembers = participantTypes.Count == 0 ? UntypedMembers(participant) : participantTypes[0].Members;
+                        if (!participantMembers.Select(item => item.Name).ToHashSet(StringComparer.Ordinal).SetEquals(participant.Members.Keys))
                             throw Error(TypedGraphError.Invalid, "Relation has unexpected member names.");
-                        foreach (var item in participantSchema.Members) {
+                        foreach (var item in participantMembers) {
                             var ids = participant.Members[item.Name];
                             RequireUnique(ids, $"participants of '{item.Name}'");
                             if (ids.Count < item.Min || item.Max is { } limit && ids.Count > limit)
@@ -212,6 +292,15 @@ public sealed class TypedGraphService(ITypedGraphStore store) : ITypedGraph, IDi
                     throw Error(TypedGraphError.Invalid, $"Member '{member.Name}' requires type '{expected}', but participant '{participantId}' does not have it.");
             }
         }
+    }
+
+    static IReadOnlyList<TypedMemberDefinition> UntypedMembers(TypedElement element) {
+        if (element.Members.Count < 2)
+            throw Error(TypedGraphError.Invalid, "A relation must have at least two named members.");
+        RequireUnique(element.Members.Keys, "member names");
+        foreach (var name in element.Members.Keys)
+            TypedGraphRules.ValidateName(name);
+        return element.Members.Keys.Select(name => new TypedMemberDefinition(name, null, 0, null)).ToArray();
     }
 
     static void ValidateStoredType(TypedType type) {

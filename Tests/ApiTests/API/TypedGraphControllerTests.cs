@@ -104,7 +104,6 @@ public sealed class TypedGraphControllerTests
 
     [DataTestMethod]
     [DataRow("""{"id":null,"typeId":"NodeTypes/Transfer","members":{}}""")]
-    [DataRow("""{"id":"transfer","typeId":null,"members":{}}""")]
     [DataRow("""{"id":"transfer","typeId":"NodeTypes/Transfer","members":null}""")]
     [DataRow("""{"id":"transfer","typeId":"NodeTypes/Transfer","members":{},"attributes":null}""")]
     public void JsonContract_RejectsNullNonNullableProperties(string json)
@@ -122,10 +121,15 @@ public sealed class TypedGraphControllerTests
     [DataRow("relation", """{"id":"invalid","typeId":"NodeTypes/Transfer","members":{"sender":[null]}}""")]
     [DataRow("relation", """{"id":"invalid","typeId":"NodeTypes/Transfer","members":{},"attributes":{"source":null}}""")]
     [DataRow("attributes", """{"attributes":{"label":null}}""")]
+    [DataRow("types", """{"typeIds":[null]}""")]
+    [DataRow("members", """{"members":{"sender":null}}""")]
+    [DataRow("members", """{"members":{"sender":[null]}}""")]
     [DataRow("type", "null")]
     [DataRow("instance", "null")]
     [DataRow("relation", "null")]
     [DataRow("attributes", "null")]
+    [DataRow("types", "null")]
+    [DataRow("members", "null")]
     public async Task JsonCollectionNulls_AreRejectedBeforeAnyDomainMutation(string action, string json)
     {
         var graph = new StubGraph();
@@ -137,6 +141,8 @@ public sealed class TypedGraphControllerTests
             "instance" => (await controller.CreateInstanceAsync(JsonSerializer.Deserialize<TypedInstanceRequest>(json, options)!)).Result,
             "relation" => (await controller.CreateRelationAsync(JsonSerializer.Deserialize<TypedRelationRequest>(json, options)!)).Result,
             "attributes" => (await controller.ReplaceAttributesAsync("existing", JsonSerializer.Deserialize<TypedAttributesRequest>(json, options)!)).Result,
+            "types" => (await controller.ReplaceTypesAsync("existing", JsonSerializer.Deserialize<TypedTypesRequest>(json, options)!)).Result,
+            "members" => (await controller.ReplaceMembersAsync("existing", JsonSerializer.Deserialize<TypedMembersRequest>(json, options)!)).Result,
             _ => throw new AssertFailedException("Unknown test action.")
         };
 
@@ -166,14 +172,104 @@ public sealed class TypedGraphControllerTests
         Assert.AreEqual(1, graph.MutationCalls);
     }
 
+    [DataTestMethod]
+    [DataRow("""{"id":"connection","members":{"from":["A"],"to":["B"]}}""")]
+    [DataRow("""{"id":"connection","typeId":null,"members":{"from":["A"],"to":["B"]}}""")]
+    public async Task RelationCreation_WithoutType_PreservesUntypedConnection(string json)
+    {
+        var graph = new StubGraph();
+        var request = JsonSerializer.Deserialize<TypedRelationRequest>(json, GraphJsonSerializerOptions.Create())!;
+
+        var result = await Controller(graph).CreateRelationAsync(request);
+
+        var relation = (result.Result as CreatedResult)?.Value as TypedElementResponse;
+        Assert.IsNotNull(relation);
+        Assert.AreEqual(0, relation.TypeIds.Length);
+        CollectionAssert.AreEqual(new[] { "A" }, relation.Members["from"]);
+        CollectionAssert.AreEqual(new[] { "B" }, relation.Members["to"]);
+    }
+
+    [TestMethod]
+    public async Task EditorOperations_ListElementsAndReplaceTypesAndMembersWithoutChangingIdentity()
+    {
+        var graph = new StubGraph();
+        var controller = Controller(graph);
+        await controller.CreateInstanceAsync(new TypedInstanceRequest { Id = "A" });
+        var typed = (await controller.ReplaceTypesAsync("A", new TypedTypesRequest { TypeIds = ["NodeTypes/Place"] })).Result as OkObjectResult;
+        var typedInstance = typed?.Value as TypedElementResponse;
+        Assert.IsNotNull(typedInstance);
+        CollectionAssert.AreEqual(new[] { "NodeTypes/Place" }, typedInstance.TypeIds);
+
+        await controller.CreateRelationAsync(new TypedRelationRequest
+        {
+            Id = "existing/fact",
+            Members = new() { ["from"] = ["A"], ["to"] = ["B"] },
+            Attributes = new() { ["label"] = "Existing fact" }
+        });
+
+        var edited = (await controller.ReplaceMembersAsync("existing/fact", new TypedMembersRequest
+        {
+            Members = new() { ["from"] = ["A"], ["to"] = ["C"] }
+        })).Result as OkObjectResult;
+        var editedFact = edited?.Value as TypedElementResponse;
+        Assert.IsNotNull(editedFact);
+        Assert.AreEqual("existing/fact", editedFact.Id);
+        Assert.AreEqual("Existing fact", editedFact.Attributes["label"]);
+        CollectionAssert.AreEqual(new[] { "C" }, editedFact.Members["to"]);
+
+        var all = (await controller.GetElementsAsync()).Result as OkObjectResult;
+        var elements = all?.Value as TypedElementResponse[];
+        Assert.IsNotNull(elements);
+        Assert.AreEqual(2, elements.Length);
+        var fact = elements.Single(static element => element.Id == "existing/fact");
+        CollectionAssert.AreEqual(new[] { "C" }, fact.Members["to"]);
+    }
+
     static TypedGraphController Controller(ITypedGraph graph) => new(graph)
     {
         ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
     };
 
+    [TestMethod]
+    public async Task RelationReplacement_SubmitsSchemaMembersAndAttributesTogetherAtExistingIdentity()
+    {
+        var graph = new StubGraph();
+        var result = await Controller(graph).ReplaceRelationAsync("existing", new TypedRelationUpdateRequest
+        {
+            TypeId = "NodeTypes/Flight",
+            Members = new() { ["departure"] = ["Paris"], ["arrival"] = ["London"] },
+            Attributes = new() { ["source"] = "Timetable" }
+        });
+
+        var relation = (result.Result as OkObjectResult)?.Value as TypedElementResponse;
+        Assert.IsNotNull(relation);
+        Assert.AreEqual("existing", relation.Id);
+        CollectionAssert.AreEqual(new[] { "NodeTypes/Flight" }, relation.TypeIds);
+        CollectionAssert.AreEqual(new[] { "London" }, relation.Members["arrival"]);
+        Assert.AreEqual("Timetable", relation.Attributes["source"]);
+        Assert.AreEqual(1, graph.MutationCalls);
+    }
+
+    [DataTestMethod]
+    [DataRow("null")]
+    [DataRow("""{"members":{"from":[null]},"attributes":{}}""")]
+    [DataRow("""{"members":{"from":null},"attributes":{}}""")]
+    [DataRow("""{"members":{},"attributes":{"source":null}}""")]
+    public async Task RelationReplacement_RejectsInvalidJsonContentsBeforeMutation(string json)
+    {
+        var graph = new StubGraph();
+        var request = JsonSerializer.Deserialize<TypedRelationUpdateRequest>(json, GraphJsonSerializerOptions.Create())!;
+
+        var result = await Controller(graph).ReplaceRelationAsync("existing", request);
+
+        Assert.AreEqual(400, (result.Result as ObjectResult)?.StatusCode);
+        Assert.AreEqual(0, graph.MutationCalls);
+    }
+
     sealed class StubGraph : ITypedGraph
     {
         public TypedGraphError? Error { get; init; }
+        public TypedElement? LastInstance { get; set; }
         public TypedElement? LastRelation { get; set; }
         public bool TypeCreationCalled { get; set; }
         public int MutationCalls { get; set; }
@@ -181,6 +277,8 @@ public sealed class TypedGraphControllerTests
         public Task<TypedType> GetTypeAsync(string id) => throw new AssertFailedException("Unexpected call.");
         public Task<IReadOnlyList<TypedType>> GetTypesAsync() => throw new AssertFailedException("Unexpected call.");
         public Task<TypedElement> GetAsync(string id) => Task.FromException<TypedElement>(Failure());
+        public Task<IReadOnlyList<TypedElement>> GetElementsAsync() =>
+            Task.FromResult<IReadOnlyList<TypedElement>>(new[] { LastInstance, LastRelation }.OfType<TypedElement>().ToArray());
         public Task<IReadOnlyList<TypedElement>> FindIncidentRelationsAsync(string participantId) => throw new AssertFailedException("Unexpected call.");
         public Task<TypedType> CreateTypeAsync(TypedType definition)
         {
@@ -192,13 +290,33 @@ public sealed class TypedGraphControllerTests
         public Task<TypedElement> CreateInstanceAsync(string id, IReadOnlyList<string> typeIds, IReadOnlyDictionary<string, string> attributes)
         {
             MutationCalls++;
-            throw new AssertFailedException("Unexpected call.");
+            LastInstance = new TypedElement(id, TypedElementKind.Instance, typeIds, attributes,
+                new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal));
+            return Task.FromResult(LastInstance);
         }
 
-        public Task<TypedElement> CreateRelationAsync(string id, string typeId, IReadOnlyDictionary<string, IReadOnlyList<string>> members, IReadOnlyDictionary<string, string> attributes)
+        public Task<TypedElement> CreateRelationAsync(string id, string? typeId, IReadOnlyDictionary<string, IReadOnlyList<string>> members, IReadOnlyDictionary<string, string> attributes)
         {
             MutationCalls++;
-            LastRelation = new TypedElement(id, TypedElementKind.Relation, [typeId], attributes, members);
+            LastRelation = new TypedElement(id, TypedElementKind.Relation, typeId is null ? [] : [typeId], attributes, members);
+            return Task.FromResult(LastRelation);
+        }
+
+        public Task<TypedElement> ReplaceTypesAsync(string id, IReadOnlyList<string> typeIds)
+        {
+            MutationCalls++;
+            var instance = LastInstance ?? throw new AssertFailedException("No existing instance.");
+            Assert.AreEqual(instance.Id, id);
+            LastInstance = instance with { TypeIds = typeIds };
+            return Task.FromResult(LastInstance);
+        }
+
+        public Task<TypedElement> ReplaceMembersAsync(string id, IReadOnlyDictionary<string, IReadOnlyList<string>> members)
+        {
+            MutationCalls++;
+            var relation = LastRelation ?? throw new AssertFailedException("No existing relation.");
+            Assert.AreEqual(relation.Id, id);
+            LastRelation = relation with { Members = members };
             return Task.FromResult(LastRelation);
         }
 
@@ -206,6 +324,13 @@ public sealed class TypedGraphControllerTests
         {
             MutationCalls++;
             throw new AssertFailedException("Unexpected call.");
+        }
+
+        public Task<TypedElement> ReplaceRelationAsync(string id, string? typeId, IReadOnlyDictionary<string, IReadOnlyList<string>> members, IReadOnlyDictionary<string, string> attributes)
+        {
+            MutationCalls++;
+            LastRelation = new TypedElement(id, TypedElementKind.Relation, typeId is null ? [] : [typeId], attributes, members);
+            return Task.FromResult(LastRelation);
         }
 
         public Task DeleteAsync(string id)

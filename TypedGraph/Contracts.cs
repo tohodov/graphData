@@ -29,11 +29,18 @@ public interface ITypedGraph
     Task<TypedType> GetTypeAsync(string id);
     Task<IReadOnlyList<TypedType>> GetTypesAsync();
     Task<TypedElement> GetAsync(string id);
+    Task<IReadOnlyList<TypedElement>> GetElementsAsync();
     Task<IReadOnlyList<TypedElement>> FindIncidentRelationsAsync(string participantId);
     Task<TypedType> CreateTypeAsync(TypedType definition);
     Task<TypedElement> CreateInstanceAsync(string id, IReadOnlyList<string> typeIds, IReadOnlyDictionary<string, string> attributes);
-    Task<TypedElement> CreateRelationAsync(string id, string typeId, IReadOnlyDictionary<string, IReadOnlyList<string>> members, IReadOnlyDictionary<string, string> attributes);
+    Task<TypedElement> CreateRelationAsync(string id, string? typeId, IReadOnlyDictionary<string, IReadOnlyList<string>> members, IReadOnlyDictionary<string, string> attributes);
     Task<TypedElement> ReplaceAttributesAsync(string id, IReadOnlyDictionary<string, string> attributes);
+    /// <summary>Replace assigned types, materializing requirements and preserving identity. No types means no schema.</summary>
+    Task<TypedElement> ReplaceTypesAsync(string id, IReadOnlyList<string> typeIds);
+    /// <summary>Replace a relation's participants without recreating the fact or its incoming references.</summary>
+    Task<TypedElement> ReplaceMembersAsync(string id, IReadOnlyDictionary<string, IReadOnlyList<string>> members);
+    /// <summary>Atomically change a relation's schema, members and attributes while retaining the fact's identity.</summary>
+    Task<TypedElement> ReplaceRelationAsync(string id, string? typeId, IReadOnlyDictionary<string, IReadOnlyList<string>> members, IReadOnlyDictionary<string, string> attributes);
     /// <summary>Restrict deletion: reject referenced elements and any backend-specific unrepresented data.</summary>
     Task DeleteAsync(string id);
 }
@@ -47,10 +54,14 @@ public interface ITypedGraphStore
     Task<TypedType?> ReadTypeAsync(string id);
     Task<IReadOnlyList<TypedType>> ReadTypesAsync();
     Task<TypedElement?> ReadElementAsync(string id);
+    Task<IReadOnlyList<TypedElement>> ReadElementsAsync();
     Task<IReadOnlyList<TypedElement>> ReadIncidentRelationsAsync(string participantId);
     Task InsertTypeAsync(TypedType definition);
     Task InsertElementAsync(TypedElement element);
     Task ReplaceAttributesAsync(string id, IReadOnlyDictionary<string, string> attributes);
+    Task ReplaceTypesAsync(string id, IReadOnlyList<string> typeIds);
+    Task ReplaceMembersAsync(string id, IReadOnlyDictionary<string, IReadOnlyList<string>> members);
+    Task ReplaceElementAsync(TypedElement element);
     Task DeleteElementAsync(string id);
 }
 

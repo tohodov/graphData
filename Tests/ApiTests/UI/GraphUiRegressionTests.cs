@@ -11,6 +11,99 @@ namespace GraphData.Tests.Ui;
 [RelevantTestClass]
 public sealed class GraphUiRegressionTests {
     [TestMethod]
+    public void TypedGraph_NodeSnapshotPreservesMembersAndReplacesRemovedIncidences() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/infrastructure/TypedGraphApi.js", "TypedGraphApi"));
+        engine.Execute(
+            """
+            const api = new TypedGraphApi({});
+            const relation = { id: "flight", kind: "relation", typeIds: ["NodeTypes/Flight"],
+              attributes: { label: "Перелёт" }, members: { departure: ["city"], arrival: ["city"] } };
+            const node = api.snapshot(relation);
+            const restored = new GraphNode(node.toViewNode());
+            const separateRoles = GraphEdge.mergeMany(node.edges).length === 2
+              && node.edges[0].key !== node.edges[1].key;
+            relation.members.arrival.push("another-city");
+            const detached = restored.members.arrival.length === 1;
+            node.merge(api.snapshot({ ...relation, members: { departure: ["city"] } }));
+            globalThis.__result = separateRoles && detached
+              && restored.semanticKind === "relation"
+              && restored.typeIds[0] === "NodeTypes/Flight"
+              && restored.members.departure[0] === "city"
+              && node.edges.length === 1 && node.edges[0].memberName === "departure"
+              && !Object.hasOwn(node.members, "arrival");
+            """);
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void TypedGraph_ViewRulesChangeCardsLabelsAndArrowsWithoutLosingRelationIdentity() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
+            ("Api/wwwroot/src/infrastructure/TypedGraphApi.js", "TypedGraphApi"));
+        engine.Execute(
+            """
+            const model = new GraphModel();
+            model.semanticMode = true;
+            model.schema.nodeTypes.set("City", { path: "City", label: "City", collapsed: false, infoAttribute: "code" });
+            model.schema.edgeTypes.set("Flight", { path: "Flight", label: "Flight", collapsed: false, directed: false, labelVisible: false });
+            for (const node of new TypedGraphApi({}).snapshots([
+              { id: "city", kind: "instance", typeIds: ["City"], attributes: { label: "Город", code: "ALA" }, members: {} },
+              { id: "flight", kind: "relation", typeIds: ["Flight"], attributes: {}, members: { from: ["city"], to: ["city"] } }
+            ])) { node.showed = true; model.loaded.set(node.name, node); }
+            const projection = model.visibleGraph();
+            globalThis.__result = projection.nodes.length === 2 && projection.edges.length === 2
+              && projection.nodes.find(node => node.name === "flight").viewShape === "circle"
+              && projection.nodes.find(node => node.name === "city").displayName === "Город · ALA"
+              && projection.edges.every(edge => edge.label === "" && edge.directed === false && edge.relationGlobalId === "flight")
+              && projection.edges.some(edge => edge.memberName === "from")
+              && projection.edges.some(edge => edge.memberName === "to");
+            """);
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
+    public void TypedGraph_ProjectionKeepsRelationAndAllNamedParticipantsWithoutCarrierNodes() {
+        var engine = CreateUiEngine(
+            ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
+            ("Api/wwwroot/src/domain/GraphNode.js", "GraphNode"),
+            ("Api/wwwroot/src/domain/GraphProjection.js", "GraphProjection"),
+            ("Api/wwwroot/src/domain/GraphModel.js", "GraphModel"),
+            ("Api/wwwroot/src/infrastructure/TypedGraphApi.js", "TypedGraphApi"));
+        engine.Execute(
+            """
+            const api = new TypedGraphApi({});
+            const model = new GraphModel();
+            model.semanticMode = true;
+            model.schema.edgeTypes.set("NodeTypes/Flight", {
+              path: "NodeTypes/Flight", label: "Перелёт", visible: true, collapsed: true, rank: 30
+            });
+            const snapshots = api.snapshots([
+              { id: "city", kind: "instance", typeIds: [], attributes: { label: "Город" }, members: {} },
+              { id: "flight", kind: "relation", typeIds: ["NodeTypes/Flight"], attributes: {},
+                members: { departure: ["city"], arrival: ["city"] } },
+              { id: "evidence", kind: "relation", typeIds: [], attributes: {}, members: { supports: ["flight"] } }
+            ]);
+            for (const node of snapshots) { node.showed = true; model.loaded.set(node.name, node); }
+            const projection = model.visibleGraph();
+            const flight = projection.nodes.find(node => node.name === "flight");
+            globalThis.__result = projection.nodes.length === 3 && projection.edges.length === 3
+              && flight.viewShape === "record" && flight.typeLabel === "Перелёт"
+              && flight.typeFields.some(field => field.name === "departure" && field.value === "Город")
+              && flight.typeFields.some(field => field.name === "arrival" && field.value === "Город")
+              && projection.edges.some(edge => edge.node1InternalId === "evidence"
+                && edge.node2InternalId === "flight" && edge.memberName === "supports")
+              && new Set(projection.edges.map(edge => edge.key)).size === 3;
+            """);
+        Assert.IsTrue(engine.Evaluate("__result").AsBoolean());
+    }
+
+    [TestMethod]
     public void GraphModel_CollapsedEdgesStayInGraphForEndpointControls() {
         var engine = CreateUiEngine(
             ("Api/wwwroot/src/domain/GraphEdge.js", "GraphEdge"),
